@@ -68,6 +68,7 @@ Tests against RDKit (answers in `datasets/*-oracle.csv`, made by
 ```bash
 lake exe canonical-test   # canonical SMILES
 lake exe morgan-test      # Morgan fingerprints (bits and unfolded identifiers)
+lake exe logistic-test    # EGFR classification vs scikit-learn
 lake exe phase1-test      # every atom and bond of the molecule graph
 lake exe validity-test    # invalid SMILES rejected exactly when RDKit rejects them
 ```
@@ -86,6 +87,17 @@ import LeanSMILES.Fingerprint.Morgan
 the bit vector for ML. Test: `lake exe morgan-test` (bits and unfolded
 identifiers); `lake exe morgan-test datasets/isotope-cases-oracle.csv` for
 isotope-labelled molecules.
+
+## Classification with Morgan fingerprints
+
+`LeanSMILES.ML.Logistic` trains L2-regularized logistic regression (scikit-learn's
+`LogisticRegression()` objective) on Morgan fingerprint bits. It is written over
+`ScalarLike` (`LeanSMILES/Scalar.lean`), so it runs on `Float`.
+`LeanSMILES/Examples/classification.lean` redoes ENCH 470 Lecture 21: EGFR
+actives vs. inactives (`ench470-content/`), test accuracy 0.925, then the five
+FDA-approved EGFR drugs. `lake exe logistic-test` checks every molecule's
+prediction and probability against scikit-learn (`tools/sklearn_egfr.py`,
+`datasets/egfr-classification.csv`).
 
 Hydrogens written as separate atoms are handled like RDKit: ordinary `[H]`
 atoms are folded into their neighbour's H count (`[H]C([H])([H])[H]` → `C`),

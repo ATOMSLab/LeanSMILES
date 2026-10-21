@@ -36,3 +36,7 @@ root = "LeanSMILES.Tests.Validity"
 [[lean_exe]]
 name = "morgan-test"
 root = "LeanSMILES.Tests.Morgan"
+
+[[lean_exe]]
+name = "logistic-test"
+root = "LeanSMILES.Tests.Logistic"

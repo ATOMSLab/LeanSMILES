@@ -259,6 +259,26 @@ Both the folded bits and the unfolded identifiers with counts equal RDKit's (`ra
 
 `LeanSMILES/Examples/morgan.lean` shows typical use (bits, radius, Tanimoto similarity, bit vector).
 
+### 4.5 Classification: logistic regression on Morgan fingerprints
+
+`LeanSMILES/ML/Logistic.lean` fits scikit-learn's L2-regularized logistic regression (`½‖w‖² + C Σ log(1 + e^(−ỹ score))`, intercept not penalized) by Nesterov-accelerated gradient descent with gradient-based restart. The step size comes from a power-iteration estimate of the curvature. Samples are sparse 0/1 vectors (Morgan on-bits). It is written over `ScalarLike` plus a small `ExpLog` class (`exp`, `log`), with `Float` and `ℝ` instances.
+
+Task (ENCH 470 Lecture 21): EGFR actives (100) vs inactives (100) from ChEMBL, radius-2 / 2048-bit Morgan bits, scikit-learn's `train_test_split(test_size=0.20, random_state=0)` (stored in `datasets/egfr-classification.csv` by `tools/sklearn_egfr.py`), `C = 1`.
+
+```bash
+lake exe logistic-test
+```
+
+| | scikit-learn | Lean |
+|---|---|---|
+| Train / test accuracy | 0.99375 / 0.925 | 0.99375 / 0.925 |
+| Test confusion matrix | [[20, 2], [1, 17]] | [[20, 2], [1, 17]] |
+| Predicted class, all 205 molecules (incl. FDA drugs) | — | identical |
+| Largest probability difference | — | 1.1 × 10⁻⁷ |
+| FDA drugs P(active): gefitinib, erlotinib, lapatinib, afatinib, osimertinib | 0.988, 0.991, 0.991, 0.999, 0.136 | the same |
+
+Training takes 1,283 iterations (about 1 s compiled). `LeanSMILES/Examples/classification.lean` walks through the lecture in Lean.
+
 **Hackathon recommendation:** do phases 0–2 plus the ring-membership and Morgan-invariance proofs. Morgan is short, fully specified and verified, so "fingerprints computed in Lean, bit-identical to RDKit, with a proof" is a strong, achievable result. Phase 3 is the bigger engineering piece.
 
 ---
