@@ -79,6 +79,24 @@ Design choices, and the reason for each:
 | `relabelIso σ` | `graph ≃g (relabel σ).graph` |
 | `canonicalize_iso` | canonicalization is a graph isomorphism |
 
+Both views are *derived* from the bond list, so the theorems above say the
+two derivations agree.  The matrix → graph direction closes the loop:
+
+| Definition / theorem | Statement |
+|---|---|
+| `BondKind.ofOrder?`, `order_injective` | `ofOrder? k.order = some k`; an order determines the kind |
+| `bondBetween_eq_some_iff` | by `nodup`, the bond found on an edge is *the* bond there |
+| `adjMatrix_eq_order_iff` | `adjMatrix i j = k.order ↔ ∃ b ∈ bonds, b.edge = s(i,j) ∧ b.kind = k` |
+| `toGraph_adjMatrix` | Mathlib's 0/1 round trip, instantiated at `graph` |
+| `graphOfMatrix`, `graphOfMatrix_adjMatrix` | the graph of the nonzero entries; `graphOfMatrix adjMatrix = graph` |
+| `IsBondMatrix` | symmetric, zero diagonal, nonzero entries are bond orders; `adjMatrix_isBondMatrix` |
+| `ofAdjMatrix atoms A : Molecule n` | total decoder: one bond per pair `i < j` whose entry is a bond order |
+| `adjMatrix_ofAdjMatrix` | `IsBondMatrix A → (ofAdjMatrix atoms A).adjMatrix = A` |
+| `graph_ofAdjMatrix_adjMatrix`, `bondKind_ofAdjMatrix_adjMatrix` | molecule → matrix → molecule keeps the graph and every bond kind |
+
+What no symmetric matrix can carry is the `src → dst` orientation of a bond,
+and with it the `/` `\` marks: `ofAdjMatrix` recovers everything but `Bond.dir`.
+
 ## 4. Parsing (`LeanSMILES/SMILES/Token.lean`, `Parse.lean`)
 
 Tokenizer: bracket atoms are decoded into one `Atom` token (isotope, symbol

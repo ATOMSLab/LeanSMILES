@@ -63,6 +63,33 @@ def ofChar? : Char → Option BondKind
   | ':' => some aromatic
   | _ => none
 
+/-- The bond kind with a given order, if any: the inverse of `order`. -/
+def ofOrder? (q : ℚ) : Option BondKind :=
+  if q = 1 then some single
+  else if q = 2 then some double
+  else if q = 3 then some triple
+  else if q = 4 then some quadruple
+  else if q = 3 / 2 then some aromatic
+  else none
+
+@[simp] theorem ofOrder?_order (k : BondKind) : ofOrder? k.order = some k := by
+  cases k <;> norm_num [ofOrder?, order]
+
+theorem ofOrder?_eq_some {q : ℚ} {k : BondKind} (h : ofOrder? q = some k) : q = k.order := by
+  unfold ofOrder? at h
+  split_ifs at h with h1 h2 h3 h4 h5
+  · obtain rfl := Option.some.inj h; exact h1
+  · obtain rfl := Option.some.inj h; exact h2
+  · obtain rfl := Option.some.inj h; exact h3
+  · obtain rfl := Option.some.inj h; exact h4
+  · obtain rfl := Option.some.inj h; exact h5
+
+/-- Distinct kinds have distinct orders: an order determines the kind. -/
+theorem order_injective : Function.Injective order := by
+  intro k k' h
+  have := congrArg ofOrder? h
+  rwa [ofOrder?_order, ofOrder?_order, Option.some.injEq] at this
+
 end BondKind
 
 /-- The directional single-bond marks `/` (up) and `\` (down) that encode

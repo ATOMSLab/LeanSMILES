@@ -111,6 +111,225 @@ theorem graph_adjMatrix_eq :
       exact h ((m.adjMatrix_ne_zero_iff i j).mp hne)
     simp [h, this]
 
+/-! ### From the matrix back to the graph
+
+Both `graph` and `adjMatrix` are computed from the bond list; the theorems
+above say the two views agree.  This section closes the loop in the other
+direction: the weighted matrix determines the graph (`graphOfMatrix`), each
+entry is exactly the order of the bond there (`adjMatrix_eq_order_iff`), and
+`ofAdjMatrix` decodes a valid matrix back into a molecule whose matrix, graph
+and bond kinds are the originals.  What a symmetric matrix cannot carry is
+the `src → dst` orientation of each bond and with it the `/` `\` marks, so
+`ofAdjMatrix` recovers everything except `Bond.dir`. -/
+
+/-- Mathlib's own round trip, instantiated: the 0/1 adjacency matrix of our
+graph determines it. -/
+theorem toGraph_adjMatrix : (m.graph.isAdjMatrix_adjMatrix ℚ).toGraph = m.graph :=
+  SimpleGraph.toGraph_adjMatrix_eq (G := m.graph) (α := ℚ)
+
+/-- The graph whose edges are the nonzero entries of a matrix. -/
+def graphOfMatrix (A : Matrix (Fin n) (Fin n) ℚ) : SimpleGraph (Fin n) :=
+  SimpleGraph.fromRel fun i j => A i j ≠ 0
+
+theorem graphOfMatrix_adj (A : Matrix (Fin n) (Fin n) ℚ) (i j : Fin n) :
+    (graphOfMatrix A).Adj i j ↔ i ≠ j ∧ (A i j ≠ 0 ∨ A j i ≠ 0) :=
+  SimpleGraph.fromRel_adj _ _ _
+
+/-- The weighted matrix determines the graph. -/
+theorem graphOfMatrix_adjMatrix : graphOfMatrix m.adjMatrix = m.graph := by
+  ext i j
+  rw [graphOfMatrix_adj, adjMatrix_ne_zero_iff, adjMatrix_ne_zero_iff]
+  exact ⟨fun ⟨_, h⟩ => h.elim id (fun h' => m.graph.symm h'),
+    fun h => ⟨m.graph.ne_of_adj h, Or.inl h⟩⟩
+
+/-- By `nodup`, the bond `bondBetween` finds is *the* bond on that edge. -/
+theorem bondBetween_eq_some_iff {i j : Fin n} {b : Bond n} :
+    m.bondBetween i j = some b ↔ b ∈ m.bonds ∧ b.edge = s(i, j) := by
+  unfold bondBetween
+  constructor
+  · intro h
+    have hp := List.find?_some h
+    exact ⟨List.mem_of_find?_eq_some h, of_decide_eq_true hp⟩
+  · rintro ⟨hb, he⟩
+    have hs : (m.bonds.find? fun b => decide (b.edge = s(i, j))).isSome := by
+      rw [List.find?_isSome]
+      exact ⟨b, hb, decide_eq_true he⟩
+    obtain ⟨b', hb'⟩ := Option.isSome_iff_exists.mp hs
+    have hm' := List.mem_of_find?_eq_some hb'
+    have hp' := List.find?_some hb'
+    have he' : b'.edge = s(i, j) := of_decide_eq_true hp'
+    rw [hb', List.inj_on_of_nodup_map m.nodup hm' hb (he'.trans he.symm)]
+
+/-- An entry of the weighted matrix is exactly the order of the bond there. -/
+theorem adjMatrix_eq_order_iff (i j : Fin n) (k : BondKind) :
+    m.adjMatrix i j = k.order ↔ ∃ b ∈ m.bonds, b.edge = s(i, j) ∧ b.kind = k := by
+  rw [adjMatrix_apply]
+  constructor
+  · intro h
+    rcases hb : m.bondBetween i j with _ | b
+    · rw [hb] at h
+      simp at h
+      exact absurd h.symm k.order_ne_zero
+    · rw [hb] at h
+      simp only [Option.map_some, Option.getD_some] at h
+      obtain ⟨hm, he⟩ := m.bondBetween_eq_some_iff.mp hb
+      exact ⟨b, hm, he, BondKind.order_injective h⟩
+  · rintro ⟨b, hb, he, rfl⟩
+    rw [m.bondBetween_eq_some_iff.mpr ⟨hb, he⟩]
+    rfl
+
+/-- A matrix that is the weighted adjacency matrix of *some* molecule:
+symmetric, zero on the diagonal, every nonzero entry a bond order. -/
+structure IsBondMatrix (A : Matrix (Fin n) (Fin n) ℚ) : Prop where
+  symm : ∀ i j, A i j = A j i
+  diag : ∀ i, A i i = 0
+  entry : ∀ i j, A i j ≠ 0 → ∃ k : BondKind, A i j = k.order
+
+theorem adjMatrix_isBondMatrix : IsBondMatrix m.adjMatrix where
+  symm i j := by rw [adjMatrix_apply, adjMatrix_apply, bondBetween_symm]
+  diag := m.adjMatrix_self
+  entry i j h := by
+    rw [adjMatrix_apply] at h ⊢
+    rcases hb : m.bondBetween i j with _ | b
+    · rw [hb] at h
+      simp at h
+    · exact ⟨b.kind, by simp⟩
+
+/-- The bond that the entry `A i j`, `i < j`, encodes — if it is a bond order. -/
+def bondOf (A : Matrix (Fin n) (Fin n) ℚ) (i j : Fin n) : Option (Bond n) :=
+  if h : i < j then (BondKind.ofOrder? (A i j)).map fun k => ⟨i, j, k, none, Fin.ne_of_lt h⟩
+  else none
+
+theorem bondOf_eq_some_iff {A : Matrix (Fin n) (Fin n) ℚ} {i j : Fin n} {b : Bond n} :
+    bondOf A i j = some b ↔
+      i < j ∧ b.src = i ∧ b.dst = j ∧ BondKind.ofOrder? (A i j) = some b.kind ∧ b.dir = none := by
+  unfold bondOf
+  split_ifs with h
+  · rw [Option.map_eq_some_iff]
+    constructor
+    · rintro ⟨k, hk, rfl⟩
+      exact ⟨h, rfl, rfl, hk, rfl⟩
+    · rintro ⟨-, rfl, rfl, hk, hd⟩
+      refine ⟨b.kind, hk, ?_⟩
+      obtain ⟨src, dst, kind, dir, ne⟩ := b
+      simp only at hd
+      subst hd
+      rfl
+  · simp [h]
+
+/-- Every bond a matrix encodes, one per pair `i < j`. -/
+def bondsOfMatrix (A : Matrix (Fin n) (Fin n) ℚ) : List (Bond n) :=
+  ((List.finRange n) ×ˢ (List.finRange n)).filterMap fun p => bondOf A p.1 p.2
+
+theorem mem_bondsOfMatrix {A : Matrix (Fin n) (Fin n) ℚ} {b : Bond n} :
+    b ∈ bondsOfMatrix A ↔
+      b.src < b.dst ∧ BondKind.ofOrder? (A b.src b.dst) = some b.kind ∧ b.dir = none := by
+  unfold bondsOfMatrix
+  rw [List.mem_filterMap]
+  constructor
+  · rintro ⟨⟨i, j⟩, -, h⟩
+    obtain ⟨hlt, rfl, rfl, hk, hd⟩ := bondOf_eq_some_iff.mp h
+    exact ⟨hlt, hk, hd⟩
+  · rintro ⟨hlt, hk, hd⟩
+    exact ⟨(b.src, b.dst), by simp, bondOf_eq_some_iff.mpr ⟨hlt, rfl, rfl, hk, hd⟩⟩
+
+theorem nodup_bondsOfMatrix (A : Matrix (Fin n) (Fin n) ℚ) :
+    ((bondsOfMatrix A).map Bond.edge).Nodup := by
+  refine List.Nodup.map_on ?_ ?_
+  · intro b hb b' hb' he
+    obtain ⟨hlt, hk, hd⟩ := mem_bondsOfMatrix.mp hb
+    obtain ⟨hlt', hk', hd'⟩ := mem_bondsOfMatrix.mp hb'
+    have he' : b.edge = s(b'.src, b'.dst) := he
+    rcases Bond.edge_eq_mk_iff.mp he' with ⟨h1, h2⟩ | ⟨h1, h2⟩
+    · obtain ⟨s, d, k, dir, ne⟩ := b
+      obtain ⟨s', d', k', dir', ne'⟩ := b'
+      simp only at h1 h2 hk hk' hd hd'
+      subst h1 h2 hd hd'
+      rw [hk] at hk'
+      cases hk'
+      rfl
+    · rw [h1, h2] at hlt
+      exact absurd hlt (lt_asymm hlt')
+  · refine ((List.nodup_finRange n).product (List.nodup_finRange n)).filterMap ?_
+    intro p p' b hp hp'
+    rw [Option.mem_def] at hp hp'
+    obtain ⟨-, h1, h2, -, -⟩ := bondOf_eq_some_iff.mp hp
+    obtain ⟨-, h1', h2', -, -⟩ := bondOf_eq_some_iff.mp hp'
+    exact Prod.ext (h1.symm.trans h1') (h2.symm.trans h2')
+
+/-- Decode a weighted adjacency matrix into a molecule with the given atoms.
+Total: entries that are zero or not a bond order give no bond.  Faithful on
+`IsBondMatrix` matrices (`adjMatrix_ofAdjMatrix`). -/
+def ofAdjMatrix (atoms : Vector Atom n) (A : Matrix (Fin n) (Fin n) ℚ) : Molecule n :=
+  ⟨atoms, bondsOfMatrix A, nodup_bondsOfMatrix A⟩
+
+@[simp] theorem atoms_ofAdjMatrix (atoms : Vector Atom n) (A : Matrix (Fin n) (Fin n) ℚ) :
+    (ofAdjMatrix atoms A).atoms = atoms := rfl
+
+/-- Decoding a valid matrix and re-encoding gives the matrix back. -/
+theorem adjMatrix_ofAdjMatrix (atoms : Vector Atom n) {A : Matrix (Fin n) (Fin n) ℚ}
+    (hA : IsBondMatrix A) : (ofAdjMatrix atoms A).adjMatrix = A := by
+  ext i j
+  rw [adjMatrix_apply]
+  by_cases h0 : A i j = 0
+  · have hnone : (ofAdjMatrix atoms A).bondBetween i j = none := by
+      unfold bondBetween
+      rw [List.find?_eq_none]
+      intro b hb hbe
+      have he := of_decide_eq_true hbe
+      obtain ⟨-, hk, -⟩ := mem_bondsOfMatrix.mp hb
+      have hq := BondKind.ofOrder?_eq_some hk
+      rcases Bond.edge_eq_mk_iff.mp he with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
+      · exact b.kind.order_ne_zero (hq.symm.trans h0)
+      · exact b.kind.order_ne_zero (hq.symm.trans ((hA.symm _ _).trans h0))
+    rw [hnone, h0]
+    rfl
+  · obtain ⟨k, hk⟩ := hA.entry i j h0
+    have hne : i ≠ j := fun h => h0 (h ▸ hA.diag i)
+    rcases lt_or_gt_of_ne hne with hlt | hgt
+    · have hb₀ : (⟨i, j, k, none, Fin.ne_of_lt hlt⟩ : Bond n) ∈ bondsOfMatrix A :=
+        mem_bondsOfMatrix.mpr ⟨hlt, by rw [hk, BondKind.ofOrder?_order], rfl⟩
+      rw [(ofAdjMatrix atoms A).bondBetween_eq_some_iff.mpr ⟨hb₀, rfl⟩]
+      simp [hk]
+    · have hk' : A j i = k.order := (hA.symm j i).trans hk
+      have hb₀ : (⟨j, i, k, none, Fin.ne_of_lt hgt⟩ : Bond n) ∈ bondsOfMatrix A :=
+        mem_bondsOfMatrix.mpr ⟨hgt, by rw [hk', BondKind.ofOrder?_order], rfl⟩
+      rw [(ofAdjMatrix atoms A).bondBetween_eq_some_iff.mpr ⟨hb₀, Sym2.eq_swap⟩]
+      simp [hk]
+
+/-- The graph of a decoded valid matrix is the matrix's graph. -/
+theorem graph_ofAdjMatrix (atoms : Vector Atom n) {A : Matrix (Fin n) (Fin n) ℚ}
+    (hA : IsBondMatrix A) : (ofAdjMatrix atoms A).graph = graphOfMatrix A := by
+  rw [← graphOfMatrix_adjMatrix, adjMatrix_ofAdjMatrix atoms hA]
+
+/-- Round trip: matrix → molecule → matrix. -/
+theorem adjMatrix_ofAdjMatrix_adjMatrix :
+    (ofAdjMatrix m.atoms m.adjMatrix).adjMatrix = m.adjMatrix :=
+  adjMatrix_ofAdjMatrix m.atoms m.adjMatrix_isBondMatrix
+
+/-- Round trip: molecule → matrix → molecule has the same graph. -/
+theorem graph_ofAdjMatrix_adjMatrix : (ofAdjMatrix m.atoms m.adjMatrix).graph = m.graph := by
+  rw [graph_ofAdjMatrix m.atoms m.adjMatrix_isBondMatrix, graphOfMatrix_adjMatrix]
+
+/-- Round trip: molecule → matrix → molecule has the same bond kinds everywhere. -/
+theorem bondKind_ofAdjMatrix_adjMatrix (i j : Fin n) :
+    ((ofAdjMatrix m.atoms m.adjMatrix).bondBetween i j).map (·.kind)
+      = (m.bondBetween i j).map (·.kind) := by
+  have hM := congrFun (congrFun m.adjMatrix_ofAdjMatrix_adjMatrix i) j
+  rw [adjMatrix_apply, adjMatrix_apply] at hM
+  rcases h₁ : (ofAdjMatrix m.atoms m.adjMatrix).bondBetween i j with _ | b <;>
+    rcases h₂ : m.bondBetween i j with _ | b'
+  · rfl
+  · rw [h₁, h₂] at hM
+    simp only [Option.map_none, Option.map_some, Option.getD_none, Option.getD_some] at hM
+    exact absurd hM.symm b'.kind.order_ne_zero
+  · rw [h₁, h₂] at hM
+    simp only [Option.map_none, Option.map_some, Option.getD_none, Option.getD_some] at hM
+    exact absurd hM b.kind.order_ne_zero
+  · rw [h₁, h₂] at hM
+    simp only [Option.map_some, Option.getD_some] at hM
+    simp only [Option.map_some, BondKind.order_injective hM]
+
 /-! ### Relabelling is an isomorphism -/
 
 theorem relabel_adj_iff (σ : Equiv.Perm (Fin n)) (i j : Fin n) :
