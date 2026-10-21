@@ -43,7 +43,8 @@ open LeanSMILES LeanSMILES.SMILES
 #eval (Mol.ofSmiles! "C=CO").mol.toBondMatrix
 #eval (Mol.ofSmiles! "C=CO").mol.toBondMatrix.flatten
 #eval let M := Mol.ofSmiles! "C=CO"
-      (List.finRange M.n).map fun i => (List.finRange M.n).map fun j => M.mol.toBondMatrix.kindAt i j
+      let B := M.mol.toBondMatrix
+      (List.finRange M.n).map fun i => (List.finRange M.n).map fun j => B.kindAt i j
 #eval (Mol.ofSmiles! "C1CC1").isNormal       -- false: the ring-closure bond is stored 2→0
 #eval (Mol.ofSmiles! "C1CC1").normalize      -- bonds now 0-1, 0-2, 1-2
 #eval (Mol.ofSmiles! "C1CC1").normalize.isNormal
