@@ -51,6 +51,8 @@ globs = [
   "LeanSMILES.MachineLearning.Proofs",
   "LeanSMILES.SMILES.Proofs",
   "LeanSMILES.API.Proofs",
+  "LeanSMILES.Optimization.+",
+  "LeanSMILES.LearningTheory.+",
   "LeanSMILES.MetaPrograms.Test",
   "LeanSMILES.MetaPrograms.Cache",
   "LeanSMILES.Tests.+",
