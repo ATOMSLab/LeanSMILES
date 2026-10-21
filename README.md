@@ -45,3 +45,9 @@ the project.
    open `LeanSMILES/Examples/parsercsv.lean`. The **Lean Infoview** panel on the
    right shows each `#eval` result: the solubility dataset in `datasets/`, read
    in as SMILES strings with their numeric features.
+
+## References
+
+LeanSMILES builds on prior work in Lean, cheminformatics, and chemistry
+education. [`REFERENCES.md`](REFERENCES.md) credits each source and says what
+it is credited for; [`references.bib`](references.bib) has the BibTeX.
