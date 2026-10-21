@@ -19,3 +19,12 @@ rev = "v4.30.0-rc1"
 name = "LeanSMILES"
 globs = ["LeanSMILES.*"]
 
+# Tests against RDKit's answers in datasets/ (run from the repository root)
+[[lean_exe]]
+name = "validity-test"
+root = "LeanSMILES.Tests.Validity"
+
+[[lean_exe]]
+name = "oracle-test"
+root = "LeanSMILES.Tests.Oracle"
+

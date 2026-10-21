@@ -1,0 +1,47 @@
+import LeanSMILES.SMILES.Canon
+import LeanSMILES.Chem.Graph
+import LeanSMILES.Data.CSVparser
+
+/-!
+# Examples: SMILES → molecule → graph → canonical SMILES
+
+Open this file in the editor; the Infoview shows each `#eval`.
+-/
+
+open LeanSMILES LeanSMILES.SMILES
+
+-- A parse is an `Except`: the molecule, or a positioned error.
+#eval parse "CCO"
+#eval parse "c1cc[nH]c1"
+#eval parse "[13CH3][NH3+].[Cl-]"
+#eval parse "C1CC"
+#eval parse "C()C"
+
+-- Three strings, one molecule, one canonical SMILES.
+#eval (Mol.ofSmiles! "OCC").canonicalSmiles
+#eval (Mol.ofSmiles! "C(O)C").canonicalSmiles
+#eval (Mol.ofSmiles! "CCO").canonicalSmiles
+
+-- Camphene written two ways (ThermoPropertiesSMILES.csv, isomeric and canonical columns).
+#eval (Mol.ofSmiles! "CC1(C)C2CCC(C2)C1=C").canonicalSmiles
+#eval (Mol.ofSmiles! "CC1(C2CCC(C2)C1=C)C").canonicalSmiles
+
+-- Canonicalization relabels the atoms; the graph is the same up to isomorphism
+-- (`Molecule.canonicalize_iso`).
+#eval (Mol.ofSmiles! "OCC").canonicalize
+#eval (Mol.ofSmiles! "c1ccccc1C").canonicalize
+
+-- The Mathlib views: bond-order-weighted and 0/1 adjacency matrices.
+#eval (Mol.ofSmiles! "C=CO").mol.adjMatrix
+#eval (Mol.ofSmiles! "C=CO").mol.graph.adjMatrix ℚ
+
+-- Hydrogens by the default-valence rule.
+#eval let M := Mol.ofSmiles! "CC(C)(C)O"; (List.finRange M.n).map fun i => (M.mol.atom i).totalH
+
+-- What is *not* done: no aromaticity perception, so a Kekulé benzene stays Kekulé.
+#eval (Mol.ofSmiles! "C1=CC=CC=C1").canonicalSmiles
+#eval (Mol.ofSmiles! "c1ccccc1").canonicalSmiles
+
+-- From the solubility dataset.
+def delaney := CSVparser.load "datasets/delaney-processed.csv"
+#eval (delaney.toList.take 5).map fun r => (r.smiles, (Mol.ofSmiles! r.smiles).canonicalSmiles)
