@@ -6,7 +6,8 @@ public import LeanSMILES.MachineLearning.Definitions
 # Regression metrics
 
 The metrics in `sklearn.metrics`, for any `Scalar`: `meanSquaredError`,
-`rootMeanSquaredError`, `meanAbsoluteError` and `r2Score`. `evaluate` computes all of
+`rootMeanSquaredError`, `meanAbsoluteError` and `r2Score`, plus `accuracy` for `±1`
+labels. `evaluate` computes all of
 them for a linear model on a dataset.
 -/
 
@@ -34,6 +35,10 @@ variable {α : Type} [Scalar α] {m n : Nat}
   let ssRes := sumFin fun (i : Fin m) => (yTrue[i] - yPred[i]) * (yTrue[i] - yPred[i])
   let ssTot := sumFin fun (i : Fin m) => (yTrue[i] - μ) * (yTrue[i] - μ)
   if ssTot ≤ 0 then (if ssRes ≤ 0 then 1 else 0) else 1 - ssRes / ssTot
+
+/-- Fraction of `±1` labels predicted with the right sign. -/
+@[specialize] def accuracy (yTrue yPred : Vec α m) : α :=
+  (sumFin fun (i : Fin m) => if 0 < yTrue[i] * yPred[i] then (1 : α) else 0) / Scalar.fromNat m
 
 structure RegressionMetrics (α : Type) where
   mse : α

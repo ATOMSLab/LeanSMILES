@@ -1,4 +1,5 @@
 import LeanSMILES.API.Metrics
+import LeanSMILES.API.Features
 import LeanSMILES.MetaPrograms.Test
 
 /-! Tests for `meanSquaredError`, `rootMeanSquaredError`, `meanAbsoluteError`, `r2Score`
@@ -29,3 +30,7 @@ def model : LinearModel Float 1 := { weights := #v[2.0], bias := 1.0 }
 def data : Dataset Float 3 1 := { X := #v[#v[0.0], #v[1.0], #v[2.0]], y := #v[1.0, 3.0, 6.0] }
 #test close (evaluate model data).mse (1.0 / 3.0)
 #test close (evaluate model data).mae (1.0 / 3.0)
+
+-- accuracy counts matching signs
+#test accuracy (#v[1.0, -1.0, 1.0, -1.0] : Vec Float 4) #v[1.0, 1.0, 1.0, -1.0] == 0.75
+#test (labelsAt (-2.0) (#v[-1.0, -2.0, -3.0] : Vec Float 3)).toList == [1.0, 1.0, -1.0]
