@@ -181,6 +181,17 @@ already the test suite of this branch (§7).
   and our canonical string coincides with RDKit's on 789/1 128 — with a
   different walk and tie-breaking rule, that is incidental agreement, not a
   goal.
+* **Morgan** (`lake exe morgan-test`, `LeanSMILES/Fingerprint/Morgan.lean`):
+  ring membership (bond on a cycle ⇔ not a bridge) must equal RDKit's
+  `atom_in_ring` on every molecule; wherever the as-written bond types and
+  hydrogen counts equal RDKit's sanitized ones, the unfolded identifiers with
+  counts and the folded bits must be identical; and the identifiers must be
+  unchanged under relabelling.
+  *Result:* ring membership 1 128/1 128; fingerprint = RDKit on 971/971 of the
+  molecules whose graph = RDKit's; relabelling invariance 1 128/1 128.  Overall
+  971/1 128 — the 157 misses are exactly the molecules whose graph RDKit's
+  aromaticity model or nitro rewrite changes, i.e. the sanitization passes
+  still to be ported (§9).
 
 ## 8. A Lean-specific lesson
 
@@ -191,6 +202,14 @@ round nested another recomputation — exponential time, found when one
 `#eval` ran for nine CPU-minutes.  Ranks are now `Vector ℕ n` data; the rule
 is: a definition that *returns a function* should not do work before the
 lambda.
+
+A second one, found when the Morgan examples hung the build: do not `#eval` a
+`Vector α n` whose `n` is not a literal (say `(Mol.ofSmiles! s).mol.inRingVector`).
+`#eval` prefers the `ToExpr` instance, which rebuilds the value as an
+expression including its `size_toArray` proof, and the elaborator then checks
+that proof by reducing the whole parse in the kernel — instant for ethanol,
+unbounded for an aromatic ring.  Print `.toList` instead.  Compiled code
+(`lake exe …`) is unaffected; only the interactive path is.
 
 ## 9. Next steps
 
@@ -203,8 +222,10 @@ lambda.
    `Molecule n → Molecule n` functions, each with its own tests, each optional.
 5. **Stereo**: interpret `@`/`@@` as a parity over the neighbour order, and
    write `/` `\` from the walk.
-6. **Featurization**: `Atom → Fin k` one-hots, Morgan fingerprints over
-   `BondKind`, using `Scalar.lean`'s `ScalarLike` for the numeric side.
+6. **Featurization**: ~~Morgan fingerprints~~ — done, `LeanSMILES/Fingerprint/Morgan.lean`
+   (§7); next, `Atom → Fin k` one-hots and feeding `morganVector` to the ML
+   side once the ML algorithms (`Scalar.lean`'s `ScalarLike`, the branch's
+   logistic regression) are cleaned up.
 
 ## Sources
 

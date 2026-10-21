@@ -43,4 +43,20 @@ Tests against RDKit's answers (oracle files from the `canonical-smiles` branch):
 ```bash
 lake exe validity-test   # 10 000 broken SMILES: accepts everything RDKit accepts (0 parser bugs)
 lake exe oracle-test     # 1 128 Delaney molecules: graph = RDKit's, canonical SMILES round-trips and is relabelling-invariant, 1128/1128
+lake exe morgan-test     # Morgan fingerprints: ring membership = RDKit's, bits = RDKit's wherever the graph is, relabelling-invariant
+```
+
+### Morgan fingerprints
+
+`LeanSMILES.Fingerprint.Morgan` ports RDKit's `GetMorganGenerator(radius=2, fpSize=2048)`
+(from the `canonical-smiles` branch's port) onto `Molecule n`: `morganIds` (unfolded
+identifiers with counts), `morganBits` (sorted on-bits), `morganVector : Vector Bool 2048`,
+`inRingVector`, and an exact `tanimoto : … → ℚ`.  It hashes the graph *as written*, so the
+bits equal RDKit's exactly where the as-written bond types and hydrogen counts equal RDKit's
+sanitized ones (no aromaticity perception here, by design), and they are always invariant
+under relabelling of the atoms.
+
+```lean
+#eval (Mol.ofSmiles! "CCO").morganBits        -- [80, 222, 294, 807, 1057, 1410, ...]
+#eval tanimoto (Mol.ofSmiles! "CCO").morganBits (Mol.ofSmiles! "CCCO").morganBits
 ```

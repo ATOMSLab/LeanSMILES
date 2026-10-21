@@ -11,4 +11,5 @@ import LeanSMILES.SMILES.Token
 import LeanSMILES.SMILES.Parse
 import LeanSMILES.SMILES.Write
 import LeanSMILES.SMILES.Canon
+import LeanSMILES.Fingerprint.Morgan
 import LeanSMILES.Examples.smiles

@@ -1,5 +1,6 @@
 import LeanSMILES.SMILES.Canon
 import LeanSMILES.Chem.Graph
+import LeanSMILES.Fingerprint.Morgan
 import LeanSMILES.Data.CSVparser
 
 /-!
@@ -41,6 +42,15 @@ open LeanSMILES LeanSMILES.SMILES
 -- What is *not* done: no aromaticity perception, so a Kekulé benzene stays Kekulé.
 #eval (Mol.ofSmiles! "C1=CC=CC=C1").canonicalSmiles
 #eval (Mol.ofSmiles! "c1ccccc1").canonicalSmiles
+
+-- Morgan fingerprints (radius 2, 2048 bits), RDKit's hashing on the graph as written.
+#eval (Mol.ofSmiles! "CCO").morganBits
+#eval (Mol.ofSmiles! "CCO").morganIds
+#eval (Mol.ofSmiles! "OCC").morganIds == (Mol.ofSmiles! "CCO").morganIds
+#eval tanimoto (Mol.ofSmiles! "CCO").morganBits (Mol.ofSmiles! "CCCO").morganBits
+-- `.toList`: `#eval` of a `Vector` whose length is not a literal makes the elaborator
+-- check the size proof by reducing the whole parse in the kernel (design notes §8).
+#eval (Mol.ofSmiles! "c1ccccc1CC").mol.inRingVector.toList
 
 -- From the solubility dataset.
 def delaney := CSVparser.load "datasets/delaney-processed.csv"

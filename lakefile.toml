@@ -28,3 +28,7 @@ root = "LeanSMILES.Tests.Validity"
 name = "oracle-test"
 root = "LeanSMILES.Tests.Oracle"
 
+[[lean_exe]]
+name = "morgan-test"
+root = "LeanSMILES.Tests.Morgan"
+
