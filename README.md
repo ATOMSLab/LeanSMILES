@@ -45,3 +45,30 @@ the project.
    open `LeanSMILES/Examples/parsercsv.lean`. The **Lean Infoview** panel on the
    right shows each `#eval` result: the solubility dataset in `datasets/`, read
    in as SMILES strings with their numeric features.
+
+## SMILES → canonical SMILES
+
+`LeanSMILES.Canonical` turns any SMILES into its canonical SMILES, the same
+string as RDKit's `Chem.MolToSmiles(Chem.MolFromSmiles(s), isomericSmiles=False)`:
+
+```lean
+import LeanSMILES.Canonical
+#eval Chem.canonicalSmiles "OCC"            -- Except.ok "CCO"
+#eval Chem.canonicalSmiles "C1=CC=CC=C1"    -- Except.ok "c1ccccc1"
+```
+
+Open `LeanSMILES/Examples/canonical.lean` for more. The code is in four files
+under `LeanSMILES/Canonical/`: `Molecule` (atoms, bonds), `Parse` (SMILES text →
+graph), `Sanitize` (RDKit's hydrogens, rings, kekulization, aromaticity) and
+`Write` (canonical atom ranking and output).
+
+Tests against RDKit (answers in `datasets/*-oracle.csv`, made by
+`tools/rdkit_oracle.py`):
+
+```bash
+lake exe canonical-test   # canonical SMILES
+lake exe phase1-test      # every atom and bond of the molecule graph
+lake exe validity-test    # invalid SMILES rejected exactly when RDKit rejects them
+```
+
+Design notes, RDKit references and results: `docs/scope-canonical-smiles-morgan.md`.
