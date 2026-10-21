@@ -5,7 +5,7 @@ module
 
 The `Scalar` interface that numeric code is written against, and the computable `Float`
 instance used for execution. The noncomputable `ℝ` instance used for proofs is in
-`Primitives/real.lean`. This file and everything executable that builds on it import no
+`Primitives/Real.lean`. This file and everything executable that builds on it import no
 Mathlib, so they can be precompiled into native code that `#eval` calls directly.
 -/
 
@@ -64,7 +64,7 @@ def min (a b : α) : α := if a < b then a else b
 end Scalar
 
 /-- `iterate f n x = f (f (… (f x)))` with `n` applications. The same definition as
-Mathlib's `Nat.iterate`; `iterate_eq_iterate` in `Machine_Learning/PROOFS.lean` proves
+Mathlib's `Nat.iterate`; `iterate_eq_iterate` in `MachineLearning/Proofs.lean` proves
 `iterate f n = f^[n]`. -/
 def iterate {β : Type} (f : β → β) : Nat → β → β
   | 0, x => x

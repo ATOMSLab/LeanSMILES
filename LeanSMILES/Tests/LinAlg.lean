@@ -1,7 +1,7 @@
-import LeanSMILES.Primitives.lin_algebra
+import LeanSMILES.Primitives.LinAlg
 import LeanSMILES.MetaPrograms.Test
 
-/-! Tests for `Primitives/lin_algebra.lean`: vector and matrix operations and `linSolve`. -/
+/-! Tests for `Primitives/LinAlg.lean`: vector and matrix operations and `linSolve`. -/
 
 open Primitives
 

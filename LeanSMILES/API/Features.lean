@@ -1,7 +1,7 @@
 module
 
 public import LeanSMILES.API.Loader
-public import LeanSMILES.Machine_Learning.DEFINITIONS
+public import LeanSMILES.MachineLearning.Definitions
 
 /-!
 # Featurization

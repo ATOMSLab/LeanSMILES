@@ -1,4 +1,4 @@
-import LeanSMILES.SMILES.DEFINITIONS
+import LeanSMILES.SMILES.Definitions
 import LeanSMILES.MetaPrograms.Test
 
 /-! Tests for `SMILES.parse`, `Molecule.toSMILES` and hydrogen counting. -/

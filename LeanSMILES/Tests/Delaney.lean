@@ -1,5 +1,5 @@
 import LeanSMILES.API.Features
-import LeanSMILES.Machine_Learning.EXECUTABLES
+import LeanSMILES.MachineLearning.Executables
 import LeanSMILES.MetaPrograms.Test
 import LeanSMILES.MetaPrograms.Cache
 
@@ -54,3 +54,14 @@ def reference : List Float :=
 
 #eval fitted
 #test (fitted.zip reference).all fun (a, b) => (a - b).abs < 1e-7
+
+/-! Sparse gradient descent on fingerprint features gives bit-for-bit the same model as
+the dense solver (proved equal over `ℝ` as `ML.linRegGDSparse_eq`). -/
+
+cached def fingerprints : ML.Exec.Dataset cleaned.1.size 1024 :=
+  toDataset cleaned.1 (fingerprintFeatures 2 1024)
+
+#test let cfg : ML.Exec.GDConfig := { stepSize := 0.1, iters := 20 }
+  let s := ML.Exec.linRegGDSparse cfg fingerprints
+  let d := ML.Exec.linRegGD cfg fingerprints
+  s.weights == d.weights && s.bias == d.bias

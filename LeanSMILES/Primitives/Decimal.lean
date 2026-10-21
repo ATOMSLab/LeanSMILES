@@ -1,6 +1,6 @@
 module
 
-public import LeanSMILES.Primitives.scalar
+public import LeanSMILES.Primitives.Scalar
 
 /-!
 # Decimals

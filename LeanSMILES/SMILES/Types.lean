@@ -4,10 +4,10 @@ module
 # SMILES — Types
 
 Data types for molecules and their string and fingerprint representations. The functions
-that build and consume them live in `DEFINITIONS.lean`.
+that build and consume them live in `Definitions.lean`.
 
 Atoms are referred to by their index (`Nat`) in `Molecule.atoms`. `Molecule.WellFormed`
-(in `DEFINITIONS.lean`) states that every bond refers to existing, distinct atoms.
+(in `Definitions.lean`) states that every bond refers to existing, distinct atoms.
 -/
 
 @[expose] public section

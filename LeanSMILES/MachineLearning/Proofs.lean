@@ -1,13 +1,13 @@
 module
 
-public import LeanSMILES.Machine_Learning.DEFINITIONS
-public import LeanSMILES.Primitives.real
+public import LeanSMILES.MachineLearning.Definitions
+public import LeanSMILES.Primitives.Real
 public import Mathlib.Algebra.BigOperators.Fin
 
 /-!
 # Machine Learning — Proofs
 
-Theorems about the algorithms in `DEFINITIONS.lean`. Unfolding lemmas that hold for any
+Theorems about the algorithms in `Definitions.lean`. Unfolding lemmas that hold for any
 `Scalar` come first; the ones that need Mathlib algebra are stated over `ℝ`.
 -/
 
@@ -126,6 +126,61 @@ theorem linRegGDWithHistory_fst {m : Nat} (cfg : GDConfig α) (data : Dataset α
   rw [← gradientDescentWithHistory_fst (every := every)]
 
 end GradientDescent
+
+/-! ## Sparse least squares
+
+Over `ℝ`, the sparse objective is the dense one, so `linRegGDSparse` computes exactly the
+iterates of `linRegGD`.
+-/
+
+section Sparse
+
+variable {m n : ℕ}
+
+theorem isZero_iff (x : ℝ) : Scalar.isZero x = true ↔ x = 0 := by
+  simp only [Scalar.isZero, Bool.and_eq_true, decide_eq_true_eq]
+  exact ⟨fun ⟨h₁, h₂⟩ => le_antisymm h₁ h₂, fun h => ⟨h.le, h.ge⟩⟩
+
+/-- Folding `sdot`'s step over the nonzero entries adds every term `v[j] * w[j]`. -/
+theorem foldl_filterMap_ofDense (v w : Vec ℝ n) (l : List (Fin n)) (a : ℝ) :
+    ((l.filterMap fun j => if Scalar.isZero v[j] then none else some (j, v[j])).foldl
+      (fun acc (p : Fin n × ℝ) => acc + p.2 * w[p.1]) a) =
+      a + (l.map fun j => v[j] * w[j]).sum := by
+  induction l generalizing a with
+  | nil => simp
+  | cons j l ih =>
+    by_cases h : Scalar.isZero v[j] = true
+    · simp only [List.filterMap_cons, h, ↓reduceIte, List.map_cons, List.sum_cons]
+      rw [ih, (isZero_iff _).1 h]
+      ring
+    · simp only [List.filterMap_cons, h, Bool.false_eq_true, ↓reduceIte, List.foldl_cons,
+        List.map_cons, List.sum_cons]
+      rw [ih]
+      ring
+
+theorem sdot_ofDense (v w : Vec ℝ n) : sdot (SparseVec.ofDense v) w = dot v w := by
+  rw [dot_eq_sum, Fin.sum_univ_def, sdot, SparseVec.ofDense, ← Array.foldl_toList,
+    Array.toList_filterMap]
+  have : (Array.finRange n).toList = List.finRange n :=
+    List.ext_getElem (by simp) fun i _ _ => by simp
+  rw [this, foldl_filterMap_ofDense, zero_add]
+
+theorem smatVec_ofDense (A : Mat ℝ m n) (v : Vec ℝ n) :
+    smatVec (SparseMat.ofDense A) v = matVec A v := by
+  ext i hi
+  simp [smatVec, matVec, SparseMat.ofDense, sdot_ofDense]
+
+theorem mseObjectiveSparse_eq (data : Dataset ℝ m n) :
+    mseObjectiveSparse data = mseObjective data := by
+  simp only [mseObjectiveSparse, mseObjective, smatVec_ofDense]
+  rfl
+
+/-- The sparse solver runs exactly the same gradient descent as `linRegGD`. -/
+theorem linRegGDSparse_eq (cfg : GDConfig ℝ) (data : Dataset ℝ m n) :
+    linRegGDSparse cfg data = linRegGD cfg data := by
+  simp only [linRegGDSparse, linRegGD, mseObjectiveSparse_eq]
+
+end Sparse
 
 /-! ## Perceptron -/
 

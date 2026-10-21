@@ -1,4 +1,4 @@
-import LeanSMILES.SMILES.EXECUTABLES
+import LeanSMILES.SMILES.Executables
 import LeanSMILES.MetaPrograms.Test
 
 /-! Tests for Tanimoto similarity of Morgan fingerprints. -/

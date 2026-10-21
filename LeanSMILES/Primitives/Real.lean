@@ -1,7 +1,7 @@
 module
 
-public import LeanSMILES.Primitives.scalar
-public import LeanSMILES.Primitives.decimal
+public import LeanSMILES.Primitives.Scalar
+public import LeanSMILES.Primitives.Decimal
 public import Mathlib.Analysis.SpecialFunctions.Log.Basic
 public import Mathlib.Analysis.SpecialFunctions.Sqrt
 public import Mathlib.Analysis.SpecialFunctions.Trigonometric.Basic

@@ -1,4 +1,4 @@
-import LeanSMILES.Machine_Learning.DEFINITIONS
+import LeanSMILES.MachineLearning.Definitions
 import LeanSMILES.MetaPrograms.Test
 
 /-! Tests for `gdStep` and `gradientDescent`. -/

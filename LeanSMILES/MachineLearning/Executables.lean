@@ -1,14 +1,14 @@
 module
 
-public import LeanSMILES.Machine_Learning.DEFINITIONS
+public import LeanSMILES.MachineLearning.Definitions
 
 /-!
 # Machine Learning — Executables
 
-The `Float` side of the system. Every algorithm in `DEFINITIONS.lean` is written once
+The `Float` side of the system. Every algorithm in `Definitions.lean` is written once
 for a generic `[Scalar α]`:
 
-* `α := ℝ` is what `PROOFS.lean` proves things about (noncomputable);
+* `α := ℝ` is what `Proofs.lean` proves things about (noncomputable);
 * `α := Float` is what runs, through the definitions below.
 
 Each definition here is the generic one at `α := Float` (the `*_eq` lemmas hold by
@@ -76,6 +76,10 @@ def mseObjective (data : Dataset m n) : Objective (n + 1) := ML.mseObjective dat
 def olsFit (data : Dataset m n) : LinearModel n := ML.olsFit data
 def linRegGD (cfg : GDConfig) (data : Dataset m n) : LinearModel n := ML.linRegGD cfg data
 
+/-- `linRegGD` with a sparse design matrix: use it for fingerprint features. -/
+def linRegGDSparse (cfg : GDConfig) (data : Dataset m n) : LinearModel n :=
+  ML.linRegGDSparse cfg data
+
 def linRegGDWithHistory (cfg : GDConfig) (data : Dataset m n) (every : Nat := 1) :
     LinearModel n × Array (Nat × Float) :=
   ML.linRegGDWithHistory cfg data every
@@ -98,6 +102,8 @@ def perceptronFit (cfg : PerceptronConfig) (data : Dataset m n) : LinearModel n 
 theorem olsFit_eq (data : Dataset m n) : olsFit data = ML.olsFit (α := Float) data := rfl
 theorem linRegGD_eq (cfg : GDConfig) (data : Dataset m n) :
     linRegGD cfg data = ML.linRegGD (α := Float) cfg data := rfl
+theorem linRegGDSparse_eq (cfg : GDConfig) (data : Dataset m n) :
+    linRegGDSparse cfg data = ML.linRegGDSparse (α := Float) cfg data := rfl
 theorem gradientDescent_eq (obj : Objective n) (cfg : GDConfig) (w₀ : Vec n) :
     gradientDescent obj cfg w₀ = ML.gradientDescent (α := Float) obj cfg w₀ := rfl
 theorem perceptronFit_eq (cfg : PerceptronConfig) (data : Dataset m n) :

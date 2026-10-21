@@ -1,6 +1,6 @@
 module
 
-public import LeanSMILES.Primitives.decimal
+public import LeanSMILES.Primitives.Decimal
 
 /-!
 # CSV parsing

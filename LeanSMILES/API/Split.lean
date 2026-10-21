@@ -1,6 +1,6 @@
 module
 
-public import LeanSMILES.Machine_Learning.TYPES
+public import LeanSMILES.MachineLearning.Types
 
 /-!
 # Train/test split

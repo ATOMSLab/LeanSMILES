@@ -16,23 +16,23 @@ rev = "v4.30.0-rc1"
 
 
 # Executable core: generic definitions plus their `Float` instantiations. It imports no
-# Mathlib and is precompiled to native code, so `#eval` and `#html` in notebooks run it at
+# Mathlib and is precompiled to native code, so `#eval` in notebooks and examples runs it at
 # compiled speed.
 [[lean_lib]]
 name = "LeanSMILESExec"
 precompileModules = true
 roots = []
 globs = [
-  "LeanSMILES.Primitives.scalar",
-  "LeanSMILES.Primitives.decimal",
-  "LeanSMILES.Primitives.lin_algebra",
-  "LeanSMILES.Primitives.parameters",
-  "LeanSMILES.Machine_Learning.TYPES",
-  "LeanSMILES.Machine_Learning.DEFINITIONS",
-  "LeanSMILES.Machine_Learning.EXECUTABLES",
-  "LeanSMILES.SMILES.TYPES",
-  "LeanSMILES.SMILES.DEFINITIONS",
-  "LeanSMILES.SMILES.EXECUTABLES",
+  "LeanSMILES.Primitives.Scalar",
+  "LeanSMILES.Primitives.Decimal",
+  "LeanSMILES.Primitives.LinAlg",
+  "LeanSMILES.Primitives.Parameters",
+  "LeanSMILES.MachineLearning.Types",
+  "LeanSMILES.MachineLearning.Definitions",
+  "LeanSMILES.MachineLearning.Executables",
+  "LeanSMILES.SMILES.Types",
+  "LeanSMILES.SMILES.Definitions",
+  "LeanSMILES.SMILES.Executables",
   "LeanSMILES.API.CSV",
   "LeanSMILES.API.Loader",
   "LeanSMILES.API.Features",
@@ -43,19 +43,16 @@ globs = [
   "LeanSMILES.MetaPrograms.CacheStore",
 ]
 
-# Proofs over ℝ (with Mathlib), metaprograms, widgets, tests and notebooks.
+# Proofs over ℝ (with Mathlib), metaprograms, tests and examples.
 [[lean_lib]]
 name = "LeanSMILES"
 globs = [
-  "LeanSMILES.main",
-  "LeanSMILES.Primitives.real",
-  "LeanSMILES.Machine_Learning.PROOFS",
-  "LeanSMILES.SMILES.PROOFS",
-  "LeanSMILES.API.PROOFS",
+  "LeanSMILES.Primitives.Real",
+  "LeanSMILES.MachineLearning.Proofs",
+  "LeanSMILES.SMILES.Proofs",
+  "LeanSMILES.API.Proofs",
   "LeanSMILES.MetaPrograms.Test",
   "LeanSMILES.MetaPrograms.Cache",
-  "LeanSMILES.MetaPrograms.Show",
-  "LeanSMILES.Widgets.+",
   "LeanSMILES.Tests.+",
   "LeanSMILES.Examples.+",
 ]

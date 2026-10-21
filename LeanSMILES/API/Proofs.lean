@@ -2,7 +2,7 @@ module
 
 public import LeanSMILES.API.Metrics
 public import LeanSMILES.API.Split
-public import LeanSMILES.Machine_Learning.PROOFS
+public import LeanSMILES.MachineLearning.Proofs
 public import Mathlib.Algebra.Order.Field.Basic
 
 /-!
@@ -10,7 +10,7 @@ public import Mathlib.Algebra.Order.Field.Basic
 
 Theorems over `ℝ` about the pipeline functions that run on `Float`: the regression
 metrics and split sizes. (Exact decimal conversion is `Decimal.toScalar_eq_toReal` in
-`Primitives/real.lean`.)
+`Primitives/Real.lean`.)
 -/
 
 public section

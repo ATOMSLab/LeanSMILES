@@ -3,7 +3,7 @@ module
 public import LeanSMILES.API.Features
 public import LeanSMILES.API.Metrics
 public import LeanSMILES.API.Stats
-public import LeanSMILES.SMILES.EXECUTABLES
+public import LeanSMILES.SMILES.Executables
 
 /-!
 # SMILES → solubility pipeline

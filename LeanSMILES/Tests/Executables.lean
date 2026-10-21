@@ -1,4 +1,4 @@
-import LeanSMILES.Machine_Learning.EXECUTABLES
+import LeanSMILES.MachineLearning.Executables
 import LeanSMILES.MetaPrograms.Test
 
 /-! Tests that the `Float` executables (`ML.Exec`) agree with the generic definitions

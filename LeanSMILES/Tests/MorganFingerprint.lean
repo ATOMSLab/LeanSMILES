@@ -1,4 +1,4 @@
-import LeanSMILES.SMILES.DEFINITIONS
+import LeanSMILES.SMILES.Definitions
 import LeanSMILES.MetaPrograms.Test
 
 /-! Tests for `Molecule.morganFingerprint` and its helpers. -/

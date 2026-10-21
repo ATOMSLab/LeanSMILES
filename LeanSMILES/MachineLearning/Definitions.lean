@@ -1,9 +1,9 @@
 module
 
-public import LeanSMILES.Primitives.scalar
-public import LeanSMILES.Primitives.lin_algebra
-public import LeanSMILES.Primitives.parameters
-public import LeanSMILES.Machine_Learning.TYPES
+public import LeanSMILES.Primitives.Scalar
+public import LeanSMILES.Primitives.LinAlg
+public import LeanSMILES.Primitives.Parameters
+public import LeanSMILES.MachineLearning.Types
 
 /-!
 # Machine Learning — Definitions
@@ -12,13 +12,13 @@ The ML algorithms used in the pipeline. Every algorithm is written once, polymor
 scalar type `α` with a `[Scalar α]` instance:
 
 * `α := ℝ`     — the noncomputable instance used to state and prove theorems
-                 (see `PROOFS.lean`);
+                 (see `Proofs.lean`);
 * `α := Float` — the computable instance used to run the algorithms
-                 (see `EXECUTABLES.lean`).
+                 (see `Executables.lean`).
 
-`Scalar` lives in `Primitives/scalar.lean`; `Vec`, `Mat` and the linear algebra helpers
-live in `Primitives/lin_algebra.lean`; configs and `Objective` live in
-`Primitives/parameters.lean`; `Dataset` and `LinearModel` live in `TYPES.lean`.
+`Scalar` lives in `Primitives/Scalar.lean`; `Vec`, `Mat` and the linear algebra helpers
+live in `Primitives/LinAlg.lean`; configs and `Objective` live in
+`Primitives/Parameters.lean`; `Dataset` and `LinearModel` live in `Types.lean`.
 -/
 
 @[expose] public section
@@ -65,7 +65,7 @@ section GradientDescent
 variable {α : Type} [Scalar α] {n : Nat}
 
 /-- One step `w ↦ w - η ∇f(w)`. Entrywise:
-`(gdStep obj η w)[i] = w[i] - η * (obj.grad w)[i]` (`gdStep_getElem` in `PROOFS.lean`). -/
+`(gdStep obj η w)[i] = w[i] - η * (obj.grad w)[i]` (`gdStep_getElem` in `Proofs.lean`). -/
 @[specialize] def gdStep (obj : Objective α n) (η : α) (w : Vec α n) : Vec α n :=
   vsub w (smul η (obj.grad w))
 
@@ -87,7 +87,7 @@ Spec (over `ℝ`): for convex, `L`-smooth `obj.loss` with `0 < η ≤ 1/L`,
 
 /-- `gradientDescent` that also records the loss at iteration 0 and every `every`
 iterations (for training curves). The first component is `gradientDescent obj cfg w₀`
-(`gradientDescentWithHistory_fst` in `PROOFS.lean`). -/
+(`gradientDescentWithHistory_fst` in `Proofs.lean`). -/
 @[specialize] def gradientDescentWithHistory (obj : Objective α n) (cfg : GDConfig α)
     (w₀ : Vec α n) (every : Nat := 1) : Vec α n × Array (Nat × α) :=
   let (w, _, hist) := iterate (gdHistoryStep obj cfg.stepSize every) cfg.iters
@@ -145,6 +145,23 @@ Spec (over `ℝ`): with `0 < η ≤ 1/L`, where `L = (2/m) λ_max(XₐᵀXₐ)`,
 to the `olsFit` optimum at rate `O(1/k)`. -/
 @[specialize] def linRegGD (cfg : GDConfig α) (data : Dataset α m n) : LinearModel α n :=
   LinearModel.ofParams (gradientDescent (mseObjective data) cfg vzero)
+
+/-- `mseObjective` with the augmented design matrix and its transpose stored sparsely, so
+each gradient costs time proportional to the number of nonzero features. Over `ℝ` it is
+`mseObjective` (`mseObjectiveSparse_eq` in `Proofs.lean`). On `Float` the gradient is
+the same up to skipped `± 0` terms, which do not change a sum of finite numbers. -/
+@[specialize] def mseObjectiveSparse (data : Dataset α m n) : Objective α (n + 1) :=
+  let Xa := augmentMat data.X
+  let rows := SparseMat.ofDense Xa
+  let cols := SparseMat.ofDense (transpose Xa)
+  { loss := fun θ => mse (LinearModel.ofParams θ) data
+    grad := fun θ =>
+      smul (Scalar.fromNat 2 / Scalar.fromNat m) (smatVec cols (vsub (smatVec rows θ) data.y)) }
+
+/-- `linRegGD` on `mseObjectiveSparse`: the same iterates (`linRegGDSparse_eq`), much
+faster on sparse features such as Morgan fingerprints. -/
+@[specialize] def linRegGDSparse (cfg : GDConfig α) (data : Dataset α m n) : LinearModel α n :=
+  LinearModel.ofParams (gradientDescent (mseObjectiveSparse data) cfg vzero)
 
 /-- `linRegGD` that also returns the training MSE every `every` iterations. -/
 @[specialize] def linRegGDWithHistory (cfg : GDConfig α) (data : Dataset α m n)

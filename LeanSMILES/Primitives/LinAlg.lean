@@ -1,6 +1,6 @@
 module
 
-public import LeanSMILES.Primitives.scalar
+public import LeanSMILES.Primitives.Scalar
 
 /-!
 # Linear algebra primitives
@@ -16,7 +16,7 @@ Every operation is defined with `Vector.ofFn`, so proofs rewrite entries with
 
 Sums are folds (`sumFin`) rather than `Finset.sum`, because `Float` has no
 `AddCommMonoid` instance. Over `ℝ`, rewrite with `sumFin_eq_sum` from
-`Machine_Learning/PROOFS.lean`.
+`MachineLearning/Proofs.lean`.
 -/
 
 @[expose] public section
@@ -103,6 +103,43 @@ the linear map `⟪(w, b), (x, 1)⟫`. -/
 @[specialize] def augmentMat (X : Mat α m n) : Mat α m (n + 1) := Vector.ofFn fun i => augment X[i]
 
 end LinAlg
+
+/-! ## Sparse matrices
+
+Fingerprint features are mostly zero (about 60 of 4096 bits are set), so a dense
+`matVec` spends nearly all its time on `0 * x` terms. A sparse vector keeps only its
+nonzero entries, in index order, and `sdot` adds exactly the terms `dot` would add, in
+the same order, minus the zero ones. Over `ℝ`, `sdot (SparseVec.ofDense v) w = dot v w`
+(`sdot_ofDense` in `MachineLearning/Proofs.lean`).
+-/
+
+section Sparse
+
+variable {α : Type} [Scalar α] {m n : Nat}
+
+/-- `x = 0`, decided with the order (`Scalar` has no `DecidableEq`). -/
+def Scalar.isZero (x : α) : Bool := decide (x ≤ 0) && decide (0 ≤ x)
+
+/-- The nonzero entries `(j, v[j])` of a length-`n` vector, in increasing `j`. -/
+structure SparseVec (α : Type) (n : Nat) where
+  entries : Array (Fin n × α)
+
+/-- An `m × n` sparse matrix stored as `m` sparse rows. -/
+abbrev SparseMat (α : Type) (m n : Nat) := Vector (SparseVec α n) m
+
+@[specialize] def SparseVec.ofDense (v : Vec α n) : SparseVec α n :=
+  ⟨(Array.finRange n).filterMap fun j => if Scalar.isZero v[j] then none else some (j, v[j])⟩
+
+@[specialize] def SparseMat.ofDense (A : Mat α m n) : SparseMat α m n := A.map SparseVec.ofDense
+
+/-- `dot` of a sparse and a dense vector. -/
+@[specialize] def sdot (s : SparseVec α n) (w : Vec α n) : α :=
+  s.entries.foldl (fun acc (j, x) => acc + x * w[j]) 0
+
+@[specialize] def smatVec (S : SparseMat α m n) (v : Vec α n) : Vec α m :=
+  Vector.ofFn fun i => sdot S[i] v
+
+end Sparse
 
 /-! ## Linear systems (Gauss–Jordan elimination) -/
 

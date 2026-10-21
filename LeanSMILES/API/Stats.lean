@@ -1,6 +1,6 @@
 module
 
-public import LeanSMILES.Primitives.lin_algebra
+public import LeanSMILES.Primitives.LinAlg
 
 /-!
 # Descriptive statistics

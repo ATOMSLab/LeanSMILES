@@ -1,6 +1,6 @@
 module
 
-public import LeanSMILES.Machine_Learning.DEFINITIONS
+public import LeanSMILES.MachineLearning.Definitions
 
 /-!
 # Regression metrics

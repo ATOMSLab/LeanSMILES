@@ -1,7 +1,7 @@
 module
 
 public import LeanSMILES.API.CSV
-public import LeanSMILES.SMILES.DEFINITIONS
+public import LeanSMILES.SMILES.Definitions
 
 /-!
 # Solubility dataset loader

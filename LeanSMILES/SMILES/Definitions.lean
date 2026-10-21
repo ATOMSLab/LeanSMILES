@@ -1,8 +1,8 @@
 module
 
-public import LeanSMILES.SMILES.TYPES
-public import LeanSMILES.Primitives.lin_algebra
-public import LeanSMILES.Primitives.decimal
+public import LeanSMILES.SMILES.Types
+public import LeanSMILES.Primitives.LinAlg
+public import LeanSMILES.Primitives.Decimal
 
 /-!
 # SMILES — Definitions
@@ -17,7 +17,6 @@ public import LeanSMILES.Primitives.decimal
   the identifiers into `nBits` bits.
 * **Descriptors** (RDKit-style): molecular weight (exact, from decimal atomic masses),
   formula, H-bond donors, ring count, rotatable bonds, minimum degree.
-* **2D layout**: coordinates for drawing a molecule, by stress majorization.
 
 Every function is total and terminates by structural recursion, on the input or on an
 explicit `fuel : Nat` bound. Hashing is plain `Nat` arithmetic. So everything runs with
@@ -592,6 +591,35 @@ def Molecule.morganFingerprint (m : Molecule) (radius nBits : Nat) : MorganFinge
   let ids := m.morganIds radius
   ⟨Vector.ofFn fun j => ids.any (· % nBits == j.val)⟩
 
+/-- `bits` with bit `x % nBits` also set for every `x ∈ xs`. -/
+def setBits {nBits : Nat} (bits : Vector Bool nBits) : List Nat → Vector Bool nBits
+  | [] => bits
+  | x :: xs => setBits (bits.setIfInBounds (x % nBits) true) xs
+
+theorem getElem_setBits {nBits : Nat} (bits : Vector Bool nBits) (xs : List Nat) (j : Nat)
+    (hj : j < nBits) : (setBits bits xs)[j] = (bits[j] || xs.any (· % nBits == j)) := by
+  induction xs generalizing bits with
+  | nil => simp [setBits]
+  | cons x xs ih =>
+    simp only [setBits, ih, Vector.getElem_setIfInBounds, List.any_cons]
+    by_cases h : x % nBits = j
+    · simp [h]
+    · have hb : (x % nBits == j) = false := by simpa using h
+      simp [h, hb]
+
+/-- `morganFingerprint` in one pass over the identifiers, instead of one pass per bit.
+The compiler uses it in place of `morganFingerprint` (`morganFingerprint_eq_fast`). -/
+def Molecule.morganFingerprintFast (m : Molecule) (radius nBits : Nat) :
+    MorganFingerprint nBits :=
+  ⟨setBits (Vector.replicate nBits false) (m.morganIds radius)⟩
+
+@[csimp] theorem Molecule.morganFingerprint_eq_fast :
+    @Molecule.morganFingerprint = @Molecule.morganFingerprintFast := by
+  funext m radius nBits
+  simp only [Molecule.morganFingerprint, Molecule.morganFingerprintFast, MorganFingerprint.mk.injEq]
+  ext j hj
+  simp [getElem_setBits]
+
 def SMILES.morganFingerprint (s : SMILES) (radius nBits : Nat) :
     Except String (MorganFingerprint nBits) :=
   (·.morganFingerprint radius nBits) <$> s.parse
@@ -785,79 +813,6 @@ def Molecule.descriptors (m : Molecule) : Descriptors :=
   { formula := m.formula, molecularWeight := m.molecularWeightExact
     heavyAtoms := m.heavyAtomCount, hDonors := m.hDonorCount, rings := m.ringCount
     rotatableBonds := m.rotatableBondCount, minDegree := m.minDegree }
-
-/-! ## 2D layout -/
-
-/-- All-pairs shortest path lengths (Floyd–Warshall), with `n` for "not connected". -/
-def Molecule.graphDistances (m : Molecule) : Array (Array Nat) :=
-  let n := m.atoms.size
-  let init := (Array.range n).map fun i => (Array.range n).map fun j =>
-    if i = j then 0 else if (m.neighbors i).any (·.1 == j) then 1 else n
-  (List.range n).foldl (fun d k =>
-    d.mapIdx fun i row => row.mapIdx fun j dij =>
-      min dij (d[i]!.getD k n + d[k]!.getD j n)) init
-
-/-- One stress-majorization (SMACOF) sweep: every atom moves to the weighted average of
-where each other atom says it should be, at its graph distance. Weights are `d⁻²`;
-disconnected pairs are ignored. -/
-def smacofStep {α : Type} [Primitives.Scalar α] (dist : Array (Array Nat))
-    (pos : Array (α × α)) : Array (α × α) :=
-  let n := pos.size
-  pos.mapIdx fun i (xi, yi) =>
-    let (sx, sy, sw) := (List.range n).foldl (fun (sx, sy, sw) j =>
-      let d := (dist.getD i #[]).getD j n
-      if j = i || d ≥ n then (sx, sy, sw)
-      else
-        let (xj, yj) := pos.getD j (0, 0)
-        let dd : α := Primitives.Scalar.fromNat d
-        let w : α := 1 / (dd * dd)
-        let len := Primitives.Scalar.sqrt ((xi - xj) * (xi - xj) + (yi - yj) * (yi - yj))
-        let f := if len ≤ 0 then 0 else dd / len
-        (sx + w * (xj + f * (xi - xj)), sy + w * (yj + f * (yi - yj)), sw + w)) (0, 0, 0)
-    if sw ≤ 0 then (xi, yi) else (sx / sw, sy / sw)
-
-/-- Atoms in depth-first preorder from the canonically first atom, neighbours in
-canonical order (the order the canonical SMILES writes them). Consecutive atoms are
-bonded wherever possible, so rings come out in ring order. -/
-def Molecule.dfsOrder (m : Molecule) : Array Nat :=
-  let n := m.atoms.size
-  let ranks := m.canonicalRanks
-  let rk := fun i => ranks.getD i 0
-  let nbrs := m.adjacency.map fun l => (l.map Prod.fst).mergeSort fun a b => rk a ≤ rk b
-  let starts := (List.range n).mergeSort fun a b => rk a ≤ rk b
-  let init : DFSState :=
-    { visited := Array.replicate n false, order := #[], children := Array.replicate n [] }
-  (starts.foldl (fun st v => if st.visited.getD v true then st else dfs nbrs (n + 1) v st)
-    init).order
-
-/-- 2D coordinates (bond length ≈ 1) for drawing. Atoms start on a circle in
-depth-first order, then `iters` SMACOF sweeps place every pair at roughly its graph
-distance. Disconnected fragments are laid out separately, side by side. -/
-def Molecule.layout2D {α : Type} [Primitives.Scalar α] (m : Molecule) (iters : Nat := 300) :
-    Array (α × α) :=
-  open Primitives in
-  let n := m.atoms.size
-  let dist := m.graphDistances
-  let order := m.dfsOrder.toList
-  let radius : α := Scalar.fromNat n / (Scalar.fromNat 2 * Scalar.pi)
-  let init := (order.zipIdx.foldl (fun p (v, k) =>
-      let θ : α := Scalar.fromNat 2 * Scalar.pi * Scalar.fromNat k / Scalar.fromNat (max n 1)
-      p.setIfInBounds v (radius * Scalar.cos θ, radius * Scalar.sin θ))
-    (Array.replicate n ((0 : α), (0 : α))))
-  let pos := iterate (smacofStep dist) iters init
-  -- place fragments side by side, left to right
-  let labels := m.componentLabels
-  let comps := labels.toList.eraseDups
-  (comps.foldl (fun (out, offset) c =>
-      let members := (List.range n).filter (labels.getD · 0 == c)
-      let xs := members.map fun i => (pos.getD i (0, 0)).1
-      let lo := xs.foldl Scalar.min (xs.headD 0)
-      let hi := xs.foldl Scalar.max (xs.headD 0)
-      (members.foldl (fun o i =>
-          let (x, y) := pos.getD i (0, 0)
-          o.setIfInBounds i (x - lo + offset, y)) out,
-        offset + (hi - lo) + Scalar.fromNat 2))
-    (pos, (0 : α))).1
 
 end Chem
 

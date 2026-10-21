@@ -1,12 +1,12 @@
 module
 
-public import LeanSMILES.SMILES.DEFINITIONS
-public import LeanSMILES.Primitives.real
+public import LeanSMILES.SMILES.Definitions
+public import LeanSMILES.Primitives.Real
 
 /-!
 # SMILES — Proofs
 
-Theorems about the definitions in `DEFINITIONS.lean`.
+Theorems about the definitions in `Definitions.lean`.
 -/
 
 public section

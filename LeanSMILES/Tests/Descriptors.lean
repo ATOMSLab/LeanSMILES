@@ -1,4 +1,4 @@
-import LeanSMILES.SMILES.EXECUTABLES
+import LeanSMILES.SMILES.Executables
 import LeanSMILES.MetaPrograms.Test
 
 /-! Tests for the RDKit-style descriptors (`Molecule.descriptors` and friends). -/

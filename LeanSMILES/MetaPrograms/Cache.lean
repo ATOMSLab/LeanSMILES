@@ -16,8 +16,8 @@ cached def model : ML.Exec.LinearModel 2048 := ML.Exec.linRegGD cfg split.train
   `@[irreducible]`, so type checking never tries to evaluate it (which matters when types
   mention values like `records.size`), but proofs can still `unfold` it.
 * When the command is elaborated, the body is evaluated once (with compiled code) and the
-  value is stored in a cache. Through `implemented_by`, every later `#eval`, `#show` or
-  `#html` that uses `model` reads the stored value instead of recomputing it.
+  value is stored in a cache. Through `implemented_by`, every later `#eval` or `#test`
+  that uses `model` reads the stored value instead of recomputing it.
 
 Re-elaborating the command (editing the cell) recomputes and replaces the stored value.
 -/

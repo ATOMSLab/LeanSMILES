@@ -1,11 +1,11 @@
 module
 
-public import LeanSMILES.Primitives.lin_algebra
+public import LeanSMILES.Primitives.LinAlg
 
 /-!
 # Machine Learning — Types
 
-Data and model types shared by the algorithms in `DEFINITIONS.lean`.
+Data and model types shared by the algorithms in `Definitions.lean`.
 -/
 
 @[expose] public section
