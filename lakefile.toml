@@ -15,7 +15,47 @@ scope = "leanprover-community"
 rev = "v4.30.0-rc1"
 
 
+# Executable core: generic definitions plus their `Float` instantiations. It imports no
+# Mathlib and is precompiled to native code, so `#eval` and `#html` in notebooks run it at
+# compiled speed.
+[[lean_lib]]
+name = "LeanSMILESExec"
+precompileModules = true
+roots = []
+globs = [
+  "LeanSMILES.Primitives.scalar",
+  "LeanSMILES.Primitives.decimal",
+  "LeanSMILES.Primitives.lin_algebra",
+  "LeanSMILES.Primitives.parameters",
+  "LeanSMILES.Machine_Learning.TYPES",
+  "LeanSMILES.Machine_Learning.DEFINITIONS",
+  "LeanSMILES.Machine_Learning.EXECUTABLES",
+  "LeanSMILES.SMILES.TYPES",
+  "LeanSMILES.SMILES.DEFINITIONS",
+  "LeanSMILES.SMILES.EXECUTABLES",
+  "LeanSMILES.API.CSV",
+  "LeanSMILES.API.Loader",
+  "LeanSMILES.API.Features",
+  "LeanSMILES.API.Split",
+  "LeanSMILES.API.Metrics",
+  "LeanSMILES.API.Stats",
+  "LeanSMILES.API.Pipeline",
+  "LeanSMILES.MetaPrograms.CacheStore",
+]
+
+# Proofs over ℝ (with Mathlib), metaprograms, widgets, tests and notebooks.
 [[lean_lib]]
 name = "LeanSMILES"
-globs = ["LeanSMILES.*"]
-
+globs = [
+  "LeanSMILES.main",
+  "LeanSMILES.Primitives.real",
+  "LeanSMILES.Machine_Learning.PROOFS",
+  "LeanSMILES.SMILES.PROOFS",
+  "LeanSMILES.API.PROOFS",
+  "LeanSMILES.MetaPrograms.Test",
+  "LeanSMILES.MetaPrograms.Cache",
+  "LeanSMILES.MetaPrograms.Show",
+  "LeanSMILES.Widgets.+",
+  "LeanSMILES.Tests.+",
+  "LeanSMILES.Examples.+",
+]
