@@ -1,0 +1,20 @@
+/.lake
+.DS_Store
+*.zip
+tools/.venv/
+__pycache__/
+# Exported trajectories and their plots: derived from the library, regenerated
+# by `lake exe mkmbench csv out`, never a source of fact. The kept pictures
+# live under artifacts/<name>/.
+/out/
+
+# Third-party papers read while writing docs/RelatedWork.md. Copyrighted by
+# their publishers and never redistributable from here; cite by DOI instead.
+/literature/
+
+# LaTeX intermediates for docs/*.tex
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
