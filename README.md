@@ -67,8 +67,28 @@ Tests against RDKit (answers in `datasets/*-oracle.csv`, made by
 
 ```bash
 lake exe canonical-test   # canonical SMILES
+lake exe morgan-test      # Morgan fingerprints (bits and unfolded identifiers)
 lake exe phase1-test      # every atom and bond of the molecule graph
 lake exe validity-test    # invalid SMILES rejected exactly when RDKit rejects them
 ```
+
+## Morgan fingerprints
+
+`LeanSMILES.Fingerprint.Morgan` computes Morgan (ECFP-like) fingerprints with the
+same bits as RDKit's `GetMorganGenerator(radius=2, fpSize=2048)`:
+
+```lean
+import LeanSMILES.Fingerprint.Morgan
+#eval Chem.morganBits "CCO"                 -- Except.ok [80, 222, 294, 807, 1057, 1410]
+```
+
+`LeanSMILES/Examples/morgan.lean` also shows Tanimoto similarity, isotopes and
+the bit vector for ML. Test: `lake exe morgan-test` (bits and unfolded
+identifiers); `lake exe morgan-test datasets/isotope-cases-oracle.csv` for
+isotope-labelled molecules.
+
+Hydrogens written as separate atoms are handled like RDKit: ordinary `[H]`
+atoms are folded into their neighbour's H count (`[H]C([H])([H])[H]` → `C`),
+while isotopic, charged and stereo-defining ones stay atoms.
 
 Design notes, RDKit references and results: `docs/scope-canonical-smiles-morgan.md`.

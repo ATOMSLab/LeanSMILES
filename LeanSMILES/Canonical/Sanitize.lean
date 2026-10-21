@@ -4,7 +4,8 @@ import LeanSMILES.Canonical.Parse
 # LeanSMILES.Canonical.Sanitize
 
 RDKit's sanitization: hydrogens, ring membership, cleanup, valence checks,
-ring set, kekulization and aromaticity. Entry point: `Chem.molFromSmiles`.
+ring set, kekulization and aromaticity, plus removal of hydrogens written as
+atoms. Entry point: `Chem.molFromSmiles`.
 -/
 
 /-!
@@ -817,6 +818,56 @@ end Mol
 end Chem
 
 /-!
+# Removing hydrogen atoms
+
+RDKit's `MolFromSmiles` removes hydrogens written as separate atoms right after
+parsing, before sanitization (`SmilesParse.cpp:473-477`, `removeHs` with
+`updateExplicitCount = true`): `[H]C([H])([H])[H]` becomes `C`, `[H]O[H]` becomes
+`O`. Each removed hydrogen adds 1 to its neighbour's explicit H count.
+
+A hydrogen atom is kept (`shouldRemoveH`, `AddHs.cpp:840-970`, default
+`RemoveHsParameters`) if it has no bonds or more than one, carries an isotope
+(`[2H]`), has charge −1 (`[H-]`), is bonded only to hydrogen (`[H][H]`), is
+bonded to an atom with non-tetrahedral stereo (`@SP`, `@TB`, `@OH`), or is
+attached by `/` or `\` to a two-neighbour atom with a double bond (it defines
+double-bond stereo, `[H]/C=C/F`).
+-/
+
+namespace Chem
+namespace Mol
+
+/-- Does RDKit remove hydrogen atom `i`? -/
+def shouldRemoveH (m : Mol) (i : Nat) : Bool :=
+  let a := m.atoms[i]!
+  a.atomicNum == 1 && a.isotope.getD 0 == 0 && a.charge != -1 &&
+  match m.neighbors i with
+  | [(k, j)] =>
+    let nbr := m.atoms[j]!
+    nbr.atomicNum != 1 && !nbr.nonTetrahedral &&
+    !(m.degree j == 2 && m.bonds[k]!.directional &&
+      (m.bondsOf j).any (m.bonds[·]!.order == .double))
+  | _ => false   -- no bonds, or more than one
+
+/-- Remove the hydrogen atoms RDKit removes, adding one explicit H to each one's
+neighbour. Other atoms keep their order; bonds keep theirs. -/
+def removeHs (m : Mol) : Mol := Id.run do
+  let remove := (List.range m.numAtoms).filter m.shouldRemoveH
+  if remove.isEmpty then return m
+  let mut atoms := m.atoms
+  for h in remove do
+    for (_, j) in m.neighbors h do
+      atoms := atoms.modify j fun a => { a with explicitHs := a.explicitHs + 1 }
+  let keep := (List.range m.numAtoms).filter (!remove.contains ·)
+  let newIndex (i : Nat) : Nat := keep.idxOf i
+  return { atoms := (keep.map (atoms[·]!)).toArray,
+           bonds := m.bonds.filterMap fun b =>
+             if remove.contains b.src || remove.contains b.dst then none
+             else some { b with src := newIndex b.src, dst := newIndex b.dst } }
+
+end Mol
+end Chem
+
+/-!
 # Sanitization
 
 The Lean counterpart of RDKit's `sanitizeMol` (`MolOps.cpp:604-716`), for the
@@ -852,9 +903,10 @@ def Mol.sanitize (m : Mol) : Except String Mol := do
   m.checkValences
   return m
 
-/-- Parse a SMILES string and sanitize it the way RDKit's `MolFromSmiles` does:
+/-- Parse a SMILES string, remove hydrogen atoms and sanitize, the way RDKit's
+`MolFromSmiles` does:
 the graph that fingerprints and canonicalization start from. -/
 def molFromSmiles (s : String) : Except String Mol :=
-  Smiles.parse s >>= Mol.sanitize
+  Smiles.parse s >>= fun m => m.removeHs.sanitize
 
 end Chem

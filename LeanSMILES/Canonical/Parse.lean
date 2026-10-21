@@ -124,13 +124,17 @@ private def readBracketAtom (cs : Array Char) (pos : Nat) : Except String (Atom 
   p := q
   -- chirality marks are skipped (stereo is not modelled), but must be well formed:
   -- `@`, `@@`, or `@` + class TH/AL/SP/TB/OH + optional number (as RDKit accepts)
+  let mut nonTetrahedral := false
   if cs.getD p ' ' == '@' then
     p := p + 1
     if cs.getD p ' ' == '@' then
       p := p + 1
-    else if ["TH", "AL", "SP", "TB", "OH"].contains (String.ofList [cs.getD p ' ', cs.getD (p + 1) ' ']) then
-      p := p + 2
-      if let some (_, q) := readNat cs p then p := q
+    else
+      let cls := String.ofList [cs.getD p ' ', cs.getD (p + 1) ' ']
+      if ["TH", "AL", "SP", "TB", "OH"].contains cls then
+        nonTetrahedral := ["SP", "TB", "OH"].contains cls
+        p := p + 2
+        if let some (_, q) := readNat cs p then p := q
   let mut hs := 0
   if cs.getD p ' ' == 'H' then
     p := p + 1
@@ -155,7 +159,7 @@ private def readBracketAtom (cs : Array Char) (pos : Nat) : Except String (Atom 
     | none => throw s!"atom class without number at position {p}"
   if cs.getD p ' ' != ']' then throw s!"expected ']' at position {p}"
   return ({ atomicNum := z, aromatic := arom, charge, isotope, explicitHs := hs,
-            noImplicit := true }, p + 1)
+            noImplicit := true, nonTetrahedral }, p + 1)
 
 /-- Unbracketed atom at `pos` (organic subset or lowercase aromatic). -/
 private def readOrganicAtom (cs : Array Char) (pos : Nat) : Option (Atom × Nat) :=
@@ -183,7 +187,8 @@ private def addAtom (st : St) (a : Atom) (next : Nat) : St :=
   let i := st.atoms.size
   let atoms := st.atoms.push a
   let bonds := match st.prev with
-    | some j => st.bonds.push { src := j, dst := i, order := writtenOrder st.pending atoms j i }
+    | some j => st.bonds.push { src := j, dst := i, order := writtenOrder st.pending atoms j i,
+                                directional := (st.pending.map (·.directional)).getD false }
     | none => st.bonds
   { st with pos := next, atoms, bonds, prev := some i, pending := none, last := .atom }
 
@@ -196,12 +201,14 @@ private def ringClosure (st : St) (d next : Nat) : Except String St := do
     if j == i then throw s!"ring closure {d} bonds an atom to itself"
     if st.bonds.any fun b => (b.src == j && b.dst == i) || (b.src == i && b.dst == j) then
       throw s!"ring closure {d} duplicates an existing bond"
+    let directional := (r.bond.map (·.directional)).getD false ||
+      (st.pending.map (·.directional)).getD false
     -- RDKit: the bond written at the opening digit wins, unless it is / or \
     let order := match r.bond with
       | some ob => if ob.directional then writtenOrder st.pending st.atoms j i else ob.order
       | none => writtenOrder st.pending st.atoms j i
     return { st with pos := next, pending := none, last := .ring,
-                     bonds := st.bonds.push { src := j, dst := i, order },
+                     bonds := st.bonds.push { src := j, dst := i, order, directional },
                      rings := st.rings.filter (·.digit != d) }
   | none =>
     return { st with pos := next, pending := none, last := .ring,

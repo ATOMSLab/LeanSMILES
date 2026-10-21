@@ -127,7 +127,7 @@ LeanSMILES/
   Canonical/Sanitize.lean      ✅ implicit H, ring membership, cleanUp, valence checks, ring set,
                                   kekulization, aromaticity; molFromSmiles
   Canonical/Write.lean         ✅ canonical ranking + DFS writer; canonicalSmiles
-  Fingerprint/Morgan.lean      port of reference/morgan_ref.py
+  Fingerprint/Morgan.lean      ✅ port of reference/morgan_ref.py; morganBits, morganIds, tanimoto
   Proofs/...                   theorems (section 5)
 tools/rdkit_oracle.py          ✅ dumps RDKit's answers per molecule → CSV for Lean tests
 ```
@@ -147,7 +147,7 @@ tools/rdkit_oracle.py          ✅ dumps RDKit's answers per molecule → CSV fo
 |---|---|---|---|
 | **0. Oracle** ✅ | `tools/rdkit_oracle.py` writes `datasets/delaney-oracle.csv` (see 4.1) | CSV exists | done |
 | **1. Graph** ✅ | `Mol` types, SMILES parser, implicit H, ring membership, **RDKit sanitization incl. aromaticity** | Per-atom and per-bond data agrees with RDKit (see 4.2) | done |
-| **2. Morgan** | `Fingerprint/Morgan.lean` (port of the reference) | 1,128/1,128 exact bit match | 1 day |
+| **2. Morgan** ✅ | `Fingerprint/Morgan.lean` (port of the reference) | 1,128/1,128 exact bit match (see 4.4) | done |
 | **3. Canonical SMILES** ✅ | `Canonical/Write.lean` (`Chem.canonicalSmiles`) | 1,128/1,128 exact string match (see 4.3) | done |
 | **4. Proofs** | Theorems from section 5, easiest first | Each one `sorry`-free | open-ended |
 | 5. Optional | Stereo | — | large |
@@ -181,6 +181,8 @@ The same command writes further test files with the same columns:
 | File | Molecules |
 |---|---|
 | `datasets/delaney-kekule-oracle.csv` | The 1,128 Delaney molecules re-written in Kekulé form (`C1=CC=CC=C1`, no lowercase), so aromaticity must be *perceived*. Atom order follows the new strings. |
+| `datasets/hydrogen-cases-oracle.csv`, `…-kekule-oracle.csv` | 494 molecules with hydrogens written as atoms (incl. isotopic, charged and stereo-defining ones), from `datasets/hydrogen-cases.csv` |
+| `datasets/isotope-cases-oracle.csv`, `…-kekule-oracle.csv` | 500 Delaney molecules with up to 3 random isotope labels each (real, exceptional and made-up isotopes), from `datasets/isotope-cases.csv` |
 | `datasets/aromaticity-cases-oracle.csv`, `…-kekule-oracle.csv` | 56 hand-picked hard cases (azulene, pyrene, tropone, `[cH-]1cccc1`, N-oxides, [18]annulene, …), from `datasets/aromaticity-cases.csv`: `python tools/rdkit_oracle.py datasets/aromaticity-cases.csv datasets/aromaticity-cases-oracle.csv datasets/aromaticity-cases-kekule-oracle.csv` |
 
 ### 4.2 Phase 1 status
@@ -202,7 +204,9 @@ lake exe validity-test                   # broken SMILES: accepted/rejected exac
 | `datasets/fuzz-validity.tsv`: 10,000 randomly broken SMILES, accept vs reject | **all agree**, except 63 with elements Lean does not support yet (reported separately) |
 | One-off checks (not in the repo), both forms each: NCI `first_5K.smi` (4,830), ENCH 470 EGFR actives / inactives / FDA drugs (100 / 100 / 5), ThermoProperties isomeric and canonical SMILES (5,618 and 4,250), 3,997 broken-but-valid fuzz SMILES | **all match** |
 
-`Chem.molFromSmiles` mirrors RDKit's `MolFromSmiles` (`Canonical/Sanitize.lean`): parse (with RDKit's syntax rules) → freeze H counts → cleanup → **strict valence check** → cache valences → ring set → kekulize (RDKit's walk) → radicals → aromaticity → final H counts (`adjustHs`) → **strict valence check again**. The Python reference for the middle steps is `docs/reference/aromaticity_ref.py`, checked by `docs/reference/verify.py`.
+`Chem.molFromSmiles` mirrors RDKit's `MolFromSmiles` (`Canonical/Sanitize.lean`): parse (with RDKit's syntax rules) → remove hydrogen atoms (`removeHs`) → freeze H counts → cleanup → **strict valence check** → cache valences → ring set → kekulize (RDKit's walk) → radicals → aromaticity → final H counts (`adjustHs`) → **strict valence check again**. The Python reference for the middle steps is `docs/reference/aromaticity_ref.py`, checked by `docs/reference/verify.py`.
+
+**Hydrogens written as atoms** (`[H]C([H])([H])[H]`, `[H]O[H]`): like RDKit's `MolFromSmiles` (`removeHs` with `updateExplicitCount`, `SmilesParse.cpp:473-477`, `AddHs.cpp:840-1082`), ordinary hydrogen atoms are removed right after parsing and counted on their neighbour. Kept: hydrogens with no bond or several bonds, isotopes (`[2H]`), hydrides (`[H-]`), H bonded only to H (`[H][H]`), H on atoms with non-tetrahedral stereo (`@SP`, `@TB`, `@OH`), and H attached by `/` or `\` to a two-neighbour atom with a double bond (`[H]/C=C/F`). Test set: `datasets/hydrogen-cases*.csv` (494 molecules, all match on all three tests in both forms); one-off checks also matched on every NCI molecule (4,858) and every ThermoProperties molecule (5,618, of which 331 have a stereo bond to a hydrogen) written with all hydrogens as atoms.
 
 **Found by the broken-SMILES (fuzz) test, now fixed:**
 - **Syntax:** RDKit rejects bonds at the start or end, two bonds in a row, a bond before `(` `)` `.`, empty branches `()`, a ring digit right after `(` or `(=`, `%` with one digit, duplicate bonds via ring closures (`C1C1`), and malformed chirality (`@@3`, `@I`). The bond written at the *opening* ring digit wins; `/` `\` between aromatic atoms keep the bond aromatic.
@@ -240,6 +244,21 @@ It equals RDKit's `MolToSmiles(mol, isomericSmiles=False)` on all Delaney molecu
 
 `LeanSMILES/Examples/canonical.lean` shows typical use.
 
+### 4.4 Phase 2 status: Morgan fingerprints
+
+`Chem.morganBits` / `Mol.morganIds` (`Fingerprint/Morgan.lean`) port `docs/reference/morgan_ref.py`: radius-0 invariants (element, degree incl. H, H count, charge as uint32, mass shift, in-ring), layer-seeded `hash_combine` over sorted (bond type, neighbour id) pairs, bond-set deduplication keeping the smallest (id, atom), dead atoms contributing 0, folding by `id mod fpSize`.
+
+```bash
+lake exe morgan-test           # Delaney, as written and in Kekulé form
+lake exe morgan-test datasets/aromaticity-cases-oracle.csv datasets/aromaticity-cases-kekule-oracle.csv
+```
+
+Both the folded bits and the unfolded identifiers with counts equal RDKit's (`radius=2, fpSize=2048`) on all Delaney molecules, the 56 hard cases and 500 isotope-labelled molecules (`datasets/isotope-cases*.csv`), in both forms. One-off checks outside the repo also matched on the NCI sample (4,830), the ENCH 470 ThermoProperties and EGFR sets, 3,997 fuzzed SMILES and 3,000 more isotope-labelled molecules, in both forms.
+
+**Isotopes.** RDKit's invariant includes `int(mass − atomic weight)`: the exact isotope mass from RDKit's table, or the isotope number for isotopes not in the table (`Atom.cpp:644-655`). `isotopeMassShift` (`Canonical/Molecule.lean`) reproduces this from each element's atomic weight plus the 82 known isotopes whose exact mass gives a different answer than the isotope number (e.g. `[2H]` → 1, while `[13C]` → 0). The table is generated by `tools/rdkit_isotope_table.py`, which also checks the rule against RDKit for every isotope 1–400 of every supported element.
+
+`LeanSMILES/Examples/morgan.lean` shows typical use (bits, radius, Tanimoto similarity, bit vector).
+
 **Hackathon recommendation:** do phases 0–2 plus the ring-membership and Morgan-invariance proofs. Morgan is short, fully specified and verified, so "fingerprints computed in Lean, bit-identical to RDKit, with a proof" is a strong, achievable result. Phase 3 is the bigger engineering piece.
 
 ---
@@ -269,6 +288,7 @@ From easiest to hardest:
 |---|---|---|
 | Charges, isotopes, general brackets in output | Low | Extra comparison fields and bracket-writing rules |
 | ~~Aromaticity perception (RDKit model)~~ | ✅ done | See 4.2 |
+| ~~Removing explicit hydrogen atoms (RDKit's `removeHs`)~~ | ✅ done | See 4.2 |
 | Canonical Kekulé form (needed only to *write* Kekulé SMILES) | Medium | Port RDKit's queue-based walk exactly |
 | Stereo (tetrahedral, E/Z) | High | Parity under the walk order; only 8 Delaney molecules |
 | Morgan options (chirality, count simulation, FCFP features) | Low–Medium | Documented in `MorganGenerator.cpp`; off by default |

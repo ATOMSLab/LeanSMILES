@@ -36,6 +36,9 @@ def sameMolecule (a b : String) : Bool :=
 #eval canonicalSmiles "CN(=O)=O"                   -- nitromethane
 #eval canonicalSmiles "[Cl-].[NH4+]"
 
+-- Hydrogens written as atoms are folded in, as RDKit does (isotopic ones stay)
+#eval ["[H]C([H])([H])[H]", "[H]O[H]", "[2H]C"].map canonicalSmiles
+
 -- The molecule graph in between (atoms, bonds, H counts) is also available
 #eval (molFromSmiles "c1cc[nH]c1").map fun m =>
   ((List.range m.numAtoms).map m.totalHs, m.bonds.map (·.order))
