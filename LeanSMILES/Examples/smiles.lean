@@ -1,5 +1,6 @@
 import LeanSMILES.SMILES.Canon
 import LeanSMILES.Chem.Graph
+import LeanSMILES.Chem.BondMatrix
 import LeanSMILES.Fingerprint.Morgan
 import LeanSMILES.Data.CSVparser
 
@@ -35,6 +36,19 @@ open LeanSMILES LeanSMILES.SMILES
 -- The Mathlib views: bond-order-weighted and 0/1 adjacency matrices.
 #eval (Mol.ofSmiles! "C=CO").mol.adjMatrix
 #eval (Mol.ofSmiles! "C=CO").mol.graph.adjMatrix ℚ
+
+-- The same two matrices as subtypes that say they come from a molecule
+-- (`BondMatrix`: entries are bond orders; `FlatMatrix`: Mathlib's `IsAdjMatrix`),
+-- with O(1) lookups, and the normal form that is nothing but atoms + bond matrix.
+#eval (Mol.ofSmiles! "C=CO").mol.toBondMatrix
+#eval (Mol.ofSmiles! "C=CO").mol.toBondMatrix.flatten
+#eval let M := Mol.ofSmiles! "C=CO"
+      (List.finRange M.n).map fun i => (List.finRange M.n).map fun j => M.mol.toBondMatrix.kindAt i j
+#eval (Mol.ofSmiles! "C1CC1").isNormal       -- false: the ring-closure bond is stored 2→0
+#eval (Mol.ofSmiles! "C1CC1").normalize      -- bonds now 0-1, 0-2, 1-2
+#eval (Mol.ofSmiles! "C1CC1").normalize.isNormal
+#eval (BondMatrix.ofMatrix? !![0, 7; 7, 0]).isSome       -- 7 is not a bond order
+#eval (BondMatrix.ofMatrix? !![0, 2; 2, 0]).isSome
 
 -- Hydrogens by the default-valence rule.
 #eval let M := Mol.ofSmiles! "CC(C)(C)O"; (List.finRange M.n).map fun i => (M.mol.atom i).totalH

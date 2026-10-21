@@ -97,6 +97,27 @@ two derivations agree.  The matrix → graph direction closes the loop:
 What no symmetric matrix can carry is the `src → dst` orientation of a bond,
 and with it the `/` `\` marks: `ofAdjMatrix` recovers everything but `Bond.dir`.
 
+**Matrices as subtypes** (`LeanSMILES/Chem/BondMatrix.lean`).  Going beyond
+RDKit where Lean's type system makes it cheap: "this matrix comes from a
+molecule" is in the type.
+
+| Definition / theorem | Statement |
+|---|---|
+| `BondMatrix n := {A // IsBondMatrix A}` | the weighted matrix; `B i j`, `B.kindAt i j`, `B.graph`, `B.toMolecule atoms` |
+| `BondMatrix.check`, `check_iff`, `ofMatrix?` | `IsBondMatrix` is decidable; any matrix can be checked into the subtype at run time |
+| `FlatMatrix n := {A // A.IsAdjMatrix}` | the 0/1 matrix, Mathlib's predicate; `F.graph` by `IsAdjMatrix.toGraph` |
+| `BondMatrix.flatten`, `graph_flatten` | forget the orders; the graph is unchanged |
+| `Molecule.toBondMatrix` | backed by the materialized `adjTable`, so `B i j` is O(1); `toBondMatrix_val : B.1 = adjMatrix` |
+| `Molecule.toFlatMatrix`, `flatten_toBondMatrix` | the graph's own 0/1 matrix; flattening the bond matrix gives it |
+| `normalize`, `IsNormal` | forget bond orientation and bond-list order; a fixed point of `normalize` (decidable) |
+| `IsNormal.bond_spec` | in normal form every bond runs `src < dst` with no direction mark |
+| `normalEquiv` | **`{m // m.IsNormal} ≃ Vector Atom n × BondMatrix n`** — nothing is lost |
+
+The `Equiv` is the honest form of "the matrix stores everything": it does, for
+molecules that have forgotten what a symmetric matrix cannot hold.  For Morgan
+fingerprints and functional-group matching that is exactly the right
+information — neither looks at `/` `\` marks or at the order bonds were written.
+
 ## 4. Parsing (`LeanSMILES/SMILES/Token.lean`, `Parse.lean`)
 
 Tokenizer: bracket atoms are decoded into one `Atom` token (isotope, symbol
@@ -222,12 +243,13 @@ is: a definition that *returns a function* should not do work before the
 lambda.
 
 A second one, found when the Morgan examples hung the build: do not `#eval` a
-`Vector α n` whose `n` is not a literal (say `(Mol.ofSmiles! s).mol.inRingVector`).
-`#eval` prefers the `ToExpr` instance, which rebuilds the value as an
-expression including its `size_toArray` proof, and the elaborator then checks
-that proof by reducing the whole parse in the kernel — instant for ethanol,
-unbounded for an aromatic ring.  Print `.toList` instead.  Compiled code
-(`lake exe …`) is unaffected; only the interactive path is.
+value whose *type* depends on a non-literal `n` — a `Vector α (Mol.ofSmiles! s).n`,
+a `Molecule (Mol.ofSmiles! s).n`.  To print it, `#eval` may rebuild the value
+as an expression or unify its type, and either makes the elaborator reduce
+`(Mol.ofSmiles! s).n` — the whole parse — in the kernel: instant for ethanol,
+unbounded for an aromatic ring.  Print a `List` (`.toList`) or wrap the value
+in the non-dependent bundle `Mol` (`Mol.canonicalize`, `Mol.normalize`).
+Compiled code (`lake exe …`) is unaffected; only the interactive path is.
 
 ## 9. Next steps
 

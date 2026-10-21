@@ -7,6 +7,7 @@ import LeanSMILES.Chem.Atom
 import LeanSMILES.Chem.Bond
 import LeanSMILES.Chem.Molecule
 import LeanSMILES.Chem.Graph
+import LeanSMILES.Chem.BondMatrix
 import LeanSMILES.SMILES.Token
 import LeanSMILES.SMILES.Parse
 import LeanSMILES.SMILES.Write

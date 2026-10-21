@@ -65,7 +65,10 @@ A `Molecule n` is a `Vector Atom n` and a list of `Bond n` between distinct
 atoms with no duplicate bonds — the invariants are the type, so
 `Molecule.graph : SimpleGraph (Fin n)` and `Molecule.adjMatrix : Matrix (Fin n) (Fin n) ℚ`
 come with Mathlib's theorems (`sum_degrees`, `card_edgeFinset`, `relabelIso`,
-`canonicalize_iso`).  The parser checks syntax, not valence; the only chemistry
+`canonicalize_iso`).  The matrices also exist as subtypes that say they come
+from a molecule — `BondMatrix n` (bond orders, O(1) lookups) and `FlatMatrix n`
+(0/1, Mathlib's `IsAdjMatrix`) — with `normalEquiv : {m // m.IsNormal} ≃ Vector Atom n × BondMatrix n`
+proving that nothing but bond orientation is lost.  The parser checks syntax, not valence; the only chemistry
 applied is the OpenSMILES implicit-hydrogen rule.  Canonical SMILES is
 colour refinement plus exhaustive tie-breaking (lexicographically smallest
 string), so it is canonical by construction rather than by matching RDKit.
