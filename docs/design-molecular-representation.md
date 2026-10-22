@@ -54,7 +54,7 @@ Design choices, and the reason for each:
   internally and converts once.
 * **`BondKind` is the data, `ℚ` is a view.**  `BondKind.order : BondKind → ℚ`
   puts the aromatic bond at `3/2`.  Featurization one-hots the kind, matrices
-  sum the order, and no `Float` appears anywhere (`Scalar.lean` is for the ML
+  sum the order, and no `Float` appears anywhere (`LeanLearn/Scalar.lean` is for the ML
   side).  There is no zero-order kind: the SMILES dot is the *absence* of a
   bond, and a salt is a disconnected graph.
 * **`Element` is a 118-constructor enumeration** in atomic-number order, so
