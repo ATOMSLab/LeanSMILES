@@ -8,7 +8,8 @@ Writes datasets/egfr-classification.csv, the answer file for `lake exe
 logistic-test`, with one row per molecule:
   name, smiles, label (1 active / 0 inactive / empty for FDA drugs),
   split (train / test / fda), sklearn_proba (P(active) from the fully converged
-  scikit-learn model), sklearn_pred (0/1)
+  scikit-learn model), sklearn_pred (0/1), rdkit_bits (RDKit's on-bits,
+  space-separated: the exact features scikit-learn was trained on)
 
 The split is scikit-learn's train_test_split(test_size=0.20, random_state=0),
 as in the lecture. The model is LogisticRegression(C=1.0) (L2 penalty, intercept
@@ -78,10 +79,11 @@ def main():
     rows += [(name, s, "", "fda", X_fda[k]) for k, (name, s) in enumerate(fda)]
     with open(OUT, "w", newline="") as f:
         w = csv.writer(f, lineterminator="\n")
-        w.writerow(["name", "smiles", "label", "split", "sklearn_proba", "sklearn_pred"])
+        w.writerow(["name", "smiles", "label", "split", "sklearn_proba", "sklearn_pred", "rdkit_bits"])
         for name, s, label, sp, x in rows:
             p = exact.predict_proba(x.reshape(1, -1))[0, 1]
-            w.writerow([name, s, label, sp, f"{p:.12f}", int(p >= 0.5)])
+            bits = " ".join(str(j) for j in np.flatnonzero(x))
+            w.writerow([name, s, label, sp, f"{p:.12f}", int(p >= 0.5), bits])
     for k, (name, _) in enumerate(fda):
         print(f"  {name:12s} P(active) = {exact.predict_proba(X_fda[k:k + 1])[0, 1]:.4f}")
     print(f"wrote {len(rows)} rows to {OUT}")

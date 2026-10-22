@@ -32,23 +32,6 @@ root = "LeanSMILES.Tests.Oracle"
 name = "morgan-test"
 root = "LeanSMILES.Tests.Morgan"
 
-# Tests for LeanSMILES.Canonical, the RDKit port with full sanitization
-[[lean_exe]]
-name = "canonical-test"
-root = "LeanSMILES.Tests.Canonical"
-
-[[lean_exe]]
-name = "phase1-test"
-root = "LeanSMILES.Tests.Phase1"
-
-[[lean_exe]]
-name = "canonical-validity-test"
-root = "LeanSMILES.Tests.CanonicalValidity"
-
-[[lean_exe]]
-name = "canonical-morgan-test"
-root = "LeanSMILES.Tests.CanonicalMorgan"
-
 # Logistic regression on Morgan fingerprints vs scikit-learn
 [[lean_exe]]
 name = "logistic-test"

@@ -77,10 +77,10 @@ rather than by matching RDKit.
 Open `LeanSMILES/Examples/caffeine.lean` for one molecule walked through every
 representation — tokens, atoms, bonds, graph, matrices, normal form, canonical
 ranks, fingerprint — and `LeanSMILES/Examples/smiles.lean` for more; design and
-comparison with `LeanSMILES.Canonical` (below) in
+comparison with the `canonical-smiles` branch in
 `docs/design-molecular-representation.md`.
 
-Tests against RDKit's answers (oracle files made by `tools/rdkit_oracle.py` and `tools/rdkit_fuzz.py`):
+Tests against RDKit's answers (oracle files from the `canonical-smiles` branch):
 
 ```bash
 lake exe validity-test   # 10 000 broken SMILES: accepts everything RDKit accepts (0 parser bugs)
@@ -91,7 +91,7 @@ lake exe morgan-test     # Morgan fingerprints: ring membership = RDKit's, bits 
 ### Morgan fingerprints
 
 `LeanSMILES.Fingerprint.Morgan` ports RDKit's `GetMorganGenerator(radius=2, fpSize=2048)`
-(from the port in `LeanSMILES/Canonical/Morgan.lean`) onto `Molecule n`: `morganIds` (unfolded
+(from the `canonical-smiles` branch's port) onto `Molecule n`: `morganIds` (unfolded
 identifiers with counts), `morganBits` (sorted on-bits), `morganVector : Vector Bool 2048`,
 `inRingVector`, and an exact `tanimoto : … → ℚ`.  It hashes the graph *as written*, so the
 bits equal RDKit's exactly where the as-written bond types and hydrogen counts equal RDKit's
@@ -103,71 +103,25 @@ under relabeling of the atoms.
 #eval tanimoto (Mol.ofSmiles! "CCO").morganBits (Mol.ofSmiles! "CCCO").morganBits
 ```
 
-## RDKit-exact pipeline: `LeanSMILES.Canonical`
-
-A second, untyped pipeline (`Chem.Mol`, arrays) that ports RDKit's sanitization
-(hydrogens, cleanup, valence checks, kekulization, aromaticity, removeHs) and so
-matches RDKit exactly, where the typed toolkit above deliberately stops at syntax.
-The plan is to move these passes onto `Molecule n`.
-
-### SMILES → canonical SMILES (RDKit's string)
-
-`LeanSMILES.Canonical` turns any SMILES into the same canonical
-string as RDKit's `Chem.MolToSmiles(Chem.MolFromSmiles(s), isomericSmiles=False)`:
-
-```lean
-import LeanSMILES.Canonical
-#eval Chem.canonicalSmiles "OCC"            -- Except.ok "CCO"
-#eval Chem.canonicalSmiles "C1=CC=CC=C1"    -- Except.ok "c1ccccc1"
-```
-
-Open `LeanSMILES/Examples/canonical.lean` for more. The code is in four files
-under `LeanSMILES/Canonical/`: `Molecule` (atoms, bonds), `Parse` (SMILES text →
-graph), `Sanitize` (RDKit's hydrogens, rings, kekulization, aromaticity) and
-`Write` (canonical atom ranking and output).
-
-Tests against RDKit (answers in `datasets/*-oracle.csv`, made by
-`tools/rdkit_oracle.py`):
-
-```bash
-lake exe canonical-test          # canonical SMILES
-lake exe canonical-morgan-test   # Morgan fingerprints (bits and unfolded identifiers)
-lake exe logistic-test           # EGFR classification vs scikit-learn
-lake exe phase1-test             # every atom and bond of the molecule graph
-lake exe canonical-validity-test # invalid SMILES rejected exactly when RDKit rejects them
-```
-
-### Morgan fingerprints (after sanitization)
-
-`LeanSMILES.Canonical.Morgan` computes Morgan (ECFP-like) fingerprints with the
-same bits as RDKit's `GetMorganGenerator(radius=2, fpSize=2048)`:
-
-```lean
-import LeanSMILES.Canonical.Morgan
-#eval Chem.morganBits "CCO"                 -- Except.ok [80, 222, 294, 807, 1057, 1410]
-```
-
-`LeanSMILES/Examples/morgan.lean` also shows Tanimoto similarity, isotopes and
-the bit vector for ML. Test: `lake exe canonical-morgan-test` (bits and unfolded
-identifiers); `lake exe canonical-morgan-test datasets/isotope-cases-oracle.csv` for
-isotope-labelled molecules.
-
-### Classification with Morgan fingerprints
+## Classification with Morgan fingerprints
 
 `LeanSMILES.ML.Logistic` trains L2-regularized logistic regression (scikit-learn's
-`LogisticRegression()` objective) on Morgan fingerprint bits. It is written over
-`ScalarLike` (`LeanSMILES/Scalar.lean`), so it runs on `Float`.
+`LogisticRegression()` objective) on Morgan fingerprint bits from
+`LeanSMILES.Fingerprint.Morgan`. It is written over `ScalarLike`
+(`LeanSMILES/Scalar.lean`), so it runs on `Float`.
 `LeanSMILES/Examples/classification.lean` redoes ENCH 470 Lecture 21: EGFR
 actives vs. inactives (`ench470-content/`), test accuracy 0.925, then the five
-FDA-approved EGFR drugs. `lake exe logistic-test` checks every molecule's
-prediction and probability against scikit-learn (`tools/sklearn_egfr.py`,
-`datasets/egfr-classification.csv`).
+FDA-approved EGFR drugs.
 
-Hydrogens written as separate atoms are handled like RDKit: ordinary `[H]`
-atoms are folded into their neighbour's H count (`[H]C([H])([H])[H]` → `C`),
-while isotopic, charged and stereo-defining ones stay atoms.
+```bash
+lake exe logistic-test   # EGFR classification vs scikit-learn (tools/sklearn_egfr.py)
+```
 
-Design notes, RDKit references and results: `docs/scope-canonical-smiles-morgan.md`.
+The test trains twice: on RDKit's fingerprint bits (stored in
+`datasets/egfr-classification.csv`), where every probability matches
+scikit-learn's to 10⁻⁶, and on Lean's own `morganFeatures`, which differ from
+RDKit's sanitized fingerprints on 30 of the 205 molecules (no aromaticity
+perception yet) but give the same predicted class for every molecule.
 
 ## References
 

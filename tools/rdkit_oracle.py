@@ -2,15 +2,14 @@
 
 For every molecule in the Delaney CSV, writes RDKit's canonical SMILES, its
 Morgan fingerprint (radius 2, 2048 bits), and per-atom data the Lean parser
-should reproduce. See docs/scope-canonical-smiles-morgan.md.
+should reproduce. Read by `lake exe oracle-test` and `lake exe morgan-test`.
 
-Also writes a second file with the same molecules re-written in Kekulé form
-(no lowercase aromatic atoms), to test aromaticity perception.
+Optionally also writes a second file with the same molecules re-written in
+Kekulé form (no lowercase aromatic atoms), to test aromaticity perception.
 
 Usage:
     python tools/rdkit_oracle.py [input.csv] [output.csv] [kekule-output.csv]
-Defaults: datasets/delaney-processed.csv -> datasets/delaney-oracle.csv,
-          datasets/delaney-kekule-oracle.csv
+Defaults: datasets/delaney-processed.csv -> datasets/delaney-oracle.csv
 """
 import csv
 import sys
@@ -38,7 +37,7 @@ COLUMNS = [
     "atom_in_ring",       # per atom 1/0
     "bonds",              # per bond "i-j:t" (i < j), sorted; t = RDKit bond type 1/2/3/12(aromatic)
     "needs_aromaticity",  # 1 if the as-written graph + cleanup rules 1-2 still differ from RDKit
-    "canonical_smiles_nostereo",  # MolToSmiles(mol, isomericSmiles=False): what Chem.canonicalSmiles gives
+    "canonical_smiles_nostereo",  # MolToSmiles(mol, isomericSmiles=False)
 ]
 
 
@@ -116,7 +115,7 @@ def write_oracle(smiles_list, dst, gen):
 
 
 def main(src="datasets/delaney-processed.csv", dst="datasets/delaney-oracle.csv",
-         kekule_dst="datasets/delaney-kekule-oracle.csv"):
+         kekule_dst=None):
     with open(src, newline="") as f:
         smiles_list = [row["smiles"].strip() for row in csv.DictReader(f)]
 
@@ -126,8 +125,9 @@ def main(src="datasets/delaney-processed.csv", dst="datasets/delaney-oracle.csv"
     # Same molecules written without lowercase aromatic atoms (C1=CC=CC=C1 style),
     # to test that aromaticity is perceived rather than read from the input.
     # Atom order follows these new strings, so rows line up by index only.
-    kekule = [kekule_smiles(s) for s in smiles_list]
-    write_oracle(kekule, kekule_dst, gen)
+    if kekule_dst:
+        kekule = [kekule_smiles(s) for s in smiles_list]
+        write_oracle(kekule, kekule_dst, gen)
 
 
 def kekule_smiles(s):

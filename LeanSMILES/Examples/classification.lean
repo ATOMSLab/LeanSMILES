@@ -10,7 +10,7 @@ every step runs in Lean:
 
 | Lecture 21 (Python) | Lean |
 |---|---|
-| `rdFingerprintGenerator.GetFPs(mols)` | `Chem.morganFeatures s` (the same 2048 bits) |
+| `rdFingerprintGenerator.GetFPs(mols)` | `morganFeatures s` (2048 bits) |
 | `y = 1` active, `0` inactive | `true` / `false` |
 | `train_test_split(test_size=0.20, random_state=0)` | the same split, read from the data file |
 | `LogisticRegression(random_state=0).fit(X, y)` | `fitLogistic {} 2048 train` |
@@ -24,7 +24,7 @@ takes about a second).
 -/
 
 -- A molecule becomes the list of its on-bits (about 40 of 2048 for drug-like molecules)
-#eval Chem.morganFeatures "CCO"                    -- ethanol: 6 bits
+#eval morganFeatures "CCO"                    -- ethanol: 6 bits
 
 -- The logistic function turns a score into a probability
 #eval [-4.0, -1.0, 0.0, 1.0, 4.0].map (sigmoid (K := Float))
@@ -40,13 +40,13 @@ structure Compound where
 def loadMolecules : IO (Array Compound) := do
   let lines := (← IO.FS.lines "datasets/egfr-classification.csv").toList.drop 1
   return (lines.filterMap fun l => match l.splitOn "," with
-    | [n, s, y, sp, _, _] =>
+    | [n, s, y, sp, _, _, _] =>
       some ⟨n, s, if y == "1" then some true else if y == "0" then some false else none, sp⟩
     | _ => none).toArray
 
 /-- Features and labels of the molecules in one split. -/
 def dataset (mols : Array Compound) (split : String) : Array (SparseBits × Bool) :=
-  mols.filterMap fun m => match m.split == split, m.active, Chem.morganFeatures m.smiles with
+  mols.filterMap fun m => match m.split == split, m.active, morganFeatures m.smiles with
     | true, some y, .ok x => some (x, y)
     | _, _, _ => none
 
@@ -66,7 +66,7 @@ def dataset (mols : Array Compound) (split : String) : Array (SparseBits × Bool
   -- the five FDA-approved EGFR drugs
   IO.println "FDA drugs, P(active):"
   for m in mols.filter (·.split == "fda") do
-    if let .ok x := Chem.morganFeatures m.smiles then
+    if let .ok x := morganFeatures m.smiles then
       IO.println s!"  {m.name}: {model.proba x}"
   -- the fingerprint bits with the largest weights (positive = points to "active")
   let top := ((List.range 2048).map fun j => (j, model.weights[j]!)).mergeSort
@@ -74,5 +74,5 @@ def dataset (mols : Array Compound) (split : String) : Array (SparseBits × Bool
   IO.println s!"largest weights (bit, weight): {top}"
   -- any new SMILES
   for s in ["c1ccccc1", "COc1cc2ncnc(Nc3ccccc3)c2cc1OC"] do
-    if let .ok x := Chem.morganFeatures s then
+    if let .ok x := morganFeatures s then
       IO.println s!"  {s}: P(active) = {model.proba x}"

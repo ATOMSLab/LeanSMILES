@@ -6,18 +6,18 @@ RDKit's Morgan atom invariant includes
 mass from RDKit's table, or the isotope number itself if the isotope is not in
 the table (Atom.cpp:644-655).
 
-So Lean needs, per element in Canonical/Molecule.lean:
+So Lean needs, per element:
   * the atomic weight (stored in millionths, exact for RDKit's values), and
   * the known isotopes whose exact mass gives a DIFFERENT shift than the
     isotope number would (all other isotopes follow the "isotope number" rule).
 
 Prints the Lean definitions to paste between the GENERATED markers in
-LeanSMILES/Canonical/Molecule.lean:
+LeanSMILES/Fingerprint/Morgan.lean:
     python tools/rdkit_isotope_table.py
 """
 from rdkit import Chem
 
-# Elements in LeanSMILES/Canonical/Molecule.lean
+# Elements covered by the table in LeanSMILES/Fingerprint/Morgan.lean
 ZS = [1, 2, 4, 5, 6, 7, 8, 9, 10, 13, 14, 15, 16, 17, 18, 31, 32, 33, 34, 35, 36,
       49, 50, 51, 52, 53, 54]
 MAX_ISOTOPE = 400  # RDKit's tables stop well below this for these elements

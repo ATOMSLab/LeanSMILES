@@ -1,5 +1,5 @@
 import LeanSMILES.Scalar
-import LeanSMILES.Canonical.Morgan
+import LeanSMILES.Fingerprint.Morgan
 
 /-!
 # Logistic regression on Morgan fingerprints
@@ -173,14 +173,10 @@ def confusionMatrix (m : LogisticModel K) (data : Array (SparseBits × Bool)) : 
   let count (y p : Bool) := (data.filter fun (x, y') => y' == y && m.predict x == p).size
   [[count false false, count false true], [count true false, count true true]]
 
-end LeanSMILES.ML
-
-namespace Chem
-
 /-- Morgan on-bits of a SMILES string as a sparse feature vector (radius 2,
-2048 bits by default), ready for `LeanSMILES.ML.fitLogistic`. -/
-def morganFeatures (s : String) (radius : Nat := 2) (fpSize : Nat := 2048) :
-    Except String LeanSMILES.ML.SparseBits :=
-  (morganBits s radius fpSize).map List.toArray
+2048 bits by default), ready for `fitLogistic`. -/
+def morganFeatures (s : String) (radius : ℕ := 2) (fpSize : ℕ := 2048) :
+    Except SMILES.ParseError SparseBits :=
+  (SMILES.morganBits s radius fpSize).map List.toArray
 
-end Chem
+end LeanSMILES.ML

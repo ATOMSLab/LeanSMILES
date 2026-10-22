@@ -3,7 +3,7 @@
 Takes real SMILES (Delaney + RDKit's bundled NCI sample), applies one or two
 random single-character edits (insert / delete / replace with a SMILES token),
 and records whether RDKit's MolFromSmiles accepts each result. The Lean side
-(`lake exe canonical-validity-test`) must agree on every line, apart from elements that
+(`lake exe validity-test`) must agree on every line, apart from elements that
 are not in Chem/Element.lean (it reports those separately).
 
 Usage:
