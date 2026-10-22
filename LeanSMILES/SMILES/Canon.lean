@@ -3,6 +3,7 @@ Copyright (c) 2026 Tyler Josephson. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Tyler Josephson
 -/
+import LeanSMILES.Chem.Graph
 import LeanSMILES.SMILES.Parse
 import LeanSMILES.SMILES.Write
 import Mathlib.Data.Fintype.Inv
@@ -35,8 +36,8 @@ canonical).
 **Relabelling.** `canonicalPerm` turns the winning ranks into an
 `Equiv.Perm (Fin n)` (checked bijective by decision, inverted computably), and
 `canonicalize` relabels the molecule by it — an isomorphism of molecular
-graphs, `Molecule.canonicalizeIso` in `LeanSMILES.Chem.Graph`, by
-`Molecule.relabelIso`.
+graphs, `Molecule.canonicalizeIso`, by `Molecule.relabelIso`
+(`LeanSMILES.Chem.Graph`).
 
 Ranks are `Vector ℕ n` *data*, never functions: Lean eta-expands a definition
 that returns a closure, so a rank-as-function would recompute every rank on
@@ -180,13 +181,19 @@ def canonicalPerm (m : Molecule n) (budget : ℕ := 1024) : Equiv.Perm (Fin n) :
   else Equiv.refl _
 
 /-- The molecule with its atoms in canonical order. That this changes labels
-and nothing else is `Molecule.canonicalizeIso` (`LeanSMILES.Chem.Graph`). -/
+and nothing else is `canonicalizeIso`. -/
 def canonicalize (m : Molecule n) (budget : ℕ := 1024) : Molecule n :=
   m.relabel (m.canonicalPerm budget)
 
 lemma numBonds_canonicalize (m : Molecule n) (budget : ℕ := 1024) :
     (m.canonicalize budget).numBonds = m.numBonds :=
   m.numBonds_relabel _
+
+/-- Canonicalization changes labels and nothing else: the canonical molecule's
+graph is isomorphic to the original's. -/
+def canonicalizeIso (m : Molecule n) (budget : ℕ := 1024) :
+    SimpleGraph.Iso m.graph (m.canonicalize budget).graph :=
+  m.relabelIso _
 
 end LeanSMILES.Molecule
 

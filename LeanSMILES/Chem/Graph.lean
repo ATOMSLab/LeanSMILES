@@ -3,16 +3,14 @@ Copyright (c) 2026 Tyler Josephson. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Tyler Josephson
 -/
-import LeanSMILES.SMILES.Canon
-import Mathlib.Combinatorics.SimpleGraph.AdjMatrix
+import LeanSMILES.Chem.Molecule
+import LeanSMILES.Chem.BondMatrix
 import Mathlib.Combinatorics.SimpleGraph.DegreeSum
-import Mathlib.LinearAlgebra.Matrix.Notation
-import Mathlib.LinearAlgebra.Matrix.Symmetric
 
 /-!
 # LeanSMILES.Chem.Graph
 
-The two mathematical views of a `Molecule n`:
+The mathematical views of a `Molecule n`, and the proofs that they agree:
 
 * `Molecule.graph : SimpleGraph (Fin n)` — Mathlib's simple graph on the atom
   indices, adjacent when some bond joins them.  It has decidable adjacency, so
@@ -21,15 +19,29 @@ The two mathematical views of a `Molecule n`:
 * `Molecule.adjMatrix : Matrix (Fin n) (Fin n) ℚ` — the bond-order-weighted
   adjacency matrix, symmetric with zero diagonal; it is nonzero exactly where
   the graph is adjacent, and Mathlib's 0/1 `adjMatrix` is its indicator.
+* `Molecule.toBondMatrix : BondMatrix n` and `Molecule.toFlatMatrix : FlatMatrix n`
+  — the same two matrices as the subtypes of `LeanSMILES.Chem.BondMatrix`, the
+  first backed by a materialized table so that `B i j` is an O(1) lookup.
+
+`ofAdjMatrix` decodes a valid matrix back into a molecule whose matrix, graph
+and bond kinds are the originals.  **Nothing is lost**: what a symmetric
+matrix cannot hold is the `src → dst` orientation of a bond (the `/` `\`
+marks) and the order of the bond list.  `normalize` forgets exactly those,
+`IsNormal` says a molecule already has, and `normalEquiv` is the theorem:
+normal molecules are *exactly* atoms together with a bond matrix.
 
 Relabelling the atoms by a permutation gives an isomorphic graph
 (`relabelIso`) — which is what makes canonicalisation (`LeanSMILES.SMILES.Canon`)
 a change of *labels* and nothing else.
 -/
 
-namespace LeanSMILES.Molecule
+namespace LeanSMILES
 
-variable {n : ℕ} (m : Molecule n)
+variable {n : ℕ}
+
+namespace Molecule
+
+variable (m : Molecule n)
 
 /-! ### The simple graph -/
 
@@ -131,14 +143,6 @@ graph determines it. -/
 lemma toGraph_adjMatrix : (m.graph.isAdjMatrix_adjMatrix ℚ).toGraph = m.graph :=
   SimpleGraph.toGraph_adjMatrix_eq (G := m.graph) (α := ℚ)
 
-/-- The graph whose edges are the nonzero entries of a matrix. -/
-def graphOfMatrix (A : Matrix (Fin n) (Fin n) ℚ) : SimpleGraph (Fin n) :=
-  SimpleGraph.fromRel fun i j ↦ A i j ≠ 0
-
-lemma graphOfMatrix_adj (A : Matrix (Fin n) (Fin n) ℚ) (i j : Fin n) :
-    (graphOfMatrix A).Adj i j ↔ i ≠ j ∧ (A i j ≠ 0 ∨ A j i ≠ 0) :=
-  SimpleGraph.fromRel_adj _ _ _
-
 /-- The weighted matrix determines the graph. -/
 theorem graphOfMatrix_adjMatrix : graphOfMatrix m.adjMatrix = m.graph := by
   ext i j
@@ -182,14 +186,8 @@ theorem adjMatrix_eq_order_iff (i j : Fin n) (k : BondKind) :
     rw [m.bondBetween_eq_some_iff.mpr ⟨hb, he⟩]
     rfl
 
-/-- A matrix that is the weighted adjacency matrix of *some* molecule:
-symmetric, zero on the diagonal, every nonzero entry a bond order. -/
-structure IsBondMatrix (A : Matrix (Fin n) (Fin n) ℚ) : Prop where
-  symm : ∀ i j, A i j = A j i
-  diag : ∀ i, A i i = 0
-  entry : ∀ i j, A i j ≠ 0 → ∃ k : BondKind, A i j = k.order
-
-lemma isBondMatrix_adjMatrix : IsBondMatrix m.adjMatrix where
+/-- A molecule's weighted adjacency matrix is a bond matrix. -/
+theorem isBondMatrix_adjMatrix : IsBondMatrix m.adjMatrix where
   symm i j := by rw [adjMatrix_apply, adjMatrix_apply, bondBetween_symm]
   diag := m.adjMatrix_apply_self
   entry i j h := by
@@ -356,10 +354,139 @@ def relabelIso (σ : Equiv.Perm (Fin n)) : SimpleGraph.Iso m.graph (m.relabel σ
   toEquiv := σ
   map_rel_iff' := fun {i j} ↦ m.relabel_adj_iff σ i j
 
-/-- Canonicalization (`LeanSMILES.SMILES.Canon`) changes labels and nothing
-else: the canonical molecule's graph is isomorphic to the original's. -/
-def canonicalizeIso (budget : ℕ := 1024) :
-    SimpleGraph.Iso m.graph (m.canonicalize budget).graph :=
-  m.relabelIso _
+end Molecule
 
-end LeanSMILES.Molecule
+/-- Decode a bond matrix, given the atoms. -/
+def BondMatrix.toMolecule (B : BondMatrix n) (atoms : Vector Atom n) : Molecule n :=
+  Molecule.ofAdjMatrix atoms B.1
+
+namespace Molecule
+
+variable (m : Molecule n)
+
+/-! ### The molecule's matrices as subtypes, with O(1) lookups -/
+
+/-- The weighted adjacency matrix as a table. -/
+def adjTable : Vector (Vector ℚ n) n :=
+  Vector.ofFn fun i ↦ Vector.ofFn fun j ↦ m.adjMatrix i j
+
+@[simp] lemma getElem_adjTable (i j : Fin n) : m.adjTable[i.val][j.val] = m.adjMatrix i j := by
+  simp [adjTable]
+
+lemma of_adjTable_eq_adjMatrix : (Matrix.of fun i j ↦ m.adjTable[i][j]) = m.adjMatrix := by
+  ext i j
+  rw [Matrix.of_apply]
+  exact m.getElem_adjTable i j
+
+/-- The molecule's bond matrix, backed by `adjTable` so that `B i j` is O(1). -/
+def toBondMatrix : BondMatrix n :=
+  let t := m.adjTable
+  ⟨Matrix.of fun i j ↦ t[i][j], m.of_adjTable_eq_adjMatrix ▸ m.isBondMatrix_adjMatrix⟩
+
+@[simp] lemma val_toBondMatrix : m.toBondMatrix.1 = m.adjMatrix := m.of_adjTable_eq_adjMatrix
+
+lemma toBondMatrix_apply (i j : Fin n) : m.toBondMatrix i j = m.adjMatrix i j :=
+  congrFun (congrFun m.val_toBondMatrix i) j
+
+@[simp] lemma graph_toBondMatrix : m.toBondMatrix.graph = m.graph := by
+  unfold BondMatrix.graph
+  rw [val_toBondMatrix, graphOfMatrix_adjMatrix]
+
+lemma kindAt_toBondMatrix (i j : Fin n) :
+    m.toBondMatrix.kindAt i j = (m.bondBetween i j).map (·.kind) := by
+  unfold BondMatrix.kindAt
+  rw [toBondMatrix_apply, adjMatrix_apply]
+  rcases m.bondBetween i j with _ | b
+  · norm_num [BondKind.ofOrder?]
+  · simp
+
+/-- The flat 0/1 matrix, from the graph. -/
+def toFlatMatrix : FlatMatrix n := ⟨m.graph.adjMatrix ℚ, m.graph.isAdjMatrix_adjMatrix ℚ⟩
+
+/-- Flattening the bond matrix is the graph's own 0/1 matrix. -/
+theorem flatten_toBondMatrix : m.toBondMatrix.flatten = m.toFlatMatrix := by
+  apply FlatMatrix.ext
+  intro i j
+  change (if m.toBondMatrix i j = 0 then 0 else 1) = m.graph.adjMatrix ℚ i j
+  rw [toBondMatrix_apply, m.graph_adjMatrix_eq, Matrix.map_apply]
+
+@[simp] lemma graph_toFlatMatrix : m.toFlatMatrix.graph = m.graph := m.toGraph_adjMatrix
+
+/-! ### Normal form: a molecule that is nothing but atoms and a bond matrix -/
+
+/-- Forget bond orientation and bond-list order: decode the molecule's own
+matrix. -/
+def normalize : Molecule n := ofAdjMatrix m.atoms m.adjMatrix
+
+/-- Already in normal form. -/
+def IsNormal : Prop := m.normalize = m
+
+@[ext] lemma ext {m m' : Molecule n} (ha : m.atoms = m'.atoms) (hb : m.bonds = m'.bonds) :
+    m = m' := by
+  cases m
+  cases m'
+  cases ha
+  cases hb
+  rfl
+
+instance : DecidableEq (Molecule n) := fun m m' ↦
+  decidable_of_iff (m.atoms = m'.atoms ∧ m.bonds = m'.bonds)
+    ⟨fun ⟨h1, h2⟩ ↦ ext h1 h2, fun h ↦ h ▸ ⟨rfl, rfl⟩⟩
+
+instance : DecidablePred (IsNormal (n := n)) := fun m ↦
+  inferInstanceAs (Decidable (m.normalize = m))
+
+@[simp] lemma atoms_normalize : m.normalize.atoms = m.atoms := rfl
+
+@[simp] lemma adjMatrix_normalize : m.normalize.adjMatrix = m.adjMatrix :=
+  m.adjMatrix_ofAdjMatrix_adjMatrix
+
+@[simp] lemma graph_normalize : m.normalize.graph = m.graph :=
+  m.graph_ofAdjMatrix_adjMatrix
+
+theorem normalize_normalize : m.normalize.normalize = m.normalize := by
+  unfold normalize
+  rw [atoms_ofAdjMatrix, adjMatrix_ofAdjMatrix_adjMatrix]
+
+lemma isNormal_normalize : m.normalize.IsNormal := m.normalize_normalize
+
+lemma isNormal_ofAdjMatrix (atoms : Vector Atom n) {A : Matrix (Fin n) (Fin n) ℚ}
+    (hA : IsBondMatrix A) : (ofAdjMatrix atoms A).IsNormal := by
+  unfold IsNormal normalize
+  rw [atoms_ofAdjMatrix, adjMatrix_ofAdjMatrix atoms hA]
+
+/-- In normal form, every bond points from the smaller index to the larger
+and carries no direction mark. -/
+lemma IsNormal.bond_spec {m : Molecule n} (h : m.IsNormal) {b : Bond n} (hb : b ∈ m.bonds) :
+    b.src < b.dst ∧ b.dir = none := by
+  have h' : b ∈ m.normalize.bonds := by
+    rw [show m.normalize = m from h]
+    exact hb
+  obtain ⟨hlt, -, hd⟩ := mem_bondsOfMatrix.mp h'
+  exact ⟨hlt, hd⟩
+
+/-- **Nothing is lost**: molecules in normal form are exactly atoms together
+with a bond matrix. -/
+def normalEquiv : {m : Molecule n // m.IsNormal} ≃ Vector Atom n × BondMatrix n where
+  toFun m := (m.1.atoms, m.1.toBondMatrix)
+  invFun p := ⟨p.2.toMolecule p.1, isNormal_ofAdjMatrix p.1 p.2.2⟩
+  left_inv m := by
+    apply Subtype.ext
+    change ofAdjMatrix m.1.atoms m.1.toBondMatrix.1 = m.1
+    rw [val_toBondMatrix]
+    exact m.2
+  right_inv p := by
+    refine Prod.ext rfl (BondMatrix.ext fun i j ↦ ?_)
+    change (p.2.toMolecule p.1).toBondMatrix.1 i j = p.2.1 i j
+    rw [val_toBondMatrix]
+    exact congrFun (congrFun (adjMatrix_ofAdjMatrix p.1 p.2.2) i) j
+
+end Molecule
+
+/-- Normal form of a bundled molecule. -/
+def Mol.normalize (M : Mol) : Mol := ⟨M.n, M.mol.normalize⟩
+
+/-- Whether a bundled molecule is in normal form. -/
+def Mol.isNormal (M : Mol) : Bool := decide M.mol.IsNormal
+
+end LeanSMILES
