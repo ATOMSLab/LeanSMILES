@@ -3,7 +3,9 @@ Copyright (c) 2026 DeMarko Fulcher. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: DeMarko Fulcher, Claude (Anthropic)
 -/
-import LeanLearn.Scalar
+module
+
+public import LeanLearn.Scalar
 
 /-!
 # LeanLearn.Regression.Problem
@@ -35,6 +37,8 @@ equations** `A θ = b`:
 Every solver in `Solvers.lean` works on `(A, b)`.
 -/
 
+@[expose] public section
+
 namespace LeanLearn.Regression
 
 /-- A length-`n` vector. -/
@@ -53,7 +57,7 @@ def sumFin (f : Fin n → K) : K := sumGen (List.finRange n) f
 /-- The count `n` as a scalar, by repeated addition (no `NatCast` needed). -/
 def count (n : ℕ) : K := nsmulGen n 1
 
-def dot (u v : Vec K n) : K := sumFin fun i ↦ u[i] * v[i]
+def dot (u v : Vec K n) : K := sumFin fun i : Fin n ↦ u[i] * v[i]
 
 def matVec (A : Mat K m n) (v : Vec K n) : Vec K m := Vector.ofFn fun i ↦ dot A[i] v
 

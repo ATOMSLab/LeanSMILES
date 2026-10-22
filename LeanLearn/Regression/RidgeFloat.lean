@@ -3,6 +3,8 @@ Copyright (c) 2026 Hao Liu. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Hao Liu
 -/
+module
+
 import Std
 
 /-!
@@ -22,6 +24,8 @@ With zero penalty, this solves the ordinary least-squares problem.
 The exact-real OLS proofs in `OLS.lean` do not certify this program's
 floating-point rounding errors or its regularized objective.
 -/
+
+public section
 
 namespace LeanLearn.Regression.RidgeFloat
 

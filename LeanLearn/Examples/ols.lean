@@ -3,7 +3,9 @@ Copyright (c) 2026 Hao Liu. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Hao Liu
 -/
-import LeanLearn.Regression.OLS
+module
+
+public import LeanLearn.Regression.OLS
 import Mathlib.Tactic.FinCases
 import Mathlib.Tactic.NormNum
 
@@ -13,6 +15,8 @@ import Mathlib.Tactic.NormNum
 These examples are checked proofs over `ℝ`, not numerical training experiments.
 The first column of each design matrix is the intercept column.
 -/
+
+public section
 
 namespace LeanLearn.Regression.OLS.Examples
 

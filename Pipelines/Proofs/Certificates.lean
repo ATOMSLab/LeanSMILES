@@ -3,10 +3,14 @@ Copyright (c) 2026 DeMarko Fulcher. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: DeMarko Fulcher, Claude (Anthropic)
 -/
-import Pipelines.Certificates
-import Pipelines.Proofs.Representation
-import LeanLearn.Proofs.Regression.GradientDescent
-import LeanLearn.Proofs.Regression.Certificates
+module
+
+public import Pipelines.Certificates
+public import Pipelines.Proofs.Representation
+public import LeanLearn.Proofs.Regression.GradientDescent
+public import LeanLearn.Proofs.Regression.Certificates
+import Mathlib.Tactic.Linarith
+import Mathlib.Tactic.Positivity
 
 /-!
 # Pipelines.Proofs.Certificates
@@ -32,6 +36,8 @@ training it**. Write `L` for the training loss of the pipeline's problem read in
 The bridge between the exact `ℚ` data and the `ℝ` reading is `normalMatrix_real` /
 `normalVector_real`, from `LeanLearn`'s `Problem.map_normalMatrix` / `map_normalVector`.
 -/
+
+@[expose] public section
 
 namespace Pipelines
 

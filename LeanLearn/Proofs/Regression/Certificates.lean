@@ -3,8 +3,10 @@ Copyright (c) 2026 DeMarko Fulcher. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: DeMarko Fulcher, Claude (Anthropic)
 -/
-import LeanLearn.Regression.Certificates
-import LeanLearn.Proofs.Regression.Iterative
+module
+
+public import LeanLearn.Regression.Certificates
+public import LeanLearn.Proofs.Regression.Iterative
 
 /-!
 # LeanLearn.Proofs.Regression.Certificates
@@ -18,6 +20,8 @@ Solver certificates — soundness, and the bridge from exact `ℚ` data to its `
   of `A` in `ℝ`, the bound on the right-hand side, and the certified excess below `ε` — the
   hypotheses of `loss_jacobi_le` and `loss_gaussSeidel_le`.
 -/
+
+@[expose] public section
 
 namespace LeanLearn.Regression
 

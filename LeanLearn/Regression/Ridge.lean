@@ -1,6 +1,10 @@
-import LeanLearn.Regression.OLS
-import Mathlib.LinearAlgebra.Matrix.PosDef
-import Mathlib.Data.Real.StarOrdered
+module
+
+public import LeanLearn.Regression.OLS
+public import Mathlib.LinearAlgebra.Matrix.PosDef
+public import Mathlib.Data.Real.StarOrdered
+import Mathlib.Tactic.Linarith
+import Mathlib.Tactic.Ring
 
 /-!
 # Ridge regression: exact specification and correctness
@@ -9,6 +13,9 @@ import Mathlib.Data.Real.StarOrdered
 an explicit intercept can be exempted by setting its penalty to zero.
 All optimization statements range over every real coefficient vector.
 -/
+
+@[expose] public section
+
 namespace LeanLearn.Regression.Ridge
 
 open Matrix

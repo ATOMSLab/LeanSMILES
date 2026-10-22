@@ -3,7 +3,9 @@ Copyright (c) 2026 DeMarko Fulcher. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: DeMarko Fulcher, Claude (Anthropic)
 -/
-import LeanLearn.Regression.Problem
+module
+
+public import LeanLearn.Regression.Problem
 
 /-!
 # LeanLearn.Regression.Solvers
@@ -30,6 +32,8 @@ excess-loss bound, when `A` is diagonally dominant with respect to some positive
 Gauss–Seidel never increases the loss; a fixed point of Jacobi solves the normal
 equations.
 -/
+
+@[expose] public section
 
 namespace LeanLearn.Regression
 

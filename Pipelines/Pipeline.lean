@@ -3,8 +3,10 @@ Copyright (c) 2026 DeMarko Fulcher. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: DeMarko Fulcher, Claude (Anthropic)
 -/
-import Pipelines.Representation
-import LeanLearn.Regression.Solvers
+module
+
+public import Pipelines.Representation
+public import LeanLearn.Regression.Solvers
 
 /-!
 # Pipelines.Pipeline
@@ -27,6 +29,8 @@ trained model from conditions checked without training it.
 The parsing and the molecules are `LeanSMILES`'s; the regression problem and its solvers
 are `LeanLearn`'s. This file only joins them.
 -/
+
+@[expose] public section
 
 namespace Pipelines
 

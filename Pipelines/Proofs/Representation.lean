@@ -3,9 +3,13 @@ Copyright (c) 2026 DeMarko Fulcher. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: DeMarko Fulcher, Claude (Anthropic)
 -/
-import Pipelines.Representation
-import LeanSMILES.SMILES.Canonicity
-import Mathlib.Algebra.Order.BigOperators.Ring.Finset
+module
+
+public import Pipelines.Representation
+public import LeanSMILES.SMILES.Canonicity
+public import Mathlib.Algebra.Order.BigOperators.Ring.Finset
+import Mathlib.Tactic.NormNum
+import Mathlib.Tactic.Ring
 
 /-!
 # Pipelines.Proofs.Representation
@@ -28,6 +32,8 @@ Molecular representations — Proofs.
   | `canonical r` | that of `r` |
   | `r₁ ++ r₂` | `R₁² + R₂²` |
 -/
+
+@[expose] public section
 
 namespace LeanSMILES
 

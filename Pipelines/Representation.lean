@@ -3,9 +3,11 @@ Copyright (c) 2026 DeMarko Fulcher. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: DeMarko Fulcher, Claude (Anthropic)
 -/
-import LeanSMILES.SMILES.Canon
-import LeanSMILES.Chem.Graph
-import LeanSMILES.Fingerprint.Morgan
+module
+
+public import LeanSMILES.SMILES.Canon
+public import LeanSMILES.Chem.Graph
+public import LeanSMILES.Fingerprint.Morgan
 
 /-!
 # Pipelines.Representation
@@ -40,6 +42,8 @@ feature vector, the form `LeanLearn.Classification.fitLogistic` takes.
 This file and `morganFeatures` are the only places the toolkit's fingerprints are read
 (`Molecule.morganVector`, `SMILES.morganBits`).
 -/
+
+@[expose] public section
 
 namespace LeanSMILES
 

@@ -3,7 +3,9 @@ Copyright (c) 2026 Hao Liu. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Hao Liu
 -/
-import LeanLearn.Regression.RidgeFloat
+module
+
+public import LeanLearn.Regression.RidgeFloat
 
 /-!
 # Numerical and input-validation checks for RidgeFloat
@@ -136,4 +138,4 @@ def run : IO Unit := do
 
 end LeanLearn.Tests.RidgeFloat
 
-def main : IO Unit := LeanLearn.Tests.RidgeFloat.run
+public def main : IO Unit := LeanLearn.Tests.RidgeFloat.run

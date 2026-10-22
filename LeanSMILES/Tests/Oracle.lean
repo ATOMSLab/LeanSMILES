@@ -3,9 +3,11 @@ Copyright (c) 2026 Tyler Josephson. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Tyler Josephson
 -/
-import LeanSMILES.Tests.OracleRow
-import Mathlib.Logic.Equiv.Fin.Basic
-import Mathlib.Logic.Equiv.Fin.Rotate
+module
+
+public import LeanSMILES.Tests.OracleRow
+public import Mathlib.Logic.Equiv.Fin.Basic
+public import Mathlib.Logic.Equiv.Fin.Rotate
 
 /-!
 # LeanSMILES.Tests.Oracle
@@ -36,7 +38,7 @@ lake exe oracle-test [datasets/delaney-oracle.csv]
 
 open LeanSMILES LeanSMILES.SMILES LeanSMILES.Tests
 
-def main (args : List String) : IO UInt32 := do
+public def main (args : List String) : IO UInt32 := do
   let path := args.headD "datasets/delaney-oracle.csv"
   let rows ← readRows path
   let mut parsed := 0

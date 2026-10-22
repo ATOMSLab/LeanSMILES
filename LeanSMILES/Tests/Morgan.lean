@@ -3,10 +3,12 @@ Copyright (c) 2026 Tyler Josephson. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Tyler Josephson
 -/
-import LeanSMILES.Fingerprint.Morgan
-import LeanSMILES.Tests.OracleRow
-import Mathlib.Logic.Equiv.Fin.Basic
-import Mathlib.Logic.Equiv.Fin.Rotate
+module
+
+public import LeanSMILES.Fingerprint.Morgan
+public import LeanSMILES.Tests.OracleRow
+public import Mathlib.Logic.Equiv.Fin.Basic
+public import Mathlib.Logic.Equiv.Fin.Rotate
 
 /-!
 # LeanSMILES.Tests.Morgan
@@ -43,7 +45,7 @@ def idsString (M : Mol) : String :=
 
 def inRingList (M : Mol) : List ℕ := M.mol.inRingVector.toList.map fun b ↦ if b then 1 else 0
 
-def main (args : List String) : IO UInt32 := do
+public def main (args : List String) : IO UInt32 := do
   let path := args.headD "datasets/delaney-oracle.csv"
   let rows ← readRows path
   let mut parsed := 0

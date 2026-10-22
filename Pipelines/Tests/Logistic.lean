@@ -1,5 +1,7 @@
-import LeanLearn.Classification.Logistic
-import Pipelines.Representation
+module
+
+public import LeanLearn.Classification.Logistic
+public import Pipelines.Representation
 
 /-!
 # Logistic regression test: EGFR classification vs scikit-learn
@@ -66,7 +68,7 @@ def compare (rows : Array Row) (feats : Array SparseBits) : IO (Float × List St
       IO.println s!"    {r.name}: lean {model.proba feats[i]!}  sklearn {r.skProba}"
   return (maxDiff, predMismatch)
 
-def main : IO UInt32 := do
+public def main : IO UInt32 := do
   let lines := (← IO.FS.lines "datasets/egfr-classification.csv").toList.drop 1
   let rows := (lines.filterMap fun l => match l.splitOn "," with
     | [n, s, y, sp, p, pr, bits] =>

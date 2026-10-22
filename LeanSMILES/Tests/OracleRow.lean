@@ -3,7 +3,9 @@ Copyright (c) 2026 Tyler Josephson. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Tyler Josephson
 -/
-import LeanSMILES.SMILES.Canon
+module
+
+public import LeanSMILES.SMILES.Canon
 
 /-!
 # LeanSMILES.Tests.OracleRow
@@ -21,6 +23,8 @@ Multi-value columns are space-separated; `bonds` entries are `i-j:t` with
 `i < j` and `t` RDKit's bond type (1/2/3/12); `morgan_ids` entries are
 `id:count`.  Atom order is the SMILES order, which this library keeps too.
 -/
+
+@[expose] public section
 
 namespace LeanSMILES.Tests
 

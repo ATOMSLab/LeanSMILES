@@ -1,8 +1,12 @@
-import LeanLearn.Regression.Ridge
+module
+
+public import LeanLearn.Regression.Ridge
 import Mathlib.Tactic.FinCases
 import Mathlib.Tactic.NormNum
 
 /-! # Kernel-checked ridge examples over exact real numbers -/
+
+public section
 namespace LeanLearn.Regression.Ridge.Examples
 open Matrix
 open scoped Matrix BigOperators

@@ -3,7 +3,9 @@ Copyright (c) 2026 DeMarko Fulcher. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: DeMarko Fulcher, Claude (Anthropic)
 -/
-import LeanLearn.Regression.Solvers
+module
+
+public import LeanLearn.Regression.Solvers
 
 /-!
 # LeanLearn.Regression.Certificates
@@ -32,6 +34,8 @@ The gradient-descent certificate needs no data, only a bound on the features, so
 stated where the features come from (for molecules, `Pipelines/Certificates.lean`).
 -/
 
+@[expose] public section
+
 namespace LeanLearn.Regression
 
 namespace Check
@@ -40,11 +44,11 @@ variable {n : ℕ}
 
 /-- `∑_{j≠i} |Aᵢⱼ| wⱼ`, exactly. -/
 def offDiagWeight (A : Mat ℚ n n) (w : Vec ℚ n) (i : Fin n) : ℚ :=
-  sumFin fun j ↦ if j = i then 0 else |A[i][j]| * w[j]
+  sumFin fun j : Fin n ↦ if j = i then 0 else |A[i][j]| * w[j]
 
 /-- `Γ = ∑ᵢⱼ |Aᵢⱼ| wᵢ wⱼ`, exactly. -/
 def weightedMass (A : Mat ℚ n n) (w : Vec ℚ n) : ℚ :=
-  sumFin fun i ↦ sumFin fun j ↦ |A[i][j]| * w[i] * w[j]
+  sumFin fun i : Fin n ↦ sumFin fun j : Fin n ↦ |A[i][j]| * w[i] * w[j]
 
 /-- The largest value of `f` over `Fin n` (`0` if `n = 0` or all values are negative). -/
 def maxFin (f : Fin n → ℚ) : ℚ := (List.finRange n).foldl (fun acc i ↦ max acc (f i)) 0
@@ -86,8 +90,8 @@ def check (W : SolverWitness n) (A : Mat ℚ n n) (b : Vec ℚ n) (k : ℕ) (ε 
 dominant (with positive diagonal). -/
 def unitWeights (A : Mat ℚ n n) (b : Vec ℚ n) : SolverWitness n :=
   let w : Vector ℚ n := Vector.replicate n 1
-  let ρ := Check.maxFin fun i ↦ Check.offDiagWeight A w i / A[i][i]
-  { weights := w, ratio := ρ, bound := Check.maxFin fun i ↦ |b[i]| / ((1 - ρ) * A[i][i]) }
+  let ρ := Check.maxFin fun i : Fin n ↦ Check.offDiagWeight A w i / A[i][i]
+  { weights := w, ratio := ρ, bound := Check.maxFin fun i : Fin n ↦ |b[i]| / ((1 - ρ) * A[i][i]) }
 
 end SolverWitness
 

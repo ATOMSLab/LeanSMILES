@@ -3,9 +3,14 @@ Copyright (c) 2026 DeMarko Fulcher. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: DeMarko Fulcher, Claude (Anthropic)
 -/
-import LeanLearn.Regression.Solvers
-import Mathlib.Algebra.Order.BigOperators.Ring.Finset
-import Mathlib.Algebra.BigOperators.Field
+module
+
+public import LeanLearn.Regression.Solvers
+public import Mathlib.Algebra.Order.BigOperators.Ring.Finset
+public import Mathlib.Algebra.BigOperators.Field
+import Mathlib.Tactic.Linarith
+import Mathlib.Tactic.GCongr
+import Mathlib.Tactic.Ring
 
 /-!
 # LeanLearn.Proofs.Regression.Basic
@@ -26,6 +31,8 @@ Over `ℝ`, for a problem `P` with normal equations `A θ = b` (`A = P.normalMat
 * **Degenerate coordinates** (`residual_eq_zero_of_diag_eq_zero`): if `Aᵢᵢ = 0` then the
   `i`-th equation is `0 = 0`, so Jacobi and Gauss–Seidel lose nothing by dividing by zero.
 -/
+
+@[expose] public section
 
 namespace LeanLearn.Regression
 

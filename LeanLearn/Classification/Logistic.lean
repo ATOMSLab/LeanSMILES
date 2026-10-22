@@ -1,4 +1,6 @@
-import LeanLearn.Scalar
+module
+
+public import LeanLearn.Scalar
 
 /-!
 # Logistic regression on sparse `0/1` features
@@ -25,6 +27,8 @@ bits. `Pipelines.morganFeatures` produces them from a SMILES string.
 Everything is written once over `ScalarLike` (`LeanLearn/Scalar.lean`):
 run it at `Float`; state theorems at `ℝ`.
 -/
+
+@[expose] public section
 
 namespace LeanLearn.Classification
 
@@ -172,6 +176,5 @@ columns = predicted class (0, 1), i.e. [[TN, FP], [FN, TP]]. -/
 def confusionMatrix (m : LogisticModel K) (data : Array (SparseBits × Bool)) : List (List Nat) :=
   let count (y p : Bool) := (data.filter fun (x, y') => y' == y && m.predict x == p).size
   [[count false false, count false true], [count true false, count true true]]
-
 
 end LeanLearn.Classification

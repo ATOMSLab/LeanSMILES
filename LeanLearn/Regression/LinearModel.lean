@@ -1,5 +1,7 @@
-import LeanLearn.Scalar
-import LeanLearn.Regression.Ridge
+module
+
+public import LeanLearn.Scalar
+public import LeanLearn.Regression.Ridge
 
 /-!
 # Scalar-polymorphic linear model and its exact-real interpretation
@@ -10,6 +12,9 @@ They use the same `PolynomialLike` interface as the `canonical-smiles` branch:
 the definitions execute at `Float` and their `ℝ` interpretation is proved here.
 No lawful ring instance or exact optimality theorem is asserted for `Float`.
 -/
+
+@[expose] public section
+
 namespace LeanLearn.Regression.LinearModel
 
 open Matrix

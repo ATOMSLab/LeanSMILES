@@ -3,7 +3,9 @@ Copyright (c) 2026 Hao Liu. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Hao Liu
 -/
-import LeanLearn.Regression.OLSFloat
+module
+
+public import LeanLearn.Regression.OLSFloat
 
 /-!
 # Numerical and input-validation checks for OLSFloat
@@ -151,4 +153,4 @@ def run : IO Unit := do
 
 end LeanLearn.Tests.OLSFloat
 
-def main : IO Unit := LeanLearn.Tests.OLSFloat.run
+public def main : IO Unit := LeanLearn.Tests.OLSFloat.run

@@ -390,6 +390,26 @@ ench470-content/      ENCH 470 course notebooks and data
 LICENSES/             TorchLean's MIT license
 ```
 
+### Module system
+
+Every file is a Lean `module`, so what a file exports is a decision, not an accident:
+
+* `public import` re-exports a dependency to whoever imports the file; a plain `import` is
+  private to the file. Project modules and the Mathlib modules whose types appear in
+  signatures are public; tactic-only imports (`Mathlib.Tactic.*`, `Std`, `Lean`) are private.
+  So `import LeanSMILES.SMILES.Canon` still brings the whole toolkit, and
+  `import LeanLearn.Regression.Solvers` the scalar interface and the regression problem.
+* Library files open `@[expose] public section`: their declarations are public and their
+  definition bodies can be unfolded downstream — which `decide +kernel`, `rfl` and
+  `simp [f]` need (the Delaney certificates reduce the SMILES parser in the kernel).
+  Theorem-only files open `public section`.
+* Examples and tests open `public section` too, so their theorems can be cited. A file
+  whose `#eval`s run code from another module also `meta import`s that module: under the
+  module system, code that runs at elaboration time is a separate phase, and a `meta
+  import` is what loads it there. The one file that proves certificates by `decide +kernel`
+  (`Pipelines/Examples/delaney.lean`) also `import all`s the three core modules whose array
+  loops the kernel has to run — core does not expose their bodies.
+
 ## References
 
 LeanSMILES builds on prior work in Lean, cheminformatics, and chemistry

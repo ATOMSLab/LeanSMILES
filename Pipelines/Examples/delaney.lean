@@ -3,8 +3,18 @@ Copyright (c) 2026 DeMarko Fulcher. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: DeMarko Fulcher, Claude (Anthropic)
 -/
-import Pipelines.Data
-import Pipelines.Proofs.Certificates
+module
+
+public import Pipelines.Data
+public import Pipelines.Proofs.Certificates
+-- The same modules again as `meta` imports: the `#eval`s run their code at elaboration time.
+meta import Pipelines.Data
+meta import Pipelines.Proofs.Certificates
+-- The two `decide +kernel` certificates in section 8 make the kernel run `Array.ofFn`, `Array.map`
+-- and `Fin.foldl`, whose bodies core does not expose; `import all` lets this file see them.
+import all Init.Data.Array.Basic
+import all Init.Data.Vector.Basic
+import all Init.Data.Fin.Fold
 
 /-!
 # Examples: molecules → features → certified linear regression
@@ -18,6 +28,8 @@ A *certificate* is a check run before training. Its soundness theorem
 (`Pipelines/Proofs/Certificates.lean`) turns `true` into a guarantee about the trained
 model; section 8 states two of them as theorems.
 -/
+
+public section
 
 open LeanSMILES LeanLearn LeanLearn.Regression Pipelines
 

@@ -3,7 +3,11 @@ Copyright (c) 2026 Hao Liu. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Hao Liu
 -/
-import LeanLearn.Regression.OLSFloat
+module
+
+public import LeanLearn.Regression.OLSFloat
+-- The same modules again as `meta` imports: the `#eval`s run their code at elaboration time.
+meta import LeanLearn.Regression.OLSFloat
 
 /-!
 # Running OLS on Float data
@@ -14,6 +18,8 @@ Open this file in the editor: the Infoview shows the output of `#eval run` (and 
 These are executable computations. The exact-real proofs and worked proof
 examples are in `OLS.lean` and `OLSExamples.lean` respectively.
 -/
+
+public section
 
 namespace LeanLearn.Examples.OLSFloat
 

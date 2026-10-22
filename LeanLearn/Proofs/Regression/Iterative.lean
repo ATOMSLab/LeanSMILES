@@ -3,9 +3,14 @@ Copyright (c) 2026 DeMarko Fulcher. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: DeMarko Fulcher, Claude (Anthropic)
 -/
-import LeanLearn.Proofs.Regression.Basic
-import Mathlib.LinearAlgebra.Matrix.Gershgorin
-import Mathlib.LinearAlgebra.Matrix.NonsingularInverse
+module
+
+public import LeanLearn.Proofs.Regression.Basic
+public import Mathlib.LinearAlgebra.Matrix.Gershgorin
+public import Mathlib.LinearAlgebra.Matrix.NonsingularInverse
+import Mathlib.Tactic.Linarith
+import Mathlib.Tactic.FieldSimp
+import Mathlib.Tactic.Ring
 
 /-!
 # LeanLearn.Proofs.Regression.Iterative
@@ -36,6 +41,8 @@ For the normal equations of a ridge problem (`λ ≥ 0`):
 * **Fixed points are optimal** (`loss_le_of_jacobiStep_eq_self`): a fixed point of Jacobi
   solves the normal equations, so it minimises the loss.
 -/
+
+@[expose] public section
 
 namespace LeanLearn.Regression
 

@@ -3,9 +3,11 @@ Copyright (c) 2026 Hao Liu. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Hao Liu
 -/
-import Mathlib.Data.Real.Basic
-import Mathlib.LinearAlgebra.Matrix.NonsingularInverse
-import Mathlib.LinearAlgebra.Matrix.DotProduct
+module
+
+public import Mathlib.Data.Real.Basic
+public import Mathlib.LinearAlgebra.Matrix.NonsingularInverse
+public import Mathlib.LinearAlgebra.Matrix.DotProduct
 import Mathlib.Tactic.Linarith
 import Mathlib.Tactic.Ring
 
@@ -25,6 +27,8 @@ closed-form solution `(XᵀX)⁻¹ Xᵀy` with an explicit nonsingularity hypoth
 These are exact statements over `ℝ`. They do not assert numerical stability
 of matrix inversion or correctness of a floating-point implementation.
 -/
+
+@[expose] public section
 
 namespace LeanLearn.Regression.OLS
 

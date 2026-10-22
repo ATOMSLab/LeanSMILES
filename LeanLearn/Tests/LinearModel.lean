@@ -1,4 +1,6 @@
-import LeanLearn.Regression.LinearModel
+module
+
+public import LeanLearn.Regression.LinearModel
 
 /-!
 # Executable Float checks for the shared regression definitions
@@ -41,4 +43,4 @@ def run : IO Unit := do
   IO.println "8/8 Float definition checks passed"
 
 end LeanLearn.Tests.LinearModel
-def main : IO Unit := LeanLearn.Tests.LinearModel.run
+public def main : IO Unit := LeanLearn.Tests.LinearModel.run

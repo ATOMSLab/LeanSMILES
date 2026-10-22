@@ -3,8 +3,10 @@ Copyright (c) 2026 DeMarko Fulcher. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: DeMarko Fulcher, Claude (Anthropic)
 -/
-import Pipelines.Pipeline
-import LeanSMILES.Data.CSVparser
+module
+
+public import Pipelines.Pipeline
+public import LeanSMILES.Data.CSVparser
 
 /-!
 # Pipelines.Data
@@ -14,6 +16,8 @@ Labelled molecules from the CSV tables in `datasets/`, read with the toolkit's
 they were written as (the Delaney table writes at most four decimals), so a pipeline's
 targets stay exact rationals.
 -/
+
+@[expose] public section
 
 namespace Pipelines
 

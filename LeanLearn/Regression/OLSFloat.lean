@@ -3,6 +3,8 @@ Copyright (c) 2026 Hao Liu. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Hao Liu
 -/
+module
+
 import Std
 
 /-!
@@ -20,6 +22,8 @@ numerical rank deficiency using a configurable relative tolerance.
 This implements the OLS objective specified in `OLS.lean`, but the exact-real
 proofs there do not certify this program's floating-point rounding errors.
 -/
+
+public section
 
 namespace LeanLearn.Regression.OLSFloat
 

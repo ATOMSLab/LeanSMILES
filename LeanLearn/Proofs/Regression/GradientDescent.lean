@@ -3,7 +3,13 @@ Copyright (c) 2026 DeMarko Fulcher. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: DeMarko Fulcher, Claude (Anthropic)
 -/
-import LeanLearn.Proofs.Regression.Basic
+module
+
+public import LeanLearn.Proofs.Regression.Basic
+import Mathlib.Tactic.Linarith
+import Mathlib.Tactic.Positivity
+import Mathlib.Tactic.GCongr
+import Mathlib.Tactic.Ring
 
 /-!
 # LeanLearn.Proofs.Regression.GradientDescent
@@ -24,6 +30,8 @@ The condition only involves the data through a bound on the feature norms:
 `‖xᵣ‖² ≤ R²` for every sample gives `Λ ≤ R² + λ` (`smoothness_le`), so
 `2η (R² + λ) ≤ 1` can be checked before training.
 -/
+
+@[expose] public section
 
 namespace LeanLearn.Regression
 

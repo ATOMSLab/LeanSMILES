@@ -3,7 +3,11 @@ Copyright (c) 2026 Hao Liu. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Hao Liu
 -/
-import LeanLearn.Regression.RidgeFloat
+module
+
+public import LeanLearn.Regression.RidgeFloat
+-- The same modules again as `meta` imports: the `#eval`s run their code at elaboration time.
+meta import LeanLearn.Regression.RidgeFloat
 
 /-!
 # Running ridge regression on Float data
@@ -14,6 +18,8 @@ Open this file in the editor: the Infoview shows the output of `#eval run` (and 
 The first column of ones is an explicit intercept. The example exempts it
 from the ridge penalty, then fits a singular design with all columns penalized.
 -/
+
+public section
 
 namespace LeanLearn.Examples.RidgeFloat
 
