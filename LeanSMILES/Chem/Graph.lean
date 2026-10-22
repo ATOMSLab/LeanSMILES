@@ -30,8 +30,8 @@ marks) and the order of the bond list.  `normalize` forgets exactly those,
 `IsNormal` says a molecule already has, and `normalEquiv` is the theorem:
 normal molecules are *exactly* atoms together with a bond matrix.
 
-Relabelling the atoms by a permutation gives an isomorphic graph
-(`relabelIso`) — which is what makes canonicalisation (`LeanSMILES.SMILES.Canon`)
+Relabeling the atoms by a permutation gives an isomorphic graph
+(`relabelIso`) — which is what makes canonicalization (`LeanSMILES.SMILES.Canon`)
 a change of *labels* and nothing else.
 -/
 
@@ -342,14 +342,14 @@ theorem bondKind_ofAdjMatrix_adjMatrix (i j : Fin n) :
     simp only [Option.map_some, Option.getD_some] at hM
     simp only [Option.map_some, BondKind.order_injective hM]
 
-/-! ### Relabelling is an isomorphism -/
+/-! ### Relabeling is an isomorphism -/
 
 lemma relabel_adj_iff (σ : Equiv.Perm (Fin n)) (i j : Fin n) :
     (m.relabel σ).graph.Adj (σ i) (σ j) ↔ m.graph.Adj i j := by
   change s(σ i, σ j) ∈ (m.relabel σ).edges ↔ s(i, j) ∈ m.edges
   rw [edges_relabel, ← Sym2.map_mk, List.mem_map_of_injective (Sym2.map.injective σ.injective)]
 
-/-- Relabelling the atoms gives an isomorphic molecular graph. -/
+/-- Relabeling the atoms gives an isomorphic molecular graph. -/
 def relabelIso (σ : Equiv.Perm (Fin n)) : SimpleGraph.Iso m.graph (m.relabel σ).graph where
   toEquiv := σ
   map_rel_iff' := fun {i j} ↦ m.relabel_adj_iff σ i j

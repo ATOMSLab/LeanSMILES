@@ -12,15 +12,15 @@ import Mathlib.Data.Fintype.Inv
 # LeanSMILES.SMILES.Canon
 
 A canonical atom order, and from it a canonical SMILES and a canonical
-relabelling of the molecule.
+relabeling of the molecule.
 
 **Refinement.** Each atom starts with an invariant that depends only on the
 atom and its degree; atoms are ranked by it; then each atom's rank is refined
-by the sorted multiset of (neighbour rank, bond kind) until the partition
-stops splitting.  This is Morgan's iteration, Weisfeiler–Lehman colour
+by the sorted multiset of (neighbor rank, bond kind) until the partition
+stops splitting.  This is Morgan's iteration, Weisfeiler–Lehman color
 refinement, and the first stage of every canonical-SMILES algorithm
 (Weininger 1989; Schneider, Sayle & Landrum 2015).  It is label-independent:
-relabelling the atoms permutes the ranks.
+relabeling the atoms permutes the ranks.
 
 **Tie-breaking.** Refinement can leave atoms tied — symmetric ones, but also
 some that merely look alike.  RDKit individualizes one tied atom and never
@@ -33,7 +33,7 @@ nauty / InChI approach, at exponential worst-case cost, bounded by `budget`
 leaves (beyond it the result is still a valid SMILES but no longer guaranteed
 canonical).
 
-**Relabelling.** `canonicalPerm` turns the winning ranks into an
+**Relabeling.** `canonicalPerm` turns the winning ranks into an
 `Equiv.Perm (Fin n)` (checked bijective by decision, inverted computably), and
 `canonicalize` relabels the molecule by it — an isomorphism of molecular
 graphs, `Molecule.canonicalizeIso`, by `Molecule.relabelIso`
@@ -92,7 +92,7 @@ def numClasses (rank : Ranks n) : ℕ := rank.toList.eraseDups.length
 def isDiscrete (rank : Ranks n) : Bool := numClasses rank == n
 
 /-- One refinement step: an atom's new invariant is its rank followed by the
-sorted (neighbour rank, bond kind) pairs. Classes only ever split. -/
+sorted (neighbor rank, bond kind) pairs. Classes only ever split. -/
 def refineOnce (m : Molecule n) (rank : Ranks n) : Ranks n :=
   ranksOf <| Vector.ofFn fun i ↦
     let nbrs := (m.bondsAt i).map fun b ↦ (((rank[b.other i] : ℕ) : ℤ), kindIdx b.kind)

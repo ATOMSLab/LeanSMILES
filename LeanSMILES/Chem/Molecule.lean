@@ -12,7 +12,7 @@ import LeanSMILES.Chem.Bond
 A molecule with `n` atoms is a `Vector Atom n` together with a list of bonds
 between distinct atoms, no two of which join the same pair — so the molecular
 graph is a *simple* graph, which is what Mathlib's `SimpleGraph` is.  The size
-is a type index: `Fin n` is the atom type, bonds cannot dangle, and relabelling
+is a type index: `Fin n` is the atom type, bonds cannot dangle, and relabeling
 the atoms is a permutation `Equiv.Perm (Fin n)`.
 
 The structure is RDKit-shaped (typed atoms and bonds, index-based) rather than
@@ -59,7 +59,7 @@ def edges : List (Sym2 (Fin n)) := m.bonds.map Bond.edge
 /-- The bonds at atom `i`. -/
 def bondsAt (i : Fin n) : List (Bond n) := m.bonds.filter (·.touches i)
 
-/-- The neighbours of atom `i`, in bond-list order. -/
+/-- The neighbors of atom `i`, in bond-list order. -/
 def neighbors (i : Fin n) : List (Fin n) := (m.bondsAt i).map (·.other i)
 
 /-- Number of bonds at atom `i` (heavy-atom degree; hydrogens are counts, not
@@ -84,15 +84,33 @@ def mapAtoms (f : Fin n → Atom → Atom) : Molecule n :=
 
 The OpenSMILES rule: a bare organic-subset atom has as many hydrogens as the
 smallest default valence not below its bond-order sum requires; if no default
-valence is large enough it has none.  Bracket atoms, wildcards and every other
-element have exactly the hydrogens that were written. -/
+valence is large enough it has none.  Aromatic bonds count `3/2`, with the one
+adjustment in `implicitHydrogens` that keeps three-connected aromatic atoms
+Kekulé-consistent.  Bracket atoms, wildcards and every other element have
+exactly the hydrogens that were written. -/
 
-/-- Implicit hydrogen count for an atom with the given bond-order sum. -/
+/-- Implicit hydrogen count for an atom with the given bond-order sum.
+
+Aromatic bonds count `3/2`, so an aromatic atom bonded to three neighbors —
+the nitrogen of `Cn1cccc1`, the sulfur of thiophene, a ring-fusion carbon —
+sums past its lowest valence to a value no Kekulé structure realizes.  Such an
+atom is snapped down to the largest valence not above its sum, when that is
+within `3/2` of it (the rule RDKit applies); otherwise `Cn1cccc1` would get an
+`NH` and thiophene an `SH`. -/
 def implicitHydrogens (a : Atom) (orderSum : ℚ) : ℕ :=
   match a.element, a.explicitH with
   | some e, none =>
-    match e.defaultValences.find? (fun v ↦ decide (orderSum ≤ (v : ℚ))) with
-    | some v => (Rat.floor ((v : ℚ) - orderSum)).toNat
+    let vs := e.defaultValences
+    let sum :=
+      match vs.head? with
+      | some v₀ =>
+        if a.aromatic && (v₀ : ℚ) < orderSum then
+          let p := (vs.filter fun v ↦ decide ((v : ℚ) ≤ orderSum)).getLast?.getD v₀
+          if orderSum - p ≤ (3 : ℚ) / 2 then (p : ℚ) else orderSum
+        else orderSum
+      | none => orderSum
+    match vs.find? (fun v ↦ decide (sum ≤ (v : ℚ))) with
+    | some v => (Rat.floor ((v : ℚ) - sum)).toNat
     | none => 0
   | _, _ => 0
 
@@ -101,7 +119,7 @@ def implicitHydrogens (a : Atom) (orderSum : ℚ) : ℕ :=
 def assignImplicitH : Molecule n :=
   m.mapAtoms fun i a ↦ { a with implicitH := implicitHydrogens a (m.bondOrderSum i) }
 
-/-! ### Relabelling -/
+/-! ### Relabeling -/
 
 /-- Relabel the atoms by a permutation: atom `i` becomes atom `σ i`. -/
 def relabel (σ : Equiv.Perm (Fin n)) : Molecule n where

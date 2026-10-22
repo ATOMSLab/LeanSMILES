@@ -22,7 +22,7 @@ library does not do, so they will differ on some molecules by design.
 
 **Canonicity, which must hold:** the canonical SMILES of a molecule must not
 change when the molecule is reparsed from it (round trip), nor when its atoms
-are relabelled (`finRotate`, `Fin.revPerm`) before canonicalizing.  Agreement
+are relabeled (`finRotate`, `Fin.revPerm`) before canonicalizing.  Agreement
 with RDKit's canonical *string* is reported for information only — it is a
 different walk and a different tie-breaking rule.
 
@@ -54,6 +54,7 @@ def main (args : List String) : IO UInt32 := do
       else failures := failures.push s!"graph differs from RDKit on {row.smiles}"
       if bondTypesAgree row M then bondTypesOk := bondTypesOk + 1
       if hydrogensAgree row M then hydrogensOk := hydrogensOk + 1
+      else failures := failures.push s!"hydrogen counts differ from RDKit on {row.smiles}"
       -- canonicity
       let c := M.canonicalSmiles
       match parse c with
@@ -68,8 +69,8 @@ def main (args : List String) : IO UInt32 := do
       let c₂ := (M.relabel Fin.revPerm).canonicalSmiles
       if c₁ == c && c₂ == c then invariant := invariant + 1
       else
-        failures := failures.push s!"relabelling changed {row.smiles}: {c} / {c₁} / {c₂}"
-      -- the relabelled molecule, written in its new atom order, is the canonical string
+        failures := failures.push s!"relabeling changed {row.smiles}: {c} / {c₁} / {c₂}"
+      -- the relabeled molecule, written in its new atom order, is the canonical string
       let c₃ := M.canonicalize.toSmiles
       if c₃ == c then canonicalizeOk := canonicalizeOk + 1
       else failures := failures.push s!"canonicalize of {row.smiles} writes {c₃}, not {c}"
@@ -79,13 +80,14 @@ def main (args : List String) : IO UInt32 := do
   IO.println s!"{rows.length} molecules, {parsed} parsed"
   IO.println (line "syntax (atoms, bonds, symbols, connectivity) = RDKit" syntaxOk "must be all")
   IO.println (line "canonical SMILES survives reparse" roundTrip "must be all")
-  IO.println (line "canonical SMILES invariant under relabelling" invariant "must be all")
+  IO.println (line "canonical SMILES invariant under relabeling" invariant "must be all")
   IO.println (line "canonicalize.toSmiles = canonical SMILES" canonicalizeOk "must be all")
   IO.println (line "bond types = RDKit (after its aromaticity model)" bondTypesOk "info")
-  IO.println (line "hydrogen counts = RDKit (after its sanitization)" hydrogensOk "info")
+  IO.println (line "hydrogen counts = RDKit (after its sanitization)" hydrogensOk "must be all")
   IO.println (line "canonical string = RDKit's string" sameAsRdkit "info")
   for f in failures.toList.take 20 do
     IO.println s!"  {f}"
   let ok := parsed == rows.length && syntaxOk == parsed
-    && roundTrip == parsed && invariant == parsed
+    && roundTrip == parsed && invariant == parsed && canonicalizeOk == parsed
+    && hydrogensOk == parsed
   return if ok then 0 else 1

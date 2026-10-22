@@ -7,17 +7,17 @@ and how it compares with the alternatives (RDKit, pysmiles, and the
 ## 1. Three layers, not two
 
 "Is RDKit storing a string or a graph?" has a three-part answer, and the
-library is organised around it:
+library is organized around it:
 
 | Layer | What it is | Here |
 |---|---|---|
 | **String** | the syntax | `String`, from `CSVparser` |
-| **Ordered labelled graph** | atoms numbered in order of appearance, bonds with kinds, decorations | `Molecule n` (`LeanSMILES/Chem/Molecule.lean`) |
-| **Molecule up to relabelling** | what "same molecule?" means | `canonicalize` / `canonicalSmiles` (`LeanSMILES/SMILES/Canon.lean`) |
+| **Ordered labeled graph** | atoms numbered in order of appearance, bonds with kinds, decorations | `Molecule n` (`LeanSMILES/Chem/Molecule.lean`) |
+| **Molecule up to relabeling** | what "same molecule?" means | `canonicalize` / `canonicalSmiles` (`LeanSMILES/SMILES/Canon.lean`) |
 
 RDKit and pysmiles both parse into the middle layer and both have to work to
 reach the third.  The ordered graph remembers the string in two places — the
-atom numbering, and the neighbour order that `@`/`@@` and `/`/`\` refer to —
+atom numbering, and the neighbor order that `@`/`@@` and `/`/`\` refer to —
 which is why `Molecule.relabel` exists as an explicit operation and why
 stereo marks are *recorded* on atoms and bonds but not *interpreted*.
 
@@ -40,7 +40,7 @@ Design choices, and the reason for each:
 
 * **Size in the type.** `Fin n` is the atom type, so `Molecule.graph : SimpleGraph (Fin n)`
   gets `Fintype`, decidable adjacency and all of Mathlib's finite-graph
-  lemmas for free, and a relabelling is an `Equiv.Perm (Fin n)`.  `Vector Atom n`
+  lemmas for free, and a relabeling is an `Equiv.Perm (Fin n)`.  `Vector Atom n`
   rather than `Array Atom` because `Vector.ofFn` keeps the size *definitional*,
   which is what lets `relabel` be written without casts.
 * **Invariants are the type.** RDKit checks "endpoint in range", "no self-bond"
@@ -141,17 +141,27 @@ the default valences — and nothing else: no aromaticity perception, no
 kekulization, no charge-separation rewrites, no strict valence check.  Those
 are a chemistry model, not syntax, and they need human choices.
 
+The one place the spec underdetermines that rule is aromatic atoms: §3.1.5
+sums bond orders but never says what an aromatic bond contributes, and §3.5
+only asks that electrons be assignable "without violating the valence rules".
+Summing aromatic bonds at `3/2` and applying the rule literally gives the
+nitrogen of `Cn1cccc1` and the sulfur of thiophene a hydrogen they cannot
+have.  `implicitHydrogens` therefore snaps an aromatic atom whose sum
+overshoots its lowest valence down to the largest valence it does not
+exceed, when within `3/2` of it — RDKit's rule, and the one that makes
+hydrogen counts agree with RDKit on all 1 128 Delaney molecules.
+
 ## 5. Writing and canonicalization (`Write.lean`, `Canon.lean`)
 
 The writer is Weininger's two-pass DFS (find ring closures, then emit with
 lowest-free-digit allocation and parenthesised branches), parameterised by a
 rank on atoms; everything it decides, it decides from ranks and bond kinds.
 
-Canonicalization is **colour refinement + exhaustive tie-breaking**:
+Canonicalization is **color refinement + exhaustive tie-breaking**:
 
 1. Invariant per atom (degree, Z, H, aromatic, charge, isotope, bracketed,
    class, chirality mark) → ranks.
-2. Refine by sorted (neighbour rank, bond kind) until the partition stops
+2. Refine by sorted (neighbor rank, bond kind) until the partition stops
    splitting — Morgan / Weisfeiler–Lehman.
 3. If atoms remain tied: individualize *each* atom of the lowest tied class in
    turn, refine, recurse.  Write a SMILES for every discrete leaf; keep the
@@ -212,8 +222,8 @@ already the test suite of this branch (§7).
   symbols and connectivity must equal RDKit's (syntax).  Bond types and
   hydrogen counts after RDKit's aromaticity model are reported, not required.
   The canonical SMILES must survive a reparse and be unchanged under two
-  relabellings of the atoms (`finRotate`, `Fin.revPerm`).
-  *Result:* syntax 1 128/1 128, reparse 1 128/1 128, relabelling invariance
+  relabelings of the atoms (`finRotate`, `Fin.revPerm`).
+  *Result:* syntax 1 128/1 128, reparse 1 128/1 128, relabeling invariance
   1 128/1 128.  For information: as-written bond types equal RDKit's
   post-aromaticity ones on 1 000/1 128 (the same 1 000 the branch's scope
   document reports for "graph as written"), hydrogen counts on 1 089/1 128,
@@ -225,9 +235,9 @@ already the test suite of this branch (§7).
   `atom_in_ring` on every molecule; wherever the as-written bond types and
   hydrogen counts equal RDKit's sanitized ones, the unfolded identifiers with
   counts and the folded bits must be identical; and the identifiers must be
-  unchanged under relabelling.
+  unchanged under relabeling.
   *Result:* ring membership 1 128/1 128; fingerprint = RDKit on 971/971 of the
-  molecules whose graph = RDKit's; relabelling invariance 1 128/1 128.  Overall
+  molecules whose graph = RDKit's; relabeling invariance 1 128/1 128.  Overall
   971/1 128 — the 157 misses are exactly the molecules whose graph RDKit's
   aromaticity model or nitro rewrite changes, i.e. the sanitization passes
   still to be ported (§9).
@@ -254,13 +264,13 @@ Compiled code (`lake exe …`) is unaffected; only the interactive path is.
 ## 9. Next steps
 
 1. **The canonicity theorem**: `canonicalSmiles (relabel σ m) = canonicalSmiles m`.
-   Needs: refinement commutes with relabelling; the leaf set is permuted by
-   relabelling; `write` commutes with relabelling when ranks are discrete.
-2. **Round trip**: `parse (toSmiles m) ≅ m` as labelled graphs.
+   Needs: refinement commutes with relabeling; the leaf set is permuted by
+   relabeling; `write` commutes with relabeling when ranks are discrete.
+2. **Round trip**: `parse (toSmiles m) ≅ m` as labeled graphs.
 3. **Degree lemma**: `graph.degree i = degree i` (needs `nodup`).
 4. **Chemistry as passes**: port the branch's sanitization as
    `Molecule n → Molecule n` functions, each with its own tests, each optional.
-5. **Stereo**: interpret `@`/`@@` as a parity over the neighbour order, and
+5. **Stereo**: interpret `@`/`@@` as a parity over the neighbor order, and
    write `/` `\` from the walk.
 6. **Featurization**: ~~Morgan fingerprints~~ — done, `LeanSMILES/Fingerprint/Morgan.lean`
    (§7); next, `Atom → Fin k` one-hots and feeding `morganVector` to the ML

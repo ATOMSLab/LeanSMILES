@@ -16,15 +16,15 @@ RDKit does: `explicitH` is what the string said inside brackets (`[CH3]`), and
 organic-subset atom.  Their sum is `totalH`.
 
 Chirality is *recorded*, not *interpreted*: `@`/`@@` are relative to the order
-in which the atom's neighbours appear in the SMILES string, which is a property
+in which the atom's neighbors appear in the SMILES string, which is a property
 of the string and of the bond order in `Molecule.bonds`, not of the atom alone.
 -/
 
 namespace LeanSMILES
 
 /-- The tetrahedral chirality mark of a bracket atom: `@` (anticlockwise) or
-`@@` (clockwise), viewed from the first neighbour towards the atom, with the
-remaining neighbours taken in the order the SMILES string lists them. -/
+`@@` (clockwise), viewed from the first neighbor towards the atom, with the
+remaining neighbors taken in the order the SMILES string lists them. -/
 inductive Chirality
   | anticlockwise
   | clockwise

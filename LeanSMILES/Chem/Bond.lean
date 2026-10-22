@@ -98,7 +98,7 @@ lemma order_injective : Function.Injective order := by
 end BondKind
 
 /-- The directional single-bond marks `/` (up) and `\` (down) that encode
-cis/trans configuration about a neighbouring double bond. Recorded relative to
+cis/trans configuration about a neighboring double bond. Recorded relative to
 the bond's `src → dst` direction, not interpreted. -/
 inductive BondDir
   | up
@@ -149,7 +149,7 @@ def other (b : Bond n) (i : Fin n) : Fin n := if b.src = i then b.dst else b.src
 def flip (b : Bond n) : Bond n :=
   { b with src := b.dst, dst := b.src, dir := b.dir.map BondDir.flip, ne := b.ne.symm }
 
-/-- Transport along an injective relabelling of the atoms. -/
+/-- Transport along an injective relabeling of the atoms. -/
 def map (σ : Fin n → Fin m) (hσ : Function.Injective σ) (b : Bond n) : Bond m :=
   { src := σ b.src, dst := σ b.dst, kind := b.kind, dir := b.dir, ne := hσ.ne b.ne }
 

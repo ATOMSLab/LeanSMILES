@@ -14,3 +14,4 @@ import LeanSMILES.SMILES.Write
 import LeanSMILES.SMILES.Canon
 import LeanSMILES.Fingerprint.Morgan
 import LeanSMILES.Examples.smiles
+import LeanSMILES.Examples.caffeine
