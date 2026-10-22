@@ -3,7 +3,9 @@ Copyright (c) 2026 Tyler Josephson. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Tyler Josephson
 -/
-import LeanSMILES.SMILES.Parse
+module
+
+public import LeanSMILES.SMILES.Parse
 
 /-!
 # LeanSMILES.Tests.Validity
@@ -32,7 +34,7 @@ lake exe validity-test [datasets/fuzz-validity.tsv]
 
 open LeanSMILES LeanSMILES.SMILES
 
-def main (args : List String) : IO UInt32 := do
+public def main (args : List String) : IO UInt32 := do
   let path := args.headD "datasets/fuzz-validity.tsv"
   let lines ← IO.FS.lines path
   let mut total := 0

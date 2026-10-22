@@ -3,8 +3,10 @@ Copyright (c) 2026 Tyler Josephson. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Tyler Josephson, Hao Liu
 -/
-import LeanSMILES.SMILES.Token
-import LeanSMILES.Chem.Molecule
+module
+
+public import LeanSMILES.SMILES.Token
+public import LeanSMILES.Chem.Molecule
 
 /-!
 # LeanSMILES.SMILES.Parse
@@ -35,6 +37,8 @@ and no duplicate bonds, so the checks are not repeated downstream.
 
 `parse` also runs `Molecule.assignImplicitH`; `parseRaw` does not.
 -/
+
+@[expose] public section
 
 namespace LeanSMILES.SMILES
 

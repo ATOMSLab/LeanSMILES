@@ -7,7 +7,7 @@ public import Mathlib.Tactic.Ring
 public import Batteries.Data.Rat.Float
 
 /-!
-# LeanSMILES.Scalar
+# LeanLearn.Scalar
 
 The scalar-arithmetic interface that LeanSMILES's numeric code — feature
 values and the classical ML algorithms that consume them — is written over:
@@ -24,7 +24,7 @@ LeanCatalyst's own modules are reworded for this library.
 
 @[expose] public section
 
-namespace LeanSMILES
+namespace LeanLearn
 
 /-- **The operations a polynomial needs, and no more**: `+`, `*`, `-`, `0`, `1`.
 
@@ -259,4 +259,4 @@ theorem nsmulGen_eq (n : Nat) (x : Real) : nsmulGen n x = (n : Real) * x := by
 
 end GenArith
 
-end LeanSMILES
+end LeanLearn

@@ -3,7 +3,9 @@ Copyright (c) 2026 Tyler Josephson. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Tyler Josephson
 -/
-import LeanSMILES.Chem.Element
+module
+
+public import LeanSMILES.Chem.Element
 
 /-!
 # LeanSMILES.Chem.Atom
@@ -21,6 +23,8 @@ of the string and of the bond order in `Molecule.bonds`, not of the atom alone.
 The named classes `@TH1` … `@OH30` are recorded the same way, as written; the
 shorthand equivalence (`@` for `@TH1`) is not applied.
 -/
+
+@[expose] public section
 
 namespace LeanSMILES
 

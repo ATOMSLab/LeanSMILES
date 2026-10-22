@@ -3,18 +3,20 @@ Copyright (c) 2026 Tyler Josephson. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Tyler Josephson
 -/
-import Mathlib.Data.Finset.SymmDiff
-import Mathlib.Data.Finset.Card
-import Mathlib.Data.Matrix.Mul
-import Mathlib.Algebra.BigOperators.Ring.Finset
-import Mathlib.Algebra.BigOperators.Fin
-import Mathlib.Data.Rat.Cast.CharZero
-import Mathlib.Data.Real.Basic
-import Mathlib.Topology.MetricSpace.Defs
-import Mathlib.Tactic.Linarith
-import Mathlib.Tactic.Positivity
-import Mathlib.Tactic.NormNum
-import LeanSMILES.Fingerprint.Morgan
+module
+
+public import Mathlib.Data.Finset.SymmDiff
+public import Mathlib.Data.Finset.Card
+public import Mathlib.Data.Matrix.Mul
+public import Mathlib.Algebra.BigOperators.Ring.Finset
+public import Mathlib.Algebra.BigOperators.Fin
+public import Mathlib.Data.Rat.Cast.CharZero
+public import Mathlib.Data.Real.Basic
+public import Mathlib.Topology.MetricSpace.Defs
+public import Mathlib.Tactic.Linarith
+public import Mathlib.Tactic.Positivity
+public import Mathlib.Tactic.NormNum
+public import LeanSMILES.Fingerprint.Morgan
 
 /-!
 # LeanSMILES.Fingerprint.Tanimoto
@@ -51,6 +53,8 @@ as `Molecule.morganBits` produces them, computes `Finset.tanimoto` of the corres
 The paper proposes `√(1 - T)` as the metric to use with real-valued vectors; that claim is
 not formalized here.
 -/
+
+@[expose] public section
 
 open scoped Finset symmDiff
 

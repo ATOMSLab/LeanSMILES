@@ -3,8 +3,10 @@ Copyright (c) 2026 Tyler Josephson. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Tyler Josephson, Hao Liu
 -/
-import LeanSMILES.Chem.Atom
-import LeanSMILES.Chem.Bond
+module
+
+public import LeanSMILES.Chem.Atom
+public import LeanSMILES.Chem.Bond
 
 /-!
 # LeanSMILES.SMILES.Token
@@ -26,6 +28,8 @@ decisions — which side was taken and why — are tabulated in the README under
 `[C:]` are rejected with the spec, while a charge of any length (`[Fe+++]`,
 `[C+123]`) is accepted and left to a post-parse chemistry check.
 -/
+
+@[expose] public section
 
 namespace LeanSMILES.SMILES
 

@@ -3,10 +3,12 @@ Copyright (c) 2026 Tyler Josephson. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Tyler Josephson
 -/
-import LeanSMILES.Fingerprint.Morgan
-import LeanSMILES.Tests.OracleRow
-import Mathlib.Logic.Equiv.Fin.Basic
-import Mathlib.Logic.Equiv.Fin.Rotate
+module
+
+public import LeanSMILES.Fingerprint.Morgan
+public import LeanSMILES.Tests.OracleRow
+public import Mathlib.Logic.Equiv.Fin.Basic
+public import Mathlib.Logic.Equiv.Fin.Rotate
 
 /-!
 # LeanSMILES.Tests.Morgan
@@ -25,7 +27,12 @@ agree where those graphs agree.  Hence three kinds of check:
   unfolded identifiers with counts, and the folded bits, must be identical.
   A miss there is a bug in the port.
 * **Relabeling invariance must hold on every molecule**: the identifiers are
-  unchanged when the atoms are renumbered (`finRotate`, `Fin.revPerm`).
+  unchanged when the atoms are renumbered (`finRotate`, `Fin.revPerm`). At the
+  default radius 2 this is a theorem (`Molecule.morganBits_relabel`); the check
+  runs the compiled code.
+* **RDKit's radius-3 atom-order dependence must be reproduced**: the two
+  spellings `C1=C(CO)C=C1CC` and `C1(CC)=CC(CO)=C1` differ in exactly RDKit's
+  radius-3 identifiers (README, "Findings about external tools").
 
 Overall agreement with RDKit is reported for information.
 
@@ -43,7 +50,7 @@ def idsString (M : Mol) : String :=
 
 def inRingList (M : Mol) : List ℕ := M.mol.inRingVector.toList.map fun b ↦ if b then 1 else 0
 
-def main (args : List String) : IO UInt32 := do
+public def main (args : List String) : IO UInt32 := do
   let path := args.headD "datasets/delaney-oracle.csv"
   let rows ← readRows path
   let mut parsed := 0
@@ -88,10 +95,16 @@ def main (args : List String) : IO UInt32 := do
   IO.println
     s!"fingerprint = RDKit where the graph = RDKit's: {graphOkFpOk}/{graphOk}  [must be all]"
   IO.println s!"fingerprint invariant under relabeling: {invariant}/{parsed}  [must be all]"
+  let r3 (s : String) := (Mol.ofSmiles! s).morganIds 3
+  let r3a := r3 "C1=C(CO)C=C1CC"
+  let r3b := r3 "C1(CC)=CC(CO)=C1"
+  let r3ok := r3a.filter (!r3b.contains ·) == [(837408524, 1)]
+    && r3b.filter (!r3a.contains ·) == [(58732580, 1)]
+  IO.println s!"radius-3 atom-order counterexample = RDKit's: {r3ok}  [must be true]"
   IO.println s!"on-bits = RDKit overall: {bitsOk}/{parsed}  [info: graph as written]"
   IO.println s!"identifiers+counts = RDKit overall: {idsOk}/{parsed}  [info: graph as written]"
   for f in failures.toList.take 10 do
     IO.println s!"  {f}"
   let ok := parsed + skipped.size == rows.length && ringOk == parsed
-    && graphOkFpOk == graphOk && invariant == parsed
+    && graphOkFpOk == graphOk && invariant == parsed && r3ok
   return if ok then 0 else 1

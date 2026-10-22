@@ -3,7 +3,9 @@ Copyright (c) 2026 Hao Liu. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Hao Liu
 -/
-import LeanSMILES.SMILES.Parse
+module
+
+public import LeanSMILES.SMILES.Parse
 
 /-!
 # Parse error messages
@@ -175,7 +177,7 @@ def checkAccept (c : AcceptCase) : IO Bool := do
       IO.eprintln s!"  got: {M.n} atoms, atom 0 {atom0}"
       pure false
 
-def main : IO UInt32 := do
+public def main : IO UInt32 := do
   let results ← cases.mapM checkCase
   let acceptResults ← accepted.mapM checkAccept
   let internalMessage := (ParseError.internal "tokenizer out of fuel").toString
