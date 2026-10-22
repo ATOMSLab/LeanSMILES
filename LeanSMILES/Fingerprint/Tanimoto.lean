@@ -325,7 +325,7 @@ decreasing_by simp_wf; exact Nat.lt_succ_of_le (List.length_filter_le _ _)
 /-- Folded Morgan fingerprints have no repeated bits. -/
 theorem Molecule.nodup_morganBits {n : ℕ} (m : Molecule n) (radius fpSize : ℕ) :
     (m.morganBits radius fpSize).Nodup :=
-  List.nodup_mergeSort.2 (List.nodup_eraseDups _)
+  (perm_sortBy _).nodup_iff.2 (List.nodup_eraseDups _)
 
 /-- The Tanimoto similarity LeanSMILES computes between two Morgan fingerprints is the bit-set
 Tanimoto, so `Finset.tanimotoDist` of the two bit sets is a metric distance between them. -/

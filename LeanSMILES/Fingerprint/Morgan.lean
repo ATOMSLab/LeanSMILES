@@ -38,13 +38,98 @@ sanitized ones — which `lake exe morgan-test` checks.  `Molecule.aromatize`
 **Atom order.** Up to radius 2 the fingerprint does not depend on the order of
 the atoms: `Molecule.morganBits_relabel` (`Fingerprint/MorganInvariance.lean`).
 From radius 3 it can, here and in RDKit, because duplicate environments are
-broken by atom index (README, "Findings about external tools").
+broken by atom index: `Molecule.not_forall_morganBits_relabel_three`
+(`Fingerprint/MorganRadius3.lean`) proves it on a concrete molecule.
+
+Lists are sorted with `sortBy`, a structurally recursive insertion sort, so the kernel can
+evaluate the fingerprint (the radius-3 proof is `decide +kernel`).
 
 Every intermediate is `Vector`/`Array` data, never a function returned from a
 definition (see `docs/design-molecular-representation.md` §8).
 -/
 
 @[expose] public section
+
+namespace LeanSMILES
+
+/-! ### Sorting -/
+
+/-- Insert `a` before the first element it is `le` to. -/
+def insertBy {α : Type*} (le : α → α → Bool) (a : α) : List α → List α
+  | [] => [a]
+  | b :: l => if le a b then a :: b :: l else b :: insertBy le a l
+
+/-- Insertion sort by a Boolean comparator. It is structurally recursive, so the kernel
+can run it (`decide +kernel` in `Fingerprint/MorganRadius3.lean`), which the
+well-founded recursion of `List.mergeSort` does not allow. Each comparator the
+fingerprint sorts by is a total order on the lists it sorts, and such a list has only
+one sorted order, so the result is the one `List.mergeSort` gives. -/
+def sortBy {α : Type*} (le : α → α → Bool) : List α → List α
+  | [] => []
+  | a :: l => insertBy le a (sortBy le l)
+
+section SortBy
+
+variable {α : Type*} {le : α → α → Bool}
+
+lemma mem_insertBy {a x : α} {l : List α} : x ∈ insertBy le a l ↔ x = a ∨ x ∈ l := by
+  induction l with
+  | nil => simp [insertBy]
+  | cons b l ih => unfold insertBy; split <;> simp [ih, or_left_comm]
+
+lemma perm_insertBy (a : α) (l : List α) : (insertBy le a l).Perm (a :: l) := by
+  induction l with
+  | nil => simp [insertBy]
+  | cons b l ih =>
+    unfold insertBy
+    split
+    · exact List.Perm.refl _
+    · exact (ih.cons b).trans (List.Perm.swap a b l)
+
+lemma perm_sortBy (l : List α) : (sortBy le l).Perm l := by
+  induction l with
+  | nil => simp [sortBy]
+  | cons a l ih => exact (perm_insertBy a _).trans (ih.cons a)
+
+@[simp] lemma mem_sortBy {x : α} {l : List α} : x ∈ sortBy le l ↔ x ∈ l :=
+  (perm_sortBy l).mem_iff
+
+lemma pairwise_insertBy (total : ∀ a b, (le a b || le b a) = true)
+    (trans : ∀ a b c, le a b = true → le b c = true → le a c = true) (a : α) {l : List α}
+    (hl : l.Pairwise fun x y ↦ le x y = true) :
+    (insertBy le a l).Pairwise fun x y ↦ le x y = true := by
+  induction l with
+  | nil => simp [insertBy]
+  | cons b l ih =>
+    rw [List.pairwise_cons] at hl
+    unfold insertBy
+    split
+    · rename_i h
+      refine List.Pairwise.cons ?_ (List.pairwise_cons.mpr hl)
+      intro x hx
+      rcases List.mem_cons.mp hx with rfl | hx
+      · exact h
+      · exact trans _ _ _ h (hl.1 x hx)
+    · rename_i h
+      have hba : le b a = true := by
+        have := total a b
+        simp_all
+      refine List.Pairwise.cons ?_ (ih hl.2)
+      intro x hx
+      rcases mem_insertBy.mp hx with rfl | hx
+      · exact hba
+      · exact hl.1 x hx
+
+lemma pairwise_sortBy (total : ∀ a b, (le a b || le b a) = true)
+    (trans : ∀ a b c, le a b = true → le b c = true → le a c = true) (l : List α) :
+    (sortBy le l).Pairwise fun x y ↦ le x y = true := by
+  induction l with
+  | nil => simp [sortBy]
+  | cons a l ih => exact pairwise_insertBy total trans a ih
+
+end SortBy
+
+end LeanSMILES
 
 namespace LeanSMILES.Molecule
 
@@ -203,8 +288,8 @@ def growEnv (adj : Vector (List (ℕ × Fin n)) n) (prevEnv : Vector ℕ n) (a :
 identifier) pairs, hashed onto (layer, own identifier). -/
 def growId (adj : Vector (List (ℕ × Fin n)) n) (kinds : Array UInt32) (cur : Vector UInt32 n)
     (layer : ℕ) (a : Fin n) : UInt32 :=
-  let pairs := (adj[a].map fun (k, o) ↦ (kinds[k]!, cur[o])).mergeSort
-    fun p q ↦ p.1 < q.1 || (p.1 == q.1 && p.2 ≤ q.2)
+  let pairs := sortBy (fun p q ↦ p.1 < q.1 || (p.1 == q.1 && p.2 ≤ q.2))
+    (adj[a].map fun (k, o) ↦ (kinds[k]!, cur[o]))
   pairs.foldl (fun h (t, v) ↦ hashCombine h (hashPair t v)) (hashCombine layer.toUInt32 cur[a])
 
 /-- One step of duplicate removal: an environment whose bond set was already
@@ -234,7 +319,7 @@ bond set is emitted and the others die. Atoms with no neighbors die too. -/
 def morganLayer (adj : Vector (List (ℕ × Fin n)) n) (kinds : Array UInt32) (layer : ℕ)
     (s : MorganState n) : MorganState n :=
   let alive := roundAlive adj s
-  let acc := ((roundTriples adj kinds layer s).mergeSort envLE).foldl (dedupStep layer)
+  let acc := (sortBy envLE (roundTriples adj kinds layer s)).foldl (dedupStep layer)
     (Vector.ofFn fun a ↦ s.dead[a] || adj[a].isEmpty, s.result, s.seen)
   { cur := Vector.ofFn fun a ↦ if alive[a] then growId adj kinds s.cur layer a else 0
     prevEnv := Vector.ofFn fun a ↦ if alive[a] then growEnv adj s.prevEnv a else s.prevEnv[a]
@@ -258,12 +343,12 @@ def morganEnvironments (m : Molecule n) (radius : ℕ := 2) : List (UInt32 × Fi
 sorted by identifier (RDKit's `GetSparseCountFingerprint`). -/
 def morganIds (m : Molecule n) (radius : ℕ := 2) : List (UInt32 × ℕ) :=
   let ids := (m.morganEnvironments radius).map (·.1)
-  let sorted := ids.mergeSort (· ≤ ·)
+  let sorted := sortBy (· ≤ ·) ids
   sorted.eraseDups.map fun id ↦ (id, sorted.count id)
 
 /-- Folded Morgan fingerprint: the sorted on-bits (RDKit's `GetFingerprint`). -/
 def morganBits (m : Molecule n) (radius : ℕ := 2) (fpSize : ℕ := 2048) : List ℕ :=
-  ((m.morganIds radius).map fun (id, _) ↦ id.toNat % fpSize).eraseDups.mergeSort (· ≤ ·)
+  sortBy (· ≤ ·) ((m.morganIds radius).map fun (id, _) ↦ id.toNat % fpSize).eraseDups
 
 /-- The fingerprint as a bit vector of length `fpSize`, for featurization. -/
 def morganVector (m : Molecule n) (radius : ℕ := 2) (fpSize : ℕ := 2048) : Vector Bool fpSize :=

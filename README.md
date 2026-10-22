@@ -140,7 +140,9 @@ bits equal RDKit's exactly where the as-written bond types and hydrogen counts e
 sanitized ones; run `Molecule.aromatize` first (below) to get RDKit's bits.  Up to radius 2 the
 fingerprint is proved independent of the atom order: `Molecule.morganBits_relabel`
 (`LeanSMILES/Fingerprint/MorganInvariance.lean`).  From radius 3 it is not, here or in
-RDKit (see "Findings about external tools").
+RDKit, and that is a theorem too: `Molecule.not_forall_morganBits_relabel_three`
+(`LeanSMILES/Fingerprint/MorganRadius3.lean`), checked by the kernel on the molecule below
+(see "Findings about external tools").
 
 ```lean
 #eval (Mol.ofSmiles! "CCO").morganBits        -- [80, 222, 294, 807, 1057, 1410, ...]
@@ -547,4 +549,8 @@ checked against.
   the default: `Molecule.morganBits_relabel`
   (`LeanSMILES/Fingerprint/MorganInvariance.lean`). A tie at radius 1 can only
   be a two-atom fragment, which emits nothing more whichever atom survives; a
-  tie at radius 2, as here, first shows at radius 3.
+  tie at radius 2, as here, first shows at radius 3. The bound is sharp:
+  `Molecule.not_forall_morganBits_relabel_three`
+  (`LeanSMILES/Fingerprint/MorganRadius3.lean`) proves, by kernel computation on
+  this molecule, that swapping its two ring CH carbons changes the radius-3
+  fingerprint and leaves the radius-2 one alone.
