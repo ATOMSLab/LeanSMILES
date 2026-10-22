@@ -147,6 +147,14 @@ RDKit (see "Findings about external tools").
 #eval tanimoto (Mol.ofSmiles! "CCO").morganBits (Mol.ofSmiles! "CCCO").morganBits
 ```
 
+`LeanSMILES.Fingerprint.Tanimoto` answers *is Tanimoto a metric?* (Surendran et al. 2025).
+On bit sets, the Tanimoto distance `|A ∆ B| / |A ∪ B|` is a metric
+(`Finset.tanimotoMetricSpace`, the Marczewski–Steinhaus / Lipkus theorem), and `tanimoto` on
+Morgan on-bits computes the bit-set similarity (`Molecule.tanimoto_morganBits`). On
+real-valued vectors the same formula, `⟨x,y⟩ / (⟨x,x⟩ + ⟨y,y⟩ − ⟨x,y⟩)`, fails the triangle
+inequality already for the scalars `1/3, 2/3, 1` (`not_tanimotoVec_dist_triangle`), so there
+is no such metric space (`not_exists_metricSpace_tanimotoVec`).
+
 ### Aromaticity: RDKit's view of the bonds
 
 The parser reads bonds as written. `Molecule.aromatize` (`LeanSMILES/Aromaticity/`)

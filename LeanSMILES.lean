@@ -17,6 +17,7 @@ public import LeanSMILES.SMILES.Canon
 public import LeanSMILES.SMILES.Canonicity
 public import LeanSMILES.Fingerprint.Morgan
 public import LeanSMILES.Fingerprint.MorganInvariance
+public import LeanSMILES.Fingerprint.Tanimoto
 public import LeanSMILES.Aromaticity.Perceive
 public import LeanSMILES.Examples.smiles
 public import LeanSMILES.Examples.caffeine
