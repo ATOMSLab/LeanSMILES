@@ -15,8 +15,16 @@ atom `[13CH3+:2]` is one token carrying one `Atom` — so the parser proper
 (`LeanSMILES.SMILES.Parse`) only has to deal with the graph grammar: bonds,
 branches, ring closures and dots.
 
-Reading stops at the first whitespace, as the OpenSMILES grammar does: what
-follows is a title, not SMILES.
+Leading whitespace is skipped, as RDKit does (the OpenSMILES grammar would read
+`" C"` as an empty molecule followed by a title, and says a SMILES *file* line
+starting with whitespace is to be ignored).  Reading then stops at the first
+whitespace: what follows is a title, not SMILES.
+
+The grammar is OpenSMILES §2.2.  Where RDKit and the spec disagree, the
+decisions — which side was taken and why — are tabulated in the README under
+"What the parser accepts".  Two of them are the tokenizer's: `[CH10]` and
+`[C:]` are rejected with the spec, while a charge of any length (`[Fe+++]`,
+`[C+123]`) is accepted and left to a post-parse chemistry check.
 -/
 
 namespace LeanSMILES.SMILES
@@ -34,6 +42,7 @@ inductive ParseError
   | unmatchedBranchClose (pos : ℕ)
   | emptyBranch (pos : ℕ)
   | ringAfterBranchOpen (pos : ℕ)
+  | ringAfterBranch (pos : ℕ)
   | danglingDot (pos : ℕ)
   | unclosedBranch (count : ℕ)
   | unclosedRing (nums : List ℕ)
@@ -57,6 +66,8 @@ def toString : ParseError → String
   | unmatchedBranchClose pos => s!"')' at {pos} closes no branch"
   | emptyBranch pos => s!"empty branch '()' closed at {pos}"
   | ringAfterBranchOpen pos => s!"ring-closure label at {pos} directly after '('"
+  | ringAfterBranch pos =>
+    s!"ring-closure label at {pos} after a branch: labels must precede branches"
   | danglingDot pos => s!"'.' at {pos} is not between two atoms"
   | unclosedBranch 1 => "1 branch was never closed"
   | unclosedBranch k => s!"{k} branches were never closed"
@@ -68,6 +79,14 @@ def toString : ParseError → String
   | internal msg => s!"internal error: {msg}"
 
 instance : ToString ParseError := ⟨toString⟩
+
+/-- Errors that are the OpenSMILES grammar overruling RDKit by decision (see
+"What the parser accepts" in the README): RDKit accepts the string, the spec
+does not, and LeanSMILES follows the spec.  The tests against RDKit's verdicts
+count these separately from parser bugs. -/
+def isGrammarDeviation : ParseError → Bool
+  | ringAfterBranch _ => true
+  | _ => false
 
 end ParseError
 
@@ -129,11 +148,14 @@ def bracketSymbol (bracketPos symbolPos : ℕ) : List Char → Except ParseError
     else if c.isLower then
       match rest with
       | d :: rest' =>
+        -- Nothing that may follow a symbol is lowercase, so two lowercase
+        -- letters can only be a two-letter aromatic symbol: `[se]`, `[as]`.
         if d.isLower then
           match Element.ofSymbol? (String.ofList [c.toUpper, d]) with
           | some e =>
-            if e.aromaticAllowed then .ok (some e, true, rest') else aromaticOne c rest
-          | none => aromaticOne c rest
+            if e.aromaticAllowed then .ok (some e, true, rest')
+            else .error (.badBracket bracketPos s!"'{c}{d}' may not be written aromatic")
+          | none => .error (.unknownElement symbolPos (String.ofList [c, d]))
         else aromaticOne c rest
       | [] => aromaticOne c rest
     else .error (.unexpectedChar symbolPos c)
@@ -152,20 +174,51 @@ where
       else .error (.badBracket bracketPos s!"'{c}' may not be written aromatic")
     | none => .error (.unknownElement symbolPos (String.ofList [c]))
 
-/-- `@@`, `@`, or nothing. -/
-def parseChirality : List Char → Option Chirality × List Char
-  | '@' :: '@' :: rest => (some .clockwise, rest)
-  | '@' :: rest => (some .anticlockwise, rest)
-  | cs => (none, cs)
+/-- The zero-based index of a one-based class number `k` in `1 … n`. -/
+def classIndex (n k : ℕ) : Option (Fin n) :=
+  if h : 1 ≤ k ∧ k ≤ n then some ⟨k - 1, by omega⟩ else none
 
-/-- `H` alone means one hydrogen; `H3` means three; nothing means none. -/
-def parseHCount : List Char → ℕ × List Char
+/-- `@@`, `@`, a named class `@TH1` … `@OH30` (OpenSMILES §3.7), or nothing.
+`pos` is the position of the `[`, for errors. -/
+def parseChirality (pos : ℕ) : List Char → Except ParseError (Option Chirality × List Char)
+  | '@' :: '@' :: rest => .ok (some .clockwise, rest)
+  | '@' :: rest =>
+    match rest with
+    | c₁ :: c₂ :: rest' =>
+      let cls := String.ofList [c₁, c₂]
+      if cls ∈ ["TH", "AL", "SP", "TB", "OH"] then
+        let (ds, rest'') := takeDigits rest'
+        let k := digitsToNat ds
+        let mark : Option Chirality :=
+          match cls with
+          | "TH" => (classIndex 2 k).map .th
+          | "AL" => (classIndex 2 k).map .al
+          | "SP" => (classIndex 3 k).map .sp
+          | "TB" => (classIndex 20 k).map .tb
+          | _ => (classIndex 30 k).map .oh
+        match mark with
+        | some m => .ok (some m, rest'')
+        | none => .error (.badBracket pos s!"'@{cls}{String.ofList ds}' is not a chirality class")
+      else .ok (some .anticlockwise, rest)
+    | _ => .ok (some .anticlockwise, rest)
+  | cs => .ok (none, cs)
+
+/-- `H` alone means one hydrogen; `H3` means three; nothing means none.  The
+count is one digit (OpenSMILES `hcount ::= 'H' | 'H' DIGIT`): `[CH10]` is an
+error.  `pos` is the position of the `[`. -/
+def parseHCount (pos : ℕ) : List Char → Except ParseError (ℕ × List Char)
   | 'H' :: rest =>
     let (ds, rest') := takeDigits rest
-    (if ds.isEmpty then 1 else digitsToNat ds, rest')
-  | cs => (0, cs)
+    match ds with
+    | [] => .ok (1, rest')
+    | [d] => .ok (d.toNat - '0'.toNat, rest')
+    | _ => .error (.badBracket pos s!"hydrogen count 'H{String.ofList ds}' has more than one digit")
+  | cs => .ok (0, cs)
 
-/-- `+`, `-`, `++`, `--`, `+2`, `-3`. -/
+/-- `+`, `-`, `++`, `--`, `+2`, `-3`.  A run of signs of any length and a
+number of any length are accepted (`[Fe+++]`, `[C+123]`), deliberately looser
+than the OpenSMILES grammar: whether the element has the electrons is a
+chemistry question, answered after parsing, not a lexical one. -/
 def parseCharge : List Char → ℤ × List Char
   | '+' :: rest =>
     let (ds, rest') := takeDigits rest
@@ -181,12 +234,14 @@ def parseCharge : List Char → ℤ × List Char
     else (-((digitsToNat ds : ℕ) : ℤ), rest')
   | cs => (0, cs)
 
-/-- `:n`, or nothing. -/
-def parseClass : List Char → Option ℕ × List Char
+/-- `:n`, or nothing.  The colon needs at least one digit (OpenSMILES
+`class ::= ':' NUMBER`): `[C:]` is an error.  `pos` is the position of the `[`. -/
+def parseClass (pos : ℕ) : List Char → Except ParseError (Option ℕ × List Char)
   | ':' :: rest =>
     let (ds, rest') := takeDigits rest
-    (some (digitsToNat ds), rest')
-  | cs => (none, cs)
+    if ds.isEmpty then .error (.badBracket pos "':' is not followed by a class number")
+    else .ok (some (digitsToNat ds), rest')
+  | cs => .ok (none, cs)
 
 /-- Decode the inside of a bracket atom, given the characters after `[`.
 Returns the atom and the characters after the closing `]`. -/
@@ -194,10 +249,10 @@ def bracketAtom (pos : ℕ) (cs : List Char) : Except ParseError (Atom × List C
   let (isoDigits, cs) := takeDigits cs
   let isotope := if isoDigits.isEmpty then none else some (digitsToNat isoDigits)
   let (element, aromatic, cs) ← bracketSymbol pos (pos + 1 + isoDigits.length) cs
-  let (chirality, cs) := parseChirality cs
-  let (h, cs) := parseHCount cs
+  let (chirality, cs) ← parseChirality pos cs
+  let (h, cs) ← parseHCount pos cs
   let (charge, cs) := parseCharge cs
-  let (atomClass, cs) := parseClass cs
+  let (atomClass, cs) ← parseClass pos cs
   match cs with
   | ']' :: rest =>
     .ok ({ element, aromatic, isotope, charge, explicitH := some h, chirality, atomClass }, rest)
@@ -251,7 +306,9 @@ def go : ℕ → List Char → ℕ → Array Token → Except ParseError (Array 
         if !d1.isDigit then .error (.unexpectedChar (pos + 1) d1)
         else if !d2.isDigit then .error (.unexpectedChar (pos + 2) d2)
         else go fuel rest (pos + 3) (acc.push ⟨.ring (digitsToNat [d1, d2]), pos⟩)
-      | _ => .error (.unexpectedEnd "two digits after '%'")
+      | [d1] => if d1.isDigit then .error (.unexpectedEnd "two digits after '%'")
+                else .error (.unexpectedChar (pos + 1) d1)
+      | [] => .error (.unexpectedEnd "two digits after '%'")
     else if c.isDigit then go fuel cs (pos + 1) (acc.push ⟨.ring (c.toNat - '0'.toNat), pos⟩)
     else
       match BondKind.ofChar? c with
@@ -264,9 +321,10 @@ def go : ℕ → List Char → ℕ → Array Token → Except ParseError (Array 
 
 end Tokenizer
 
-/-- Tokenize a SMILES string. -/
+/-- Tokenize a SMILES string.  Leading whitespace is skipped; positions still
+count from the start of the string. -/
 def tokenize (s : String) : Except ParseError (Array Token) :=
-  let cs := s.toList
-  Tokenizer.go (cs.length + 1) cs 0 #[]
+  let (lead, cs) := s.toList.span Char.isWhitespace
+  Tokenizer.go (cs.length + 1) cs lead.length #[]
 
 end LeanSMILES.SMILES

@@ -54,9 +54,12 @@ def main (args : List String) : IO UInt32 := do
   let mut idsOk := 0
   let mut invariant := 0
   let mut failures : Array String := #[]
+  let mut skipped : Array String := #[]
   for row in rows do
     match parse row.smiles with
-    | .error e => failures := failures.push s!"parse error on {row.smiles}: {e}"
+    | .error e =>
+      if e.isGrammarDeviation then skipped := skipped.push s!"{row.smiles}: {e}"
+      else failures := failures.push s!"parse error on {row.smiles}: {e}"
     | .ok M =>
       parsed := parsed + 1
       if inRingList M == row.inRing then ringOk := ringOk + 1
@@ -77,7 +80,10 @@ def main (args : List String) : IO UInt32 := do
       let ids₂ := (M.relabel Fin.revPerm).morganIds
       if ids₁ == M.morganIds && ids₂ == M.morganIds then invariant := invariant + 1
       else failures := failures.push s!"relabelling changed the fingerprint of {row.smiles}"
-  IO.println s!"{rows.length} molecules, {parsed} parsed"
+  IO.println s!"{rows.length} molecules, {parsed} parsed, \
+    {skipped.size} rejected by the OpenSMILES grammar (deliberate)"
+  for f in skipped.toList do
+    IO.println s!"  {f}"
   IO.println s!"ring membership = RDKit: {ringOk}/{parsed}  [must be all]"
   IO.println
     s!"fingerprint = RDKit where the graph = RDKit's: {graphOkFpOk}/{graphOk}  [must be all]"
@@ -86,6 +92,6 @@ def main (args : List String) : IO UInt32 := do
   IO.println s!"identifiers+counts = RDKit overall: {idsOk}/{parsed}  [info: graph as written]"
   for f in failures.toList.take 10 do
     IO.println s!"  {f}"
-  let ok := parsed == rows.length && ringOk == parsed
+  let ok := parsed + skipped.size == rows.length && ringOk == parsed
     && graphOkFpOk == graphOk && invariant == parsed
   return if ok then 0 else 1

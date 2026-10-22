@@ -74,10 +74,7 @@ def atomInvariant (m : Molecule n) (i : Fin n) : List ℤ :=
   [(m.degree i : ℤ), (a.atomicNumber : ℤ), (a.totalH : ℤ), (if a.aromatic then 1 else 0),
     a.charge, ((a.isotope.getD 0 : ℕ) : ℤ), (if a.explicitH.isSome then 1 else 0),
     ((a.atomClass.getD 0 : ℕ) : ℤ),
-    (match a.chirality with
-      | none => 0
-      | some .anticlockwise => 1
-      | some .clockwise => 2)]
+    (((a.chirality.map Chirality.code).getD 0 : ℕ) : ℤ)]
 
 /-- Rank each atom by how many atoms have a strictly smaller invariant, so
 tied atoms share a rank and the ranks are label-independent. -/
