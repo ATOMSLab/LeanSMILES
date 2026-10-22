@@ -70,17 +70,11 @@ def ofElement (e : Element) : Atom := { element := some e }
 /-- The wildcard atom `*`. -/
 def wildcard : Atom := {}
 
-/-- Whether the atom is the wildcard `*`. -/
-def isWildcard (a : Atom) : Bool := a.element.isNone
-
 /-- Atomic number, with `0` for the wildcard. -/
 def atomicNumber (a : Atom) : ℕ := (a.element.map Element.atomicNumber).getD 0
 
 /-- Written plus inferred hydrogens. -/
 def totalH (a : Atom) : ℕ := a.explicitH.getD 0 + a.implicitH
-
-/-- Whether the atom was written (or must be written) inside brackets. -/
-def isBracket (a : Atom) : Bool := a.explicitH.isSome
 
 /-- The element symbol as SMILES writes it: lowercase when aromatic, `*` for
 the wildcard. -/
