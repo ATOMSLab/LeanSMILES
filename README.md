@@ -97,13 +97,33 @@ ranks, fingerprint — and `LeanSMILES/Examples/smiles.lean` for more; design an
 comparison with the `canonical-smiles` branch in
 `docs/design-molecular-representation.md`.
 
+### What the parser accepts
+
+The grammar is OpenSMILES's ([opensmiles.org](http://opensmiles.org/opensmiles.html),
+§2.2).  RDKit and the specification disagree on a handful of strings; where
+they do, LeanSMILES follows the specification, with the decided exceptions
+below.  Every row is pinned by `lake exe parse-errors-test`.
+
+| String | RDKit | OpenSMILES | LeanSMILES |
+|---|---|---|---|
+| `C(C)1CC1` — ring-closure label after a branch | accepts | rejects: `atom ringbond* branch*` | rejects (`ringAfterBranch`).  Chlorothalonil in the Delaney set is written `…c(Cl)1` and is skipped by `oracle-test`. |
+| `C(.O)`, `C.(O)`, `C(C.)`, `C.1CC1` — dots next to branches and labels | rejects | allows only the first | rejects all four |
+| `" C"` — leading whitespace | methane | empty molecule, then a title | methane |
+| `[Fe+++]`, `[C+123]` — charge forms | rejects, accepts | rejects both: `++`/`--` only, two digits | accepts both; whether the element has the electrons is `Molecule.checkCharges`, a post-parse chemistry check, not a lexical one |
+| `[CH10]`, `[C:]` — two-digit H count, empty class | accepts, rejects | rejects both | rejects both |
+| `[C@TH1]` … `[Fe@OH30]` — named chirality classes | accepts | accepts | accepts, recorded as written (`@` is not rewritten to `@TH1`) |
+| `C=1CC-1` — different bond symbols on one ring closure | accepts, opening symbol wins | rejects | rejects (`conflictingRingBond`) |
+| `C%(123)CC%(123)` — RDKit's long ring labels | accepts | rejects | rejects |
+| `[02H]` — isotope with a leading zero | rejects | accepts | accepts |
+
 Tests against RDKit's answers (oracle files from the `canonical-smiles` branch):
 
 ```bash
-lake exe validity-test   # 10 000 broken SMILES: accepts everything RDKit accepts (0 parser bugs)
-lake exe oracle-test     # 1 128 Delaney molecules: graph = RDKit's, canonical SMILES round-trips and is relabeling-invariant, 1128/1128
-lake exe morgan-test     # Morgan fingerprints: ring membership = RDKit's, bits = RDKit's wherever the graph is, relabeling-invariant
-lake exe charge-test     # formal charges: [C+123], [H+++], [C-123] parse but fail checkCharges; [Na+], [O-2], [Fe+3], [NH4+] pass
+lake exe parse-errors-test  # every ParseError with its exact message, plus the accept/reject decisions above
+lake exe validity-test      # 10 000 broken SMILES: accepts everything RDKit accepts, bar the OpenSMILES rules above (0 parser bugs)
+lake exe oracle-test        # 1 128 Delaney molecules: graph = RDKit's, canonical SMILES round-trips and is relabeling-invariant (1 skipped, see above)
+lake exe morgan-test        # Morgan fingerprints: ring membership = RDKit's, bits = RDKit's wherever the graph is, relabeling-invariant
+lake exe charge-test        # formal charges: [C+123], [H+++], [C-123] parse but fail checkCharges; [Na+], [O-2], [Fe+3], [NH4+] pass
 ```
 
 ### Morgan fingerprints

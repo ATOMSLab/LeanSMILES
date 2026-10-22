@@ -185,10 +185,7 @@ def atomInvariant (i : Fin n) : List ℤ :=
   [(d.degree i : ℤ), (a.atomicNumber : ℤ), (a.totalH : ℤ), (if a.aromatic then 1 else 0),
     a.charge, ((a.isotope.getD 0 : ℕ) : ℤ), (if a.explicitH.isSome then 1 else 0),
     ((a.atomClass.getD 0 : ℕ) : ℤ),
-    (match a.chirality with
-      | none => 0
-      | some .anticlockwise => 1
-      | some .clockwise => 2)]
+    (((a.chirality.map Chirality.code).getD 0 : ℕ) : ℤ)]
 
 /-- The sorted (neighbor rank, bond kind) pairs of an atom. -/
 def neighborInvariant (rank : Ranks n) (i : Fin n) : List (ℤ × ℤ) :=
