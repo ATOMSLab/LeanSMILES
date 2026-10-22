@@ -10,7 +10,7 @@ polynomial fragment also runs exactly over `ℚ`. The layout follows that split:
 | Folder | What it is |
 |---|---|
 | [`Regression/`](Regression) | executable linear regression, over any scalar: the ridge `Problem`, its iterative `Solvers` (gradient descent, Jacobi, Gauss–Seidel) and their exact `ℚ` `Certificates`; the `LinearModel` objectives on a Mathlib matrix; the Householder-QR solvers `OLSFloat` and `RidgeFloat`; `SparseRidge` (conjugate gradients on sparse 0/1 features) and `Metrics` (R², RMSE, MAE) |
-| [`Classification/`](Classification) | L2-regularized logistic regression on sparse 0/1 features |
+| [`Classification/`](Classification) | L2-regularized logistic regression on sparse 0/1 features (`Logistic`); ROC curves and AUC (`ROC`) |
 | [`Plot/`](Plot) | parity plots as SVG |
 | [`Proofs/LeastSquares/`](Proofs/LeastSquares) | over `ℝ`, on Mathlib matrices: ordinary least squares (`OLS`), diagonal ridge (`Ridge`), and the two against each other (`RidgeOLS`: the trade-off, shrinkage, the ridge path) |
 | [`Proofs/Regression/`](Proofs/Regression) | over `ℝ`, about the executable code: the loss is an exact quadratic (`Basic`), gradient descent's `O(1/k)` rate (`GradientDescent`), Jacobi and Gauss–Seidel under weighted diagonal dominance (`Iterative`), certificate soundness (`Certificates`), and the bridges to the closed form (`MatrixBridge`: `Problem` is `Ridge` up to the factor `m`; `LinearModel`: the executable objectives are the specifications) |
