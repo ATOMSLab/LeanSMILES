@@ -82,3 +82,14 @@ root = "LeanSMILES.Tests.Aromaticity"
 [[lean_exe]]
 name = "ridge-test"
 root = "Pipelines.Tests.Ridge"
+
+# 2D depiction: SVG drawings and mol blocks from the command line
+[[lean_exe]]
+name = "depict"
+root = "LeanSMILES.Depict.Main"
+
+# Checks every drawing of datasets/stereo.smi and writes out/stereo.sdf for
+# tools/check_depiction.py (RDKit reads the stereochemistry back)
+[[lean_exe]]
+name = "depict-test"
+root = "LeanSMILES.Tests.Depict"
