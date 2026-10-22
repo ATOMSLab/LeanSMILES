@@ -43,9 +43,45 @@ structure Mol where
   /-- The molecule. -/
   mol : Molecule n
 
+section RelabelVec
+
+variable {n : ℕ} {α : Type*}
+
+/-- Transport a per-atom vector along a relabeling: position `σ i` receives
+what `i` had. `relabel` does this to the atoms. -/
+def relabelVec (σ : Equiv.Perm (Fin n)) (v : Vector α n) : Vector α n :=
+  Vector.ofFn fun i ↦ v[σ.symm i]
+
+@[simp] lemma getElem_relabelVec (σ : Equiv.Perm (Fin n)) (v : Vector α n)
+    (j : ℕ) (h : j < n) : (relabelVec σ v)[j] = v[σ.symm ⟨j, h⟩] := by
+  simp [relabelVec, Vector.getElem_ofFn]
+
+lemma relabelVec_apply (σ : Equiv.Perm (Fin n)) (v : Vector α n) (i : Fin n) :
+    (relabelVec σ v)[σ i] = v[i] := by
+  simp [relabelVec, Vector.getElem_ofFn]
+
+lemma relabelVec_relabelVec (σ τ : Equiv.Perm (Fin n)) (v : Vector α n) :
+    relabelVec τ (relabelVec σ v) = relabelVec (σ.trans τ) v := by
+  ext i
+  simp [relabelVec, Vector.getElem_ofFn]
+
+end RelabelVec
+
 namespace Molecule
 
 variable {n : ℕ} (m : Molecule n)
+
+@[ext] lemma ext {m m' : Molecule n} (ha : m.atoms = m'.atoms) (hb : m.bonds = m'.bonds) :
+    m = m' := by
+  cases m
+  cases m'
+  cases ha
+  cases hb
+  rfl
+
+instance : DecidableEq (Molecule n) := fun m m' ↦
+  decidable_of_iff (m.atoms = m'.atoms ∧ m.bonds = m'.bonds)
+    ⟨fun ⟨h1, h2⟩ ↦ ext h1 h2, fun h ↦ h ▸ ⟨rfl, rfl⟩⟩
 
 /-- The number of bonds. -/
 def numBonds : ℕ := m.bonds.length
@@ -75,6 +111,15 @@ def bondBetween (i j : Fin n) : Option (Bond n) :=
 
 /-- Whether some bond joins `i` and `j`. -/
 def adjacent (i j : Fin n) : Bool := (m.bondBetween i j).isSome
+
+/-- Among the bonds at `i`, the one whose other end is `j` is the bond between them. -/
+lemma find?_bondsAt_other (i j : Fin n) :
+    (m.bondsAt i).find? (fun b ↦ b.other i == j) = m.bondBetween i j := by
+  unfold bondsAt bondBetween
+  rw [List.find?_filter]
+  congr 1
+  funext b
+  exact decide_eq_decide.mpr (Bond.touches_and_other_iff b i j)
 
 /-- Replace every atom, keeping the bonds. -/
 def mapAtoms (f : Fin n → Atom → Atom) : Molecule n :=
@@ -142,6 +187,28 @@ lemma edges_relabel (σ : Equiv.Perm (Fin n)) :
 
 lemma numBonds_relabel (σ : Equiv.Perm (Fin n)) : (m.relabel σ).numBonds = m.numBonds := by
   simp [relabel, numBonds]
+
+lemma atoms_relabel (σ : Equiv.Perm (Fin n)) : (m.relabel σ).atoms = relabelVec σ m.atoms := rfl
+
+lemma bonds_relabel (σ : Equiv.Perm (Fin n)) :
+    (m.relabel σ).bonds = m.bonds.map (Bond.map σ σ.injective) := rfl
+
+/-- The bonds at `σ i` after relabeling are the bonds at `i`, relabeled, in order. -/
+lemma bondsAt_relabel (σ : Equiv.Perm (Fin n)) (i : Fin n) :
+    (m.relabel σ).bondsAt (σ i) = (m.bondsAt i).map (Bond.map σ σ.injective) := by
+  simp [bondsAt, bonds_relabel, List.filter_map, Function.comp_def]
+
+@[simp] lemma degree_relabel (σ : Equiv.Perm (Fin n)) (i : Fin n) :
+    (m.relabel σ).degree (σ i) = m.degree i := by
+  simp [degree, bondsAt_relabel]
+
+/-- Relabeling twice is relabeling by the composite: first `σ`, then `τ`. -/
+theorem relabel_relabel (σ τ : Equiv.Perm (Fin n)) :
+    (m.relabel σ).relabel τ = m.relabel (σ.trans τ) := by
+  refine Molecule.ext ?_ ?_
+  · ext i
+    simp [relabel, Vector.getElem_ofFn]
+  · simp [relabel, List.map_map, Function.comp_def]
 
 /-! ### Printing -/
 

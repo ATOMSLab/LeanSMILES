@@ -366,12 +366,16 @@ variable (m : Molecule n)
 
 /-! ### The molecule's matrices as subtypes, with O(1) lookups -/
 
-/-- The weighted adjacency matrix as a table. -/
+/-- The weighted adjacency matrix as a table, each row read off that atom's own
+bonds (O(n · bonds) to build, where `adjMatrix` entry by entry would scan the
+bond list n² times). -/
 def adjTable : Vector (Vector ℚ n) n :=
-  Vector.ofFn fun i ↦ Vector.ofFn fun j ↦ m.adjMatrix i j
+  Vector.ofFn fun i ↦
+    let bs := m.bondsAt i
+    Vector.ofFn fun j ↦ ((bs.find? fun b ↦ b.other i == j).map (·.kind.order)).getD 0
 
 @[simp] lemma getElem_adjTable (i j : Fin n) : m.adjTable[i.val][j.val] = m.adjMatrix i j := by
-  simp [adjTable]
+  simp [adjTable, Vector.getElem_ofFn, find?_bondsAt_other, adjMatrix_apply]
 
 lemma of_adjTable_eq_adjMatrix : (Matrix.of fun i j ↦ m.adjTable[i][j]) = m.adjMatrix := by
   ext i j
@@ -421,18 +425,6 @@ def normalize : Molecule n := ofAdjMatrix m.atoms m.adjMatrix
 /-- Already in normal form. -/
 def IsNormal : Prop := m.normalize = m
 
-@[ext] lemma ext {m m' : Molecule n} (ha : m.atoms = m'.atoms) (hb : m.bonds = m'.bonds) :
-    m = m' := by
-  cases m
-  cases m'
-  cases ha
-  cases hb
-  rfl
-
-instance : DecidableEq (Molecule n) := fun m m' ↦
-  decidable_of_iff (m.atoms = m'.atoms ∧ m.bonds = m'.bonds)
-    ⟨fun ⟨h1, h2⟩ ↦ ext h1 h2, fun h ↦ h ▸ ⟨rfl, rfl⟩⟩
-
 instance : DecidablePred (IsNormal (n := n)) := fun m ↦
   inferInstanceAs (Decidable (m.normalize = m))
 
@@ -465,6 +457,11 @@ lemma IsNormal.bond_spec {m : Molecule n} (h : m.IsNormal) {b : Bond n} (hb : b 
   obtain ⟨hlt, -, hd⟩ := mem_bondsOfMatrix.mp h'
   exact ⟨hlt, hd⟩
 
+lemma numBonds_normalize : m.normalize.numBonds = m.numBonds := by
+  rw [← card_edgeFinset, ← card_edgeFinset, SimpleGraph.edgeFinset_card,
+    SimpleGraph.edgeFinset_card]
+  exact Fintype.card_congr (Equiv.setCongr (by rw [graph_normalize]))
+
 /-- **Nothing is lost**: molecules in normal form are exactly atoms together
 with a bond matrix. -/
 def normalEquiv : {m : Molecule n // m.IsNormal} ≃ Vector Atom n × BondMatrix n where
@@ -480,6 +477,138 @@ def normalEquiv : {m : Molecule n // m.IsNormal} ≃ Vector Atom n × BondMatrix
     change (p.2.toMolecule p.1).toBondMatrix.1 i j = p.2.1 i j
     rw [val_toBondMatrix]
     exact congrFun (congrFun (adjMatrix_ofAdjMatrix p.1 p.2.2) i) j
+
+end Molecule
+
+/-! ### Relabeling the matrix views -/
+
+namespace Molecule
+
+variable (m : Molecule n)
+
+/-- The bond between `σ i` and `σ j` after relabeling is the bond between `i` and `j`,
+relabeled. -/
+lemma bondBetween_relabel (σ : Equiv.Perm (Fin n)) (i j : Fin n) :
+    (m.relabel σ).bondBetween (σ i) (σ j) = (m.bondBetween i j).map (Bond.map σ σ.injective) := by
+  simp only [bondBetween, bonds_relabel, List.find?_map]
+  congr 2
+  funext b
+  simp only [Function.comp_apply, Bond.edge_map, decide_eq_decide]
+  rw [← Sym2.map_mk σ i j]
+  exact (Sym2.map.injective σ.injective).eq_iff
+
+lemma adjMatrix_relabel_apply (σ : Equiv.Perm (Fin n)) (i j : Fin n) :
+    (m.relabel σ).adjMatrix (σ i) (σ j) = m.adjMatrix i j := by
+  rw [adjMatrix_apply, adjMatrix_apply, bondBetween_relabel, Option.map_map]
+  rfl
+
+/-- Relabeling a molecule relabels its bond matrix. -/
+theorem toBondMatrix_relabel (σ : Equiv.Perm (Fin n)) :
+    (m.relabel σ).toBondMatrix = m.toBondMatrix.relabel σ := by
+  refine BondMatrix.ext fun i j ↦ ?_
+  rw [toBondMatrix_apply, BondMatrix.relabel_apply, toBondMatrix_apply]
+  conv_lhs => rw [← σ.apply_symm_apply i, ← σ.apply_symm_apply j]
+  exact adjMatrix_relabel_apply m σ _ _
+
+end Molecule
+
+/-! ### A molecule as atoms and a bond matrix -/
+
+/-- A molecule as the canonical search sees it: its atoms and its bond matrix —
+a molecule up to the order and orientation of its bond list (`normalEquiv`).
+The matrix is stored as a table, so a lookup is O(1) wherever the value flows
+(a matrix closing over a table is not: the compiler may float the table into
+the closure and rebuild it per call); `bonds` is the same matrix as a
+`BondMatrix` for the theorems.  Relabeling acts on it literally, so an
+automorphism is an equality `d.relabel γ = d`. -/
+structure MolData (n : ℕ) where
+  /-- The atoms. -/
+  atoms : Vector Atom n
+  /-- The weighted adjacency matrix, as a table. -/
+  table : Vector (Vector ℚ n) n
+  /-- The table is a bond matrix. -/
+  isBondMatrix : IsBondMatrix (Matrix.of fun i j ↦ table[i][j])
+
+namespace MolData
+
+variable (d : MolData n)
+
+@[ext] lemma ext {d d' : MolData n} (ha : d.atoms = d'.atoms) (ht : d.table = d'.table) :
+    d = d' := by
+  cases d
+  cases d'
+  cases ha
+  cases ht
+  rfl
+
+instance : DecidableEq (MolData n) := fun d d' ↦
+  decidable_of_iff (d.atoms = d'.atoms ∧ d.table = d'.table)
+    ⟨fun ⟨h1, h2⟩ ↦ ext h1 h2, fun h ↦ h ▸ ⟨rfl, rfl⟩⟩
+
+/-- The bond matrix. -/
+def bonds : BondMatrix n := ⟨Matrix.of fun i j ↦ d.table[i][j], d.isBondMatrix⟩
+
+@[simp] lemma bonds_apply (i j : Fin n) : d.bonds i j = d.table[i][j] := rfl
+
+/-- Relabel the atoms by `σ`: position `σ i` receives what `i` had. -/
+def relabel (σ : Equiv.Perm (Fin n)) : MolData n where
+  atoms := relabelVec σ d.atoms
+  table := Vector.ofFn fun i ↦ Vector.ofFn fun j ↦ d.table[σ.symm i][σ.symm j]
+  isBondMatrix :=
+    { symm := fun i j ↦ by
+        simpa [Vector.getElem_ofFn] using d.isBondMatrix.symm (σ.symm i) (σ.symm j)
+      diag := fun i ↦ by simpa [Vector.getElem_ofFn] using d.isBondMatrix.diag (σ.symm i)
+      entry := fun i j h ↦ by
+        simp only [Matrix.of_apply, Fin.getElem_fin, Vector.getElem_ofFn, Fin.eta] at h ⊢
+        exact d.isBondMatrix.entry _ _ h }
+
+@[simp] lemma atoms_relabel (σ : Equiv.Perm (Fin n)) : (d.relabel σ).atoms = relabelVec σ d.atoms :=
+  rfl
+
+@[simp] lemma table_relabel (σ : Equiv.Perm (Fin n)) (i j : Fin n) :
+    (d.relabel σ).table[i][j] = d.table[σ.symm i][σ.symm j] := by
+  simp [relabel, Vector.getElem_ofFn]
+
+lemma bonds_relabel (σ : Equiv.Perm (Fin n)) : (d.relabel σ).bonds = d.bonds.relabel σ := by
+  refine BondMatrix.ext fun i j ↦ ?_
+  simp [relabel, Vector.getElem_ofFn]
+
+lemma relabel_relabel (σ τ : Equiv.Perm (Fin n)) :
+    (d.relabel σ).relabel τ = d.relabel (σ.trans τ) := by
+  refine ext (relabelVec_relabelVec σ τ d.atoms) ?_
+  ext i hi j hj
+  simp [relabel, Vector.getElem_ofFn]
+
+/-- The molecule, in normal form. -/
+def toMolecule : Molecule n := Molecule.ofAdjMatrix d.atoms d.bonds.1
+
+end MolData
+
+namespace Molecule
+
+variable (m : Molecule n)
+
+/-- The atoms and the bond matrix, as a table with O(1) lookups. -/
+def toMolData : MolData n :=
+  ⟨m.atoms, m.adjTable, m.of_adjTable_eq_adjMatrix ▸ m.isBondMatrix_adjMatrix⟩
+
+@[simp] lemma toMolData_atoms : m.toMolData.atoms = m.atoms := rfl
+
+lemma toMolData_bonds : m.toMolData.bonds = m.toBondMatrix := rfl
+
+lemma toMolData_relabel (σ : Equiv.Perm (Fin n)) :
+    (m.relabel σ).toMolData = m.toMolData.relabel σ := by
+  refine MolData.ext rfl ?_
+  ext i hi j hj
+  have h₁ := getElem_adjTable (m.relabel σ) ⟨i, hi⟩ ⟨j, hj⟩
+  have h₂ := getElem_adjTable m (σ.symm ⟨i, hi⟩) (σ.symm ⟨j, hj⟩)
+  simp only [toMolData, MolData.relabel, Fin.getElem_fin, Vector.getElem_ofFn, h₁, h₂]
+  conv_lhs => rw [← σ.apply_symm_apply ⟨i, hi⟩, ← σ.apply_symm_apply ⟨j, hj⟩]
+  exact adjMatrix_relabel_apply m σ _ _
+
+/-- Round trip: the molecule of a molecule's data is its normal form. -/
+lemma toMolecule_toMolData : m.toMolData.toMolecule = m.normalize := by
+  simp [MolData.toMolecule, toMolData_bonds, val_toBondMatrix, normalize]
 
 end Molecule
 

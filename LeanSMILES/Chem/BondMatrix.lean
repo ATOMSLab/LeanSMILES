@@ -131,6 +131,30 @@ lemma ofMatrix?_eq_some_iff {A : Matrix (Fin n) (Fin n) ℚ} {B : BondMatrix n} 
 
 instance : Repr (BondMatrix n) := ⟨fun B p ↦ reprPrec B.1 p⟩
 
+instance : DecidableEq (BondMatrix n) := fun B B' ↦
+  decidable_of_iff (∀ i j, B i j = B' i j) ⟨ext, fun h _ _ ↦ h ▸ rfl⟩
+
+/-! #### Relabeling -/
+
+/-- Relabel the atoms: entry `(σ i, σ j)` receives entry `(i, j)`. -/
+def relabel (σ : Equiv.Perm (Fin n)) (B : BondMatrix n) : BondMatrix n :=
+  ⟨Matrix.of fun i j ↦ B (σ.symm i) (σ.symm j),
+    { symm := fun i j ↦ B.symm (σ.symm i) (σ.symm j)
+      diag := fun i ↦ B.diag (σ.symm i)
+      entry := fun i j h ↦ B.entry (σ.symm i) (σ.symm j) h }⟩
+
+@[simp] lemma relabel_apply (σ : Equiv.Perm (Fin n)) (B : BondMatrix n) (i j : Fin n) :
+    B.relabel σ i j = B (σ.symm i) (σ.symm j) := rfl
+
+lemma relabel_apply_apply (σ : Equiv.Perm (Fin n)) (B : BondMatrix n) (i j : Fin n) :
+    B.relabel σ (σ i) (σ j) = B i j := by
+  simp
+
+lemma relabel_relabel (σ τ : Equiv.Perm (Fin n)) (B : BondMatrix n) :
+    (B.relabel σ).relabel τ = B.relabel (σ.trans τ) := by
+  ext i j
+  simp
+
 end BondMatrix
 
 /-! ### The flat 0/1 matrix -/

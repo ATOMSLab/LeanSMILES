@@ -71,7 +71,8 @@ from a molecule — `BondMatrix n` (bond orders, O(1) lookups) and `FlatMatrix n
 proving that nothing but bond orientation is lost.  The parser checks syntax, not valence; the only chemistry
 applied is the OpenSMILES implicit-hydrogen rule.  Canonical SMILES is
 color refinement plus exhaustive tie-breaking (lexicographically smallest
-string), so it is canonical by construction rather than by matching RDKit.
+string), and it is canonical by theorem (`Molecule.canonicalSmiles_relabel`)
+rather than by matching RDKit.
 
 Open `LeanSMILES/Examples/caffeine.lean` for one molecule walked through every
 representation — tokens, atoms, bonds, graph, matrices, normal form, canonical
@@ -120,9 +121,12 @@ checked against.
   canonical SMILES depending on input atom order
   (`LeanSMILES/Examples/smiles.lean`). Found by searching random cubic graphs;
   20 of 1 989 showed it. LeanSMILES tries every tied atom and keeps the
-  lexicographically smallest string, so its canonical SMILES is independent of
-  input order by construction (within the leaf budget), not by testing; the
-  Lean theorem is the next step (design notes §9).
+  lexicographically smallest string, and its canonical SMILES is proved
+  independent of input order for every molecule, with no budget:
+  `Mol.canonicalSmiles_relabel` (`LeanSMILES/SMILES/Canonicity.lean`).
+  nauty-style automorphism pruning, checked at every use, keeps symmetric
+  molecules tractable — a 53-atom *tert*-butyl dendrimer with about 7 × 10¹³
+  tie-breaking leaves canonicalizes in seconds.
 * **OpenSMILES underdetermines implicit hydrogens on aromatic atoms.** §3.1.5
   computes the count from a sum of bond orders but never says what an
   aromatic bond contributes; §3.5 only requires that electrons be assignable

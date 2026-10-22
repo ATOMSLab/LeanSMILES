@@ -139,16 +139,18 @@ stored from the closing atom back to the opening one. -/
 
 /-! ### 7. Canonical ranks and the canonical SMILES
 
-Canonicalization is a relabeling.  Each atom gets an invariant (degree,
+Canonicalization is a relabeling.  The search reads the molecule as atoms
+plus bond matrix (`toMolData`).  Each atom gets an invariant (degree,
 element, hydrogens, aromatic, charge, …); ranks are refined by neighbors'
-ranks until nothing splits; ties are broken by trying every tied atom and
-keeping the lexicographically smallest string.  `canonicalPerm` is the
+ranks until nothing splits; ties are broken by trying every tied atom —
+skipping those a verified symmetry shows redundant — and keeping the
+lexicographically smallest string.  `canonicalPerm` is the
 resulting permutation, `canonicalize` applies it, and the canonical SMILES is
 the canonical molecule written in its new atom order. -/
 
 -- The initial invariants, and how many classes refinement reaches.
-#eval (List.finRange M.n).map M.mol.atomInvariant
-#eval numClasses (M.mol.refine M.n (ranksOf (Vector.ofFn M.mol.atomInvariant)))
+#eval (List.finRange M.n).map M.mol.toMolData.atomInvariant
+#eval numClasses M.mol.toMolData.initialRanks
 
 -- Where each atom goes.
 #eval let σ := M.mol.canonicalPerm; (List.finRange M.n).map fun i ↦ (i.val, (σ i).val)

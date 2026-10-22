@@ -156,6 +156,24 @@ def map (σ : Fin n → Fin m) (hσ : Function.Injective σ) (b : Bond n) : Bond
 @[simp] lemma edge_map (σ : Fin n → Fin m) (hσ : Function.Injective σ) (b : Bond n) :
     (b.map σ hσ).edge = Sym2.map σ b.edge := rfl
 
+@[simp] lemma map_map {k : ℕ} (σ : Fin n → Fin m) (hσ : Function.Injective σ)
+    (τ : Fin m → Fin k) (hτ : Function.Injective τ) (b : Bond n) :
+    (b.map σ hσ).map τ hτ = b.map (τ ∘ σ) (hτ.comp hσ) := rfl
+
+@[simp] lemma kind_map (σ : Fin n → Fin m) (hσ : Function.Injective σ) (b : Bond n) :
+    (b.map σ hσ).kind = b.kind := rfl
+
+@[simp] lemma touches_map (σ : Fin n → Fin m) (hσ : Function.Injective σ) (b : Bond n)
+    (i : Fin n) : (b.map σ hσ).touches (σ i) = b.touches i := by
+  simp only [touches, map]
+  rw [Bool.eq_iff_iff]
+  simp [hσ.eq_iff]
+
+@[simp] lemma other_map (σ : Fin n → Fin m) (hσ : Function.Injective σ) (b : Bond n)
+    (i : Fin n) : (b.map σ hσ).other (σ i) = σ (b.other i) := by
+  simp only [other, map, hσ.eq_iff]
+  split_ifs <;> rfl
+
 @[simp] lemma edge_flip (b : Bond n) : b.flip.edge = b.edge := Sym2.eq_swap
 
 lemma edge_not_isDiag (b : Bond n) : ¬ b.edge.IsDiag := by
@@ -169,6 +187,13 @@ lemma edge_eq_mk_iff {b : Bond n} {i j : Fin n} :
 lemma edge_ne_diag (b : Bond n) (i : Fin n) : b.edge ≠ s(i, i) := by
   intro h
   rcases edge_eq_mk_iff.mp h with ⟨h1, h2⟩ | ⟨h1, h2⟩ <;> exact b.ne (h1.trans h2.symm)
+
+/-- A bond touches `i` with `j` at the other end exactly when its edge is `s(i, j)`. -/
+lemma touches_and_other_iff (b : Bond n) (i j : Fin n) :
+    (b.touches i = true ∧ (b.other i == j) = true) ↔ b.edge = s(i, j) := by
+  simp only [touches, Bool.or_eq_true, beq_iff_eq, other, edge_eq_mk_iff]
+  have hne := b.ne
+  split_ifs with hs <;> aesop
 
 lemma touches_iff {b : Bond n} {i : Fin n} : b.touches i = true ↔ i ∈ b.edge := by
   simp only [touches, edge, Bool.or_eq_true, beq_iff_eq, Sym2.mem_iff]

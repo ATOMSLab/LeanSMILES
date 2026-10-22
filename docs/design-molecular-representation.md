@@ -176,13 +176,34 @@ exhaustive mode as the fix.  Here the set of leaves is label-independent, so
 the minimum is label-independent, which is the theorem we want:
 
 ```
-canonicalSmiles (relabel σ m) = canonicalSmiles m      -- the target, not yet proved
+canonicalSmiles (relabel σ m) = canonicalSmiles m      -- `canonicalSmiles_relabel`, Canonicity.lean
 ```
 
-The cost is exponential in the worst case, bounded by `budget` leaves (default
-1024; beyond it the output is still a valid SMILES but no longer guaranteed
-canonical).  On drug-like molecules the leaf count is tiny — ties come from
-local symmetries such as a phenyl ring's two ortho positions.
+The full search costs one leaf per element of the automorphism group when
+every tie is a true symmetry (more when refinement leaves non-equivalent atoms
+tied), at a few milliseconds per leaf.  Size is not the issue — taxol
+(62 atoms) and vancomycin (101) each have one tied pair and 2 leaves — symmetry
+is: tetraphenylmethane 384 leaves (4!·2⁴), 1,3,5-tri-*tert*-butylbenzene 1 296
+(6·6³), tetra-*tert*-butylmethane 31 104 (4!·6⁴, 17 s), and a 53-atom
+second-generation *tert*-butyl dendrimer about 7 × 10¹³ (4!·1296⁴).
+
+`search` prunes as nauty does.  Before exploring the subtree under a tied
+atom it walks that subtree to its first leaf and asks whether an already
+explored sibling's first leaf is an automorphic image of it.  The candidate
+automorphism is the permutation carrying one leaf's rank order onto the
+other's, and it is *checked* — it must fix the data, fix the current ranking,
+and send the sibling to the atom — before the subtree is skipped; soundness
+rests on the check alone (`Canonicity`: the pruned and the full search have
+the same minimum).  Every case above collapses to a single explored leaf:
+tetra-*tert*-butylmethane in 0.2 s, the dendrimer in 17 s.  There is no
+budget.  What stays exponential is refinement-tied atoms that are *not*
+symmetric, as in regular graphs, where a 62-atom cage explores 62 leaves in
+3.5 s.
+
+The search reads the molecule as `MolData` — atoms plus bond matrix, the
+normal-form data — because there an automorphism is a literal equality
+`d.relabel γ = d`.  The matrix is a table field, built row by row from each
+atom's bonds (`adjMatrix` entry by entry would scan the bond list n² times).
 
 ## 6. Compared with the `canonical-smiles` branch
 
@@ -197,7 +218,7 @@ the two are complementary rather than competing.
 | Bond order | half-units (`Nat`), RDKit enum | `BondKind` with `order : ℚ` |
 | Mathlib | none (planned `toSimpleGraph`) | `SimpleGraph`, `Matrix ℚ`, theorems |
 | Chemistry | full RDKit sanitization: cleanup, kekulize, aromaticity, strict valence (860 lines) | implicit H only |
-| Canonical SMILES | RDKit's ranking and walk, string-identical to RDKit on 1 128/1 128 Delaney | exhaustive-minimum, provably canonical by construction, not RDKit's string |
+| Canonical SMILES | RDKit's ranking and walk, string-identical to RDKit on 1 128/1 128 Delaney | exhaustive minimum with automorphism pruning, canonical by theorem (`canonicalSmiles_relabel`), not RDKit's string |
 | Stereo | skipped | recorded, not written |
 | Test oracles | `datasets/*-oracle.csv`, `fuzz-validity.tsv` (reused here) | — |
 
@@ -263,9 +284,14 @@ Compiled code (`lake exe …`) is unaffected; only the interactive path is.
 
 ## 9. Next steps
 
-1. **The canonicity theorem**: `canonicalSmiles (relabel σ m) = canonicalSmiles m`.
-   Needs: refinement commutes with relabeling; the leaf set is permuted by
-   relabeling; `write` commutes with relabeling when ranks are discrete.
+1. **The canonicity theorem** — done, with no hypothesis:
+   `canonicalSmiles_relabel` in `SMILES/Canonicity.lean`,
+   `(m.relabel σ).canonicalSmiles = m.canonicalSmiles`.  Refinement commutes
+   with relabeling and the leaf list is permuted, as expected; the writer
+   needed no proof at all, because `writeRanked` was redefined as "relabel
+   into rank order, then write in index order", so its commuting is
+   `relabel_relabel`; and pruning is sound because it acts only on symmetries
+   it has checked.
 2. **Round trip**: `parse (toSmiles m) ≅ m` as labeled graphs.
 3. **Degree lemma**: `graph.degree i = degree i` (needs `nodup`).
 4. **Chemistry as passes**: port the branch's sanitization as
