@@ -15,40 +15,21 @@ scope = "leanprover-community"
 rev = "v4.30.0-rc1"
 
 
-# Polymorphic definitions and their `Float` instantiation. This library imports no Mathlib
-# and is precompiled to native code, so `#eval` runs it at compiled speed.
-[[lean_lib]]
-name = "LeanSMILESExec"
-precompileModules = true
-roots = []
-globs = [
-  "LeanSMILES.Polymorphic.+",
-  "LeanSMILES.Float.+",
-]
-
-# Everything that needs Mathlib: the `ℝ` instance and the proofs, the theorems ported from
-# TorchLean, the typed SMILES toolkit, tests and examples.
 [[lean_lib]]
 name = "LeanSMILES"
-# No implicit root: Lake would otherwise treat every `LeanSMILES.*` module as a member of this
-# library (the last one declared wins), so nothing would ever belong to `LeanSMILESExec` and
-# `precompileModules` would never apply. For the same reason the globs list directories
-# rather than `LeanSMILES.*`.
-roots = []
 globs = [
   "LeanSMILES",
-  # the pipeline: ℝ instance, proofs, theorems ported from TorchLean
-  "LeanSMILES.Real.+",
-  "LeanSMILES.Proofs.+",
-  "LeanSMILES.Optimization.+",
-  "LeanSMILES.LearningTheory.+",
-  # the typed SMILES toolkit from `main`
   "LeanSMILES.main",
   "LeanSMILES.Scalar",
   "LeanSMILES.Chem.+",
   "LeanSMILES.SMILES.+",
   "LeanSMILES.Fingerprint.+",
   "LeanSMILES.Data.+",
+  "LeanSMILES.Regression.+",
+  "LeanSMILES.Pipeline.+",
+  "LeanSMILES.Proofs.+",
+  "LeanSMILES.Optimization.+",
+  "LeanSMILES.LearningTheory.+",
   "LeanSMILES.Tests.+",
   "LeanSMILES.Examples.+",
 ]

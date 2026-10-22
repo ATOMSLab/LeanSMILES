@@ -3,14 +3,16 @@ Formalizing molecular representations in Lean
 
 The repository has two parts that build together:
 
-* **A typed SMILES toolkit** (`LeanSMILES.*`): SMILES → `Molecule n` → canonical SMILES and
-  Morgan fingerprints, with Mathlib graph and matrix views, canonical SMILES proved
+* **A typed SMILES toolkit**: SMILES → `Molecule n` → canonical SMILES, Morgan fingerprints
+  and bond-order matrices, with Mathlib graph and matrix views, canonical SMILES proved
   canonical, and tests against RDKit.
-* **Certified cheminformatics pipelines** (`Polymorphic/`, `Float/`, `Real/`, `Proofs/`):
-  describe a pipeline — labelled molecules, a molecular representation, a learning algorithm
-  and its hyperparameters — and prove what the trained model is guaranteed to satisfy,
-  without training it. Every definition is written once, polymorphic over a scalar type `α`;
-  theorems are proved at `α := ℝ` and the same code runs at `α := Float`.
+* **Certified linear-regression pipelines** (`Regression/`, `Pipeline/`, `Proofs/`), built on
+  the toolkit: describe a pipeline — molecules from SMILES with exact targets, a molecular
+  representation, a ridge penalty, and an iterative solver (gradient descent, Jacobi or
+  Gauss–Seidel) with its hyperparameters — and prove what the trained model is guaranteed to
+  satisfy, without training it. The solvers are written once over the toolkit's scalar
+  interface (`LeanSMILES.Scalar`): they compute exactly over `ℚ` for certificates, run on
+  `Float`, and are proved correct over `ℝ`.
 
 ## Installation
 
@@ -120,121 +122,109 @@ under relabeling of the atoms.
 
 ## Certifying a pipeline
 
-**1. Write the pipeline**, once, for any scalar type:
+The worked example is [`LeanSMILES/Examples/CertifiedPipeline.lean`](LeanSMILES/Examples/CertifiedPipeline.lean).
+
+**1. Write the pipeline.** Data are SMILES with exact rational targets; the representation
+comes from the toolkit:
 
 ```lean
-def esolPipeline (α : Type) [Scalar α] : Pipeline α 6 1024 where
-  data := esolData α                                  -- molecules + targets
-  representation := .morgan 2 1024                    -- radius-2, 1024-bit fingerprints
-  algorithm := .gradientDescent ⟨1 / Scalar.fromNat 2050, 41000⟩   -- step size, iterations
+def esolGD : Pipeline 6 64 :=
+  { data := esol                                   -- `LabelledMolecules.ofSmiles` on (SMILES, logS)
+    representation := .morgan 2 64                 -- the toolkit's Morgan fingerprints
+    algorithm := .gradientDescent (1 / 130) 2600 } -- step size, steps (ridge λ defaults to 0)
 ```
 
-**2. Fill in its certificate.** Each field is a condition on the parameters. The feature bound
-comes from a lemma about the representation, and the rest is arithmetic that `norm_num` closes:
+**2. Fill in its certificate.** For gradient descent every field is about the representation
+and the hyperparameters, so the guarantee holds for every dataset:
 
 ```lean
-noncomputable def esolCertificate :
-    Pipeline.GDCertificate (esolPipeline ℝ).representation ⟨1 / Scalar.fromNat 2050, 41000⟩ where
-  R2 := (1024 : ℕ)                                    -- ‖φ(mol)‖² ≤ 1024 for every molecule
-  B := 1                                              -- compare with models of norm² ≤ 1
-  ε := 1 / 20                                         -- tolerated excess training error
-  bounded := Representation.morgan_bounded 2 1024
+def esolCertificate : GDCertificate (Representation.morgan 2 64) 0 (1 / 130) 2600 where
+  R2 := (64 : ℕ)                                   -- ‖φ(M)‖² ≤ 64 for every molecule
+  B := 4                                           -- compare with parameters of norm² ≤ 4
+  ε := 1 / 10                                      -- tolerated excess training loss
+  bounded := Representation.morgan_bounded 2 64
+  ridge_nonneg := le_rfl
   stepSize_pos := by norm_num
-  stepSize_small := by norm_num                       -- 2η(R² + 1) ≤ 1
+  stepSize_small := by norm_num                    -- 2η(R² + 1 + λ) ≤ 1
   iters_pos := by norm_num
-  iters_enough := by norm_num                         -- B ≤ 2ηkε
+  iters_enough := by norm_num                      -- B ≤ 2ηkε
+
+theorem esol_guarantee (u : Vec ℝ 65) (hu : ∑ i : Fin 65, u[i] ^ 2 ≤ 4) :
+    esolGD.trainLoss ℝ ≤ (esolGD.problem ℝ).loss u + 1 / 10 := ...
 ```
 
-If a condition fails, for example a step size too large for the representation, `norm_num`
-proves its negation and there is no certificate.
-
-**3. Use the guarantee:**
-
-```lean
-theorem esol_guarantee (u : LinearModel ℝ 1024) (hu : normSq u.toParams ≤ 1) :
-    (esolPipeline ℝ).trainMSE ≤ mse u (esolPipeline ℝ).dataset + 1 / 20 :=
-  esolCertificate.sound (esolPipeline ℝ) rfl u hu
-```
-
-The certificate never mentions the data, so the guarantee holds for every dataset.
-
-**Perceptron pipelines** need a separator with a positive margin on the training molecules.
-For bit representations (such as Morgan fingerprints) you can give it as an integer
-`PerceptronWitness`. The kernel then parses the SMILES, computes the fingerprints and checks the
-witness:
+For Jacobi and Gauss–Seidel the condition is about the data: the normal equations must be
+diagonally dominant with respect to some weights. `p.suggestWitness` proposes a witness,
+`p.certifiedExcess W` is the excess loss it certifies, and the kernel checks it — parsing
+the SMILES, building the bond-order matrices and forming the normal equations exactly:
 
 ```lean
-theorem hydroxylWitness_check :
-    hydroxylWitness.check (fun m => (m.morganFingerprint 0 64).bits)
-      solubilityClassifier.data.molecules solubleLabels 45 = true := by
+def smallJacobi : Pipeline 4 9 :=
+  { data := small, representation := .bondOrders 3, ridge := 8, algorithm := .jacobi 40 }
+
+theorem smallJacobi_check :
+    smallJacobi.checkSolver smallJacobi.suggestWitness (1 / 1000) = true := by
   decide +kernel
 
-theorem solubility_guarantee (i : Fin 8) :   -- every training molecule classified correctly
-    solubilityClassifier.model.classify (solubilityClassifier.representation.featurize
-      solubilityClassifier.data.molecules[i]) = solubilityClassifier.data.targets[i] :=
-  (hydroxylWitness.certificate solubilityClassifier rfl rfl (by norm_num)
-    hydroxylWitness_check).sound rfl i
+theorem smallJacobi_guarantee (u : Vec ℝ 10) :          -- within 0.001 of the optimum
+    smallJacobi.trainLoss ℝ ≤ (smallJacobi.problem ℝ).loss u + 1 / 1000 := ...
 ```
+
+When a condition fails there is no certificate: `norm_num` refutes a step size too large
+for the representation, and the check returns `false` for Jacobi without enough ridge
+penalty — a pipeline that, run on `Float`, diverges.
 
 ## What is proved
 
-### Pipelines ([`Proofs/Pipeline.lean`](LeanSMILES/Proofs/Pipeline.lean), [`Proofs/Certificates.lean`](LeanSMILES/Proofs/Certificates.lean))
+### Certificates ([`Proofs/Pipeline/Certificates.lean`](LeanSMILES/Proofs/Pipeline/Certificates.lean))
 
-| Algorithm | Conditions (checked without training) | Guarantee |
+Write `L` for the training loss `(1/m) ∑ᵣ (⟪xᵣ, θ⟫ - yᵣ)² + λ ‖θ‖²` (`λ = 0`: least squares).
+
+| Solver | Conditions (checked without training) | Guarantee |
 |---|---|---|
-| Gradient descent | `‖φ‖² ≤ R²` for the representation, `η > 0`, `2η(R² + 1) ≤ 1`, `B ≤ 2ηkε` | training MSE ≤ MSE of any model with `‖(w, b)‖² ≤ B`, plus `ε`, for **every dataset** (`GDCertificate.sound`); MSE non-increasing in `k` (`gd_antitone`); the `O(1/k)` rate (`gd_rate`) |
-| Perceptron | `±1` labels, a separator with `‖u‖ ≤ 1` and margin `γ`, `‖φ‖² ≤ R²` on the data, `(R² + 1)/γ² ≤ epochs` | every training molecule classified correctly, training accuracy 1 (`PerceptronCertificate.sound`) |
-| OLS | the augmented features of the training molecules are linearly independent | no linear model has a smaller training MSE (`ols_optimal_of_fullColumnRank`) |
+| Gradient descent | `‖φ(M)‖² ≤ R²` for the representation, `λ ≥ 0`, `η > 0`, `2η(R² + 1 + λ) ≤ 1`, `B ≤ 2ηkε` | `L(θ) ≤ L(u) + ε` for every `u` with `‖u‖² ≤ B`, for **every dataset** (`GDCertificate.sound`) |
+| Jacobi, Gauss–Seidel | the exact `ℚ` check of weighted diagonal dominance (`checkSolver`) | `L(θ) ≤ L(u) + ε` for **every** `u`: `θ` is `ε`-optimal (`checkSolver_sound`) |
+| Gauss–Seidel | none (`λ ≥ 0`) | the loss never increases with more sweeps (`gaussSeidel_antitone`) |
 
-### Machine learning ([`Proofs/ML/`](LeanSMILES/Proofs/ML))
+### Linear regression ([`Proofs/Regression/`](LeanSMILES/Proofs/Regression))
 
-* **Gradient descent converges at rate `O(1/k)`** (`mse_linRegGD_le`): with `2η ∑ᵢ‖xᵢ‖² ≤ m`, after `k` steps
-  `mse(θₖ) ≤ mse(u) + ‖u‖² / (2ηk)` for every linear model `u`. Proved through convexity,
-  sufficient decrease, and a telescoping distance argument.
-* **Gauss–Jordan elimination is correct** ([`Proofs/LinSolve.lean`](LeanSMILES/Proofs/LinSolve.lean)):
-  if `A` is invertible, `linSolve A b` (with partial pivoting) solves `A x = b`, and it is the
-  only solution (`linSolve_spec`, `linSolve_unique`, `linSolve_spec_of_det_ne_zero`).
-* Least squares: the loss is an exact quadratic; zero gradient ⟺ global minimum; normal equations,
-  solved by `linSolve` whenever the features have full column rank; a fixed point of gradient
-  descent is optimal; the sparse solver computes the same iterates.
-* Perceptron: Novikoff's mistake bound `mistakes ≤ (R/γ)²` (for any separator with `‖u‖ ≤ 1`),
-  convergence within `⌊(R/γ)²⌋` epochs, and stability afterwards.
-* Lipschitz predictions: `(score x − score x')² ≤ ‖w‖² ‖x − x'‖²`.
+* **The loss is an exact quadratic**: `L(θ + v) = L(θ) + 2⟪Aθ - b, v⟫ + vᵀAv` for the normal
+  equations `Aθ = b`; so solutions of the normal equations are global minimisers.
+* **Gradient descent**: sufficient decrease, monotone loss, and the `O(1/k)` rate
+  `L(θₖ) ≤ L(u) + ‖u‖²/(2ηk)` for every `u`, when `2η((1/m)∑‖xᵣ‖² + λ) ≤ 1`.
+* **Jacobi and Gauss–Seidel**, for any linear system with weighted diagonal dominance
+  (`∑_{j≠i} |Aᵢⱼ| wⱼ ≤ ρ Aᵢᵢ wᵢ`, `ρ < 1`): a solution exists (Gershgorin), both iterations
+  contract by `ρ` per step in the weighted max-norm, and the solution is bounded from `b`.
+  On the normal equations this gives `L(θₖ) ≤ L(u) + Γβ²ρ²ᵏ`.
+* **Gauss–Seidel is coordinate descent**: every update minimises the loss exactly along one
+  coordinate, so it never increases the loss, for any data. A fixed point of Jacobi is
+  optimal.
 
-### Molecular representations ([`Proofs/Chem/`](LeanSMILES/Proofs/Chem))
+### Representations ([`Proofs/Pipeline/Representation.lean`](LeanSMILES/Proofs/Pipeline/Representation.lean))
 
-* **Matrices** (`Matrices.lean`), for well-formed molecules:
-  * the adjacency, bond-order and weighted adjacency matrices are symmetric with zero diagonal;
-  * row sums are the degrees (or total bond orders), and `∑ deg = 2 · #bonds` (handshake lemma);
-  * for every Laplacian `L = D − W`: `L𝟙 = 0`, `tr L = 2∑w_b`, and
-    `xᵀLx = ∑_bonds w_b (x_s − x_d)²`, so `L` is positive semidefinite, and `xᵀLx = 0` forces
-    `x` to be constant along bonds;
-  * Zagreb indices: `M₁ = ∑ deg²` and `M₂ = ∑_bonds deg(s)·deg(d)`.
-* **Topological distance** (`Distance.lean`): breadth-first distance is a metric (zero exactly on
-  the diagonal, symmetric, triangle inequality), and bonded atoms are at distance 1. The distance
-  and topological Coulomb matrices are symmetric, and the Wiener index is non-negative.
-* **Fingerprints** (`Fingerprint.lean`): the squared feature distance between two fingerprints
-  equals their Hamming distance. So, for any linear model,
-  `(pred a − pred b)² ≤ ‖w‖² · hamming(a, b)`: molecules with similar fingerprints get similar
-  predictions.
-* **Feature bounds** (`Representation.lean`), for every molecule: `morgan` ≤ `nBits`,
-  `adjacency k` ≤ `k²`, `clip c r` ≤ `n c²`, `normalize r` ≤ 1, `scale c r` ≤ `c² R²`, and
-  `r₁ ++ r₂` ≤ `R₁² + R₂²`.
+* `bondOrder_eq_adjMatrix`: the kernel-evaluable bond-order features are the toolkit's
+  `adjMatrix`.
+* `canonical_relabel`: a representation read through canonical SMILES gives every atom
+  numbering of a molecule the same features (from the toolkit's `canonicalSmiles_relabel`).
+* Feature bounds for every molecule: Morgan `≤ fpSize`, bond orders `≤ 16k²`, and through
+  `canonical` and `++`.
 
-All of these depend only on Lean's standard axioms (`propext`, `Classical.choice`, `Quot.sound`).
-Kernel checks use `decide +kernel`, never `native_decide`.
+Every theorem depends only on Lean's standard axioms (`propext`, `Classical.choice`,
+`Quot.sound`); kernel checks use `decide +kernel`, never `native_decide`.
 
 ## What the guarantees do not cover
 
-* **Floating-point rounding.** Theorems are about the definitions at `α := ℝ`, and the `Float`
-  code is the same definitions at `α := Float`. They agree up to rounding, which is not modelled.
-* **OLS on rank-deficient data.** When the features are linearly dependent, the normal equations
-  have many solutions and Gauss–Jordan hits a zero pivot. No guarantee is given then.
-* **Generalization.** The guarantees bound the training error. For unseen molecules, the
-  available bound is the Lipschitz one: predictions move by at most `‖w‖ · √hamming`.
-* **The pipeline's canonical SMILES** (`Polymorphic/Chem/SMILES.lean`) is proved to be a function
-  of the molecule only; that it does not depend on atom order is not proved. The toolkit's
-  canonical SMILES (`LeanSMILES.SMILES.Canon`) is: `Mol.canonicalSmiles_relabel`.
+* **Floating-point rounding.** Theorems are about the solvers at `ℝ`; the `Float` run is the
+  same code, and agrees up to rounding, which is not modelled.
+* **Kernel-checked data conditions need a kernel-evaluable representation.** `bondOrders` is
+  one; the toolkit's Morgan fingerprints are not (their hashing uses `UInt32` and
+  `mergeSort`, which the kernel cannot reduce). So a Jacobi/Gauss–Seidel certificate on
+  Morgan features can be computed (`#eval p.checkSolver …`) but not yet proved by
+  `decide +kernel`. Gradient-descent certificates need no evaluation and work for Morgan.
+* **Diagonal dominance needs ridge.** With an intercept, the normal equations of typical
+  molecular data are not diagonally dominant unless `λ` is large enough; the guarantee is
+  then about the ridge loss. Gauss–Seidel's monotonicity needs no condition.
+* **Generalization.** The guarantees bound the training loss.
 
 ## Project layout
 
@@ -247,19 +237,16 @@ LeanSMILES/
   Fingerprint/        RDKit-compatible Morgan fingerprints on Molecule n
   Data/               CSV parser for the Delaney dataset
   Tests/              validity, oracle and Morgan tests against RDKit (lake exe …-test)
-  Polymorphic/        definitions, written once for any [Scalar α]; no Mathlib
-    Scalar.lean         the scalar interface
-    LinAlg.lean         vectors, matrices, sparse products, Laplacians, linear solves
-    Chem/               molecules: SMILES parsing and canonical form, graph, Morgan fingerprints,
-                        descriptors, matrix representations, topological distance,
-                        Representation (feature maps and combinators)
-    ML/                 linear models, gradient descent, least squares, perceptron, metrics,
-                        Algorithm (the learner as data)
-    Pipeline.lean       Pipeline = labelled molecules + representation + algorithm
-    Certificates.lean   integer witnesses that the kernel checks
-  Float/              the Float instance and precompiled specializations (runs the code)
-  Real/               the ℝ instance (used by the proofs)
-  Proofs/             all theorems, mirroring Polymorphic/
+  Regression/         ridge regression and its solvers, over the scalar interface:
+    Basic.lean          vectors, the problem, normal equations, loss
+    Solvers.lean        gradient descent, Jacobi, Gauss–Seidel; Algorithm (the solver as data)
+  Pipeline/           certified pipelines on the toolkit's molecules:
+    Representation.lean morgan, bondOrders, canonical, ++
+    Pipeline.lean       LabelledMolecules (from SMILES), Pipeline, model, trainLoss
+    Certificates.lean   the exact ℚ checks (SolverWitness)
+  Proofs/             all theorems, over ℝ
+    Regression/         the quadratic loss, gradient descent, Jacobi and Gauss–Seidel
+    Pipeline/           representations, certificate soundness
   Optimization/       gradient-descent convergence theorems over ℝ (from TorchLean)
   LearningTheory/     algorithmic stability; 1D ridge regression: closed form, uniform
                       stability, unique minimizer (over ℝ)
@@ -269,14 +256,6 @@ docs/                 design notes and the build memory report
 ench470-content/      ENCH 470 course notebooks and data
 notebooks/            the original Python (RDKit + scikit-learn) project notebook
 ```
-
-The two parts use different molecule types: the toolkit's `LeanSMILES.Molecule n` and the
-pipeline's `Chem.Molecule` (`Polymorphic/Chem/`). They do not depend on each other yet.
-
-`Polymorphic/` and `Float/` form the `LeanSMILESExec` library. It imports no Mathlib and is
-precompiled to native code, so `#eval` runs at compiled speed (use `lake lean`, not
-`lake env lean`, to load the native code). Everything else forms the `LeanSMILES`
-library.
 
 ## Theorems ported from TorchLean
 
