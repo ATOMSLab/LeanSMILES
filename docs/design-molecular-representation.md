@@ -273,14 +273,26 @@ round nested another recomputation — exponential time, found when one
 is: a definition that *returns a function* should not do work before the
 lambda.
 
-A second one, found when the Morgan examples hung the build: do not `#eval` a
-value whose *type* depends on a non-literal `n` — a `Vector α (Mol.ofSmiles! s).n`,
-a `Molecule (Mol.ofSmiles! s).n`.  To print it, `#eval` may rebuild the value
-as an expression or unify its type, and either makes the elaborator reduce
-`(Mol.ofSmiles! s).n` — the whole parse — in the kernel: instant for ethanol,
-unbounded for an aromatic ring.  Print a `List` (`.toList`) or wrap the value
-in the non-dependent bundle `Mol` (`Mol.canonicalize`, `Mol.normalize`).
-Compiled code (`lake exe …`) is unaffected; only the interactive path is.
+A second one, found when the Morgan examples hung the build and again when
+the caffeine walkthrough was killed for memory: `#eval` of a value whose
+*type* mentions `(Mol.ofSmiles! s).n` — a `Vector α _`, a `List (Bond _)`, a
+`Matrix (Fin _) (Fin _) ℚ` — ran for minutes while the same computation
+wrapped in `IO.println (repr …)` took seconds.  So the cost was never the
+evaluation: it is the `#eval` command inspecting the result type, during
+which the elaborator's `whnf` unfolds the definition down to
+`(Mol.ofSmiles! s).n` and then runs the parser *symbolically* — instant for
+ethanol, unbounded for an aromatic ring.  Marking the binding
+`@[irreducible]` fixed it while `opaque` did too and `set_option eval.pp false`
+did not, which is the signature of the elaborator (which respects
+`irreducible`), not the kernel (which ignores it).
+
+The fix is therefore one attribute at the source: `Mol.ofSmiles!` is
+`@[irreducible]`, so `(Mol.ofSmiles! s).n` is atomic to the elaborator however
+the result is bound, and `#eval`s of dependent values need no `.toList`, no
+`opaque`, no non-dependent wrapper.  The price is that a proof about a
+*concrete* parse cannot unfold it with `rfl`; none does, and none should —
+theorems are about `Molecule n`, and a concrete fact is `decide`d or run.
+Compiled code (`lake exe …`) is unaffected either way.
 
 ## 9. Next steps
 

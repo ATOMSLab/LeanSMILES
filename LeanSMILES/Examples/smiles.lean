@@ -75,9 +75,7 @@ open LeanSMILES LeanSMILES.SMILES
 #eval (Mol.ofSmiles! "CCO").morganIds
 #eval (Mol.ofSmiles! "OCC").morganIds == (Mol.ofSmiles! "CCO").morganIds
 #eval tanimoto (Mol.ofSmiles! "CCO").morganBits (Mol.ofSmiles! "CCCO").morganBits
--- `.toList`: `#eval` of a `Vector` whose length is not a literal makes the elaborator
--- check the size proof by reducing the whole parse in the kernel (design notes §8).
-#eval (Mol.ofSmiles! "c1ccccc1CC").mol.inRingVector.toList
+#eval (Mol.ofSmiles! "c1ccccc1CC").mol.inRingVector
 
 -- From the solubility dataset.
 def delaney := CSVparser.load "datasets/delaney-processed.csv"

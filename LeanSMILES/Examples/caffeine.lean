@@ -64,15 +64,10 @@ bond as `src kind dst`. -/
 
 #eval parse caffeine
 
-/-- The parsed molecule, for the rest of the file.
-
-`opaque`, not `def`: several `#eval`s below have a result type that mentions
-`M.n` (`List (Bond M.n)`, `Matrix (Fin M.n) (Fin M.n) ℚ`), and to print such a
-value the elaborator may unify its type and unfold `M` — running the whole
-parse by kernel reduction, which does not terminate in practice for an
-aromatic ring (design notes §8).  `opaque` keeps the value for the compiler
-and hides it from the elaborator. -/
-opaque M : Mol := Mol.ofSmiles! caffeine
+/-- The parsed molecule, for the rest of the file.  Several `#eval`s below have
+a result type that mentions `M.n`; that is fine because `Mol.ofSmiles!` is
+irreducible, so the elaborator never tries to run the parse (design notes §8). -/
+def M : Mol := Mol.ofSmiles! caffeine
 
 #eval M.n            -- 14 atoms
 #eval M.mol.numBonds -- 15 bonds: 14 atoms, 2 rings, 14 - 1 + 2
