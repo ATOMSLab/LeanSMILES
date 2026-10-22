@@ -1,21 +1,122 @@
 # LeanSMILES
+Formalizing molecular representations in Lean
 
-Formal guarantees for cheminformatics pipelines, in Lean. You describe a pipeline: labelled
-molecules, a molecular representation, a learning algorithm and its hyperparameters. You then
-prove what the trained model is guaranteed to satisfy, without training it.
+The repository has two parts that build together:
 
-Every definition is written once, polymorphic over a scalar type `α`. Theorems are proved at
-`α := ℝ`, and the same code runs at `α := Float`.
+* **A typed SMILES toolkit** (`LeanSMILES.*`): SMILES → `Molecule n` → canonical SMILES and
+  Morgan fingerprints, with Mathlib graph and matrix views, canonical SMILES proved
+  canonical, and tests against RDKit.
+* **Certified cheminformatics pipelines** (`Polymorphic/`, `Float/`, `Real/`, `Proofs/`):
+  describe a pipeline — labelled molecules, a molecular representation, a learning algorithm
+  and its hyperparameters — and prove what the trained model is guaranteed to satisfy,
+  without training it. Every definition is written once, polymorphic over a scalar type `α`;
+  theorems are proved at `α := ℝ` and the same code runs at `α := Float`.
 
-## Getting started
+## Installation
 
-```bash
-lake exe cache get   # Mathlib's precompiled cache
-lake build           # checks every definition, proof and example
+No Lean experience needed. Setup is a one-time job, and most of it is download
+time. Two tools do the work: **elan** installs the right Lean version (much as
+conda manages Python environments), and **lake** fetches dependencies and builds
+the project.
+
+1. **Install the editor and Lean.** Install [Git](https://git-scm.com/downloads)
+   and [VS Code](https://code.visualstudio.com/), then add VS Code's **Lean 4**
+   extension (search "Lean 4" in the Extensions panel). The first time you open
+   a Lean file, the extension offers to install Lean (elan) for you. Accept.
+
+   Prefer the terminal? On macOS or Linux, install elan directly:
+
+   ```bash
+   curl https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh -sSf | sh
+   ```
+
+2. **Download this project:**
+
+   ```bash
+   git clone https://github.com/ATOMSLab/LeanSMILES.git
+   cd LeanSMILES
+   ```
+
+3. **Download the project's dependencies and Mathlib's precompiled cache, then
+   check the project:**
+
+   ```bash
+   lake exe cache get
+   lake build
+   ```
+
+   `lake build` also checks every proof and the worked example
+   `LeanSMILES/Examples/CertifiedPipeline.lean`
+   (`lake build LeanSMILES.Examples.CertifiedPipeline` checks it alone).
+
+   Mathlib is Lean's mathematics library, and it is large. `lake exe cache get`
+   downloads it already compiled (several GB of disk). Without it, `lake build`
+   compiles Mathlib from scratch, which takes hours. The Lean version this
+   project needs (pinned in `lean-toolchain`) installs itself the first time you
+   run `lake`.
+
+4. **Try it.** In VS Code, use **File → Open Folder…** and open the whole
+   `LeanSMILES` folder, not a single file, so the dataset paths resolve. Then
+   open `LeanSMILES/Examples/parsercsv.lean`. The **Lean Infoview** panel on the
+   right shows each `#eval` result: the solubility dataset in `datasets/`, read
+   in as SMILES strings with their numeric features.
+
+## SMILES → typed molecular graph → canonical SMILES
+
+`LeanSMILES.SMILES.Canon` is the one import for the SMILES toolkit:
+
+```lean
+import LeanSMILES.SMILES.Canon
+import LeanSMILES.Chem.Graph            -- the Mathlib views
+open LeanSMILES LeanSMILES.SMILES
+
+#eval parse "c1cc[nH]c1"                                  -- Except.ok (Molecule 5 ["c","c","c","[nH]","c"] [0:1, 1:2, 2:3, 3:4, 0:4])
+#eval (Mol.ofSmiles! "C(O)C").canonicalSmiles             -- "CCO"
+#eval (Mol.ofSmiles! "C=CO").mol.adjMatrix                -- !![0, 2, 0; 2, 0, 1; 0, 1, 0]  (over ℚ)
+#eval (Mol.ofSmiles! "C=CO").mol.graph.adjMatrix ℚ        -- Mathlib's 0/1 matrix
 ```
 
-The worked example is [`LeanSMILES/Examples/CertifiedPipeline.lean`](LeanSMILES/Examples/CertifiedPipeline.lean).
-Check it on its own with `lake build LeanSMILES.Examples.CertifiedPipeline`.
+A `Molecule n` is a `Vector Atom n` and a list of `Bond n` between distinct
+atoms with no duplicate bonds — the invariants are the type, so
+`Molecule.graph : SimpleGraph (Fin n)` and `Molecule.adjMatrix : Matrix (Fin n) (Fin n) ℚ`
+come with Mathlib's theorems (`sum_degrees`, `card_edgeFinset`, `relabelIso`,
+`canonicalizeIso`).  The matrices also exist as subtypes that say they come
+from a molecule — `BondMatrix n` (bond orders, O(1) lookups) and `FlatMatrix n`
+(0/1, Mathlib's `IsAdjMatrix`) — with `normalEquiv : {m // m.IsNormal} ≃ Vector Atom n × BondMatrix n`
+proving that nothing but bond orientation is lost.  The parser checks syntax, not valence; the only chemistry
+applied is the OpenSMILES implicit-hydrogen rule.  Canonical SMILES is
+color refinement plus exhaustive tie-breaking (lexicographically smallest
+string), and it is canonical by theorem (`Molecule.canonicalSmiles_relabel`)
+rather than by matching RDKit.
+
+Open `LeanSMILES/Examples/caffeine.lean` for one molecule walked through every
+representation — tokens, atoms, bonds, graph, matrices, normal form, canonical
+ranks, fingerprint — and `LeanSMILES/Examples/smiles.lean` for more; design and
+comparison with the `canonical-smiles` branch in
+`docs/design-molecular-representation.md`.
+
+Tests against RDKit's answers (oracle files from the `canonical-smiles` branch):
+
+```bash
+lake exe validity-test   # 10 000 broken SMILES: accepts everything RDKit accepts (0 parser bugs)
+lake exe oracle-test     # 1 128 Delaney molecules: graph = RDKit's, canonical SMILES round-trips and is relabeling-invariant, 1128/1128
+lake exe morgan-test     # Morgan fingerprints: ring membership = RDKit's, bits = RDKit's wherever the graph is, relabeling-invariant
+```
+
+### Morgan fingerprints
+
+`LeanSMILES.Fingerprint.Morgan` ports RDKit's `GetMorganGenerator(radius=2, fpSize=2048)`
+(from the `canonical-smiles` branch's port) onto `Molecule n`: `morganIds` (unfolded
+identifiers with counts), `morganBits` (sorted on-bits), `morganVector : Vector Bool 2048`,
+`inRingVector`, and an exact `tanimoto : … → ℚ`.  It hashes the graph *as written*, so the
+bits equal RDKit's exactly where the as-written bond types and hydrogen counts equal RDKit's
+sanitized ones (no aromaticity perception here, by design), and they are always invariant
+under relabeling of the atoms.
+
+```lean
+#eval (Mol.ofSmiles! "CCO").morganBits        -- [80, 222, 294, 807, 1057, 1410, ...]
+#eval tanimoto (Mol.ofSmiles! "CCO").morganBits (Mol.ofSmiles! "CCCO").morganBits
+```
 
 ## Certifying a pipeline
 
@@ -123,10 +224,29 @@ theorem solubility_guarantee (i : Fin 8) :   -- every training molecule classifi
 All of these depend only on Lean's standard axioms (`propext`, `Classical.choice`, `Quot.sound`).
 Kernel checks use `decide +kernel`, never `native_decide`.
 
+## What the guarantees do not cover
+
+* **Floating-point rounding.** Theorems are about the definitions at `α := ℝ`, and the `Float`
+  code is the same definitions at `α := Float`. They agree up to rounding, which is not modelled.
+* **OLS on rank-deficient data.** When the features are linearly dependent, the normal equations
+  have many solutions and Gauss–Jordan hits a zero pivot. No guarantee is given then.
+* **Generalization.** The guarantees bound the training error. For unseen molecules, the
+  available bound is the Lipschitz one: predictions move by at most `‖w‖ · √hamming`.
+* **The pipeline's canonical SMILES** (`Polymorphic/Chem/SMILES.lean`) is proved to be a function
+  of the molecule only; that it does not depend on atom order is not proved. The toolkit's
+  canonical SMILES (`LeanSMILES.SMILES.Canon`) is: `Mol.canonicalSmiles_relabel`.
+
 ## Project layout
 
 ```
 LeanSMILES/
+  Scalar.lean         ScalarLike scalar interface (from LeanCatalyst)
+  Chem/               the typed SMILES toolkit: Element, Atom, Bond, Molecule n, Mathlib
+                      graph and matrix views, BondMatrix / FlatMatrix
+  SMILES/             tokenizer, parser, writer, canonical SMILES and its canonicity proof
+  Fingerprint/        RDKit-compatible Morgan fingerprints on Molecule n
+  Data/               CSV parser for the Delaney dataset
+  Tests/              validity, oracle and Morgan tests against RDKit (lake exe …-test)
   Polymorphic/        definitions, written once for any [Scalar α]; no Mathlib
     Scalar.lean         the scalar interface
     LinAlg.lean         vectors, matrices, sparse products, Laplacians, linear solves
@@ -143,25 +263,20 @@ LeanSMILES/
   Optimization/       gradient-descent convergence theorems over ℝ (from TorchLean)
   LearningTheory/     algorithmic stability; 1D ridge regression: closed form, uniform
                       stability, unique minimizer (over ℝ)
-  Examples/           CertifiedPipeline.lean
+  Examples/           CertifiedPipeline.lean, caffeine.lean, smiles.lean, parsercsv.lean
+datasets/             Delaney (ESOL) data and RDKit oracle files for the tests
+docs/                 design notes and the build memory report
+ench470-content/      ENCH 470 course notebooks and data
 notebooks/            the original Python (RDKit + scikit-learn) project notebook
 ```
 
+The two parts use different molecule types: the toolkit's `LeanSMILES.Molecule n` and the
+pipeline's `Chem.Molecule` (`Polymorphic/Chem/`). They do not depend on each other yet.
+
 `Polymorphic/` and `Float/` form the `LeanSMILESExec` library. It imports no Mathlib and is
 precompiled to native code, so `#eval` runs at compiled speed (use `lake lean`, not
-`lake env lean`, to load the native code). `Real/`, `Proofs/`, `Optimization/`,
-`LearningTheory/` and `Examples/` form the `LeanSMILES` library.
-
-## What the guarantees do not cover
-
-* **Floating-point rounding.** Theorems are about the definitions at `α := ℝ`, and the `Float`
-  code is the same definitions at `α := Float`. They agree up to rounding, which is not modelled.
-* **OLS on rank-deficient data.** When the features are linearly dependent, the normal equations
-  have many solutions and Gauss–Jordan hits a zero pivot. No guarantee is given then.
-* **Generalization.** The guarantees bound the training error. For unseen molecules, the
-  available bound is the Lipschitz one: predictions move by at most `‖w‖ · √hamming`.
-* **Canonical SMILES** is proved to be a function of the molecule. That it determines the molecule
-  up to renumbering is not yet proved.
+`lake env lean`, to load the native code). Everything else forms the `LeanSMILES`
+library.
 
 ## Theorems ported from TorchLean
 
@@ -186,3 +301,35 @@ To apply the gradient-descent theorems to `ML.gradientDescent`, instantiate them
 product) and rewrite with `Primitives.iterate_eq_iterate`. The files are copied from
 [TorchLean](https://github.com/lean-dojo/TorchLean) (MIT; `LICENSES/TorchLean-MIT.txt`), and
 each file's header records the source commit and every change made here.
+
+## References
+
+LeanSMILES builds on prior work in Lean, cheminformatics, and chemistry
+education. [`REFERENCES.md`](REFERENCES.md) credits each source and says what
+it is credited for; [`references.bib`](references.bib) has the BibTeX.
+
+## Findings about external tools
+
+Things the formalization turned up in the tools and specifications it is
+checked against.
+
+* **RDKit canonical SMILES is not always canonical.** Its tie-breaking
+  individualizes one atom of the lowest tied class and never backtracks, which
+  is only canonical when the tied atoms are symmetry-equivalent. On a 12-carbon
+  cubic graph where they are not, RDKit 2026.09.1 returns eight different
+  canonical SMILES depending on input atom order
+  (`LeanSMILES/Examples/smiles.lean`). Found by searching random cubic graphs;
+  20 of 1 989 showed it. LeanSMILES tries every tied atom and keeps the
+  lexicographically smallest string, and its canonical SMILES is proved
+  independent of input order for every molecule, with no budget:
+  `Mol.canonicalSmiles_relabel` (`LeanSMILES/SMILES/Canonicity.lean`).
+  nauty-style automorphism pruning, checked at every use, keeps symmetric
+  molecules tractable — a 53-atom *tert*-butyl dendrimer with about 7 × 10¹³
+  tie-breaking leaves canonicalizes in seconds.
+* **OpenSMILES underdetermines implicit hydrogens on aromatic atoms.** §3.1.5
+  computes the count from a sum of bond orders but never says what an
+  aromatic bond contributes; §3.5 only requires that electrons be assignable
+  without violating valence. Read literally with aromatic bonds at `3/2`, the
+  nitrogen of `Cn1cccc1` and the sulfur of thiophene get a hydrogen they
+  cannot have. Toolkits agree on a fix the spec does not state
+  (`Molecule.implicitHydrogens`).
