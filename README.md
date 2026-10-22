@@ -95,8 +95,10 @@ lake exe morgan-test     # Morgan fingerprints: ring membership = RDKit's, bits 
 identifiers with counts), `morganBits` (sorted on-bits), `morganVector : Vector Bool 2048`,
 `inRingVector`, and an exact `tanimoto : … → ℚ`.  It hashes the graph *as written*, so the
 bits equal RDKit's exactly where the as-written bond types and hydrogen counts equal RDKit's
-sanitized ones (no aromaticity perception here, by design), and they are always invariant
-under relabeling of the atoms.
+sanitized ones (no aromaticity perception here, by design).  Up to radius 2 the
+fingerprint is proved independent of the atom order: `Molecule.morganBits_relabel`
+(`LeanSMILES/Fingerprint/MorganInvariance.lean`).  From radius 3 it is not, here or in
+RDKit (see "Findings about external tools").
 
 ```lean
 #eval (Mol.ofSmiles! "CCO").morganBits        -- [80, 222, 294, 807, 1057, 1410, ...]
@@ -160,3 +162,21 @@ checked against.
   nitrogen of `Cn1cccc1` and the sulfur of thiophene get a hydrogen they
   cannot have. Toolkits agree on a fix the spec does not state
   (`Molecule.implicitHydrogens`).
+* **RDKit Morgan fingerprints depend on atom order from radius 3.** When two
+  atoms' environments cover the same bonds, RDKit keeps the one with the
+  smaller (identifier, atom index) and the other stops growing. If the
+  identifiers are equal too, the atom index decides, and the survivor's
+  identifiers at the next radius can differ from the loser's. In
+  `C1=C(CO)C=C1CC`, a cyclobutadiene with ethyl and hydroxymethyl groups, the
+  two ring CH carbons tie at radius 2 without being symmetric (one is
+  single-bonded to the ethyl-bearing carbon and double-bonded to the other,
+  the second the reverse). Over all 8! atom orders, RDKit 2026.09.1 gives one
+  fingerprint at radii 1 and 2 and two at radii 3 and 4; the spelling
+  `C1(CC)=CC(CO)=C1` has a different radius-3 identifier (58732580 instead of
+  837408524) and different folded bits. So ECFP6 is not a function of the
+  molecule. LeanSMILES reproduces RDKit's fingerprint bit for bit, including
+  this, and proves the fingerprint independent of atom order up to radius 2,
+  the default: `Molecule.morganBits_relabel`
+  (`LeanSMILES/Fingerprint/MorganInvariance.lean`). A tie at radius 1 can only
+  be a two-atom fragment, which emits nothing more whichever atom survives; a
+  tie at radius 2, as here, first shows at radius 3.
