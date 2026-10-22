@@ -29,7 +29,7 @@ LeanLearn/            learning algorithms on tabular data (imports Mathlib only)
                       bridges to the closed form (MatrixBridge, LinearModel)
   Examples/           ols.lean, ridge.lean (worked proofs), olsFloat.lean, ridgeFloat.lean (runs)
   Tests/              OLSFloat, RidgeFloat, LinearModel (lake exe …-test)
-  
+
 Pipelines/            molecules as tabular data (imports both)
   Representation.lean morgan, bondOrders, counts, canonical, clip, ++; morganFeatures (aromatized)
   Pipeline.lean       LabelledMolecules (from SMILES), Pipeline, model, losses, predictions
@@ -43,7 +43,7 @@ datasets/             Delaney (ESOL) data, RDKit oracle files (as written and Ke
                       Delaney-ridge answer files
 
 tools/                RDKit oracle and fuzz generators; sklearn file writes; drawing
-  rdkit_reference/ holds the pure-Python references the RDKit ports follow
+  rdkit_reference/    the pure-Python references the RDKit ports follow
 
 docs/                 design notes, REFERENCES.md and references.bib; figures/ holds plots written by Lean
 
