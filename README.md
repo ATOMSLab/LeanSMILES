@@ -208,7 +208,10 @@ Two formulations of the same problem, by two authors, side by side:
   loss `‖Xw − y‖²`, plus `Σⱼ ρⱼ wⱼ²` for ridge. Any solution of the normal equations is a
   global minimizer, with no rank assumption; `fit = (XᵀX)⁻¹ Xᵀy` satisfies them and is the
   unique minimizer when `det(XᵀX) ≠ 0`; positive ridge has a unique minimizer for every
-  design, even underdetermined ones. [`LinearModel.lean`](LeanLearn/Regression/LinearModel.lean)
+  design, even underdetermined ones. [`RidgeOLS.lean`](LeanLearn/Regression/RidgeOLS.lean)
+  relates the two: a ridge minimizer trades squared error for a smaller penalized norm than
+  any OLS minimizer, `wρ = (XᵀX + diag ρ)⁻¹ XᵀX w₀`, and the ridge path is continuous with
+  `wλ → w₀` as `λ → 0` and `‖wλ‖² → 0` as `λ → ∞`. [`LinearModel.lean`](LeanLearn/Regression/LinearModel.lean)
   writes the same objectives over `PolynomialLike`, so they run at `Float`, and proves that
   their `ℝ` reading is the specification. [`OLSFloat.lean`](LeanLearn/Regression/OLSFloat.lean)
   and [`RidgeFloat.lean`](LeanLearn/Regression/RidgeFloat.lean) are executable Householder-QR

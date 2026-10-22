@@ -17,6 +17,7 @@ exact-real specifications and the executable Float solvers:
 |---|---|
 | `OLS.lean` | Exact-real OLS definitions, inverse formula, optimality, uniqueness |
 | `Ridge.lean` | Exact-real diagonal ridge definitions, optimality, positive-ridge existence and uniqueness |
+| `RidgeOLS.lean` | Ridge against OLS: the shrinkage trade-off, ridge as a linear image of OLS, the ridge path's limits at `λ → 0` and `λ → ∞` |
 | `LinearModel.lean` | Shared executable prediction/loss/stationarity definitions and proofs connecting their real interpretation to OLS/ridge |
 | `OLSFloat.lean` | Executable OLS on floating-point arrays using Householder QR |
 | `RidgeFloat.lean` | Executable ridge regression using augmented Householder QR |
@@ -134,6 +135,21 @@ there is no implicit standardization or division by the observation count.
 | `normalEquations_unique` | Uniqueness when the regularized Gram matrix is positive definite |
 | `loss_zero_penalty`, `normalEquations_zero_penalty`, `fit_zero_penalty` | Exact reduction to OLS at zero penalty |
 | `augmented_loss` | Ridge equals OLS on the square-root-penalty augmented design |
+
+`RidgeOLS.lean` puts the two models side by side. Nothing below assumes a
+rank condition unless it says so:
+
+| Ridge-vs-OLS theorem | Meaning |
+|---|---|
+| `isMinimizer_zero_penalty` | At zero penalty the ridge minimizers are the OLS minimizers |
+| `isMinimizer_iff_augmented` | For nonnegative weights, the ridge minimizers are the OLS minimizers on the augmented design `[X; diag √ρ]`, `[y; 0]` |
+| `penalty_le_of_isMinimizer` | **The trade-off**: a ridge minimizer has no larger penalized norm `Σⱼ ρⱼ wⱼ²` than any OLS minimizer (and, by definition of the latter, no smaller squared error) |
+| `penalty_antitone`, `ols_loss_monotone` | Along `λ ↦ λρ`, the minimizer's penalized norm falls and its squared error rises |
+| `fit_eq_shrink_ols_fit` | `wρ = (XᵀX + diag ρ)⁻¹ XᵀX w₀`: ridge is a linear image of OLS |
+| `fit_eq_smul_ols_fit_of_gram_eq_one` | Orthonormal columns: `wλ = w₀ / (1 + λ)` |
+| `path`, `continuousOn_path` | The ridge path `λ ↦ (XᵀX + λI)⁻¹ Xᵀy` is continuous on `λ > 0` for every design |
+| `tendsto_path_nhds_zero` | `wλ → w₀` as `λ → 0` when `XᵀX` is nonsingular |
+| `sum_sq_le_of_isMinimizer`, `tendsto_sum_sq_path_atTop` | `‖wλ‖² ≤ ‖y‖² / λ`, so `‖wλ‖² → 0` as `λ → ∞` |
 
 An exempt intercept means not all weights are positive, so the automatic
 positive-ridge uniqueness theorem does not apply directly. General optimality
@@ -255,7 +271,7 @@ lake exe ridge-float-test
 lake exe linear-model-test
 ```
 
-A successful build of `OLS.lean`, `Ridge.lean` and `LinearModel.lean` means Lean
+A successful build of `OLS.lean`, `Ridge.lean`, `RidgeOLS.lean` and `LinearModel.lean` means Lean
 has checked the proofs. Open the repository in a Lean-enabled editor and inspect
 `LeanLearn/Examples/ols.lean` and `ridge.lean` in the Infoview to follow the
 worked proofs step by step; `olsFloat.lean` and `ridgeFloat.lean` show the Float
