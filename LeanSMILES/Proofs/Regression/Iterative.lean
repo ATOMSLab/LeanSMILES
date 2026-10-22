@@ -8,7 +8,9 @@ import Mathlib.LinearAlgebra.Matrix.Gershgorin
 import Mathlib.LinearAlgebra.Matrix.NonsingularInverse
 
 /-!
-# Jacobi and Gauss–Seidel iteration
+# LeanSMILES.Proofs.Regression.Iterative
+
+Jacobi and Gauss–Seidel iteration.
 
 **Weighted diagonal dominance** (`DiagDominant A w ρ`): weights `wᵢ > 0`, a ratio
 `0 ≤ ρ < 1`, positive diagonal, and for every row `∑_{j≠i} |Aᵢⱼ| wⱼ ≤ ρ Aᵢᵢ wᵢ`. With
@@ -67,20 +69,20 @@ theorem offDiag_eq_sum (A : Mat ℝ n n) (θ : Vec ℝ n) (i : Fin n) :
   rw [offDiag, dot_getElem_eq]
   have h : ∀ j : Fin n, A[i][j] * θ[j] =
       (if j = i then A[i][j] * θ[j] else 0) + if j = i then 0 else A[i][j] * θ[j] :=
-    fun j => by split_ifs <;> simp
-  rw [sum_congr rfl fun j _ => h j, sum_add_distrib, sum_ite_eq']
+    fun j ↦ by split_ifs <;> simp
+  rw [sum_congr rfl fun j _ ↦ h j, sum_add_distrib, sum_ite_eq']
   simp
 
 theorem offDiag_sub (A : Mat ℝ n n) (θ θ' : Vec ℝ n) (i : Fin n) :
     offDiag A θ i - offDiag A θ' i = offDiag A (vsub θ θ') i := by
   simp only [offDiag_eq_sum, ← sum_sub_distrib, vsub_getElem]
-  exact sum_congr rfl fun j _ => by split_ifs <;> ring
+  exact sum_congr rfl fun j _ ↦ by split_ifs <;> ring
 
 theorem abs_offDiag_le (A : Mat ℝ n n) (w e : Vec ℝ n) {M : ℝ}
     (he : ∀ j : Fin n, |e[j]| ≤ M * w[j]) (i : Fin n) :
     |offDiag A e i| ≤ M * offDiagWeight A w i := by
   rw [offDiag_eq_sum, offDiagWeight, mul_sum]
-  refine (abs_sum_le_sum_abs _ _).trans (sum_le_sum fun j _ => ?_)
+  refine (abs_sum_le_sum_abs _ _).trans (sum_le_sum fun j _ ↦ ?_)
   split_ifs
   · simp
   · rw [abs_mul]
@@ -125,7 +127,7 @@ theorem update_bound {w : Vec ℝ n} {ρ : ℝ} (hdd : DiagDominant A w ρ)
     |(b[i] - offDiag A θ i) / A[i][i] - θs[i]| ≤ ρ * M * w[i] := by
   have hAi := hdd.diag_pos i
   rw [update_sub hsol θ i hAi.ne', abs_div, abs_neg, abs_of_pos hAi, div_le_iff₀ hAi]
-  have he : ∀ j : Fin n, |(vsub θ θs)[j]| ≤ M * w[j] := fun j => by simpa using hθ j
+  have he : ∀ j : Fin n, |(vsub θ θs)[j]| ≤ M * w[j] := fun j ↦ by simpa using hθ j
   calc |offDiag A (vsub θ θs) i| ≤ M * offDiagWeight A w i := abs_offDiag_le A w _ he i
     _ ≤ M * (ρ * A[i][i] * w[i]) := mul_le_mul_of_nonneg_left (hdd.dominant i) hM
     _ = ρ * M * w[i] * A[i][i] := by ring
@@ -175,7 +177,7 @@ theorem gsUpdate_getElem (θ : Vec ℝ n) (i j : Fin n) :
   simp only [gsUpdate, Fin.getElem_fin, Vector.getElem_set]
   by_cases h : j = i
   · subst h; simp
-  · rw [if_neg (fun h' => h (Fin.ext h'.symm)), if_neg h]
+  · rw [if_neg (fun h' ↦ h (Fin.ext h'.symm)), if_neg h]
 
 /-- The Gauss–Seidel invariant over a list of coordinates: every coordinate stays within
 `M wⱼ`, and every coordinate updated so far is within `ρ M wⱼ`. -/
@@ -186,7 +188,7 @@ theorem foldl_gsUpdate_bound (hdd : DiagDominant A w ρ)
     (∀ j : Fin n, |(l.foldl (gsUpdate A b) θ)[j] - θs[j]| ≤ M * w[j]) ∧
       ∀ j, (done j ∨ j ∈ l) → |(l.foldl (gsUpdate A b) θ)[j] - θs[j]| ≤ ρ * M * w[j] := by
   induction l generalizing θ done with
-  | nil => exact ⟨hθ, fun j hj => hdone j (hj.resolve_right (List.not_mem_nil))⟩
+  | nil => exact ⟨hθ, fun j hj ↦ hdone j (hj.resolve_right (List.not_mem_nil))⟩
   | cons i l ih =>
     simp only [List.foldl_cons]
     have hnew := update_bound hdd hsol hM θ hθ i
@@ -195,19 +197,19 @@ theorem foldl_gsUpdate_bound (hdd : DiagDominant A w ρ)
       have := hdd.weight_pos i
       have : ρ * M ≤ M := by nlinarith [hdd.ratio_lt_one]
       nlinarith
-    have hθ' : ∀ j : Fin n, |(gsUpdate A b θ i)[j] - θs[j]| ≤ M * w[j] := fun j => by
+    have hθ' : ∀ j : Fin n, |(gsUpdate A b θ i)[j] - θs[j]| ≤ M * w[j] := fun j ↦ by
       rw [gsUpdate_getElem]
       split_ifs with h
       · subst h; exact hnew.trans hρM
       · exact hθ j
     have hdone' : ∀ j, (done j ∨ j = i) →
-        |(gsUpdate A b θ i)[j] - θs[j]| ≤ ρ * M * w[j] := fun j hj => by
+        |(gsUpdate A b θ i)[j] - θs[j]| ≤ ρ * M * w[j] := fun j hj ↦ by
       rw [gsUpdate_getElem]
       split_ifs with h
       · subst h; exact hnew
       · exact hdone j (hj.resolve_right h)
-    obtain ⟨h1, h2⟩ := ih (gsUpdate A b θ i) (fun j => done j ∨ j = i) hθ' hdone'
-    refine ⟨h1, fun j hj => h2 j ?_⟩
+    obtain ⟨h1, h2⟩ := ih (gsUpdate A b θ i) (fun j ↦ done j ∨ j = i) hθ' hdone'
+    refine ⟨h1, fun j hj ↦ h2 j ?_⟩
     rcases hj with hj | hj
     · exact Or.inl (Or.inl hj)
     · rcases List.mem_cons.mp hj with rfl | hj
@@ -218,7 +220,7 @@ theorem foldl_gsUpdate_bound (hdd : DiagDominant A w ρ)
 theorem gsSweep_bound (hdd : DiagDominant A w ρ) (hsol : ∀ i : Fin n, (matVec A θs)[i] = b[i])
     {M : ℝ} (hM : 0 ≤ M) (θ : Vec ℝ n) (hθ : ∀ j : Fin n, |θ[j] - θs[j]| ≤ M * w[j])
     (i : Fin n) : |(gsSweep A b θ)[i] - θs[i]| ≤ ρ * M * w[i] :=
-  (foldl_gsUpdate_bound hdd hsol hM _ θ (fun _ => False) hθ (fun _ h => h.elim)).2 i
+  (foldl_gsUpdate_bound hdd hsol hM _ θ (fun _ ↦ False) hθ (fun _ h ↦ h.elim)).2 i
     (Or.inr (List.mem_finRange i))
 
 /-- After `k` Gauss–Seidel sweeps, `|θₖ,ⱼ - θ*ⱼ| ≤ ρᵏ M wⱼ`. -/
@@ -244,19 +246,19 @@ variable {A : Mat ℝ n n} {b w : Vec ℝ n} {ρ : ℝ}
 
 /-- The matrix as Mathlib sees it. -/
 noncomputable def toMatrix (A : Mat ℝ n n) : Matrix (Fin n) (Fin n) ℝ :=
-  Matrix.of fun i j => A[i][j]
+  Matrix.of fun i j ↦ A[i][j]
 
 theorem det_ne_zero (hdd : DiagDominant A w ρ) : (toMatrix A).det ≠ 0 := by
   -- scale column `j` by `wⱼ`: the result is strictly diagonally dominant
-  set D : Matrix (Fin n) (Fin n) ℝ := Matrix.diagonal fun j => w[j]
+  set D : Matrix (Fin n) (Fin n) ℝ := Matrix.diagonal fun j ↦ w[j]
   have hB : (toMatrix A * D).det ≠ 0 := by
-    refine det_ne_zero_of_sum_row_lt_diag fun i => ?_
-    have hentry : ∀ j, (toMatrix A * D) i j = A[i][j] * w[j] := fun j => by
+    refine det_ne_zero_of_sum_row_lt_diag fun i ↦ ?_
+    have hentry : ∀ j, (toMatrix A * D) i j = A[i][j] * w[j] := fun j ↦ by
       simp [D, toMatrix, Matrix.mul_diagonal]
     simp only [hentry, Real.norm_eq_abs, abs_mul, abs_of_pos (hdd.weight_pos _)]
     have hsum : ∑ j ∈ univ.erase i, |A[i][j]| * w[j] = offDiagWeight A w i := by
       rw [offDiagWeight, ← sum_erase_add _ _ (mem_univ i), if_pos rfl, add_zero]
-      exact sum_congr rfl fun j hj => by rw [if_neg (ne_of_mem_erase hj)]
+      exact sum_congr rfl fun j hj ↦ by rw [if_neg (ne_of_mem_erase hj)]
     rw [hsum, abs_of_pos (hdd.diag_pos i)]
     have hpos : 0 < A[i][i] * w[i] := mul_pos (hdd.diag_pos i) (hdd.weight_pos i)
     calc offDiagWeight A w i ≤ ρ * A[i][i] * w[i] := hdd.dominant i
@@ -270,9 +272,9 @@ theorem det_ne_zero (hdd : DiagDominant A w ρ) : (toMatrix A).det ≠ 0 := by
 theorem exists_solution (hdd : DiagDominant A w ρ) (b : Vec ℝ n) :
     ∃ θs : Vec ℝ n, ∀ i : Fin n, (matVec A θs)[i] = b[i] := by
   have hu : IsUnit (toMatrix A).det := isUnit_iff_ne_zero.mpr (det_ne_zero hdd)
-  let v : Fin n → ℝ := (toMatrix A)⁻¹.mulVec fun j => b[j]
-  refine ⟨Vector.ofFn v, fun i => ?_⟩
-  have h : (toMatrix A).mulVec v = fun j => b[j] := by
+  let v : Fin n → ℝ := (toMatrix A)⁻¹.mulVec fun j ↦ b[j]
+  refine ⟨Vector.ofFn v, fun i ↦ ?_⟩
+  have h : (toMatrix A).mulVec v = fun j ↦ b[j] := by
     simp only [v, Matrix.mulVec_mulVec, Matrix.mul_nonsing_inv _ hu, Matrix.one_mulVec]
   have := congrFun h i
   rw [matVec_getElem]
@@ -285,11 +287,11 @@ theorem solution_bound (hdd : DiagDominant A w ρ) {θs : Vec ℝ n}
     (hb : ∀ i : Fin n, |b[i]| ≤ (1 - ρ) * A[i][i] * w[i] * β) (i : Fin n) :
     |θs[i]| ≤ β * w[i] := by
   -- the coordinate where `|θ*ⱼ| / wⱼ` is largest
-  obtain ⟨i₀, -, hmax⟩ := exists_max_image univ (fun j : Fin n => |θs[j]| / w[j])
+  obtain ⟨i₀, -, hmax⟩ := exists_max_image univ (fun j : Fin n ↦ |θs[j]| / w[j])
     ⟨i, mem_univ i⟩
   set M := |θs[i₀]| / w[i₀]
   have hw₀ := hdd.weight_pos i₀
-  have hall : ∀ j : Fin n, |θs[j]| ≤ M * w[j] := fun j => by
+  have hall : ∀ j : Fin n, |θs[j]| ≤ M * w[j] := fun j ↦ by
     have := hmax j (mem_univ j)
     rwa [div_le_iff₀ (hdd.weight_pos j)] at this
   have hM : 0 ≤ M := div_nonneg (abs_nonneg _) hw₀.le
@@ -321,7 +323,7 @@ theorem jacobi_bound (hdd : DiagDominant A w ρ) {θs : Vec ℝ n}
     (hb : ∀ i : Fin n, |b[i]| ≤ (1 - ρ) * A[i][i] * w[i] * β) (k : ℕ) (i : Fin n) :
     |(jacobi A b k)[i] - θs[i]| ≤ ρ ^ k * β * w[i] :=
   jacobi_iterate_bound hdd hsol hβ vzero
-    (fun j => by rw [vzero_getElem, zero_sub, abs_neg]; exact solution_bound hdd hsol hb j) k i
+    (fun j ↦ by rw [vzero_getElem, zero_sub, abs_neg]; exact solution_bound hdd hsol hb j) k i
 
 /-- From `θ = 0`, the error after `k` Gauss–Seidel sweeps is at most `ρᵏ β wᵢ`. -/
 theorem gaussSeidel_bound (hdd : DiagDominant A w ρ) {θs : Vec ℝ n}
@@ -329,16 +331,16 @@ theorem gaussSeidel_bound (hdd : DiagDominant A w ρ) {θs : Vec ℝ n}
     (hb : ∀ i : Fin n, |b[i]| ≤ (1 - ρ) * A[i][i] * w[i] * β) (k : ℕ) (i : Fin n) :
     |(gaussSeidel A b k)[i] - θs[i]| ≤ ρ ^ k * β * w[i] :=
   gaussSeidel_iterate_bound hdd hsol hβ vzero
-    (fun j => by rw [vzero_getElem, zero_sub, abs_neg]; exact solution_bound hdd hsol hb j) k i
+    (fun j ↦ by rw [vzero_getElem, zero_sub, abs_neg]; exact solution_bound hdd hsol hb j) k i
 
 /-- `vᵀ A v ≤ c² Γ` when every `|vᵢ| ≤ c wᵢ`. -/
 theorem quad_le_weightedMass (hw : ∀ i : Fin n, 0 ≤ w[i]) {c : ℝ} (hc : 0 ≤ c) (v : Vec ℝ n)
     (hv : ∀ i : Fin n, |v[i]| ≤ c * w[i]) :
     ∑ i : Fin n, ∑ j : Fin n, A[i][j] * v[i] * v[j] ≤ c ^ 2 * weightedMass A w := by
   rw [weightedMass, mul_sum]
-  refine sum_le_sum fun i _ => ?_
+  refine sum_le_sum fun i _ ↦ ?_
   rw [mul_sum]
-  refine sum_le_sum fun j _ => ?_
+  refine sum_le_sum fun j _ ↦ ?_
   calc A[i][j] * v[i] * v[j] ≤ |A[i][j] * v[i] * v[j]| := le_abs_self _
     _ = |A[i][j]| * |v[i]| * |v[j]| := by rw [abs_mul, abs_mul]
     _ ≤ |A[i][j]| * (c * w[i]) * (c * w[j]) := by
@@ -364,10 +366,10 @@ theorem loss_le_of_near_solution (hridge : 0 ≤ P.ridge) {w : Vec ℝ (d + 1)}
     {c : ℝ} (hc : 0 ≤ c) (θ : Vec ℝ (d + 1)) (hθ : ∀ i : Fin (d + 1), |θ[i] - θs[i]| ≤ c * w[i])
     (u : Vec ℝ (d + 1)) : P.loss θ ≤ P.loss u + c ^ 2 * weightedMass P.normalMatrix w := by
   have hres : ∀ i : Fin (d + 1), (residual P.normalMatrix P.normalVector θs)[i] = 0 :=
-    fun i => by rw [residual, vsub_getElem, hsol i, sub_self]
+    fun i ↦ by rw [residual, vsub_getElem, hsol i, sub_self]
   rw [P.loss_eq_of_residual_eq_zero hres θ, curvature_eq]
   have hq := quad_le_weightedMass (A := P.normalMatrix) hw hc (vsub θ θs)
-    (fun i => by rw [vsub_getElem]; exact hθ i)
+    (fun i ↦ by rw [vsub_getElem]; exact hθ i)
   have hopt := P.loss_le_of_residual_eq_zero hridge hres u
   linarith
 
@@ -381,7 +383,7 @@ theorem loss_jacobi_le (hridge : 0 ≤ P.ridge) {w : Vec ℝ (d + 1)} {ρ β : �
       P.loss u + weightedMass P.normalMatrix w * β ^ 2 * ρ ^ (2 * k) := by
   obtain ⟨θs, hsol⟩ := exists_solution hdd P.normalVector
   have hc : 0 ≤ ρ ^ k * β := mul_nonneg (pow_nonneg hdd.ratio_nonneg k) hβ
-  have := P.loss_le_of_near_solution hridge (fun i => (hdd.weight_pos i).le) hsol hc _
+  have := P.loss_le_of_near_solution hridge (fun i ↦ (hdd.weight_pos i).le) hsol hc _
     (jacobi_bound hdd hsol hβ hb k) u
   calc _ ≤ _ := this
     _ = _ := by ring
@@ -395,7 +397,7 @@ theorem loss_gaussSeidel_le (hridge : 0 ≤ P.ridge) {w : Vec ℝ (d + 1)} {ρ �
       P.loss u + weightedMass P.normalMatrix w * β ^ 2 * ρ ^ (2 * k) := by
   obtain ⟨θs, hsol⟩ := exists_solution hdd P.normalVector
   have hc : 0 ≤ ρ ^ k * β := mul_nonneg (pow_nonneg hdd.ratio_nonneg k) hβ
-  have := P.loss_le_of_near_solution hridge (fun i => (hdd.weight_pos i).le) hsol hc _
+  have := P.loss_le_of_near_solution hridge (fun i ↦ (hdd.weight_pos i).le) hsol hc _
     (gaussSeidel_bound hdd hsol hβ hb k) u
   calc _ ≤ _ := this
     _ = _ := by ring
@@ -403,12 +405,12 @@ theorem loss_gaussSeidel_le (hridge : 0 ≤ P.ridge) {w : Vec ℝ (d + 1)} {ρ �
 theorem normalMatrix_diag_nonneg (hridge : 0 ≤ P.ridge) (i : Fin (d + 1)) :
     0 ≤ P.normalMatrix[i][i] := by
   rw [normalMatrix_apply, if_pos rfl]
-  exact add_nonneg (div_nonneg (sum_nonneg fun _ _ => mul_self_nonneg _) (Nat.cast_nonneg m))
+  exact add_nonneg (div_nonneg (sum_nonneg fun _ _ ↦ mul_self_nonneg _) (Nat.cast_nonneg m))
     hridge
 
 /-- The unit vector `t eᵢ`. -/
 noncomputable def coord (i : Fin (d + 1)) (t : ℝ) : Vec ℝ (d + 1) :=
-  Vector.ofFn fun j => if j = i then t else 0
+  Vector.ofFn fun j ↦ if j = i then t else 0
 
 theorem curvature_coord (i : Fin (d + 1)) (t : ℝ) :
     P.curvature (coord i t) = t ^ 2 * P.normalMatrix[i][i] := by
@@ -426,7 +428,7 @@ theorem loss_gsUpdate_le (hridge : 0 ≤ P.ridge) (θ : Vec ℝ (d + 1)) (i : Fi
   · -- the new coordinate is `θᵢ + t` with `t = -rᵢ / Aᵢᵢ`; the loss drops by `rᵢ² / Aᵢᵢ`
     have hA' : A[i][i] ≠ 0 := hA.ne'
     set t := (P.normalVector[i] - offDiag A θ i) / A[i][i] - θ[i]
-    have hupd : gsUpdate A P.normalVector θ i = vadd θ (coord i t) := vext fun j => by
+    have hupd : gsUpdate A P.normalVector θ i = vadd θ (coord i t) := vext fun j ↦ by
       rw [gsUpdate_getElem, vadd_getElem, coordSolve_of_ne hA']
       simp only [coord, Fin.getElem_fin, Vector.getElem_ofFn, Fin.eta]
       split_ifs with h
@@ -451,7 +453,7 @@ theorem loss_gsUpdate_le (hridge : 0 ≤ P.ridge) (θ : Vec ℝ (d + 1)) (i : Fi
     have : 0 ≤ (residual A P.normalVector θ)[i] ^ 2 / A[i][i] := div_nonneg (sq_nonneg _) hA.le
     linarith
   · -- `Aᵢᵢ = 0`: the update keeps `θᵢ`
-    have hupd : gsUpdate A P.normalVector θ i = θ := vext fun j => by
+    have hupd : gsUpdate A P.normalVector θ i = θ := vext fun j ↦ by
       rw [gsUpdate_getElem, coordSolve_of_eq hA.symm]
       split_ifs with h
       · subst h; rfl
@@ -467,8 +469,8 @@ theorem loss_foldl_gsUpdate_le (hridge : 0 ≤ P.ridge) (l : List (Fin (d + 1)))
 
 /-- **Gauss–Seidel never increases the loss**, for any data and any `λ ≥ 0`. -/
 theorem loss_gaussSeidel_antitone (hridge : 0 ≤ P.ridge) :
-    Antitone fun k => P.loss (gaussSeidel P.normalMatrix P.normalVector k) := by
-  refine antitone_nat_of_succ_le fun k => ?_
+    Antitone fun k ↦ P.loss (gaussSeidel P.normalMatrix P.normalVector k) := by
+  refine antitone_nat_of_succ_le fun k ↦ ?_
   simp only [gaussSeidel]
   rw [Function.iterate_succ_apply']
   exact P.loss_foldl_gsUpdate_le hridge _ _
@@ -477,7 +479,7 @@ theorem loss_gaussSeidel_antitone (hridge : 0 ≤ P.ridge) :
 theorem loss_le_of_jacobiStep_eq_self (hridge : 0 ≤ P.ridge) {θ : Vec ℝ (d + 1)}
     (hfix : jacobiStep P.normalMatrix P.normalVector θ = θ) (u : Vec ℝ (d + 1)) :
     P.loss θ ≤ P.loss u := by
-  refine P.loss_le_of_residual_eq_zero hridge (fun i => ?_) u
+  refine P.loss_le_of_residual_eq_zero hridge (fun i ↦ ?_) u
   rcases (P.normalMatrix_diag_nonneg hridge i).lt_or_eq with hA | hA
   · have h := congrArg (·[i]) hfix
     simp only [jacobiStep_getElem, coordSolve_of_ne hA.ne'] at h

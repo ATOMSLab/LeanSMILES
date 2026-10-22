@@ -47,9 +47,9 @@ the project.
    lake build
    ```
 
-   `lake build` also checks every proof and the worked example
-   `LeanSMILES/Examples/CertifiedPipeline.lean`
-   (`lake build LeanSMILES.Examples.CertifiedPipeline` checks it alone).
+   `lake build` also checks every proof and runs the examples, including
+   `LeanSMILES/Examples/pipeline.lean`
+   (`lake build LeanSMILES.Examples.pipeline` checks it alone).
 
    Mathlib is Lean's mathematics library, and it is large. `lake exe cache get`
    downloads it already compiled (several GB of disk). Without it, `lake build`
@@ -122,57 +122,63 @@ under relabeling of the atoms.
 
 ## Certifying a pipeline
 
-The worked example is [`LeanSMILES/Examples/CertifiedPipeline.lean`](LeanSMILES/Examples/CertifiedPipeline.lean).
+Open [`LeanSMILES/Examples/pipeline.lean`](LeanSMILES/Examples/pipeline.lean): like
+`caffeine.lean`, it walks through the pipeline one `#eval` at a time, on the Delaney table.
 
-**1. Write the pipeline.** Data are SMILES with exact rational targets; the representation
-comes from the toolkit:
-
-```lean
-def esolGD : Pipeline 6 64 :=
-  { data := esol                                   -- `LabelledMolecules.ofSmiles` on (SMILES, logS)
-    representation := .morgan 2 64                 -- the toolkit's Morgan fingerprints
-    algorithm := .gradientDescent (1 / 130) 2600 } -- step size, steps (ridge λ defaults to 0)
-```
-
-**2. Fill in its certificate.** For gradient descent every field is about the representation
-and the hyperparameters, so the guarantee holds for every dataset:
+**1. Data and pipeline.** Molecules come from SMILES (`LabelledMolecules.ofSmiles!`) or from
+a table in `datasets/` (`ofRecords`, through the toolkit's `CSVparser`), with exact rational
+targets. A pipeline adds a representation, a ridge penalty `λ` (default `0`) and a solver:
 
 ```lean
-def esolCertificate : GDCertificate (Representation.morgan 2 64) 0 (1 / 130) 2600 where
-  R2 := (64 : ℕ)                                   -- ‖φ(M)‖² ≤ 64 for every molecule
-  B := 4                                           -- compare with parameters of norm² ≤ 4
-  ε := 1 / 10                                      -- tolerated excess training loss
-  bounded := Representation.morgan_bounded 2 64
-  ridge_nonneg := le_rfl
-  stepSize_pos := by norm_num
-  stepSize_small := by norm_num                    -- 2η(R² + 1 + λ) ≤ 1
-  iters_pos := by norm_num
-  iters_enough := by norm_num                      -- B ≤ 2ηkε
+def delaney := CSVparser.load "datasets/delaney-processed.csv"
+def train : LabelledMolecules 40 := .ofRecords delaney 0 40
 
-theorem esol_guarantee (u : Vec ℝ 65) (hu : ∑ i : Fin 65, u[i] ^ 2 ≤ 4) :
-    esolGD.trainLoss ℝ ≤ (esolGD.problem ℝ).loss u + 1 / 10 := ...
+def gd : Pipeline 40 32 :=
+  { data := train, representation := .morgan 2 32, algorithm := .gradientDescent (1 / 66) 3000 }
+
+#eval gd.trainMSE Float                       -- train it, on Float
+#eval gd.predictSmiles (gd.model Float) "CCCO"
 ```
 
-For Jacobi and Gauss–Seidel the condition is about the data: the normal equations must be
-diagonally dominant with respect to some weights. `p.suggestWitness` proposes a witness,
-`p.certifiedExcess W` is the excess loss it certifies, and the kernel checks it — parsing
-the SMILES, building the bond-order matrices and forming the normal equations exactly:
+**2. Gradient descent.** Morgan bits are `0/1`, so `‖φ(M)‖² ≤ 32` for every molecule
+(`morgan_bounded`). With that bound the certificate is arithmetic on the hyperparameters, so
+it holds for every dataset:
 
 ```lean
-def smallJacobi : Pipeline 4 9 :=
-  { data := small, representation := .bondOrders 3, ridge := 8, algorithm := .jacobi 40 }
+#eval gd.maxStepSize 32          -- 1/66: the largest step size the certificate accepts
+#eval gd.gdTolerance 4           -- 11/250: within 0.044 of every model with ‖θ‖² ≤ 4
+#eval gd.checkGD 32 4 (1 / 20)   -- true
 
-theorem smallJacobi_check :
-    smallJacobi.checkSolver smallJacobi.suggestWitness (1 / 1000) = true := by
-  decide +kernel
-
-theorem smallJacobi_guarantee (u : Vec ℝ 10) :          -- within 0.001 of the optimum
-    smallJacobi.trainLoss ℝ ≤ (smallJacobi.problem ℝ).loss u + 1 / 1000 := ...
+theorem gd_certified (u : Vec ℝ 33) (hu : ∑ i : Fin 33, u[i] ^ 2 ≤ 4) :
+    gd.trainLoss ℝ ≤ (gd.problem ℝ).loss u + 1 / 20 := by
+  have := gd.checkGD_sound (R2 := (32 : ℕ)) (B := 4) (ε := 1 / 20)
+    (Representation.morgan_bounded 2 32) (by decide +kernel) u (by exact_mod_cast hu)
+  simpa using this
 ```
 
-When a condition fails there is no certificate: `norm_num` refutes a step size too large
-for the representation, and the check returns `false` for Jacobi without enough ridge
-penalty — a pipeline that, run on `Float`, diverges.
+**3. Jacobi and Gauss–Seidel.** The condition is about the data: the normal equations must
+be diagonally dominant with respect to some weights. `suggestWitness` proposes a witness,
+`certifiedSolverExcess` is how close to the optimum the solver is then guaranteed to end
+(`none` if the check fails), and for representations the kernel can evaluate (bond orders)
+the whole check is a proof:
+
+```lean
+def gs : Pipeline 40 16 :=
+  { data := train, representation := .bondOrders 4, ridge := 16, algorithm := .gaussSeidel 30 }
+
+#eval gs.suggestWitness                                   -- weights, ρ < 1, β
+#eval gs.certifiedSolverExcess.map fun e ↦ decide (e < 1 / 10 ^ 9)   -- some true
+
+theorem smallJacobi_certified (u : Vec ℝ 10) :           -- within 0.001 of the optimum
+    smallJacobi.trainLoss ℝ ≤ (smallJacobi.problem ℝ).loss u + 1 / 1000 := by
+  have := smallJacobi.checkSolver_sound (W := smallJacobi.suggestWitness) (ε := 1 / 1000)
+    (by decide +kernel) u
+  simpa using this
+```
+
+When a condition fails there is no certificate: `checkGD` returns `false` for a step size
+too large for the representation, and `certifiedSolverExcess` is `none` for Jacobi without
+enough ridge penalty — a pipeline that, run on `Float`, diverges.
 
 ## What is proved
 
@@ -206,8 +212,8 @@ Write `L` for the training loss `(1/m) ∑ᵣ (⟪xᵣ, θ⟫ - yᵣ)² + λ ‖
   `adjMatrix`.
 * `canonical_relabel`: a representation read through canonical SMILES gives every atom
   numbering of a molecule the same features (from the toolkit's `canonicalSmiles_relabel`).
-* Feature bounds for every molecule: Morgan `≤ fpSize`, bond orders `≤ 16k²`, and through
-  `canonical` and `++`.
+* Feature bounds for every molecule: Morgan `≤ fpSize`, bond orders `≤ 16k²`, `clip c` of
+  anything `≤ d c²`, and through `canonical` and `++`.
 
 Every theorem depends only on Lean's standard axioms (`propext`, `Classical.choice`,
 `Quot.sound`); kernel checks use `decide +kernel`, never `native_decide`.
@@ -241,16 +247,17 @@ LeanSMILES/
     Basic.lean          vectors, the problem, normal equations, loss
     Solvers.lean        gradient descent, Jacobi, Gauss–Seidel; Algorithm (the solver as data)
   Pipeline/           certified pipelines on the toolkit's molecules:
-    Representation.lean morgan, bondOrders, canonical, ++
-    Pipeline.lean       LabelledMolecules (from SMILES), Pipeline, model, trainLoss
-    Certificates.lean   the exact ℚ checks (SolverWitness)
+    Representation.lean morgan, bondOrders, counts, canonical, clip, ++
+    Pipeline.lean       LabelledMolecules (from SMILES), Pipeline, model, losses, predictions
+    Data.lean           LabelledMolecules from the CSV tables in datasets/ (via CSVparser)
+    Certificates.lean   the exact checks: checkGD, SolverWitness, certifiedSolverExcess
   Proofs/             all theorems, over ℝ
     Regression/         the quadratic loss, gradient descent, Jacobi and Gauss–Seidel
     Pipeline/           representations, certificate soundness
   Optimization/       gradient-descent convergence theorems over ℝ (from TorchLean)
   LearningTheory/     algorithmic stability; 1D ridge regression: closed form, uniform
                       stability, unique minimizer (over ℝ)
-  Examples/           CertifiedPipeline.lean, caffeine.lean, smiles.lean, parsercsv.lean
+  Examples/           caffeine.lean, smiles.lean, parsercsv.lean, pipeline.lean
 datasets/             Delaney (ESOL) data and RDKit oracle files for the tests
 docs/                 design notes and the build memory report
 ench470-content/      ENCH 470 course notebooks and data

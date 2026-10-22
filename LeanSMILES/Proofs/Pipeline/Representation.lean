@@ -8,7 +8,9 @@ import LeanSMILES.SMILES.Canonicity
 import Mathlib.Algebra.Order.BigOperators.Ring.Finset
 
 /-!
-# Molecular representations — Proofs
+# LeanSMILES.Proofs.Pipeline.Representation
+
+Molecular representations — Proofs.
 
 * `bondOrder_eq_adjMatrix`: the kernel-evaluable `Molecule.bondOrder` is the toolkit's
   bond-order matrix `Molecule.adjMatrix`. So `bondOrders k` is that matrix, padded and
@@ -22,6 +24,7 @@ import Mathlib.Algebra.Order.BigOperators.Ring.Finset
   |---|---|
   | `morgan radius fpSize` | `fpSize` |
   | `bondOrders k` | `16 k²` (bond orders are at most `4`) |
+  | `clip c r` | `d c²` (for any `r`) |
   | `canonical r` | that of `r` |
   | `r₁ ++ r₂` | `R₁² + R₂²` |
 -/
@@ -93,30 +96,30 @@ def Bounded (r : Representation d) (R2 : ℚ) : Prop :=
   ∀ M : Mol, ∑ i : Fin d, (r M)[i] ^ 2 ≤ R2
 
 theorem Bounded.nonneg {r : Representation d} {R2 : ℚ} (h : r.Bounded R2) : 0 ≤ R2 :=
-  (sum_nonneg fun _ _ => sq_nonneg _).trans (h Mol.empty)
+  (sum_nonneg fun _ _ ↦ sq_nonneg _).trans (h Mol.empty)
 
 theorem Bounded.mono {r : Representation d} {R2 R2' : ℚ} (h : r.Bounded R2) (h' : R2 ≤ R2') :
-    r.Bounded R2' := fun M => (h M).trans h'
+    r.Bounded R2' := fun M ↦ (h M).trans h'
 
 /-- Features bounded entrywise by `c` give `‖r M‖² ≤ d c²`. -/
 theorem bounded_of_abs_le {r : Representation d} {c : ℚ}
     (h : ∀ M (i : Fin d), |(r M)[i]| ≤ c) : r.Bounded (d * c ^ 2) := by
   intro M
-  calc ∑ i : Fin d, (r M)[i] ^ 2 ≤ ∑ _i : Fin d, c ^ 2 := sum_le_sum fun i _ => by
+  calc ∑ i : Fin d, (r M)[i] ^ 2 ≤ ∑ _i : Fin d, c ^ 2 := sum_le_sum fun i _ ↦ by
         rw [← sq_abs]
         exact pow_le_pow_left₀ (abs_nonneg _) (h M i) 2
     _ = d * c ^ 2 := by simp
 
 /-- **Morgan fingerprints**: `‖r M‖² ≤ fpSize`. -/
 theorem morgan_bounded (radius fpSize : ℕ) : (morgan radius fpSize).Bounded fpSize := by
-  have := bounded_of_abs_le (r := morgan radius fpSize) (c := 1) fun _ i => by
+  have := bounded_of_abs_le (r := morgan radius fpSize) (c := 1) fun _ i ↦ by
     simp only [morgan, Fin.getElem_fin, Vector.getElem_map]
     split_ifs <;> simp
   simpa using this
 
 /-- **Bond-order matrices**: `‖r M‖² ≤ 16 k²`. -/
 theorem bondOrders_bounded (k : ℕ) : (bondOrders k).Bounded (16 * (k * k)) := by
-  have := bounded_of_abs_le (r := bondOrders k) (c := 4) fun M i => by
+  have := bounded_of_abs_le (r := bondOrders k) (c := 4) fun M i ↦ by
     simp only [bondOrders, Fin.getElem_fin, Vector.getElem_ofFn]
     split_ifs
     · rw [abs_of_nonneg (M.mol.bondOrder_nonneg _ _)]
@@ -126,8 +129,18 @@ theorem bondOrders_bounded (k : ℕ) : (bondOrders k).Bounded (16 * (k * k)) := 
   push_cast
   ring
 
+/-- **Clipping bounds any representation**: `‖clip c r M‖² ≤ d c²`. -/
+theorem clip_bounded {c : ℚ} (hc : 0 ≤ c) (r : Representation d) :
+    (clip c r).Bounded (d * c ^ 2) :=
+  bounded_of_abs_le fun M i ↦ by
+    simp only [clip, Fin.getElem_fin, Vector.getElem_map]
+    rw [abs_le]
+    constructor
+    · exact le_max_left _ _
+    · exact max_le (neg_le_self hc) (min_le_left _ _)
+
 theorem canonical_bounded {r : Representation d} {R2 : ℚ} (h : r.Bounded R2) :
-    (canonical r).Bounded R2 := fun _ => h _
+    (canonical r).Bounded R2 := fun _ ↦ h _
 
 theorem append_bounded {r₁ : Representation a} {r₂ : Representation b} {R₁ R₂ : ℚ}
     (h₁ : r₁.Bounded R₁) (h₂ : r₂.Bounded R₂) : (r₁ ++ r₂).Bounded (R₁ + R₂) := by
@@ -135,8 +148,8 @@ theorem append_bounded {r₁ : Representation a} {r₂ : Representation b} {R₁
   change ∑ i : Fin (a + b), (r₁ M ++ r₂ M)[i] ^ 2 ≤ R₁ + R₂
   rw [Fin.sum_univ_add]
   simp only [Fin.getElem_fin, Fin.val_castAdd, Fin.val_natAdd, Vector.getElem_append]
-  refine add_le_add ((le_of_eq (sum_congr rfl fun i _ => ?_)).trans (h₁ M))
-    ((le_of_eq (sum_congr rfl fun i _ => ?_)).trans (h₂ M))
+  refine add_le_add ((le_of_eq (sum_congr rfl fun i _ ↦ ?_)).trans (h₁ M))
+    ((le_of_eq (sum_congr rfl fun i _ ↦ ?_)).trans (h₂ M))
   · simp [i.isLt]
   · simp
 

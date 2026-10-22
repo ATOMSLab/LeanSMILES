@@ -8,7 +8,9 @@ import LeanSMILES.Chem.Graph
 import LeanSMILES.Fingerprint.Morgan
 
 /-!
-# Molecular representations
+# LeanSMILES.Pipeline.Representation
+
+Molecular representations.
 
 A representation turns a molecule (`Mol`, from the SMILES toolkit) into `d` exact rational
 features. Exact, so that a certificate can compute with the data exactly
@@ -20,9 +22,13 @@ features. Exact, so that a certificate can compute with the data exactly
   padded with zeros), flattened row by row. Entries are read with `Molecule.bondOrder`,
   which compares bond endpoints directly instead of deciding equality in `Sym2`, so the
   kernel can evaluate it; `bondOrder_eq_adjMatrix` proves it is `adjMatrix`.
+* `counts`: atoms, bonds, hydrogens, aromatic atoms and heteroatoms, from the toolkit's
+  `Molecule` and `Atom`.
 * `canonical r`: `r` applied to the molecule read back from its canonical SMILES. By
   `Mol.canonicalSmiles_relabel` it does not depend on how the atoms are numbered
   (`canonical_relabel`).
+* `clip c r`: every feature of `r` clamped to `[-c, c]`, so that any representation gets a
+  feature bound.
 * `r₁ ++ r₂`: both representations side by side.
 
 Feature bounds, used by the gradient-descent certificate, are in
@@ -38,7 +44,7 @@ variable {n : ℕ} (m : Molecule n)
 /-- The order of the bond between atoms `i` and `j`, or `0` if there is none. Equal to
 `m.adjMatrix i j` (`bondOrder_eq_adjMatrix`). -/
 def bondOrder (i j : Fin n) : ℚ :=
-  ((m.bonds.find? fun b => (b.src == i && b.dst == j) || (b.src == j && b.dst == i)).map
+  ((m.bonds.find? fun b ↦ (b.src == i && b.dst == j) || (b.src == j && b.dst == i)).map
     (·.kind.order)).getD 0
 
 end Molecule
@@ -63,23 +69,35 @@ variable {a b d : ℕ}
 /-- Morgan (ECFP-style) fingerprint bits as `0/1` features: RDKit's
 `GetMorganGenerator(radius, fpSize)`, as `Molecule.morganVector` computes it. -/
 def morgan (radius fpSize : ℕ) : Representation fpSize :=
-  fun M => (M.mol.morganVector radius fpSize).map fun bit => if bit then 1 else 0
+  fun M ↦ (M.mol.morganVector radius fpSize).map fun bit ↦ if bit then 1 else 0
 
 /-- The bond-order matrix (`Molecule.adjMatrix`) of the first `k` atoms, padded with zeros
 and flattened row by row. -/
 def bondOrders (k : ℕ) : Representation (k * k) :=
-  fun M => Vector.ofFn fun idx =>
+  fun M ↦ Vector.ofFn fun idx ↦
     if h : idx.val / k < M.n ∧ idx.val % k < M.n then
       M.mol.bondOrder ⟨idx.val / k, h.1⟩ ⟨idx.val % k, h.2⟩
     else 0
 
+/-- Five counts read off the toolkit's molecule: heavy atoms, bonds, hydrogens, aromatic
+atoms, and heteroatoms (heavy atoms other than carbon). -/
+def counts : Representation 5 :=
+  fun M ↦
+    let atoms := M.mol.atoms.toList
+    #v[M.n, M.mol.numBonds, (atoms.map Atom.totalH).sum, (atoms.filter (·.aromatic)).length,
+      (atoms.filter fun a ↦ a.atomicNumber ≠ 6).length]
+
+/-- Every feature clamped to `[-c, c]`. -/
+def clip (c : ℚ) (r : Representation d) : Representation d :=
+  fun M ↦ (r M).map fun x ↦ max (-c) (min c x)
+
 /-- `r` on the molecule read back from its canonical SMILES: independent of atom
 numbering. -/
-def canonical (r : Representation d) : Representation d := fun M => r M.canonicalForm
+def canonical (r : Representation d) : Representation d := fun M ↦ r M.canonicalForm
 
 /-- Both representations' features, side by side. -/
 def append (r₁ : Representation a) (r₂ : Representation b) : Representation (a + b) :=
-  fun M => r₁ M ++ r₂ M
+  fun M ↦ r₁ M ++ r₂ M
 
 instance : HAppend (Representation a) (Representation b) (Representation (a + b)) := ⟨append⟩
 

@@ -6,7 +6,9 @@ Authors: DeMarko Fulcher, Claude (Anthropic)
 import LeanSMILES.Proofs.Regression.Basic
 
 /-!
-# Gradient descent — the `O(1/k)` rate
+# LeanSMILES.Proofs.Regression.GradientDescent
+
+Gradient descent — the `O(1/k)` rate.
 
 For a problem with ridge penalty `λ ≥ 0`, write `Λ = (1/m) ∑ᵣ ‖xᵣ‖² + λ` (`smoothness`) and
 assume the step-size condition `2ηΛ ≤ 1` with `η > 0`.
@@ -42,7 +44,7 @@ theorem smoothness_le {R2 : ℝ} (hR2 : 0 ≤ R2) (h : ∀ r, ∑ i, P.x r i ^ 2
   rcases Nat.eq_zero_or_pos m with hm | hm
   · subst hm; simpa using hR2
   · rw [div_le_iff₀ (by exact_mod_cast hm)]
-    calc ∑ r, ∑ i, P.x r i ^ 2 ≤ ∑ _r : Fin m, R2 := sum_le_sum fun r _ => h r
+    calc ∑ r, ∑ i, P.x r i ^ 2 ≤ ∑ _r : Fin m, R2 := sum_le_sum fun r _ ↦ h r
       _ = R2 * m := by simp [mul_comm]
 
 /-- The residual `A θ - b`. -/
@@ -51,7 +53,7 @@ noncomputable abbrev res (θ : Vec ℝ (d + 1)) : Vec ℝ (d + 1) :=
 
 theorem gdStep_eq (η : ℝ) (θ : Vec ℝ (d + 1)) :
     gdStep P.normalMatrix P.normalVector η θ = vadd θ (smul (-(2 * η)) (P.res θ)) :=
-  vext fun i => by simp [gdStep, vadd, smul]; ring
+  vext fun i ↦ by simp [gdStep, vadd, smul]; ring
 
 /-- One step changes the loss by exactly `-4η ‖r‖² + 4η² C(r)`, `r = A θ - b`. -/
 theorem loss_gdStep (η : ℝ) (θ : Vec ℝ (d + 1)) :
@@ -62,7 +64,7 @@ theorem loss_gdStep (η : ℝ) (θ : Vec ℝ (d + 1)) :
   simp only [smul_getElem]
   have : ∑ i : Fin (d + 1), (P.res θ)[i] * (-(2 * η) * (P.res θ)[i]) =
       -(2 * η) * ∑ i : Fin (d + 1), (P.res θ)[i] ^ 2 := by
-    rw [mul_sum]; exact sum_congr rfl fun i _ => by ring
+    rw [mul_sum]; exact sum_congr rfl fun i _ ↦ by ring
   rw [this]
   ring
 
@@ -74,7 +76,7 @@ theorem loss_gdStep_le {η : ℝ} (hη : 0 ≤ η) (hstep : 2 * η * P.smoothnes
       P.loss θ - 2 * η * ∑ i : Fin (d + 1), (P.res θ)[i] ^ 2 := by
   rw [loss_gdStep]
   have hC := P.curvature_le (P.res θ)
-  have hN : 0 ≤ ∑ i : Fin (d + 1), (P.res θ)[i] ^ 2 := sum_nonneg fun _ _ => sq_nonneg _
+  have hN : 0 ≤ ∑ i : Fin (d + 1), (P.res θ)[i] ^ 2 := sum_nonneg fun _ _ ↦ sq_nonneg _
   have h1 : 4 * η ^ 2 * P.curvature (P.res θ) ≤
       4 * η ^ 2 * (P.smoothness * ∑ i : Fin (d + 1), (P.res θ)[i] ^ 2) :=
     mul_le_mul_of_nonneg_left hC (by positivity)
@@ -90,7 +92,7 @@ theorem dist_gdStep (η : ℝ) (θ u : Vec ℝ (d + 1)) :
         4 * η ^ 2 * ∑ i : Fin (d + 1), (P.res θ)[i] ^ 2 := by
   rw [gdStep_eq]
   simp only [vadd_getElem, smul_getElem, mul_sum, ← sum_sub_distrib, ← sum_add_distrib]
-  exact sum_congr rfl fun i _ => by ring
+  exact sum_congr rfl fun i _ ↦ by ring
 
 /-- **Progress towards any point**: `2η (L θ' - L u) ≤ ‖θ - u‖² - ‖θ' - u‖²`. -/
 theorem loss_gdStep_progress (hridge : 0 ≤ P.ridge) {η : ℝ} (hη : 0 ≤ η)
@@ -103,7 +105,7 @@ theorem loss_gdStep_progress (hridge : 0 ≤ P.ridge) {η : ℝ} (hη : 0 ≤ η
   rw [P.dist_gdStep η θ u]
   have hflip : ∑ i : Fin (d + 1), (P.res θ)[i] * (u[i] - θ[i]) =
       -∑ i : Fin (d + 1), (P.res θ)[i] * (θ[i] - u[i]) := by
-    rw [← sum_neg_distrib]; exact sum_congr rfl fun i _ => by ring
+    rw [← sum_neg_distrib]; exact sum_congr rfl fun i _ ↦ by ring
   rw [hflip] at hconv
   have key : P.loss (gdStep P.normalMatrix P.normalVector η θ) - P.loss u ≤
       2 * ∑ i : Fin (d + 1), (P.res θ)[i] * (θ[i] - u[i]) -
@@ -126,7 +128,7 @@ theorem gd_invariant (hridge : 0 ≤ P.ridge) {η : ℝ} (hη : 0 ≤ η)
     have hmono : P.loss (gdStep P.normalMatrix P.normalVector η θ) ≤ P.loss θ := by
       have := P.loss_gdStep_le hη hstep θ
       have : 0 ≤ 2 * η * ∑ i : Fin (d + 1), (P.res θ)[i] ^ 2 :=
-        mul_nonneg (by positivity) (sum_nonneg fun _ _ => sq_nonneg _)
+        mul_nonneg (by positivity) (sum_nonneg fun _ _ ↦ sq_nonneg _)
       linarith
     have hk : 0 ≤ 2 * η * (k : ℝ) := by positivity
     have h1 := mul_le_mul_of_nonneg_left (sub_le_sub_right hmono (P.loss u)) hk
@@ -135,14 +137,14 @@ theorem gd_invariant (hridge : 0 ≤ P.ridge) {η : ℝ} (hη : 0 ≤ η)
 
 /-- Gradient descent never increases the loss, under the step-size condition. -/
 theorem loss_gradientDescent_antitone {η : ℝ} (hη : 0 ≤ η) (hstep : 2 * η * P.smoothness ≤ 1) :
-    Antitone fun k => P.loss (gradientDescent P.normalMatrix P.normalVector η k) := by
-  refine antitone_nat_of_succ_le fun k => ?_
+    Antitone fun k ↦ P.loss (gradientDescent P.normalMatrix P.normalVector η k) := by
+  refine antitone_nat_of_succ_le fun k ↦ ?_
   simp only [gradientDescent]
   rw [Function.iterate_succ_apply']
   have := P.loss_gdStep_le hη hstep ((gdStep P.normalMatrix P.normalVector η)^[k] vzero)
   have : 0 ≤ 2 * η * ∑ i : Fin (d + 1),
       (P.res ((gdStep P.normalMatrix P.normalVector η)^[k] vzero))[i] ^ 2 :=
-    mul_nonneg (by positivity) (sum_nonneg fun _ _ => sq_nonneg _)
+    mul_nonneg (by positivity) (sum_nonneg fun _ _ ↦ sq_nonneg _)
   linarith
 
 /-- **The rate, multiplied out**: `2ηk (L θₖ - L u) ≤ ‖u‖²`. -/
@@ -154,7 +156,7 @@ theorem loss_gradientDescent_mul_le (hridge : 0 ≤ P.ridge) {η : ℝ} (hη : 0
   simp only [vzero_getElem, zero_sub, neg_sq] at h
   have : 0 ≤ ∑ i : Fin (d + 1),
       (((gdStep P.normalMatrix P.normalVector η)^[k] vzero)[i] - u[i]) ^ 2 :=
-    sum_nonneg fun _ _ => sq_nonneg _
+    sum_nonneg fun _ _ ↦ sq_nonneg _
   simp only [gradientDescent]
   linarith
 

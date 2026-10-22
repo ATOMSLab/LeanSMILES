@@ -6,7 +6,9 @@ Authors: DeMarko Fulcher, Claude (Anthropic)
 import LeanSMILES.Scalar
 
 /-!
-# Linear regression — the problem
+# LeanSMILES.Regression.Basic
+
+Linear regression — the problem.
 
 Ridge linear regression on `m` samples with `d` features, written once over the scalar
 interface of `LeanSMILES.Scalar`. Only the polynomial fragment (`PolynomialLike`) and
@@ -51,17 +53,17 @@ def sumFin (f : Fin n → K) : K := sumGen (List.finRange n) f
 /-- The count `n` as a scalar, by repeated addition (no `NatCast` needed). -/
 def count (n : ℕ) : K := nsmulGen n 1
 
-def dot (u v : Vec K n) : K := sumFin fun i => u[i] * v[i]
+def dot (u v : Vec K n) : K := sumFin fun i ↦ u[i] * v[i]
 
-def matVec (A : Mat K m n) (v : Vec K n) : Vec K m := Vector.ofFn fun i => dot A[i] v
+def matVec (A : Mat K m n) (v : Vec K n) : Vec K m := Vector.ofFn fun i ↦ dot A[i] v
 
-def vsub (u v : Vec K n) : Vec K n := Vector.ofFn fun i => u[i] - v[i]
+def vsub (u v : Vec K n) : Vec K n := Vector.ofFn fun i ↦ u[i] - v[i]
 
-def vadd (u v : Vec K n) : Vec K n := Vector.ofFn fun i => u[i] + v[i]
+def vadd (u v : Vec K n) : Vec K n := Vector.ofFn fun i ↦ u[i] + v[i]
 
-def smul (c : K) (v : Vec K n) : Vec K n := Vector.ofFn fun i => c * v[i]
+def smul (c : K) (v : Vec K n) : Vec K n := Vector.ofFn fun i ↦ c * v[i]
 
-def vzero : Vec K n := Vector.ofFn fun _ => 0
+def vzero : Vec K n := Vector.ofFn fun _ ↦ 0
 
 /-- Append the constant feature `1`, so an affine model `⟪w, x⟫ + b` is the linear model
 `⟪(w, b), (x, 1)⟫`. -/
@@ -99,17 +101,17 @@ def design : Mat K m (d + 1) := Vector.ofFn P.row
 /-- `A = (1/m) ∑ᵣ xᵣ xᵣᵀ + λ I`. -/
 def normalMatrix : Mat K (d + 1) (d + 1) :=
   let X := P.design
-  Vector.ofFn fun i => Vector.ofFn fun j =>
-    sumFin (fun r : Fin m => X[r][i] * X[r][j]) / count m + if i = j then P.ridge else 0
+  Vector.ofFn fun i ↦ Vector.ofFn fun j ↦
+    sumFin (fun r : Fin m ↦ X[r][i] * X[r][j]) / count m + if i = j then P.ridge else 0
 
 /-- `b = (1/m) ∑ᵣ yᵣ xᵣ`. -/
 def normalVector : Vec K (d + 1) :=
   let X := P.design
-  Vector.ofFn fun i => sumFin (fun r : Fin m => X[r][i] * P.y[r]) / count m
+  Vector.ofFn fun i ↦ sumFin (fun r : Fin m ↦ X[r][i] * P.y[r]) / count m
 
 /-- The ridge loss `L(θ) = (1/m) ∑ᵣ (⟪xᵣ, θ⟫ - yᵣ)² + λ ‖θ‖²`. -/
 def loss (θ : Vec K (d + 1)) : K :=
-  sumFin (fun r : Fin m => (dot (P.row r) θ - P.y[r]) * (dot (P.row r) θ - P.y[r])) / count m +
+  sumFin (fun r : Fin m ↦ (dot (P.row r) θ - P.y[r]) * (dot (P.row r) θ - P.y[r])) / count m +
     P.ridge * dot θ θ
 
 end Problem

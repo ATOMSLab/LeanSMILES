@@ -9,7 +9,9 @@ import LeanSMILES.Proofs.Regression.GradientDescent
 import LeanSMILES.Proofs.Regression.Iterative
 
 /-!
-# Pipeline certificates — soundness
+# LeanSMILES.Proofs.Pipeline.Certificates
+
+Pipeline certificates — soundness.
 
 What a trained pipeline is guaranteed to satisfy, from conditions checked **without
 training it**. Write `L` for the training loss of the pipeline's problem read in `ℝ`
@@ -41,7 +43,7 @@ open Regression Finset
 @[simp] theorem ratEmbed_real (q : ℚ) : (RatEmbed.ofRat q : ℝ) = q := rfl
 
 theorem cast_sumGen {X : Type} (l : List X) (g : X → ℚ) :
-    ((sumGen l g : ℚ) : ℝ) = sumGen l fun x => (g x : ℝ) := by
+    ((sumGen l g : ℚ) : ℝ) = sumGen l fun x ↦ (g x : ℝ) := by
   induction l with
   | nil => simp [sumGen]
   | cons a l ih =>
@@ -49,7 +51,7 @@ theorem cast_sumGen {X : Type} (l : List X) (g : X → ℚ) :
     push_cast
     rw [ih]
 
-theorem cast_sumFin {n : ℕ} (g : Fin n → ℚ) : ((sumFin g : ℚ) : ℝ) = sumFin fun i => (g i : ℝ) :=
+theorem cast_sumFin {n : ℕ} (g : Fin n → ℚ) : ((sumFin g : ℚ) : ℝ) = sumFin fun i ↦ (g i : ℝ) :=
   cast_sumGen _ _
 
 theorem cast_count (k : ℕ) : ((count k : ℚ) : ℝ) = count k := by
@@ -69,17 +71,17 @@ theorem cast_npowGen (x : ℚ) (k : ℕ) : ((npowGen x k : ℚ) : ℝ) = (x : �
     rw [ih, pow_succ, mul_comm]
 
 /-- A rational matrix, read in `ℝ`. -/
-abbrev castMat {m n : ℕ} (A : Mat ℚ m n) : Mat ℝ m n := A.map (·.map fun q : ℚ => (q : ℝ))
+abbrev castMat {m n : ℕ} (A : Mat ℚ m n) : Mat ℝ m n := A.map (·.map fun q : ℚ ↦ (q : ℝ))
 
 /-- A rational vector, read in `ℝ`. -/
-abbrev castVec {n : ℕ} (v : Vec ℚ n) : Vec ℝ n := v.map fun q : ℚ => (q : ℝ)
+abbrev castVec {n : ℕ} (v : Vec ℚ n) : Vec ℝ n := v.map fun q : ℚ ↦ (q : ℝ)
 
 namespace Regression.Problem
 
 variable {m d : ℕ} (P : Problem ℚ m d)
 
 theorem map_design_getElem (r : Fin m) (i : Fin (d + 1)) :
-    (P.map fun q : ℚ => (q : ℝ)).design[r][i] = ((P.design[r][i] : ℚ) : ℝ) := by
+    (P.map fun q : ℚ ↦ (q : ℝ)).design[r][i] = ((P.design[r][i] : ℚ) : ℝ) := by
   simp only [design, row, augment, Problem.map, Fin.getElem_fin, Vector.getElem_ofFn,
     Vector.getElem_map]
   rw [Vector.getElem_push, Vector.getElem_push]
@@ -87,15 +89,15 @@ theorem map_design_getElem (r : Fin m) (i : Fin (d + 1)) :
 
 /-- Reading the data in `ℝ` and forming `A` gives the cast of the exact `A`. -/
 theorem map_normalMatrix (i j : Fin (d + 1)) :
-    (P.map fun q : ℚ => (q : ℝ)).normalMatrix[i][j] = ((P.normalMatrix[i][j] : ℚ) : ℝ) := by
+    (P.map fun q : ℚ ↦ (q : ℝ)).normalMatrix[i][j] = ((P.normalMatrix[i][j] : ℚ) : ℝ) := by
   simp only [normalMatrix, Fin.getElem_fin, Vector.getElem_ofFn]
-  push_cast [cast_sumFin, cast_count, apply_ite (fun q : ℚ => (q : ℝ))]
+  push_cast [cast_sumFin, cast_count, apply_ite (fun q : ℚ ↦ (q : ℝ))]
   simp only [Fin.eta, ← Fin.getElem_fin, map_design_getElem]
   simp [Problem.map]
 
 /-- Reading the data in `ℝ` and forming `b` gives the cast of the exact `b`. -/
 theorem map_normalVector (i : Fin (d + 1)) :
-    (P.map fun q : ℚ => (q : ℝ)).normalVector[i] = ((P.normalVector[i] : ℚ) : ℝ) := by
+    (P.map fun q : ℚ ↦ (q : ℝ)).normalVector[i] = ((P.normalVector[i] : ℚ) : ℝ) := by
   simp only [normalVector, Fin.getElem_fin, Vector.getElem_ofFn]
   push_cast [cast_sumFin, cast_count]
   simp only [← Fin.getElem_fin, map_design_getElem]
@@ -107,7 +109,7 @@ namespace Pipeline
 
 variable {m d : ℕ} (p : Pipeline m d)
 
-theorem problem_real : p.problem ℝ = p.exactProblem.map fun q : ℚ => (q : ℝ) := rfl
+theorem problem_real : p.problem ℝ = p.exactProblem.map fun q : ℚ ↦ (q : ℝ) := rfl
 
 theorem normalMatrix_real :
     (p.problem ℝ).normalMatrix = castMat p.exactProblem.normalMatrix := by
@@ -132,7 +134,7 @@ theorem sample_bound {R2 : ℚ} (h : p.representation.Bounded R2) (r : Fin m) :
     ∑ i, (p.problem ℝ).x r i ^ 2 ≤ (R2 : ℝ) + 1 := by
   have hrow : ∀ i : Fin (d + 1), (p.problem ℝ).x r i =
       if hi : i.val < d then (((p.representation p.data.molecules[r])[i.val]'hi : ℚ) : ℝ)
-      else 1 := fun i => by
+      else 1 := fun i ↦ by
     simp only [Problem.x, Problem.row, augment, problem_real, Problem.map, exactProblem,
       Fin.getElem_fin, Vector.getElem_map]
     rw [Vector.getElem_push]
@@ -197,6 +199,27 @@ theorem GDCertificate.sound {m d : ℕ} {rep : Representation d} {ridge η : ℚ
   rw [Pipeline.trainLoss_real, halg]
   exact P.loss_gradientDescent_le_add hr hη hstep c.iters_pos hB u hu
 
+namespace Pipeline
+
+variable {m d : ℕ} (p : Pipeline m d)
+
+/-- **Soundness of `checkGD`**: with a feature bound `R²` for the representation, a passing
+check gives the gradient-descent guarantee — for every `u` with `‖u‖² ≤ B`, the trained
+model's training loss is within `ε` of `u`'s. -/
+theorem checkGD_sound {R2 B ε : ℚ} (hR : p.representation.Bounded R2)
+    (h : p.checkGD R2 B ε = true) (u : Vec ℝ (d + 1)) (hu : ∑ i : Fin (d + 1), u[i] ^ 2 ≤ B) :
+    p.trainLoss ℝ ≤ (p.problem ℝ).loss u + ε := by
+  rcases halg : p.algorithm with ⟨η, k⟩ | k | k
+  · simp only [checkGD, halg, Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨⟨⟨⟨hr, hη⟩, hstep⟩, hk⟩, hB⟩ := h
+    let c : GDCertificate p.representation p.ridge η k :=
+      { R2, B, ε, bounded := hR, ridge_nonneg := hr, stepSize_pos := hη,
+        stepSize_small := hstep, iters_pos := hk, iters_enough := hB }
+    exact c.sound p rfl rfl halg u hu
+  all_goals simp [checkGD, halg] at h
+
+end Pipeline
+
 /-! ## Jacobi and Gauss–Seidel -/
 
 namespace SolverWitness
@@ -206,15 +229,15 @@ variable {n : ℕ}
 theorem cast_offDiagWeight (A : Mat ℚ n n) (w : Vec ℚ n) (i : Fin n) :
     ((Check.offDiagWeight A w i : ℚ) : ℝ) = offDiagWeight (castMat A) (castVec w) i := by
   rw [Check.offDiagWeight, cast_sumFin, sumFin_eq_sum, offDiagWeight]
-  refine sum_congr rfl fun j _ => ?_
+  refine sum_congr rfl fun j _ ↦ ?_
   split_ifs <;> simp
 
 theorem cast_weightedMass (A : Mat ℚ n n) (w : Vec ℚ n) :
     ((Check.weightedMass A w : ℚ) : ℝ) = weightedMass (castMat A) (castVec w) := by
   rw [Check.weightedMass, cast_sumFin, sumFin_eq_sum, weightedMass]
-  refine sum_congr rfl fun i _ => ?_
+  refine sum_congr rfl fun i _ ↦ ?_
   rw [cast_sumFin, sumFin_eq_sum]
-  exact sum_congr rfl fun j _ => by simp
+  exact sum_congr rfl fun j _ ↦ by simp
 
 /-- **What a passing check gives, in `ℝ`**: weighted diagonal dominance, the bound on the
 right-hand side, and the excess loss below `ε`. -/
@@ -228,8 +251,8 @@ theorem check_sound {A : Mat ℚ n n} {b : Vec ℚ n} {k : ℕ} {ε : ℚ} (W : 
   simp only [check, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true, List.mem_finRange,
     true_implies] at h
   obtain ⟨⟨⟨⟨hρ0, hρ1⟩, hβ⟩, hrows⟩, hexc⟩ := h
-  refine ⟨⟨by exact_mod_cast hρ0, by exact_mod_cast hρ1, fun i => ?_, fun i => ?_,
-    fun i => ?_⟩, by exact_mod_cast hβ, fun i => ?_, ?_⟩
+  refine ⟨⟨by exact_mod_cast hρ0, by exact_mod_cast hρ1, fun i ↦ ?_, fun i ↦ ?_,
+    fun i ↦ ?_⟩, by exact_mod_cast hβ, fun i ↦ ?_, ?_⟩
   · simpa using (hrows i).1.1.1
   · simpa using (hrows i).1.1.2
   · rw [← cast_offDiagWeight]
@@ -273,7 +296,7 @@ theorem checkSolver_sound {W : SolverWitness (d + 1)} {ε : ℚ} (h : p.checkSol
 /-- **Gauss–Seidel never increases the training loss**, for every pipeline with
 `λ ≥ 0`: more sweeps are never worse. -/
 theorem gaussSeidel_antitone (hr : 0 ≤ p.ridge) :
-    Antitone fun k => (p.problem ℝ).loss
+    Antitone fun k ↦ (p.problem ℝ).loss
       (gaussSeidel (p.problem ℝ).normalMatrix (p.problem ℝ).normalVector k) :=
   (p.problem ℝ).loss_gaussSeidel_antitone (by simp only [ridge_real]; exact_mod_cast hr)
 

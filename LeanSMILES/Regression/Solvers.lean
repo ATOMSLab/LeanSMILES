@@ -6,7 +6,9 @@ Authors: DeMarko Fulcher, Claude (Anthropic)
 import LeanSMILES.Regression.Basic
 
 /-!
-# Linear regression — iterative solvers
+# LeanSMILES.Regression.Solvers
+
+Linear regression — iterative solvers.
 
 Three iterative methods for the normal equations `A θ = b` of `Basic.lean`, each started
 from `θ = 0`:
@@ -50,7 +52,7 @@ def coordSolve [BEq K] (A : Mat K n n) (b θ : Vec K n) (i : Fin n) : K :=
 /-- One gradient step `θ - 2η (A θ - b)`. -/
 def gdStep (A : Mat K n n) (b : Vec K n) (η : K) (θ : Vec K n) : Vec K n :=
   let r := residual A b θ
-  Vector.ofFn fun i => θ[i] - (η + η) * r[i]
+  Vector.ofFn fun i ↦ θ[i] - (η + η) * r[i]
 
 /-- `k` gradient steps from `θ = 0`. -/
 def gradientDescent (A : Mat K n n) (b : Vec K n) (η : K) (k : ℕ) : Vec K n :=
@@ -60,7 +62,7 @@ def gradientDescent (A : Mat K n n) (b : Vec K n) (η : K) (k : ℕ) : Vec K n :
 
 /-- One Jacobi step: `θᵢ ← (bᵢ - ∑_{j≠i} Aᵢⱼ θⱼ) / Aᵢᵢ` for every `i` at once. -/
 def jacobiStep [BEq K] (A : Mat K n n) (b θ : Vec K n) : Vec K n :=
-  Vector.ofFn fun i => coordSolve A b θ i
+  Vector.ofFn fun i ↦ coordSolve A b θ i
 
 /-- `k` Jacobi steps from `θ = 0`. -/
 def jacobi [BEq K] (A : Mat K n n) (b : Vec K n) (k : ℕ) : Vec K n :=
