@@ -15,7 +15,7 @@ follows each entry.
 - The mathlib Community (2020), *The Lean mathematical library*, CPP 2020,
   367–381. [doi:10.1145/3372885.3373824](https://doi.org/10.1145/3372885.3373824).
   Supplies `ℝ`, `Real.sqrt`, `Real.rpow`, `Finset.sum` and the tactics used in
-  [`LeanLearn/Scalar.lean`](LeanLearn/Scalar.lean).
+  [`LeanLearn/Scalar.lean`](../LeanLearn/Scalar.lean).
   `mathlibcommunityLeanMathematicalLibrary2020`
 - The Lean Community, [*Batteries*](https://github.com/leanprover-community/batteries).
   Supplies the `Rat`-to-`Float` conversion behind the `RatEmbed Float`
@@ -25,7 +25,7 @@ follows each entry.
 
 - ATOMS Lab, *LeanCatalyst: Formally verified microkinetic modeling*
   ([repository](https://github.com/ATOMSLab/LeanCatalyst), private).
-  [`LeanLearn/Scalar.lean`](LeanLearn/Scalar.lean) is extracted from
+  [`LeanLearn/Scalar.lean`](../LeanLearn/Scalar.lean) is extracted from
   `LeanCatalyst/Scalar.lean` at commit `65d1e87`, unchanged apart from the
   namespace and docstrings. `atomslabLeanCatalyst2026`
 - Matemb, O., [*LeanBisection*](https://github.com/Oscario0/LeanBisection).
@@ -33,16 +33,6 @@ follows each entry.
   scalar-polymorphic design: generic code, a `Real` proof surface, and
   executable instantiations. `Scalar.lean` inherits that design.
   `matembLeanBisection2025`
-- Lean Dojo, [*TorchLean*](https://github.com/lean-dojo/TorchLean) (MIT;
-  [`LICENSES/TorchLean-MIT.txt`](LICENSES/TorchLean-MIT.txt)).
-  [`LeanLearn/Optimization/`](LeanLearn/Optimization) and
-  [`LeanLearn/LearningTheory/Stability/`](LeanLearn/LearningTheory/Stability)
-  are adapted from TorchLean at commit `772b6b8`: the operator-form
-  gradient-descent contraction and convergence theorems, the bridge from
-  strong convexity to a strongly monotone gradient, the algorithmic-stability
-  vocabulary, and the replace-one uniform stability of 1D ridge regression.
-  Each file's header records the source and every change;
-  `RidgeRegression1D/Minimizer.lean` is written here. `leandojoTorchLean2026`
 
 ## Formalizing chemistry in Lean
 
@@ -99,7 +89,7 @@ follows each entry.
   corresponding distance of functions*, Colloquium Mathematicum 6(1), 319–327.
   [doi:10.4064/cm-6-1-319-327](https://doi.org/10.4064/cm-6-1-319-327). The
   Jaccard distance `|A ∆ B| / |A ∪ B|` is a metric, which
-  [`Finset.tanimotoMetricSpace`](LeanSMILES/Fingerprint/Tanimoto.lean) proves.
+  [`Finset.tanimotoMetricSpace`](../LeanSMILES/Fingerprint/Tanimoto.lean) proves.
   `marczewskiCertainDistanceSets1958`
 - Lipkus, A.H. (1999), *A proof of the triangle inequality for the Tanimoto
   distance*, Journal of Mathematical Chemistry 26(1–3), 263–265.
@@ -121,8 +111,8 @@ follows each entry.
 
 ## Datasets
 
-- [`datasets/delaney-processed.csv`](datasets/delaney-processed.csv), read by
-  [`LeanSMILES/Data/CSVparser.lean`](LeanSMILES/Data/CSVparser.lean): measured
+- [`datasets/delaney-processed.csv`](../datasets/delaney-processed.csv), read by
+  [`LeanSMILES/Data/CSVparser.lean`](../LeanSMILES/Data/CSVparser.lean): measured
   aqueous solubilities of 1,128 compounds (name, SMILES and measured log
   solubility; the original file's ESOL predictions and descriptors were
   dropped, see `MERGE-NOTES.md`).
@@ -137,7 +127,7 @@ follows each entry.
     [doi:10.1039/C7SC02664A](https://doi.org/10.1039/C7SC02664A). The benchmark
     that distributes this processed CSV as its ESOL set.
     `wuMoleculeNetBenchmarkMolecular2018`
-- [`ench470-content/winequality-white.csv`](ench470-content/winequality-white.csv):
+- [`ench470-content/winequality-white.csv`](../ench470-content/winequality-white.csv):
   physicochemical measurements and quality scores for white wines.
   - Cortez, P., Cerdeira, A., Almeida, F., Matos, T. & Reis, J. (2009),
     *Modeling wine preferences by data mining from physicochemical properties*,
@@ -146,9 +136,9 @@ follows each entry.
     `cortezModelingWinePreferences2009`
   - The same authors (2009), *Wine Quality*, UCI Machine Learning Repository.
     [doi:10.24432/C56S3T](https://doi.org/10.24432/C56S3T). `cortezWineQuality2009`
-- [`ench470-content/Chembl_EGFR_actives_ML.csv`](ench470-content/Chembl_EGFR_actives_ML.csv),
-  [`Chembl_EGFR_inactives_ML.csv`](ench470-content/Chembl_EGFR_inactives_ML.csv)
-  and [`EGFR-FDA.csv`](ench470-content/EGFR-FDA.csv): 100 EGFR actives, 100
+- [`ench470-content/Chembl_EGFR_actives_ML.csv`](../ench470-content/Chembl_EGFR_actives_ML.csv),
+  [`Chembl_EGFR_inactives_ML.csv`](../ench470-content/Chembl_EGFR_inactives_ML.csv)
+  and [`EGFR-FDA.csv`](../ench470-content/EGFR-FDA.csv): 100 EGFR actives, 100
   inactives, and SMILES for five FDA-approved EGFR inhibitors (gefitinib,
   erlotinib, lapatinib, afatinib, osimertinib). All three are byte-identical
   copies of files from TeachOpenCADD's original introductory notebooks;
@@ -170,7 +160,7 @@ follows each entry.
     Nucleic Acids Research 52(D1), D1180–D1192.
     [doi:10.1093/nar/gkad1004](https://doi.org/10.1093/nar/gkad1004). A
     recent ChEMBL update. `zdrazilChEMBLDatabase20232024`
-- [`ench470-content/ThermoProperties.csv`](ench470-content/ThermoProperties.csv):
+- [`ench470-content/ThermoProperties.csv`](../ench470-content/ThermoProperties.csv):
   molecular weight, critical temperature, acentric factor and boiling point for
   6,031 compounds.
   - Joss, L. & Müller, E.A. (2019), *Machine learning for fluid property
@@ -178,7 +168,7 @@ follows each entry.
     Education 96(4), 697–703.
     [doi:10.1021/acs.jchemed.8b00692](https://doi.org/10.1021/acs.jchemed.8b00692).
     The source of the data. `jossMachineLearningFluid2019`
-  - [`ThermoPropertiesSMILES.csv`](ench470-content/ThermoPropertiesSMILES.csv)
+  - [`ThermoPropertiesSMILES.csv`](../ench470-content/ThermoPropertiesSMILES.csv)
     adds SMILES generated by Samiha Sharlin, who looked up each compound by
     name with the code in the Lecture 18 notebook (that notebook's
     extra-credit problem). The isomeric SMILES come from the NCI/CADD Chemical
@@ -189,7 +179,7 @@ follows each entry.
 
 - Josephson, T.R. (2021), *ENCH 470 course materials*, University of Maryland,
   Baltimore County, Fall 2021. The notebooks and data in
-  [`ench470-content/`](ench470-content/). `josephsonENCH470CourseMaterials2021`
+  [`ench470-content/`](../ench470-content/). `josephsonENCH470CourseMaterials2021`
 - Sydow, D., Morger, A., Driller, M. & Volkamer, A. (2019), *TeachOpenCADD: a
   teaching platform for computer-aided drug design using open source packages
   and data*, Journal of Cheminformatics 11, 29.
@@ -293,4 +283,4 @@ follows each entry.
 3. Name the key `authorFirstThreeWordsYear`, as in the entries above.
 4. When code is adapted from another project, also name the source, and the
    commit if there is one, in the adapted file's module docstring, as
-   [`Scalar.lean`](LeanLearn/Scalar.lean) does.
+   [`Scalar.lean`](../LeanLearn/Scalar.lean) does.

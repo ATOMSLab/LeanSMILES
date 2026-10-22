@@ -1,6 +1,11 @@
+/-
+Copyright (c) 2026 Hao Liu. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Hao Liu
+-/
 module
 
-public import LeanLearn.Regression.OLS
+public import LeanLearn.Proofs.LeastSquares.OLS
 public import Mathlib.LinearAlgebra.Matrix.PosDef
 public import Mathlib.Data.Real.StarOrdered
 import Mathlib.Tactic.Linarith
@@ -9,7 +14,7 @@ import Mathlib.Tactic.Ring
 /-!
 # Ridge regression: exact specification and correctness
 
-`ρ j` is the penalty on coefficient `j`. Standard ridge uses `fun _ => λ`;
+`ρ j` is the penalty on coefficient `j`. Standard ridge uses `fun _ ↦ λ`;
 an explicit intercept can be exempted by setting its penalty to zero.
 All optimization statements range over every real coefficient vector.
 -/
@@ -19,7 +24,7 @@ All optimization statements range over every real coefficient vector.
 namespace LeanLearn.Regression.Ridge
 
 open Matrix
-open scoped BigOperators Matrix
+open scoped Matrix
 noncomputable section
 variable {n p : ℕ}
 
@@ -48,7 +53,7 @@ theorem loss_eq_sum (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ)
   rw [loss, OLS.loss_eq_sum, penalty]
 
 theorem penalty_nonneg {ρ : Fin p → ℝ} (hρ : ∀ j, 0 ≤ ρ j) (w : Fin p → ℝ) :
-    0 ≤ penalty ρ w := Finset.sum_nonneg fun j _ => mul_nonneg (hρ j) (sq_nonneg _)
+    0 ≤ penalty ρ w := Finset.sum_nonneg fun j _ ↦ mul_nonneg (hρ j) (sq_nonneg _)
 
 theorem loss_nonneg (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ)
     {ρ : Fin p → ℝ} (hρ : ∀ j, 0 ≤ ρ j) (w : Fin p → ℝ) : 0 ≤ loss X y ρ w :=
@@ -75,7 +80,7 @@ def energy (X : Matrix (Fin n) (Fin p) ℝ) (ρ d : Fin p → ℝ) : ℝ :=
 
 theorem energy_nonneg (X : Matrix (Fin n) (Fin p) ℝ) {ρ : Fin p → ℝ}
     (hρ : ∀ j, 0 ≤ ρ j) (d : Fin p → ℝ) : 0 ≤ energy X ρ d :=
-  add_nonneg (Finset.sum_nonneg fun _ _ => mul_self_nonneg _) (penalty_nonneg hρ d)
+  add_nonneg (Finset.sum_nonneg fun _ _ ↦ mul_self_nonneg _) (penalty_nonneg hρ d)
 
 theorem energy_eq (X : Matrix (Fin n) (Fin p) ℝ) (ρ d : Fin p → ℝ) :
     energy X ρ d = d ⬝ᵥ (gram X ρ *ᵥ d) := by
@@ -91,7 +96,7 @@ theorem loss_add_of_normalEquations (X : Matrix (Fin n) (Fin p) ℝ)
     (y : Fin n → ℝ) (ρ : Fin p → ℝ) {w : Fin p → ℝ}
     (h : NormalEquations X y ρ w) (d : Fin p → ℝ) :
     loss X y ρ (w + d) = loss X y ρ w + energy X ρ d := by
-  have hcross := congrArg (fun z => z ⬝ᵥ d) ((normalEquations_iff X y ρ w).mp h)
+  have hcross := congrArg (fun z ↦ z ⬝ᵥ d) ((normalEquations_iff X y ρ w).mp h)
   simp only [add_dotProduct, zero_dotProduct] at hcross
   have hdot : (Xᵀ *ᵥ OLS.residual X y w) ⬝ᵥ d =
       OLS.residual X y w ⬝ᵥ OLS.predict X d := by
@@ -152,7 +157,7 @@ def fitPositive (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ)
 
 theorem fitPositive_minimizes (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ)
     (ρ : Fin p → ℝ) (hρ : ∀ j, 0 < ρ j) : IsMinimizer X y ρ (fitPositive X y ρ hρ) :=
-  fit_minimizes X y (fun j => (hρ j).le) _
+  fit_minimizes X y (fun j ↦ (hρ j).le) _
 
 /-- Positive definiteness guarantees uniqueness, also for identifiable exempt-intercept models. -/
 theorem normalEquations_unique (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ)
@@ -193,16 +198,16 @@ theorem fit_zero_penalty (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ)
 theorem exists_unique_minimizer (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ)
     (ρ : Fin p → ℝ) (hρ : ∀ j, 0 < ρ j) : ∃! w, IsMinimizer X y ρ w := by
   exact ⟨fitPositive X y ρ hρ, fitPositive_minimizes X y ρ hρ,
-    fun w hw => fitPositive_unique X y ρ hρ hw⟩
+    fun w hw ↦ fitPositive_unique X y ρ hρ hw⟩
 
 /-- Augmented design used by the numerical QR implementation. -/
 def augmentedDesign (X : Matrix (Fin n) (Fin p) ℝ) (ρ : Fin p → ℝ) :
     Matrix (Fin (n + p)) (Fin p) ℝ :=
-  Fin.addCases X (diagonal fun j => Real.sqrt (ρ j))
+  Fin.addCases X (diagonal fun j ↦ Real.sqrt (ρ j))
 
 /-- Targets of the penalty observations are zero. -/
 def augmentedTargets (y : Fin n → ℝ) : Fin (n + p) → ℝ :=
-  Fin.addCases y (fun _ => 0)
+  Fin.addCases y (fun _ ↦ 0)
 
 /-- Ridge is exactly least squares on the augmented design, before rounding. -/
 theorem augmented_loss (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ)

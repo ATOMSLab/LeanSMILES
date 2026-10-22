@@ -33,7 +33,7 @@ of matrix inversion or correctness of a floating-point implementation.
 namespace LeanLearn.Regression.OLS
 
 open Matrix
-open scoped BigOperators Matrix
+open scoped Matrix
 
 noncomputable section
 
@@ -75,7 +75,7 @@ theorem loss_eq_sum (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ)
 theorem loss_nonneg (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ)
     (w : Fin p → ℝ) : 0 ≤ loss X y w := by
   rw [loss_eq_sum]
-  exact Finset.sum_nonneg fun i _ => sq_nonneg _
+  exact Finset.sum_nonneg fun i _ ↦ sq_nonneg _
 
 /-- The residual form of the normal equations is equivalent to `XᵀXw = Xᵀy`. -/
 theorem normalEquations_iff (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ)
@@ -118,7 +118,7 @@ theorem normalEquations_minimize (X : Matrix (Fin n) (Fin p) ℝ)
   have heq := loss_add_of_normalEquations X y h (v - w)
   rw [hadd] at heq
   have hnonneg : 0 ≤ predict X (v - w) ⬝ᵥ predict X (v - w) :=
-    Finset.sum_nonneg fun i _ => mul_self_nonneg _
+    Finset.sum_nonneg fun i _ ↦ mul_self_nonneg _
   linarith
 
 /-- Exact OLS coefficients. The hypothesis excludes singular Gram matrices. -/
@@ -141,7 +141,7 @@ theorem fit_minimizes (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ)
 theorem predict_injective (X : Matrix (Fin n) (Fin p) ℝ)
     (h : (gram X).det ≠ 0) : Function.Injective (predict X) := by
   intro u v huv
-  have heq := congrArg (fun z => (gram X)⁻¹ *ᵥ (Xᵀ *ᵥ z)) huv
+  have heq := congrArg (fun z ↦ (gram X)⁻¹ *ᵥ (Xᵀ *ᵥ z)) huv
   simp only [predict, mulVec_mulVec] at heq
   change ((gram X)⁻¹ * gram X) *ᵥ u = ((gram X)⁻¹ * gram X) *ᵥ v at heq
   simpa only [nonsing_inv_mul _ (isUnit_iff_ne_zero.mpr h), one_mulVec] using heq
@@ -160,7 +160,7 @@ theorem fit_unique (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ)
     predict X (w - f) ⬝ᵥ predict X (w - f) at heq
   rw [hadd] at heq
   have hnonneg : 0 ≤ predict X (w - f) ⬝ᵥ predict X (w - f) :=
-    Finset.sum_nonneg fun i _ => mul_self_nonneg _
+    Finset.sum_nonneg fun i _ ↦ mul_self_nonneg _
   have hle := hw f
   have hzero : predict X (w - f) ⬝ᵥ predict X (w - f) = 0 := by linarith
   have hpred := dotProduct_self_eq_zero.mp hzero

@@ -1,12 +1,12 @@
 /-
 Copyright (c) 2026 Tyler Josephson. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
-Authors: Tyler Josephson, Claude (Anthropic)
+Authors: Tyler Josephson
 -/
 module
 
 public import LeanLearn.Proofs.Regression.Basic
-public import LeanLearn.Regression.Ridge
+public import LeanLearn.Proofs.LeastSquares.Ridge
 import Mathlib.Tactic.Linarith
 import Mathlib.Tactic.Ring
 
@@ -17,7 +17,7 @@ The two regression formulations are one problem.
 
 `Regression/Problem.lean` writes ridge regression on `m` samples as the *averaged* loss
 `L(θ) = (1/m) ∑ᵣ (⟪xᵣ, θ⟫ − yᵣ)² + λ ‖θ‖²` over executable `Vec`s, with normal equations
-`A θ = b`. `Regression/OLS.lean` and `Ridge.lean` write it as the *unaveraged* matrix loss
+`A θ = b`. `Proofs/LeastSquares/OLS.lean` and `Ridge.lean` write it as the *unaveraged* matrix loss
 `‖Xw − y‖² + Σⱼ ρⱼ wⱼ²` over Mathlib's `Matrix`. Over `ℝ`, with `X` the design matrix of the
 problem (every sample with its constant `1` appended), `y` its targets and `ρ = m λ` on every
 coefficient,
@@ -104,16 +104,16 @@ noncomputable def target : Fin m → ℝ := fun r ↦ P.y[r]
 
 /-- `Xθ` is the vector of fitted values `⟪xᵣ, θ⟫`. -/
 theorem predict_designMatrix (θ : Vec ℝ (d + 1)) (r : Fin m) :
-    OLS.predict P.designMatrix (ofVec θ) r = P.fit r θ := by
-  simp [OLS.predict, mulVec, dotProduct, fit_eq]
+    OLS.predict P.designMatrix (ofVec θ) r = P.fitted r θ := by
+  simp [OLS.predict, mulVec, dotProduct, fitted_eq]
 
 /-- `Xθ − y` is the vector of residuals `⟪xᵣ, θ⟫ − yᵣ`. -/
 theorem residual_designMatrix (θ : Vec ℝ (d + 1)) (r : Fin m) :
-    OLS.residual P.designMatrix P.target (ofVec θ) r = P.fit r θ - P.y[r] := by
+    OLS.residual P.designMatrix P.target (ofVec θ) r = P.fitted r θ - P.y[r] := by
   simp [OLS.residual, predict_designMatrix]
 
 /-- The mean squared error `(1/m) ∑ᵣ (⟪xᵣ, θ⟫ − yᵣ)²`: the loss without its penalty. -/
-noncomputable def mse (θ : Vec ℝ (d + 1)) : ℝ := (∑ r, (P.fit r θ - P.y[r]) ^ 2) / m
+noncomputable def mse (θ : Vec ℝ (d + 1)) : ℝ := (∑ r, (P.fitted r θ - P.y[r]) ^ 2) / m
 
 theorem loss_eq_mse_add (θ : Vec ℝ (d + 1)) : P.loss θ = P.mse θ + P.ridge * dot θ θ := by
   rw [loss_eq, mse, dot_eq_sum]

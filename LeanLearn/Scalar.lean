@@ -1,3 +1,8 @@
+/-
+Copyright (c) 2026 Tyler Josephson. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Tyler Josephson
+-/
 module
 
 public import Mathlib.Data.Real.Sqrt
@@ -115,17 +120,17 @@ instance : ScalarLike Float where
 /-- The `ℝ` reading, for the theorems: classical in its order and equality,
 `Real.sqrt`, `Real.rpow`, every real finite. -/
 noncomputable instance : ScalarLike ℝ where
-  abs := fun x => |x|
+  abs := fun x ↦ |x|
   sqrt := Real.sqrt
-  rpow := fun x y => x ^ y
-  isFinite := fun _ => true
+  rpow := fun x y ↦ x ^ y
+  isFinite := fun _ ↦ true
   ofNat := Nat.cast
 
-@[simp] lemma ScalarLike.abs_real (x : ℝ) : ScalarLike.abs x = |x| := rfl
-@[simp] lemma ScalarLike.sqrt_real (x : ℝ) : ScalarLike.sqrt x = Real.sqrt x := rfl
-@[simp] lemma ScalarLike.rpow_real (x y : ℝ) : ScalarLike.rpow x y = x ^ y := rfl
-@[simp] lemma ScalarLike.isFinite_real (x : ℝ) : ScalarLike.isFinite x = true := rfl
-@[simp] lemma ScalarLike.ofNat_real (n : Nat) : ScalarLike.ofNat n = (n : ℝ) := rfl
+@[simp] theorem ScalarLike.abs_real (x : ℝ) : ScalarLike.abs x = |x| := rfl
+@[simp] theorem ScalarLike.sqrt_real (x : ℝ) : ScalarLike.sqrt x = Real.sqrt x := rfl
+@[simp] theorem ScalarLike.rpow_real (x y : ℝ) : ScalarLike.rpow x y = x ^ y := rfl
+@[simp] theorem ScalarLike.isFinite_real (x : ℝ) : ScalarLike.isFinite x = true := rfl
+@[simp] theorem ScalarLike.ofNat_real (n : Nat) : ScalarLike.ofNat n = (n : ℝ) := rfl
 
 /-- **The two paths to `PolynomialLike ℝ` are one term.** The blanket instance
 and the projection from `ScalarLike ℝ` build the same bundle, so a lemma proved
@@ -177,7 +182,7 @@ form through `∑`. The index list is an argument rather than derived from a
 is the same obstruction one level up; callers pass `FinEnum.toList`, which is
 the order the index type declares. -/
 def sumGen [PolynomialLike K] {X : Type u} (l : List X) (f : X → K) : K :=
-  l.foldr (fun s acc => f s + acc) 0
+  l.foldr (fun s acc ↦ f s + acc) 0
 
 /-- `∑ i : Fin n, f i`, as the executable fold `sumGen` over `List.finRange n` (usable at
 `Float`): an inner product, a squared error, a normal-equation entry. -/
@@ -193,7 +198,7 @@ def sumDistinctGen [PolynomialLike K] [DecidableEq X]
     (l : List X) (f : X → K) : K :=
   sumGen l.dedup f
 
-lemma sumGen_eq {X : Type u} (l : List X) (f : X → Real) :
+theorem sumGen_eq {X : Type u} (l : List X) (f : X → Real) :
     sumGen l f = (l.map f).sum := by
   induction l with
   | nil => rfl
@@ -205,7 +210,7 @@ theorem sumFin_eq_sum {n : Nat} (f : Fin n → Real) : sumFin f = ∑ i, f i := 
 
 /-- At `Real`, the distinct executable fold is exactly the corresponding
 finite-set sum. -/
-lemma sumDistinctGen_eq {X : Type u} [DecidableEq X]
+theorem sumDistinctGen_eq {X : Type u} [DecidableEq X]
     (l : List X) (f : X → Real) :
     sumDistinctGen l f = ∑ x ∈ l.toFinset, f x := by
   rw [sumDistinctGen, sumGen_eq]
@@ -216,8 +221,8 @@ lemma sumDistinctGen_eq {X : Type u} [DecidableEq X]
 
 /-- Differencing two sums over one index list is summing their difference —
 what lets an observable's error be read as an observable of the error. -/
-lemma sumGen_sub {X : Type u} (l : List X) (f g : X → Real) :
-    sumGen l f - sumGen l g = sumGen l fun s => f s - g s := by
+theorem sumGen_sub {X : Type u} (l : List X) (f g : X → Real) :
+    sumGen l f - sumGen l g = sumGen l fun s ↦ f s - g s := by
   induction l with
   | nil => simp [sumGen]
   | cons a l ih =>
@@ -225,33 +230,33 @@ lemma sumGen_sub {X : Type u} (l : List X) (f g : X → Real) :
     linarith
 
 /-- A sum of nonnegative terms is nonnegative. -/
-lemma sumGen_nonneg {X : Type u} {l : List X} {f : X → Real}
+theorem sumGen_nonneg {X : Type u} {l : List X} {f : X → Real}
     (hf : ∀ x ∈ l, 0 ≤ f x) : 0 ≤ sumGen l f := by
   induction l with
   | nil => exact le_of_eq rfl
   | cons a t ih =>
     have h1 : 0 ≤ f a := hf a (List.mem_cons_self ..)
-    have h2 := ih fun x hx => hf x (List.mem_cons_of_mem _ hx)
+    have h2 := ih fun x hx ↦ hf x (List.mem_cons_of_mem _ hx)
     rw [sumGen, List.foldr_cons]
     rw [sumGen] at h2
     linarith
 
 /-- One member's term is a lower bound on a sum of nonnegative terms — how a
 sum is bounded *below*, and what a quotient's denominator needs. -/
-lemma le_sumGen {X : Type u} {l : List X} {f : X → Real} {a : X} (ha : a ∈ l)
+theorem le_sumGen {X : Type u} {l : List X} {f : X → Real} {a : X} (ha : a ∈ l)
     (hf : ∀ x ∈ l, 0 ≤ f x) : f a ≤ sumGen l f := by
   induction l with
   | nil => exact absurd ha List.not_mem_nil
   | cons b t ih =>
     have hrest := sumGen_nonneg (l := t) (f := f)
-      fun x hx => hf x (List.mem_cons_of_mem _ hx)
+      fun x hx ↦ hf x (List.mem_cons_of_mem _ hx)
     rw [sumGen] at hrest
     rw [sumGen, List.foldr_cons]
     rcases List.mem_cons.mp ha with h | h
     · subst h
       linarith
     · have hb : 0 ≤ f b := hf b (List.mem_cons_self ..)
-      have hle := ih h fun x hx => hf x (List.mem_cons_of_mem _ hx)
+      have hle := ih h fun x hx ↦ hf x (List.mem_cons_of_mem _ hx)
       rw [sumGen] at hle
       linarith
 

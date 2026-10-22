@@ -15,7 +15,7 @@ Aromaticity perception, RDKit's default model
 
 Decides which rings are aromatic on a Kekulé structure and marks their bonds
 `aromatic` (`Aromaticity.cpp`, `aromaticityHelper`, Release_2026_09_1). Ported
-from `docs/reference/aromaticity_ref.py` (`assign_radicals`, `set_aromaticity`).
+from `tools/rdkit_reference/aromaticity_ref.py` (`assign_radicals`, `set_aromaticity`).
 
 1. **Electrons per atom.** Each ring atom gets a donor type: how many π electrons
    it can put into the ring (benzene C: 1, pyrrole NH / furan O: 2, ring C=O: 0).

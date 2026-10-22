@@ -15,7 +15,7 @@ Kekulization
 Turns lowercase-aromatic input into an explicit alternating single/double
 structure, as RDKit does before perceiving aromaticity (`Kekulize.cpp`,
 `KekulizeFragment` with `canonical = false`). Ported from
-`docs/reference/aromaticity_ref.py` (`kekulize`).
+`tools/rdkit_reference/aromaticity_ref.py` (`kekulize`).
 
 Works one **fused ring system** at a time (rings sharing at least one bond):
 

@@ -17,7 +17,7 @@ non-legacy default) returns the **relevant cycles**: the cycles that are not a
 sum (over GF(2), i.e. symmetric difference of bond sets) of strictly shorter
 cycles. Kekulization and aromaticity work ring by ring over this set.
 
-Method (Vismara 1997), ported from `docs/reference/aromaticity_ref.py`
+Method (Vismara 1997), ported from `tools/rdkit_reference/aromaticity_ref.py`
 (`relevant_cycles`): every relevant cycle is made of a root atom `r` plus two
 shortest paths from `r` that only meet at `r`, closed either by a bond (odd
 length) or by a shared atom (even length). We enumerate all such candidates,

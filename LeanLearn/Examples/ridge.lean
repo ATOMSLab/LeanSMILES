@@ -1,6 +1,11 @@
+/-
+Copyright (c) 2026 Hao Liu. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Hao Liu
+-/
 module
 
-public import LeanLearn.Regression.RidgeOLS
+public import LeanLearn.Proofs.LeastSquares.RidgeOLS
 import Mathlib.Tactic.FinCases
 import Mathlib.Tactic.NormNum
 
@@ -9,7 +14,7 @@ import Mathlib.Tactic.NormNum
 public section
 namespace LeanLearn.Regression.Ridge.Examples
 open Matrix
-open scoped Matrix BigOperators
+open scoped Matrix
 noncomputable section
 
 def lineX : Matrix (Fin 3) (Fin 2) ℝ := !![1, 0; 1, 1; 1, 2]
@@ -41,13 +46,13 @@ def duplicateY : Fin 2 → ℝ := ![1, 3]
 
 /-- Ridge identifies both coefficients even when feature columns are identical. -/
 theorem duplicate_normalEquations :
-    NormalEquations duplicateX duplicateY (fun _ => 1) ![4/5, 4/5] := by
+    NormalEquations duplicateX duplicateY (fun _ ↦ 1) ![4/5, 4/5] := by
   unfold NormalEquations
   ext j
   fin_cases j <;> norm_num [gram, OLS.gram, duplicateX, duplicateY, Matrix.mulVec,
     Matrix.mul_apply, dotProduct, Fin.sum_univ_succ, diagonal]
 
-theorem duplicate_fit : fitPositive duplicateX duplicateY (fun _ => 1) (by intro j; norm_num) =
+theorem duplicate_fit : fitPositive duplicateX duplicateY (fun _ ↦ 1) (by intro j; norm_num) =
     ![4/5, 4/5] := by
   symm
   apply fitPositive_unique
@@ -56,7 +61,7 @@ theorem duplicate_fit : fitPositive duplicateX duplicateY (fun _ => 1) (by intro
 
 /-- One observation and two coefficients: positive ridge still has a unique solution. -/
 theorem underdetermined_minimizes :
-    IsMinimizer (!![1, 2] : Matrix (Fin 1) (Fin 2) ℝ) ![3] (fun _ => 1) ![1/2, 1] := by
+    IsMinimizer (!![1, 2] : Matrix (Fin 1) (Fin 2) ℝ) ![3] (fun _ ↦ 1) ![1/2, 1] := by
   apply normalEquations_minimize _ _ (by intro j; norm_num)
   unfold NormalEquations
   ext j
@@ -99,7 +104,7 @@ theorem orthoX_transpose : orthoXᵀ = !![1, 0, 0; 0, 1, 0] := by
 
 /-- With orthonormal columns, unit ridge halves the OLS coefficients `Xᵀy = ![2, 4]`. -/
 theorem ortho_halves :
-    fitPositive orthoX ![2, 4, 6] (fun _ => 1) (fun _ => one_pos) = ![1, 2] := by
+    fitPositive orthoX ![2, 4, 6] (fun _ ↦ 1) (fun _ ↦ one_pos) = ![1, 2] := by
   rw [fitPositive_eq_smul_of_gram_eq_one orthoX _ orthoX_gram one_pos, orthoX_transpose]
   ext j
   fin_cases j <;> norm_num [Matrix.mulVec, dotProduct, Fin.sum_univ_succ]

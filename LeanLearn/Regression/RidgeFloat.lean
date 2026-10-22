@@ -21,7 +21,7 @@ QR. It does not form or invert `XᵀX`. A positive penalty permits singular or
 underdetermined designs when the augmented design is numerically full rank.
 With zero penalty, this solves the ordinary least-squares problem.
 
-The exact-real OLS proofs in `OLS.lean` do not certify this program's
+The exact-real proofs in `Proofs/LeastSquares/` do not certify this program's
 floating-point rounding errors or its regularized objective.
 -/
 
@@ -59,7 +59,8 @@ def Error.toString : Error → String
   | .nonFiniteFeature row column => s!"non-finite feature at row {row}, column {column}"
   | .nonFiniteTarget row => s!"non-finite target at row {row}"
   | .underdetermined observations features =>
-    s!"{observations} observations cannot determine {features} coefficients uniquely without a penalty"
+    s!"{observations} observations cannot determine {features} coefficients uniquely \
+      without a penalty"
   | .invalidPenalty => "penalty must be finite and nonnegative"
   | .invalidUnpenalizedColumn column features =>
     s!"unpenalized column {column} is outside {features} feature columns"
@@ -180,7 +181,7 @@ def fit (X : Design) (y : Array Float) (cfg : Config := {}) : Except Error Model
     if some j != cfg.unpenalizedColumn then
       scales := scales.set! j (max scales[j]! rootPenalty)
     if scales[j]! == 0 then throw (.rankDeficient j)
-  let targetMax := y.foldl (fun s v => max s v.abs) 0.0
+  let targetMax := y.foldl (fun s v ↦ max s v.abs) 0.0
   let targetScale := if targetMax == 0 then 1.0 else targetMax
   -- Put penalty rows first so a dominant penalty does not erase a small
   -- data contribution when the first Householder reflection updates the target.
@@ -194,7 +195,7 @@ def fit (X : Design) (y : Array Float) (cfg : Config := {}) : Except Error Model
       a := a.push row
       b := b.push 0.0
   for i in [0:m] do
-    a := a.push (X[i]!.mapIdx fun j v => v / scales[j]!)
+    a := a.push (X[i]!.mapIdx fun j v ↦ v / scales[j]!)
     b := b.push (y[i]! / targetScale)
   let rows := a.size
   let mut originalNorms := Array.replicate p 0.0
@@ -219,7 +220,7 @@ def fit (X : Design) (y : Array Float) (cfg : Config := {}) : Except Error Model
     for i in [k:rows] do
       v := v.set! i a[i]![k]!
     v := v.set! k (v[k]! - alpha)
-    let vnormSq := v.foldl (fun s vi => s + vi * vi) 0.0
+    let vnormSq := v.foldl (fun s vi ↦ s + vi * vi) 0.0
     if !vnormSq.isFinite || vnormSq == 0 then
       throw (.numericalFailure s!"Householder reflection {k}")
     for j in [k:p] do

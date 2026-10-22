@@ -304,7 +304,7 @@ The repository builds three Lean libraries, with one direction of dependency:
 | Library | What it is | Imports |
 |---|---|---|
 | [`LeanSMILES/`](LeanSMILES) | SMILES → typed molecular graph → canonical SMILES, Morgan fingerprints, matrices | Mathlib |
-| [`LeanLearn/`](LeanLearn) | learning algorithms on tabular data (`X`, `y`) and their proofs: linear regression, logistic regression, iterative solvers and their certificates, optimization, learning theory | Mathlib only — no chemistry |
+| [`LeanLearn/`](LeanLearn) | learning algorithms on tabular data (`X`, `y`) and their proofs: linear regression in closed form and by certified iterative solvers, logistic regression, and the theorems over `ℝ` | Mathlib only — no chemistry |
 | [`Pipelines/`](Pipelines) | molecules as tabular data: representations `Mol → ℚᵈ`, labelled molecules, certified pipelines, the Delaney and EGFR walkthroughs, the tests against scikit-learn | both |
 
 `LeanLearn` does not know what a molecule is — as scikit-learn does not import RDKit —
@@ -323,22 +323,24 @@ theorems are about, and the polynomial fragment also runs exactly over `ℚ`.
 
 Two formulations of the same problem, by two authors, side by side:
 
-* **Closed form, over `ℝ`** ([`Regression/OLS.lean`](LeanLearn/Regression/OLS.lean),
-  [`Ridge.lean`](LeanLearn/Regression/Ridge.lean); Hao Liu). `X : Matrix (Fin n) (Fin p) ℝ`,
+* **Closed form, over `ℝ`** ([`Proofs/LeastSquares/OLS.lean`](LeanLearn/Proofs/LeastSquares/OLS.lean),
+  [`Ridge.lean`](LeanLearn/Proofs/LeastSquares/Ridge.lean); Hao Liu). `X : Matrix (Fin n) (Fin p) ℝ`,
   loss `‖Xw − y‖²`, plus `Σⱼ ρⱼ wⱼ²` for ridge. Any solution of the normal equations is a
   global minimizer, with no rank assumption; `fit = (XᵀX)⁻¹ Xᵀy` satisfies them and is the
   unique minimizer when `det(XᵀX) ≠ 0`; positive ridge has a unique minimizer for every
-  design, even underdetermined ones. [`RidgeOLS.lean`](LeanLearn/Regression/RidgeOLS.lean)
+  design, even underdetermined ones. [`RidgeOLS.lean`](LeanLearn/Proofs/LeastSquares/RidgeOLS.lean)
   relates the two: a ridge minimizer trades squared error for a smaller penalized norm than
   any OLS minimizer, `wρ = (XᵀX + diag ρ)⁻¹ XᵀX w₀`, and the ridge path is continuous with
-  `wλ → w₀` as `λ → 0` and `‖wλ‖² → 0` as `λ → ∞`. [`LinearModel.lean`](LeanLearn/Regression/LinearModel.lean)
-  writes the same objectives over `PolynomialLike`, so they run at `Float`, and proves that
-  their `ℝ` reading is the specification. [`OLSFloat.lean`](LeanLearn/Regression/OLSFloat.lean)
+  `wλ → w₀` as `λ → 0` and `‖wλ‖² → 0` as `λ → ∞`.
+  [`Regression/LinearModel.lean`](LeanLearn/Regression/LinearModel.lean) writes the same
+  objectives over `PolynomialLike`, so they run at `Float`, and
+  [`Proofs/Regression/LinearModel.lean`](LeanLearn/Proofs/Regression/LinearModel.lean) proves
+  that their `ℝ` reading is the specification. [`OLSFloat.lean`](LeanLearn/Regression/OLSFloat.lean)
   and [`RidgeFloat.lean`](LeanLearn/Regression/RidgeFloat.lean) are executable Householder-QR
   solvers on `Float` arrays, with input validation and no formal rounding bound. Worked proofs
   in [`Examples/ols.lean`](LeanLearn/Examples/ols.lean) and
   [`ridge.lean`](LeanLearn/Examples/ridge.lean); details in
-  [`LeanLearn/Regression/README.md`](LeanLearn/Regression/README.md).
+  [`LeanLearn/README.md`](LeanLearn/README.md).
 * **Iterative, over any scalar** ([`Regression/Problem.lean`](LeanLearn/Regression/Problem.lean),
   [`Solvers.lean`](LeanLearn/Regression/Solvers.lean); DeMarko Fulcher). The ridge problem
   `(1/m) Σᵣ (⟪xᵣ, θ⟫ − yᵣ)² + λ‖θ‖²` with an intercept, its normal equations `Aθ = b`, and
@@ -371,10 +373,13 @@ logistic regression — scikit-learn's `LogisticRegression()` objective, interce
 penalized — on sparse `0/1` features, trained by Nesterov-accelerated gradient descent with
 gradient-based restarts to a (nearly) zero gradient. It runs at `Float`; `Pipelines` checks it
 against scikit-learn molecule by molecule (`lake exe logistic-test`, below).
+[`Classification/ROC.lean`](LeanLearn/Classification/ROC.lean) scores a classifier at every
+threshold at once: the ROC curve and its area, as scikit-learn's `roc_curve` and `roc_auc_score`.
 
 ### Proofs over `ℝ`
 
-[`Proofs/Regression/`](LeanLearn/Proofs/Regression):
+[`Proofs/`](LeanLearn/Proofs): `LeastSquares/` is the closed form on Mathlib matrices (the bullets
+above); `Regression/` reads the executable code in `ℝ`:
 
 * **The loss is an exact quadratic**: `L(θ + v) = L(θ) + 2⟪Aθ − b, v⟫ + vᵀAv`; so solutions
   of the normal equations are global minimizers.
@@ -393,30 +398,6 @@ against scikit-learn molecule by molecule (`lake exe logistic-test`, below).
   point of Jacobi is optimal.
 * **The certificate is sound** (`SolverWitness.check_sound`): a passing exact `ℚ` check
   gives the hypotheses above in `ℝ`.
-
-### Optimization and learning theory (from TorchLean)
-
-[`Optimization/`](LeanLearn/Optimization) and
-[`LearningTheory/`](LeanLearn/LearningTheory) are proofs over `ℝ` that import only Mathlib;
-nothing executable depends on them.
-
-- `Optimization/StronglyConvexGD.lean`: for a μ-strongly monotone, L-Lipschitz `g` on a real
-  inner product space, each step of `x ↦ x − η g(x)` shrinks the squared distance to the
-  root of `g` by the factor `1 − 2ημ + η²L²`, which is below 1 when `0 < η` and `ηL² < 2μ`;
-  the iterates converge to the root. `SmoothStrongConvexBridge.lean` derives strong
-  monotonicity of `∇f` from `StrongConvexOn`; the Lipschitz constant of `∇f` stays a
-  hypothesis.
-- `LearningTheory/Stability/RidgeRegression1D/Real.lean`: replace-one uniform stability of
-  the closed-form 1D ridge fit, with `β = 4X²Y²(λ+X²)²/(λ³N)`.
-- `LearningTheory/Stability/RidgeRegression1D/Minimizer.lean` (written here, not from
-  TorchLean): for `λ > 0` the closed form is the unique minimizer of
-  `(1/N) Σ (w xᵢ − yᵢ)² + λ w²`.
-
-To apply the gradient-descent theorems to `LeanLearn.Regression.gradientDescent`,
-instantiate them on `EuclideanSpace ℝ (Fin n)` (Mathlib's `Fin n → ℝ` carries the sup norm,
-not an inner product). The files are copied from
-[TorchLean](https://github.com/lean-dojo/TorchLean) (MIT; `LICENSES/TorchLean-MIT.txt`), and
-each file's header records the source commit and every change made here.
 
 ## Molecules as tabular data: `Pipelines`
 
@@ -563,16 +544,17 @@ LeanSMILES/           the typed SMILES toolkit (imports Mathlib)
   Data/               CSV parser (columns by header name) for the Delaney dataset
   Tests/              validity, oracle, Morgan, aromaticity, charge, parse-error and depiction tests (lake exe …-test)
   Examples/           caffeine.lean, smiles.lean, parsercsv.lean, depict.lean
-LeanLearn/            learning algorithms on tabular data (imports Mathlib only)
+LeanLearn/            learning algorithms on tabular data (imports Mathlib only); see its README.md
   Scalar.lean         ScalarLike: the scalar interface, Float to run and ℝ to prove (from LeanCatalyst)
-  Regression/         Problem, Solvers, Certificates (iterative, any scalar);
-                      OLS, Ridge, LinearModel (closed form, ℝ); OLSFloat, RidgeFloat (QR, Float);
+  Regression/         executable, over any scalar: Problem, Solvers, Certificates (iterative);
+                      LinearModel (the objectives on a matrix); OLSFloat, RidgeFloat (QR, Float);
                       SparseRidge (conjugate gradients, sparse 0/1); Metrics (R², RMSE, MAE)
   Classification/     Logistic, ROC (ROC curve, AUC)
   Plot/               parity plots as SVG
-  Proofs/Regression/  the quadratic loss, gradient descent, Jacobi and Gauss–Seidel, certificate soundness
-  Optimization/       gradient-descent convergence over ℝ (from TorchLean)
-  LearningTheory/     algorithmic stability; 1D ridge regression (from TorchLean)
+  Proofs/             over ℝ. LeastSquares/: OLS, Ridge, RidgeOLS — the closed form on Mathlib
+                      matrices. Regression/: the executable code read in ℝ — the quadratic loss,
+                      gradient descent, Jacobi and Gauss–Seidel, certificate soundness, and the
+                      bridges to the closed form (MatrixBridge, LinearModel)
   Examples/           ols.lean, ridge.lean (worked proofs), olsFloat.lean, ridgeFloat.lean (runs)
   Tests/              OLSFloat, RidgeFloat, LinearModel (lake exe …-test)
 Pipelines/            molecules as tabular data (imports both)
@@ -586,11 +568,10 @@ Pipelines/            molecules as tabular data (imports both)
 datasets/             Delaney (ESOL) data, RDKit oracle files (as written and Kekulé), the EGFR and
                       Delaney-ridge answer files
 tools/                RDKit oracle and fuzz generators; sklearn_egfr.py and sklearn_delaney.py write
-                      the scikit-learn answer files
-                      check_depiction.py reads the drawings back with RDKit
-docs/                 design notes; figures/ holds plots written by Lean
+                      the scikit-learn answer files; check_depiction.py reads the drawings back with
+                      RDKit; rdkit_reference/ holds the pure-Python references the RDKit ports follow
+docs/                 design notes, REFERENCES.md and references.bib; figures/ holds plots written by Lean
 ench470-content/      ENCH 470 course notebooks and data
-LICENSES/             TorchLean's MIT license
 ```
 
 ### Module system
@@ -615,11 +596,35 @@ Every file is a Lean `module`, so what a file exports is a decision, not an acci
 
 Merging this branch into `main`: see [`MERGE-NOTES.md`](MERGE-NOTES.md).
 
+## Authors
+
+LeanSMILES is written in the [ATOMS Lab](https://github.com/ATOMSLab) at UMBC by DeMarko
+Fulcher, Ejike David Ugwuanyi, Kevin Ishimwe, Samiha Sharlin, Hao Liu, Alex Haibel, Izzy
+Shahmoradi and Tyler R. Josephson, and was prepared as part of the
+[Open Scientific Intelligence Hackathon](https://llmhackathon.github.io). Every Lean file
+names its authors in its header; by area:
+
+* **DeMarko Fulcher** — the iterative formulation of linear regression (`Problem`; gradient
+  descent, Jacobi and Gauss–Seidel with their exact `ℚ` certificates) and its proofs over `ℝ`;
+  `Pipelines`: representations, certified pipelines, and the Delaney walkthrough.
+* **Ejike David Ugwuanyi** — 2D depiction: layout, SVG, mol blocks, `#draw`, `lake exe depict`.
+* **Kevin Ishimwe** — the initial Lake project and the CSV parser for the Delaney table.
+* **Samiha Sharlin** — the RDKit port and its Python references: Morgan fingerprints and the
+  proof that they are independent of atom order, aromaticity perception, the oracle datasets;
+  logistic regression, sparse ridge regression, metrics and parity plots; the EGFR and Delaney
+  walkthroughs against scikit-learn; the ENCH 470 course content.
+* **Hao Liu** — ordinary least squares and ridge regression in closed form over `ℝ`, the
+  Householder-QR solvers on `Float`, and the parser's error messages and their tests.
+* **Alex Haibel** and **Izzy Shahmoradi**.
+* **Tyler R. Josephson** — the typed molecular graph and its Mathlib views, the SMILES grammar,
+  parser, writer and canonicity proof, charges, Tanimoto, the scalar interface, ridge against
+  OLS and the bridge between the two regression formulations.
+
 ## References
 
 LeanSMILES builds on prior work in Lean, cheminformatics, and chemistry
-education. [`REFERENCES.md`](REFERENCES.md) credits each source and says what
-it is credited for; [`references.bib`](references.bib) has the BibTeX.
+education. [`docs/REFERENCES.md`](docs/REFERENCES.md) credits each source and says
+what it is credited for; [`docs/references.bib`](docs/references.bib) has the BibTeX.
 
 ## Findings about external tools
 
