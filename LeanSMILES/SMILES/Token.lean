@@ -1,7 +1,7 @@
 /-
 Copyright (c) 2026 Tyler Josephson. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
-Authors: Tyler Josephson
+Authors: Tyler Josephson, Hao Liu
 -/
 import LeanSMILES.Chem.Atom
 import LeanSMILES.Chem.Bond
@@ -51,15 +51,17 @@ def toString : ParseError → String
   | unexpectedEnd expected => s!"unexpected end of input, expected {expected}"
   | unknownElement pos s => s!"unknown element symbol '{s}' at {pos}"
   | badBracket pos msg => s!"malformed bracket atom at {pos}: {msg}"
-  | bondWithoutAtom pos => s!"bond symbol at {pos} is not followed by an atom or ring closure"
-  | branchWithoutAtom pos => s!"branch opened at {pos} before any atom"
-  | ringWithoutAtom pos => s!"ring-closure digit at {pos} before any atom"
+  | bondWithoutAtom pos => s!"bond symbol at {pos} cannot connect two atoms"
+  | branchWithoutAtom pos => s!"branch opened at {pos} without an atom to attach to"
+  | ringWithoutAtom pos => s!"ring-closure label at {pos} without an atom to attach to"
   | unmatchedBranchClose pos => s!"')' at {pos} closes no branch"
   | emptyBranch pos => s!"empty branch '()' closed at {pos}"
-  | ringAfterBranchOpen pos => s!"ring-closure digit at {pos} directly after '('"
+  | ringAfterBranchOpen pos => s!"ring-closure label at {pos} directly after '('"
   | danglingDot pos => s!"'.' at {pos} is not between two atoms"
-  | unclosedBranch k => s!"{k} branch(es) never closed"
-  | unclosedRing nums => s!"ring closure(s) {nums} never closed"
+  | unclosedBranch 1 => "1 branch was never closed"
+  | unclosedBranch k => s!"{k} branches were never closed"
+  | unclosedRing [num] => s!"ring closure {num} was never closed"
+  | unclosedRing nums => s!"ring closures {nums} were never closed"
   | selfBond pos a => s!"ring closure at {pos} bonds atom {a} to itself"
   | duplicateBond pos i j => s!"bond at {pos} duplicates the bond between atoms {i} and {j}"
   | conflictingRingBond pos num => s!"ring closure {num} at {pos} has two different bond symbols"
@@ -112,7 +114,7 @@ abbrev BracketSymbol := Option Element × Bool × List Char
 
 /-- The element symbol inside brackets, greedy on two-letter symbols (`[Sc]` is scandium,
 `[Co]` cobalt); lowercase symbols are aromatic. -/
-def bracketSymbol (pos : ℕ) : List Char → Except ParseError BracketSymbol
+def bracketSymbol (bracketPos symbolPos : ℕ) : List Char → Except ParseError BracketSymbol
   | '*' :: rest => .ok (none, false, rest)
   | c :: rest =>
     if c.isUpper then
@@ -134,21 +136,21 @@ def bracketSymbol (pos : ℕ) : List Char → Except ParseError BracketSymbol
           | none => aromaticOne c rest
         else aromaticOne c rest
       | [] => aromaticOne c rest
-    else .error (.unexpectedChar pos c)
+    else .error (.unexpectedChar symbolPos c)
   | [] => .error (.unexpectedEnd "an element symbol")
 where
   /-- A one-letter uppercase symbol. -/
   oneLetter (c : Char) (rest : List Char) : Except ParseError BracketSymbol :=
     match Element.ofSymbol? (String.ofList [c]) with
     | some e => .ok (some e, false, rest)
-    | none => .error (.unknownElement pos (String.ofList [c]))
+    | none => .error (.unknownElement symbolPos (String.ofList [c]))
   /-- A one-letter aromatic (lowercase) symbol. -/
   aromaticOne (c : Char) (rest : List Char) : Except ParseError BracketSymbol :=
     match Element.ofSymbol? (String.ofList [c.toUpper]) with
     | some e =>
       if e.aromaticAllowed then .ok (some e, true, rest)
-      else .error (.badBracket pos s!"'{c}' may not be written aromatic")
-    | none => .error (.unknownElement pos (String.ofList [c]))
+      else .error (.badBracket bracketPos s!"'{c}' may not be written aromatic")
+    | none => .error (.unknownElement symbolPos (String.ofList [c]))
 
 /-- `@@`, `@`, or nothing. -/
 def parseChirality : List Char → Option Chirality × List Char
@@ -191,7 +193,7 @@ Returns the atom and the characters after the closing `]`. -/
 def bracketAtom (pos : ℕ) (cs : List Char) : Except ParseError (Atom × List Char) := do
   let (isoDigits, cs) := takeDigits cs
   let isotope := if isoDigits.isEmpty then none else some (digitsToNat isoDigits)
-  let (element, aromatic, cs) ← bracketSymbol pos cs
+  let (element, aromatic, cs) ← bracketSymbol pos (pos + 1 + isoDigits.length) cs
   let (chirality, cs) := parseChirality cs
   let (h, cs) := parseHCount cs
   let (charge, cs) := parseCharge cs
@@ -246,9 +248,9 @@ def go : ℕ → List Char → ℕ → Array Token → Except ParseError (Array 
     else if c == '%' then
       match cs with
       | d1 :: d2 :: rest =>
-        if d1.isDigit && d2.isDigit then
-          go fuel rest (pos + 3) (acc.push ⟨.ring (digitsToNat [d1, d2]), pos⟩)
-        else .error (.unexpectedChar (pos + 1) d1)
+        if !d1.isDigit then .error (.unexpectedChar (pos + 1) d1)
+        else if !d2.isDigit then .error (.unexpectedChar (pos + 2) d2)
+        else go fuel rest (pos + 3) (acc.push ⟨.ring (digitsToNat [d1, d2]), pos⟩)
       | _ => .error (.unexpectedEnd "two digits after '%'")
     else if c.isDigit then go fuel cs (pos + 1) (acc.push ⟨.ring (c.toNat - '0'.toNat), pos⟩)
     else
