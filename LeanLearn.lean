@@ -23,6 +23,7 @@ public import LeanLearn.Classification.Logistic
 public import LeanLearn.Plot.Parity
 -- Proofs (over ℝ)
 public import LeanLearn.Proofs.Regression.Basic
+public import LeanLearn.Proofs.Regression.MatrixBridge
 public import LeanLearn.Proofs.Regression.GradientDescent
 public import LeanLearn.Proofs.Regression.Iterative
 public import LeanLearn.Proofs.Regression.Certificates
