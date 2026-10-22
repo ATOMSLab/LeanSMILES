@@ -14,11 +14,11 @@ port of RDKit's `GetMorganGenerator(radius=2, fpSize=2048)`
 (`Fingerprints/MorganGenerator.cpp`, `FingerprintUtil.cpp`, RDKit 2026.09.1).
 
 1. **Radius 0.** Each atom gets a 32-bit number from its own properties:
-   element, number of neighbours including H, H count, charge, isotope mass
+   element, number of neighbors including H, H count, charge, isotope mass
    shift, and whether it is in a ring.
 2. **Each radius 1, 2, ….** Each atom's number is re-hashed together with its
-   sorted (bond type, neighbour's number) pairs, so it describes a bigger and
-   bigger neighbourhood (an "environment").
+   sorted (bond type, neighbor's number) pairs, so it describes a bigger and
+   bigger neighborhood (an "environment").
 3. **Duplicates.** If two atoms' environments cover exactly the same bonds,
    only the smallest (identifier, atom) is kept; an environment already seen at
    a smaller radius is dropped, and its atom stops growing ("dead", contributes 0).
@@ -31,7 +31,7 @@ written*: no aromaticity perception, no nitro rewrite, and hydrogens written
 as `[H]` atoms stay atoms (RDKit removes them).  So the bits equal RDKit's
 exactly when the as-written bond types and hydrogen counts equal RDKit's
 sanitized ones — which `lake exe morgan-test` checks — and the fingerprint is
-always invariant under relabelling of the atoms, which is the property that is
+always invariant under relabeling of the atoms, which is the property that is
 ours to guarantee.
 
 Every intermediate is `Vector`/`Array` data, never a function returned from a
@@ -149,7 +149,7 @@ def inRingVector (m : Molecule n) : Vector Bool n :=
 
 /-! ### The fingerprint -/
 
-/-- Each atom's neighbours as (bond index, neighbour), in bond-list order —
+/-- Each atom's neighbors as (bond index, neighbor), in bond-list order —
 RDKit's adjacency order. -/
 def adjacency (m : Molecule n) : Vector (List (ℕ × Fin n)) n := Id.run do
   let mut adj : Vector (List (ℕ × Fin n)) n := Vector.replicate n []
@@ -159,7 +159,7 @@ def adjacency (m : Molecule n) : Vector (List (ℕ × Fin n)) n := Id.run do
   return adj
 
 /-- Radius-0 identifiers (`getConnectivityInvariants`): element, total degree, total H
-count (counting neighbouring `[H]` atoms), charge, isotope mass shift, and a ring flag. -/
+count (counting neighboring `[H]` atoms), charge, isotope mass shift, and a ring flag. -/
 def morganAtomInvariants (m : Molecule n) : Vector UInt32 n :=
   let inRing := m.inRingVector
   Vector.ofFn fun i ↦
@@ -192,12 +192,12 @@ def morganEnvironments (m : Molecule n) (radius : ℕ := 2) : List (UInt32 × Fi
         if nbrs.isEmpty then
           dead := dead.set a.val true a.isLt
           continue
-        -- the environment grows by the atom's bonds and its neighbours' previous environments
+        -- the environment grows by the atom's bonds and its neighbors' previous environments
         let mut env := roundEnv[a]
         for (k, o) in nbrs do
           env := env ||| (1 <<< k) ||| prevEnv[o]
         roundEnv := roundEnv.set a.val env a.isLt
-        -- sorted (bond type, neighbour identifier) pairs, hashed onto (layer, own identifier)
+        -- sorted (bond type, neighbor identifier) pairs, hashed onto (layer, own identifier)
         let pairs := (nbrs.map fun (k, o) ↦ (kinds[k]!, cur[o])).mergeSort
           fun p q ↦ p.1 < q.1 || (p.1 == q.1 && p.2 ≤ q.2)
         let h := pairs.foldl (fun h (t, v) ↦ hashCombine h (hashPair t v))

@@ -24,7 +24,7 @@ agree where those graphs agree.  Hence three kinds of check:
   molecule whose as-written bond types and hydrogen counts equal RDKit's, the
   unfolded identifiers with counts, and the folded bits, must be identical.
   A miss there is a bug in the port.
-* **Relabelling invariance must hold on every molecule**: the identifiers are
+* **Relabeling invariance must hold on every molecule**: the identifiers are
   unchanged when the atoms are renumbered (`finRotate`, `Fin.revPerm`).
 
 Overall agreement with RDKit is reported for information.
@@ -76,12 +76,12 @@ def main (args : List String) : IO UInt32 := do
       let ids₁ := (M.relabel (finRotate M.n)).morganIds
       let ids₂ := (M.relabel Fin.revPerm).morganIds
       if ids₁ == M.morganIds && ids₂ == M.morganIds then invariant := invariant + 1
-      else failures := failures.push s!"relabelling changed the fingerprint of {row.smiles}"
+      else failures := failures.push s!"relabeling changed the fingerprint of {row.smiles}"
   IO.println s!"{rows.length} molecules, {parsed} parsed"
   IO.println s!"ring membership = RDKit: {ringOk}/{parsed}  [must be all]"
   IO.println
     s!"fingerprint = RDKit where the graph = RDKit's: {graphOkFpOk}/{graphOk}  [must be all]"
-  IO.println s!"fingerprint invariant under relabelling: {invariant}/{parsed}  [must be all]"
+  IO.println s!"fingerprint invariant under relabeling: {invariant}/{parsed}  [must be all]"
   IO.println s!"on-bits = RDKit overall: {bitsOk}/{parsed}  [info: graph as written]"
   IO.println s!"identifiers+counts = RDKit overall: {idsOk}/{parsed}  [info: graph as written]"
   for f in failures.toList.take 10 do

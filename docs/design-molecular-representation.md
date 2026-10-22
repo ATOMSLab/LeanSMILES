@@ -7,17 +7,17 @@ and how it compares with the alternatives (RDKit, pysmiles, and the
 ## 1. Three layers, not two
 
 "Is RDKit storing a string or a graph?" has a three-part answer, and the
-library is organised around it:
+library is organized around it:
 
 | Layer | What it is | Here |
 |---|---|---|
 | **String** | the syntax | `String`, from `CSVparser` |
-| **Ordered labelled graph** | atoms numbered in order of appearance, bonds with kinds, decorations | `Molecule n` (`LeanSMILES/Chem/Molecule.lean`) |
-| **Molecule up to relabelling** | what "same molecule?" means | `canonicalize` / `canonicalSmiles` (`LeanSMILES/SMILES/Canon.lean`) |
+| **Ordered labeled graph** | atoms numbered in order of appearance, bonds with kinds, decorations | `Molecule n` (`LeanSMILES/Chem/Molecule.lean`) |
+| **Molecule up to relabeling** | what "same molecule?" means | `canonicalize` / `canonicalSmiles` (`LeanSMILES/SMILES/Canon.lean`) |
 
 RDKit and pysmiles both parse into the middle layer and both have to work to
 reach the third.  The ordered graph remembers the string in two places — the
-atom numbering, and the neighbour order that `@`/`@@` and `/`/`\` refer to —
+atom numbering, and the neighbor order that `@`/`@@` and `/`/`\` refer to —
 which is why `Molecule.relabel` exists as an explicit operation and why
 stereo marks are *recorded* on atoms and bonds but not *interpreted*.
 
@@ -40,7 +40,7 @@ Design choices, and the reason for each:
 
 * **Size in the type.** `Fin n` is the atom type, so `Molecule.graph : SimpleGraph (Fin n)`
   gets `Fintype`, decidable adjacency and all of Mathlib's finite-graph
-  lemmas for free, and a relabelling is an `Equiv.Perm (Fin n)`.  `Vector Atom n`
+  lemmas for free, and a relabeling is an `Equiv.Perm (Fin n)`.  `Vector Atom n`
   rather than `Array Atom` because `Vector.ofFn` keeps the size *definitional*,
   which is what lets `relabel` be written without casts.
 * **Invariants are the type.** RDKit checks "endpoint in range", "no self-bond"
@@ -141,17 +141,27 @@ the default valences — and nothing else: no aromaticity perception, no
 kekulization, no charge-separation rewrites, no strict valence check.  Those
 are a chemistry model, not syntax, and they need human choices.
 
+The one place the spec underdetermines that rule is aromatic atoms: §3.1.5
+sums bond orders but never says what an aromatic bond contributes, and §3.5
+only asks that electrons be assignable "without violating the valence rules".
+Summing aromatic bonds at `3/2` and applying the rule literally gives the
+nitrogen of `Cn1cccc1` and the sulfur of thiophene a hydrogen they cannot
+have.  `implicitHydrogens` therefore snaps an aromatic atom whose sum
+overshoots its lowest valence down to the largest valence it does not
+exceed, when within `3/2` of it — RDKit's rule, and the one that makes
+hydrogen counts agree with RDKit on all 1 128 Delaney molecules.
+
 ## 5. Writing and canonicalization (`Write.lean`, `Canon.lean`)
 
 The writer is Weininger's two-pass DFS (find ring closures, then emit with
 lowest-free-digit allocation and parenthesised branches), parameterised by a
 rank on atoms; everything it decides, it decides from ranks and bond kinds.
 
-Canonicalization is **colour refinement + exhaustive tie-breaking**:
+Canonicalization is **color refinement + exhaustive tie-breaking**:
 
 1. Invariant per atom (degree, Z, H, aromatic, charge, isotope, bracketed,
    class, chirality mark) → ranks.
-2. Refine by sorted (neighbour rank, bond kind) until the partition stops
+2. Refine by sorted (neighbor rank, bond kind) until the partition stops
    splitting — Morgan / Weisfeiler–Lehman.
 3. If atoms remain tied: individualize *each* atom of the lowest tied class in
    turn, refine, recurse.  Write a SMILES for every discrete leaf; keep the
@@ -166,13 +176,34 @@ exhaustive mode as the fix.  Here the set of leaves is label-independent, so
 the minimum is label-independent, which is the theorem we want:
 
 ```
-canonicalSmiles (relabel σ m) = canonicalSmiles m      -- the target, not yet proved
+canonicalSmiles (relabel σ m) = canonicalSmiles m      -- `canonicalSmiles_relabel`, Canonicity.lean
 ```
 
-The cost is exponential in the worst case, bounded by `budget` leaves (default
-1024; beyond it the output is still a valid SMILES but no longer guaranteed
-canonical).  On drug-like molecules the leaf count is tiny — ties come from
-local symmetries such as a phenyl ring's two ortho positions.
+The full search costs one leaf per element of the automorphism group when
+every tie is a true symmetry (more when refinement leaves non-equivalent atoms
+tied), at a few milliseconds per leaf.  Size is not the issue — taxol
+(62 atoms) and vancomycin (101) each have one tied pair and 2 leaves — symmetry
+is: tetraphenylmethane 384 leaves (4!·2⁴), 1,3,5-tri-*tert*-butylbenzene 1 296
+(6·6³), tetra-*tert*-butylmethane 31 104 (4!·6⁴, 17 s), and a 53-atom
+second-generation *tert*-butyl dendrimer about 7 × 10¹³ (4!·1296⁴).
+
+`search` prunes as nauty does.  Before exploring the subtree under a tied
+atom it walks that subtree to its first leaf and asks whether an already
+explored sibling's first leaf is an automorphic image of it.  The candidate
+automorphism is the permutation carrying one leaf's rank order onto the
+other's, and it is *checked* — it must fix the data, fix the current ranking,
+and send the sibling to the atom — before the subtree is skipped; soundness
+rests on the check alone (`Canonicity`: the pruned and the full search have
+the same minimum).  Every case above collapses to a single explored leaf:
+tetra-*tert*-butylmethane in 0.2 s, the dendrimer in 17 s.  There is no
+budget.  What stays exponential is refinement-tied atoms that are *not*
+symmetric, as in regular graphs, where a 62-atom cage explores 62 leaves in
+3.5 s.
+
+The search reads the molecule as `MolData` — atoms plus bond matrix, the
+normal-form data — because there an automorphism is a literal equality
+`d.relabel γ = d`.  The matrix is a table field, built row by row from each
+atom's bonds (`adjMatrix` entry by entry would scan the bond list n² times).
 
 ## 6. Compared with the `canonical-smiles` branch
 
@@ -187,7 +218,7 @@ the two are complementary rather than competing.
 | Bond order | half-units (`Nat`), RDKit enum | `BondKind` with `order : ℚ` |
 | Mathlib | none (planned `toSimpleGraph`) | `SimpleGraph`, `Matrix ℚ`, theorems |
 | Chemistry | full RDKit sanitization: cleanup, kekulize, aromaticity, strict valence (860 lines) | implicit H only |
-| Canonical SMILES | RDKit's ranking and walk, string-identical to RDKit on 1 128/1 128 Delaney | exhaustive-minimum, provably canonical by construction, not RDKit's string |
+| Canonical SMILES | RDKit's ranking and walk, string-identical to RDKit on 1 128/1 128 Delaney | exhaustive minimum with automorphism pruning, canonical by theorem (`canonicalSmiles_relabel`), not RDKit's string |
 | Stereo | skipped | recorded, not written |
 | Test oracles | `datasets/*-oracle.csv`, `fuzz-validity.tsv` (reused here) | — |
 
@@ -212,8 +243,8 @@ already the test suite of this branch (§7).
   symbols and connectivity must equal RDKit's (syntax).  Bond types and
   hydrogen counts after RDKit's aromaticity model are reported, not required.
   The canonical SMILES must survive a reparse and be unchanged under two
-  relabellings of the atoms (`finRotate`, `Fin.revPerm`).
-  *Result:* syntax 1 128/1 128, reparse 1 128/1 128, relabelling invariance
+  relabelings of the atoms (`finRotate`, `Fin.revPerm`).
+  *Result:* syntax 1 128/1 128, reparse 1 128/1 128, relabeling invariance
   1 128/1 128.  For information: as-written bond types equal RDKit's
   post-aromaticity ones on 1 000/1 128 (the same 1 000 the branch's scope
   document reports for "graph as written"), hydrogen counts on 1 089/1 128,
@@ -225,9 +256,9 @@ already the test suite of this branch (§7).
   `atom_in_ring` on every molecule; wherever the as-written bond types and
   hydrogen counts equal RDKit's sanitized ones, the unfolded identifiers with
   counts and the folded bits must be identical; and the identifiers must be
-  unchanged under relabelling.
+  unchanged under relabeling.
   *Result:* ring membership 1 128/1 128; fingerprint = RDKit on 971/971 of the
-  molecules whose graph = RDKit's; relabelling invariance 1 128/1 128.  Overall
+  molecules whose graph = RDKit's; relabeling invariance 1 128/1 128.  Overall
   971/1 128 — the 157 misses are exactly the molecules whose graph RDKit's
   aromaticity model or nitro rewrite changes, i.e. the sanitization passes
   still to be ported (§9).
@@ -242,25 +273,42 @@ round nested another recomputation — exponential time, found when one
 is: a definition that *returns a function* should not do work before the
 lambda.
 
-A second one, found when the Morgan examples hung the build: do not `#eval` a
-value whose *type* depends on a non-literal `n` — a `Vector α (Mol.ofSmiles! s).n`,
-a `Molecule (Mol.ofSmiles! s).n`.  To print it, `#eval` may rebuild the value
-as an expression or unify its type, and either makes the elaborator reduce
-`(Mol.ofSmiles! s).n` — the whole parse — in the kernel: instant for ethanol,
-unbounded for an aromatic ring.  Print a `List` (`.toList`) or wrap the value
-in the non-dependent bundle `Mol` (`Mol.canonicalize`, `Mol.normalize`).
-Compiled code (`lake exe …`) is unaffected; only the interactive path is.
+A second one, found when the Morgan examples hung the build and again when
+the caffeine walkthrough was killed for memory: `#eval` of a value whose
+*type* mentions `(Mol.ofSmiles! s).n` — a `Vector α _`, a `List (Bond _)`, a
+`Matrix (Fin _) (Fin _) ℚ` — ran for minutes while the same computation
+wrapped in `IO.println (repr …)` took seconds.  So the cost was never the
+evaluation: it is the `#eval` command inspecting the result type, during
+which the elaborator's `whnf` unfolds the definition down to
+`(Mol.ofSmiles! s).n` and then runs the parser *symbolically* — instant for
+ethanol, unbounded for an aromatic ring.  Marking the binding
+`@[irreducible]` fixed it while `opaque` did too and `set_option eval.pp false`
+did not, which is the signature of the elaborator (which respects
+`irreducible`), not the kernel (which ignores it).
+
+The fix is therefore one attribute at the source: `Mol.ofSmiles!` is
+`@[irreducible]`, so `(Mol.ofSmiles! s).n` is atomic to the elaborator however
+the result is bound, and `#eval`s of dependent values need no `.toList`, no
+`opaque`, no non-dependent wrapper.  The price is that a proof about a
+*concrete* parse cannot unfold it with `rfl`; none does, and none should —
+theorems are about `Molecule n`, and a concrete fact is `decide`d or run.
+Compiled code (`lake exe …`) is unaffected either way.
 
 ## 9. Next steps
 
-1. **The canonicity theorem**: `canonicalSmiles (relabel σ m) = canonicalSmiles m`.
-   Needs: refinement commutes with relabelling; the leaf set is permuted by
-   relabelling; `write` commutes with relabelling when ranks are discrete.
-2. **Round trip**: `parse (toSmiles m) ≅ m` as labelled graphs.
+1. **The canonicity theorem** — done, with no hypothesis:
+   `canonicalSmiles_relabel` in `SMILES/Canonicity.lean`,
+   `(m.relabel σ).canonicalSmiles = m.canonicalSmiles`.  Refinement commutes
+   with relabeling and the leaf list is permuted, as expected; the writer
+   needed no proof at all, because `writeRanked` was redefined as "relabel
+   into rank order, then write in index order", so its commuting is
+   `relabel_relabel`; and pruning is sound because it acts only on symmetries
+   it has checked.
+2. **Round trip**: `parse (toSmiles m) ≅ m` as labeled graphs.
 3. **Degree lemma**: `graph.degree i = degree i` (needs `nodup`).
 4. **Chemistry as passes**: port the branch's sanitization as
    `Molecule n → Molecule n` functions, each with its own tests, each optional.
-5. **Stereo**: interpret `@`/`@@` as a parity over the neighbour order, and
+5. **Stereo**: interpret `@`/`@@` as a parity over the neighbor order, and
    write `/` `\` from the walk.
 6. **Featurization**: ~~Morgan fingerprints~~ — done, `LeanSMILES/Fingerprint/Morgan.lean`
    (§7); next, `Atom → Fin k` one-hots and feeding `morganVector` to the ML

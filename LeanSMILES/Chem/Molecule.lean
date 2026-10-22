@@ -12,7 +12,7 @@ import LeanSMILES.Chem.Bond
 A molecule with `n` atoms is a `Vector Atom n` together with a list of bonds
 between distinct atoms, no two of which join the same pair — so the molecular
 graph is a *simple* graph, which is what Mathlib's `SimpleGraph` is.  The size
-is a type index: `Fin n` is the atom type, bonds cannot dangle, and relabelling
+is a type index: `Fin n` is the atom type, bonds cannot dangle, and relabeling
 the atoms is a permutation `Equiv.Perm (Fin n)`.
 
 The structure is RDKit-shaped (typed atoms and bonds, index-based) rather than
@@ -43,9 +43,45 @@ structure Mol where
   /-- The molecule. -/
   mol : Molecule n
 
+section RelabelVec
+
+variable {n : ℕ} {α : Type*}
+
+/-- Transport a per-atom vector along a relabeling: position `σ i` receives
+what `i` had. `relabel` does this to the atoms. -/
+def relabelVec (σ : Equiv.Perm (Fin n)) (v : Vector α n) : Vector α n :=
+  Vector.ofFn fun i ↦ v[σ.symm i]
+
+@[simp] lemma getElem_relabelVec (σ : Equiv.Perm (Fin n)) (v : Vector α n)
+    (j : ℕ) (h : j < n) : (relabelVec σ v)[j] = v[σ.symm ⟨j, h⟩] := by
+  simp [relabelVec, Vector.getElem_ofFn]
+
+lemma relabelVec_apply (σ : Equiv.Perm (Fin n)) (v : Vector α n) (i : Fin n) :
+    (relabelVec σ v)[σ i] = v[i] := by
+  simp [relabelVec, Vector.getElem_ofFn]
+
+lemma relabelVec_relabelVec (σ τ : Equiv.Perm (Fin n)) (v : Vector α n) :
+    relabelVec τ (relabelVec σ v) = relabelVec (σ.trans τ) v := by
+  ext i
+  simp [relabelVec, Vector.getElem_ofFn]
+
+end RelabelVec
+
 namespace Molecule
 
 variable {n : ℕ} (m : Molecule n)
+
+@[ext] lemma ext {m m' : Molecule n} (ha : m.atoms = m'.atoms) (hb : m.bonds = m'.bonds) :
+    m = m' := by
+  cases m
+  cases m'
+  cases ha
+  cases hb
+  rfl
+
+instance : DecidableEq (Molecule n) := fun m m' ↦
+  decidable_of_iff (m.atoms = m'.atoms ∧ m.bonds = m'.bonds)
+    ⟨fun ⟨h1, h2⟩ ↦ ext h1 h2, fun h ↦ h ▸ ⟨rfl, rfl⟩⟩
 
 /-- The number of bonds. -/
 def numBonds : ℕ := m.bonds.length
@@ -59,7 +95,7 @@ def edges : List (Sym2 (Fin n)) := m.bonds.map Bond.edge
 /-- The bonds at atom `i`. -/
 def bondsAt (i : Fin n) : List (Bond n) := m.bonds.filter (·.touches i)
 
-/-- The neighbours of atom `i`, in bond-list order. -/
+/-- The neighbors of atom `i`, in bond-list order. -/
 def neighbors (i : Fin n) : List (Fin n) := (m.bondsAt i).map (·.other i)
 
 /-- Number of bonds at atom `i` (heavy-atom degree; hydrogens are counts, not
@@ -76,6 +112,15 @@ def bondBetween (i j : Fin n) : Option (Bond n) :=
 /-- Whether some bond joins `i` and `j`. -/
 def adjacent (i j : Fin n) : Bool := (m.bondBetween i j).isSome
 
+/-- Among the bonds at `i`, the one whose other end is `j` is the bond between them. -/
+lemma find?_bondsAt_other (i j : Fin n) :
+    (m.bondsAt i).find? (fun b ↦ b.other i == j) = m.bondBetween i j := by
+  unfold bondsAt bondBetween
+  rw [List.find?_filter]
+  congr 1
+  funext b
+  exact decide_eq_decide.mpr (Bond.touches_and_other_iff b i j)
+
 /-- Replace every atom, keeping the bonds. -/
 def mapAtoms (f : Fin n → Atom → Atom) : Molecule n :=
   { m with atoms := Vector.ofFn fun i ↦ f i m.atoms[i] }
@@ -84,15 +129,33 @@ def mapAtoms (f : Fin n → Atom → Atom) : Molecule n :=
 
 The OpenSMILES rule: a bare organic-subset atom has as many hydrogens as the
 smallest default valence not below its bond-order sum requires; if no default
-valence is large enough it has none.  Bracket atoms, wildcards and every other
-element have exactly the hydrogens that were written. -/
+valence is large enough it has none.  Aromatic bonds count `3/2`, with the one
+adjustment in `implicitHydrogens` that keeps three-connected aromatic atoms
+Kekulé-consistent.  Bracket atoms, wildcards and every other element have
+exactly the hydrogens that were written. -/
 
-/-- Implicit hydrogen count for an atom with the given bond-order sum. -/
+/-- Implicit hydrogen count for an atom with the given bond-order sum.
+
+Aromatic bonds count `3/2`, so an aromatic atom bonded to three neighbors —
+the nitrogen of `Cn1cccc1`, the sulfur of thiophene, a ring-fusion carbon —
+sums past its lowest valence to a value no Kekulé structure realizes.  Such an
+atom is snapped down to the largest valence not above its sum, when that is
+within `3/2` of it (the rule RDKit applies); otherwise `Cn1cccc1` would get an
+`NH` and thiophene an `SH`. -/
 def implicitHydrogens (a : Atom) (orderSum : ℚ) : ℕ :=
   match a.element, a.explicitH with
   | some e, none =>
-    match e.defaultValences.find? (fun v ↦ decide (orderSum ≤ (v : ℚ))) with
-    | some v => (Rat.floor ((v : ℚ) - orderSum)).toNat
+    let vs := e.defaultValences
+    let sum :=
+      match vs.head? with
+      | some v₀ =>
+        if a.aromatic && (v₀ : ℚ) < orderSum then
+          let p := (vs.filter fun v ↦ decide ((v : ℚ) ≤ orderSum)).getLast?.getD v₀
+          if orderSum - p ≤ (3 : ℚ) / 2 then (p : ℚ) else orderSum
+        else orderSum
+      | none => orderSum
+    match vs.find? (fun v ↦ decide (sum ≤ (v : ℚ))) with
+    | some v => (Rat.floor ((v : ℚ) - sum)).toNat
     | none => 0
   | _, _ => 0
 
@@ -101,7 +164,7 @@ def implicitHydrogens (a : Atom) (orderSum : ℚ) : ℕ :=
 def assignImplicitH : Molecule n :=
   m.mapAtoms fun i a ↦ { a with implicitH := implicitHydrogens a (m.bondOrderSum i) }
 
-/-! ### Relabelling -/
+/-! ### Relabeling -/
 
 /-- Relabel the atoms by a permutation: atom `i` becomes atom `σ i`. -/
 def relabel (σ : Equiv.Perm (Fin n)) : Molecule n where
@@ -124,6 +187,28 @@ lemma edges_relabel (σ : Equiv.Perm (Fin n)) :
 
 lemma numBonds_relabel (σ : Equiv.Perm (Fin n)) : (m.relabel σ).numBonds = m.numBonds := by
   simp [relabel, numBonds]
+
+lemma atoms_relabel (σ : Equiv.Perm (Fin n)) : (m.relabel σ).atoms = relabelVec σ m.atoms := rfl
+
+lemma bonds_relabel (σ : Equiv.Perm (Fin n)) :
+    (m.relabel σ).bonds = m.bonds.map (Bond.map σ σ.injective) := rfl
+
+/-- The bonds at `σ i` after relabeling are the bonds at `i`, relabeled, in order. -/
+lemma bondsAt_relabel (σ : Equiv.Perm (Fin n)) (i : Fin n) :
+    (m.relabel σ).bondsAt (σ i) = (m.bondsAt i).map (Bond.map σ σ.injective) := by
+  simp [bondsAt, bonds_relabel, List.filter_map, Function.comp_def]
+
+@[simp] lemma degree_relabel (σ : Equiv.Perm (Fin n)) (i : Fin n) :
+    (m.relabel σ).degree (σ i) = m.degree i := by
+  simp [degree, bondsAt_relabel]
+
+/-- Relabeling twice is relabeling by the composite: first `σ`, then `τ`. -/
+theorem relabel_relabel (σ τ : Equiv.Perm (Fin n)) :
+    (m.relabel σ).relabel τ = m.relabel (σ.trans τ) := by
+  refine Molecule.ext ?_ ?_
+  · ext i
+    simp [relabel, Vector.getElem_ofFn]
+  · simp [relabel, List.map_map, Function.comp_def]
 
 /-! ### Printing -/
 

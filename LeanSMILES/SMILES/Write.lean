@@ -9,10 +9,10 @@ import LeanSMILES.Chem.Molecule
 # LeanSMILES.SMILES.Write
 
 From a `Molecule` back to a SMILES string, given a *rank* on the atoms that
-says where to start and which neighbour to visit first.  Two passes, as in
+says where to start and which neighbor to visit first.  Two passes, as in
 every SMILES writer since Weininger (1989):
 
-1. `dfs` walks a spanning forest, visiting neighbours in rank order, and
+1. `dfs` walks a spanning forest, visiting neighbors in rank order, and
    records the bonds it meets that lead back to an already-visited atom — the
    ring closures.
 2. `emit` writes the forest: the atom, its ring-closure digits (lowest free
@@ -132,7 +132,7 @@ def emit (m : Molecule n) (rank : Fin n → ℕ) (w : Walk n) : ℕ → Fin n �
       else emit m rank w fuel o { e with out := e.out ++ sym }
 
 /-- Write the molecule, starting each component at its lowest-ranked atom and
-visiting neighbours in rank order; components are joined by `.` in order of
+visiting neighbors in rank order; components are joined by `.` in order of
 their start atom. -/
 def write (m : Molecule n) (rank : Fin n → ℕ) : String :=
   let order := (List.finRange n).mergeSort (rankLE rank)

@@ -14,14 +14,12 @@ number, so that `atomicNumber` is the constructor index shifted by one and
 `Fintype.card Element = 118` is a fact about the type rather than a table.
 
 Everything SMILES needs to know about an element lives here: its symbol (both
-directions), whether it may be written bare (the OpenSMILES *organic subset*),
-whether it may be written lowercase (aromatic), and the default valences the
-implicit-hydrogen rule uses.  The valence table is deliberately the thin
-OpenSMILES one — this library aims at a syntactically faithful reading of
-SMILES, not at agreeing with any one toolkit's chemistry model on edge cases.
-
-This file is generated (`scratchpad/gen_element.py`) so the three 118-entry
-tables cannot drift; edit the generator, not the arms.
+directions, proved inverse by `ofSymbol?_eq_some_iff`), whether it may be
+written bare (the OpenSMILES *organic subset*), whether it may be written
+lowercase (aromatic), and the default valences the implicit-hydrogen rule
+uses.  The valence table is deliberately the thin OpenSMILES one — this
+library aims at a syntactically faithful reading of SMILES, not at agreeing
+with any one toolkit's chemistry model on edge cases.
 -/
 
 namespace LeanSMILES
@@ -307,20 +305,28 @@ def ofSymbol? : String → Option Element
 
 instance : ToString Element := ⟨symbol⟩
 
-/-- Every element, in atomic-number order. -/
-def all : List Element :=
-  [
-   .H, .He, .Li, .Be, .B, .C, .N, .O, .F, .Ne, .Na, .Mg,
-   .Al, .Si, .P, .S, .Cl, .Ar, .K, .Ca, .Sc, .Ti, .V, .Cr,
-   .Mn, .Fe, .Co, .Ni, .Cu, .Zn, .Ga, .Ge, .As, .Se, .Br, .Kr,
-   .Rb, .Sr, .Y, .Zr, .Nb, .Mo, .Tc, .Ru, .Rh, .Pd, .Ag, .Cd,
-   .In, .Sn, .Sb, .Te, .I, .Xe, .Cs, .Ba, .La, .Ce, .Pr, .Nd,
-   .Pm, .Sm, .Eu, .Gd, .Tb, .Dy, .Ho, .Er, .Tm, .Yb, .Lu, .Hf,
-   .Ta, .W, .Re, .Os, .Ir, .Pt, .Au, .Hg, .Tl, .Pb, .Bi, .Po,
-   .At, .Rn, .Fr, .Ra, .Ac, .Th, .Pa, .U, .Np, .Pu, .Am, .Cm,
-   .Bk, .Cf, .Es, .Fm, .Md, .No, .Lr, .Rf, .Db, .Sg, .Bh, .Hs,
-   .Mt, .Ds, .Rg, .Cn, .Nh, .Fl, .Mc, .Lv, .Ts, .Og
-  ]
+/-! ### `symbol` and `ofSymbol?` are inverse
+
+Together these say the two 118-arm tables above agree on every element and on
+every string, so neither can drift from the other. -/
+
+/-- Writing a symbol and reading it back recovers the element. -/
+theorem ofSymbol?_symbol (e : Element) : ofSymbol? e.symbol = some e := by
+  cases e <;> rfl
+
+theorem symbol_injective : Function.Injective symbol := fun a b h ↦
+  Option.some_injective _ <| by rw [← ofSymbol?_symbol a, h, ofSymbol?_symbol]
+
+/-- `ofSymbol?` never invents an element: whatever it parses writes back as the
+string it parsed. -/
+theorem symbol_of_ofSymbol? {s : String} {e : Element} (h : ofSymbol? s = some e) :
+    e.symbol = s := by
+  unfold ofSymbol? at h
+  split at h <;> first | cases h; rfl | simp at h
+
+theorem ofSymbol?_eq_some_iff {s : String} {e : Element} :
+    ofSymbol? s = some e ↔ e.symbol = s :=
+  ⟨symbol_of_ofSymbol?, fun h ↦ h ▸ ofSymbol?_symbol e⟩
 
 /-- The OpenSMILES *organic subset*: the elements that may be written without
 brackets, whose hydrogen count is then implied by `defaultValences`. -/
@@ -344,6 +350,12 @@ def defaultValences : Element → List ℕ
   | .S => [2, 4, 6]
   | .F | .Cl | .Br | .I => [1]
   | _ => []
+
+/-- The default valences are strictly ascending, so `List.find?` over them
+picks the *smallest* valence that fits — the OpenSMILES rule
+`Molecule.implicitHydrogens` implements. -/
+theorem defaultValences_sorted (e : Element) : e.defaultValences.Pairwise (· < ·) := by
+  cases e <;> decide
 
 end Element
 

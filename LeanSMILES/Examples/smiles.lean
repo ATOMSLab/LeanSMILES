@@ -33,6 +33,13 @@ open LeanSMILES LeanSMILES.SMILES
 #eval (Mol.ofSmiles! "CC1(C)C2CCC(C2)C1=C").canonicalSmiles
 #eval (Mol.ofSmiles! "CC1(C2CCC(C2)C1=C)C").canonicalSmiles
 
+-- Where exhaustive tie-breaking matters: a 12-carbon cubic cage whose atoms no
+-- refinement tells apart. RDKit 2026.09.1 returns eight different "canonical"
+-- SMILES for it depending on the input atom order (two of them below); the
+-- search over every tied atom returns one.
+#eval ["C12C3C1C(C1C4C5C1C1C4C51)C23", "C12C3C1C1C2C3C1C1C2C3C2C31"].map fun s ↦
+  (Mol.ofSmiles! s).canonicalSmiles
+
 -- Canonicalization relabels the atoms; the graph is the same up to isomorphism
 -- (`Molecule.canonicalizeIso`).
 #eval (Mol.ofSmiles! "OCC").canonicalize
@@ -68,9 +75,7 @@ open LeanSMILES LeanSMILES.SMILES
 #eval (Mol.ofSmiles! "CCO").morganIds
 #eval (Mol.ofSmiles! "OCC").morganIds == (Mol.ofSmiles! "CCO").morganIds
 #eval tanimoto (Mol.ofSmiles! "CCO").morganBits (Mol.ofSmiles! "CCCO").morganBits
--- `.toList`: `#eval` of a `Vector` whose length is not a literal makes the elaborator
--- check the size proof by reducing the whole parse in the kernel (design notes §8).
-#eval (Mol.ofSmiles! "c1ccccc1CC").mol.inRingVector.toList
+#eval (Mol.ofSmiles! "c1ccccc1CC").mol.inRingVector
 
 -- From the solubility dataset.
 def delaney := CSVparser.load "datasets/delaney-processed.csv"

@@ -222,8 +222,14 @@ namespace LeanSMILES
 instance : Inhabited Mol :=
   ⟨⟨0, { atoms := ⟨#[], rfl⟩, bonds := [], nodup := List.nodup_nil }⟩⟩
 
-/-- Parse, or panic with the error: for examples and tests. -/
-def Mol.ofSmiles! (s : String) : Mol :=
+/-- Parse, or panic with the error: for examples and tests.
+
+Irreducible so that `(Mol.ofSmiles! s).n` is atomic to the elaborator: a
+`#eval` whose result type mentions it (a `Molecule (Mol.ofSmiles! s).n`, a
+`Vector α (Mol.ofSmiles! s).n`) would otherwise make `whnf` run the parser
+symbolically, which does not terminate in practice for an aromatic ring.
+Compiled code is unaffected (design notes §8). -/
+@[irreducible] def Mol.ofSmiles! (s : String) : Mol :=
   match SMILES.parse s with
   | .ok M => M
   | .error e => panic! s!"invalid SMILES {s.quote}: {e}"
