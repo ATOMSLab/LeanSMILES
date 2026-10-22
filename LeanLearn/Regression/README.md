@@ -18,6 +18,7 @@ exact-real specifications and the executable Float solvers:
 | `OLS.lean` | Exact-real OLS definitions, inverse formula, optimality, uniqueness |
 | `Ridge.lean` | Exact-real diagonal ridge definitions, optimality, positive-ridge existence and uniqueness |
 | `LinearModel.lean` | Shared executable prediction/loss/stationarity definitions and proofs connecting their real interpretation to OLS/ridge |
+| `../Proofs/Regression/MatrixBridge.lean` | The iterative `Problem` formulation (`Problem.lean`) is this problem up to the factor `m`: closed form and uniqueness transported, the shrinkage trade-off proved for it |
 | `OLSFloat.lean` | Executable OLS on floating-point arrays using Householder QR |
 | `RidgeFloat.lean` | Executable ridge regression using augmented Householder QR |
 | `../Examples/ols.lean`, `../Examples/ridge.lean` | Exact, noisy, singular, exempt-intercept, duplicate-column and underdetermined examples proved in Lean |
@@ -173,6 +174,43 @@ def weights : Fin 2 → Float := ![0, 2]
 #eval LinearModel.squaredError X y coefficients   -- 2
 #eval LinearModel.ridgeLoss X y weights coefficients -- 4
 ```
+
+## The iterative formulation is the same problem
+
+`Problem.lean` (DeMarko Fulcher) writes ridge regression as the *averaged* loss
+`L(θ) = (1/m) Σᵣ (⟪xᵣ, θ⟫ − yᵣ)² + λ ‖θ‖²` over executable `Vec`s, a constant
+`1` appended to every sample for the intercept, with normal equations
+`A θ = b` for the iterative solvers. `../Proofs/Regression/MatrixBridge.lean`
+proves, over `ℝ`, that this is the problem above up to the factor `m`: with
+`X = P.designMatrix` (every sample with its `1`), `y = P.target` and `ρ = m λ`
+on every coefficient,
+
+```text
+‖Xθ − y‖² + m λ ‖θ‖² = m · L(θ)         (every m)
+XᵀX + m λ I = m · A,    Xᵀy = m · b      (m > 0)
+```
+
+so for `m > 0` the two formulations have the same normal equations and the
+same minimizers, and the theorems above transfer to `Problem`:
+
+| Bridge theorem | Meaning |
+|---|---|
+| `predict_designMatrix`, `residual_designMatrix` | `Xθ` is the vector of fitted values `⟪xᵣ, θ⟫`; `Xθ − y` the residuals |
+| `ridge_loss_eq`, `loss_eq_ridge_loss` | `Ridge.loss X y (mλ) θ = m · P.loss θ`; for `m > 0`, `P.loss θ = (1/m) · Ridge.loss …` |
+| `ols_loss_eq`, `mse_eq_ols_loss` | `OLS.loss X y θ = m · P.mse θ`, the mean squared error |
+| `gram_apply`, `transpose_mulVec_target` | `XᵀX + mλI = m · A` and `Xᵀy = m · b`, entry by entry |
+| `residual_eq_zero_iff_normalEquations` | `A θ = b` is exactly `Ridge.NormalEquations X y (mλ) θ` |
+| `isMinimizer_iff` | `θ` minimizes `P.loss` iff it minimizes `Ridge.loss X y (mλ)` |
+| `closedForm`, `closedForm_isMinimizer`, `isMinimizer_unique`, `existsUnique_isMinimizer` | For `λ > 0`, `(XᵀX + mλI)⁻¹ Xᵀy` is the unique minimizer of `P.loss`, for every design |
+| `dot_self_le_of_isMinimizer` | A minimizer of `P` (`λ > 0`) has no larger `‖θ‖²` than any least-squares minimizer on the same data |
+| `dot_self_antitone`, `mse_monotone` | Raising `λ` can only shrink the minimizer's `‖θ‖²` and raise its mean squared error (the ridge-vs-OLS trade-off, for every `m`) |
+
+The averaging is the whole difference. It does not move the minimizers, but
+it rescales the penalty — `Problem` with `λ` is `Ridge` with `ρ = mλ` — so a
+`λ` tuned in one formulation is `mλ` in the other. At `m = 0` the loss
+identity still holds (both sides are `0`), but `L(θ) = λ‖θ‖²` while the matrix
+problem is empty, so the statements about normal equations and minimizers
+assume `m > 0`.
 
 ## Run OLS on floating-point data
 

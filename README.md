@@ -231,6 +231,11 @@ Two formulations of the same problem, by two authors, side by side:
   solver with its hyperparameters, as data. [`Certificates.lean`](LeanLearn/Regression/Certificates.lean)
   is the exact `ℚ` check (`SolverWitness`: weighted diagonal dominance) that certifies
   Jacobi and Gauss–Seidel before running them.
+  [`Proofs/Regression/MatrixBridge.lean`](LeanLearn/Proofs/Regression/MatrixBridge.lean) proves
+  the two formulations are one problem up to the factor `m` — `‖Xθ − y‖² + mλ‖θ‖² = m·L(θ)`,
+  `XᵀX + mλI = m·A`, `Xᵀy = m·b` — so for `m > 0` they share normal equations and minimizers,
+  and the closed form `(XᵀX + mλI)⁻¹Xᵀy` with its uniqueness for `λ > 0` transfers to
+  `Problem`, which also gets the ridge-vs-OLS shrinkage trade-off.
 * **Sparse, for fingerprints** ([`Regression/SparseRidge.lean`](LeanLearn/Regression/SparseRidge.lean);
   Samiha Sharlin). scikit-learn's `Ridge(alpha)` objective, intercept not penalized, on
   sparse `0/1` features: conjugate gradients on the centered normal equations, using only
@@ -258,6 +263,11 @@ against scikit-learn molecule by molecule (`lake exe logistic-test`, below).
 
 * **The loss is an exact quadratic**: `L(θ + v) = L(θ) + 2⟪Aθ − b, v⟫ + vᵀAv`; so solutions
   of the normal equations are global minimizers.
+* **The two formulations are one problem** (`MatrixBridge.lean`): the averaged `Vec` loss is
+  the matrix ridge loss with weights `mλ`, divided by `m`, entry for entry (`m·A = XᵀX + mλI`,
+  `m·b = Xᵀy`); so `Problem` inherits the closed form and its uniqueness for `λ > 0` from
+  `Ridge.lean`, and the shrinkage trade-off — `‖θ‖²` falls and the mean squared error rises
+  with `λ` — holds for it directly.
 * **Gradient descent**: sufficient decrease, monotone loss, and the `O(1/k)` rate
   `L(θₖ) ≤ L(u) + ‖u‖²/(2ηk)` for every `u`, when `2η((1/m)Σ‖xᵣ‖² + λ) ≤ 1`.
 * **Jacobi and Gauss–Seidel**, for any linear system with weighted diagonal dominance
