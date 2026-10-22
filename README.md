@@ -1,6 +1,54 @@
 # LeanSMILES
+
 Formalizing molecular representations in Lean — and, downstream of them, the
 learning algorithms that consume them.
+
+## Project layout
+
+```
+LeanSMILES/           the typed SMILES toolkit (imports Mathlib)
+  Chem/               Element, Atom, Bond, Molecule n, Mathlib graph and matrix views, charges
+  SMILES/             tokenizer, parser, writer, canonical SMILES and its canonicity proof
+  Fingerprint/        RDKit-compatible Morgan fingerprints on Molecule n; order-invariance proof
+  Aromaticity/        Molecule.aromatize: RDKit's ring set, kekulization, aromaticity perception
+  Depict/             2D depiction: layout, SVG, mol blocks, #draw for the Infoview, lake exe depict
+  Data/               CSV parser (columns by header name) for the Delaney dataset
+  Tests/              validity, oracle, Morgan, aromaticity, charge, parse-error and depiction tests (lake exe …-test)
+  Examples/           caffeine.lean, smiles.lean, parsercsv.lean, depict.lean
+
+LeanLearn/            learning algorithms on tabular data (imports Mathlib only); see its README.md
+  Scalar.lean         ScalarLike: the scalar interface, Float to run and ℝ to prove (from LeanCatalyst)
+  Regression/         executable, over any scalar: Problem, Solvers, Certificates (iterative);
+                      LinearModel (the objectives on a matrix); OLSFloat, RidgeFloat (QR, Float);
+                      SparseRidge (conjugate gradients, sparse 0/1); Metrics (R², RMSE, MAE)
+  Classification/     Logistic, ROC (ROC curve, AUC)
+  Plot/               parity plots as SVG
+  Proofs/             over ℝ. LeastSquares/: OLS, Ridge, RidgeOLS — the closed form on Mathlib
+                      matrices. Regression/: the executable code read in ℝ — the quadratic loss,
+                      gradient descent, Jacobi and Gauss–Seidel, certificate soundness, and the
+                      bridges to the closed form (MatrixBridge, LinearModel)
+  Examples/           ols.lean, ridge.lean (worked proofs), olsFloat.lean, ridgeFloat.lean (runs)
+  Tests/              OLSFloat, RidgeFloat, LinearModel (lake exe …-test)
+  
+Pipelines/            molecules as tabular data (imports both)
+  Representation.lean morgan, bondOrders, counts, canonical, clip, ++; morganFeatures (aromatized)
+  Pipeline.lean       LabelledMolecules (from SMILES), Pipeline, model, losses, predictions
+  Data.lean           LabelledMolecules from the CSV tables in datasets/ (via CSVparser)
+  Certificates.lean   the exact checks on a pipeline: checkGD, checkSolver, certifiedSolverExcess
+  Proofs/             representations (bounds, canonicity), certificate soundness
+  Examples/           delaney.lean (certified solubility regression), egfr.lean (classification)
+  Tests/              Logistic, Ridge (lake exe logistic-test, ridge-test)
+
+datasets/             Delaney (ESOL) data, RDKit oracle files (as written and Kekulé), the EGFR and
+                      Delaney-ridge answer files
+
+tools/                RDKit oracle and fuzz generators; sklearn file writes; drawing
+  rdkit_reference/ holds the pure-Python references the RDKit ports follow
+
+docs/                 design notes, REFERENCES.md and references.bib; figures/ holds plots written by Lean
+
+ench470-content/      ENCH 470 course notebooks and data
+```
 
 ## Results
 
@@ -16,22 +64,22 @@ logistic regression (`lake exe logistic-test`). Every predicted probability equa
 scikit-learn's to within 10⁻⁶, and Lean's fingerprints equal RDKit's on all 205 molecules.
 
 | Metric (active = positive) | Training (n = 160) | Test (n = 40) |
-|---|---|---|
-| Accuracy | 0.994 | 0.925 |
-| Precision | | 0.895 |
-| Recall | | 0.944 |
-| F1 | | 0.919 |
-| ROC AUC | | 0.942 |
+| -------------------------- | ------------------ | ------------- |
+| Accuracy                   | 0.994              | 0.925         |
+| Precision                  |                    | 0.895         |
+| Recall                     |                    | 0.944         |
+| F1                         |                    | 0.919         |
+| ROC AUC                    |                    | 0.942         |
 
 scikit-learn's `LogisticRegression` on the same split gives exactly these values, metric for
 metric.
 
 Test confusion matrix:
 
-| | Predicted inactive | Predicted active |
-|---|---|---|
-| **Actual inactive** (22) | 20 | 2 |
-| **Actual active** (18) | 1 | 17 |
+|                          | Predicted inactive | Predicted active |
+| ------------------------ | ------------------ | ---------------- |
+| **Actual inactive** (22) | 20                 | 2                |
+| **Actual active** (18)   | 1                  | 17               |
 
 P(active) for the five FDA-approved EGFR inhibitors: gefitinib 0.988, erlotinib 0.991,
 lapatinib 0.991, afatinib 0.999, osimertinib 0.136 (the one the model misses).
@@ -43,10 +91,10 @@ Measured log solubility (log mol/L) of the Delaney molecules, predicted by ridge
 prediction equals scikit-learn's to within 10⁻⁶; the table is the full Lean pipeline, on the
 1 127 molecules the parser accepts.
 
-| | R² | RMSE | MAE |
-|---|---|---|---|
+|                    | R²    | RMSE | MAE  |
+| ------------------ | ----- | ---- | ---- |
 | Training (n = 901) | 0.959 | 0.42 | 0.26 |
-| Test (n = 226) | 0.662 | 1.27 | 0.96 |
+| Test (n = 226)     | 0.662 | 1.27 | 0.96 |
 
 scikit-learn's `Ridge` on RDKit's fingerprints gets test R² 0.671, RMSE 1.26 and MAE 0.94,
 which Lean reproduces exactly when given the same bits. The full Lean pipeline is slightly
@@ -126,24 +174,24 @@ A `Molecule n` is a `Vector Atom n` and a list of `Bond n` between distinct
 atoms with no duplicate bonds — the invariants are the type, so
 `Molecule.graph : SimpleGraph (Fin n)` and `Molecule.adjMatrix : Matrix (Fin n) (Fin n) ℚ`
 come with Mathlib's theorems (`sum_degrees`, `card_edgeFinset`, `relabelIso`,
-`canonicalizeIso`).  The matrices also exist as subtypes that say they come
+`canonicalizeIso`). The matrices also exist as subtypes that say they come
 from a molecule — `BondMatrix n` (bond orders, O(1) lookups) and `FlatMatrix n`
 (0/1, Mathlib's `IsAdjMatrix`) — with `normalEquiv : {m // m.IsNormal} ≃ Vector Atom n × BondMatrix n`
-proving that nothing but bond orientation is lost.  The parser checks syntax, not valence; the only chemistry
-applied is the OpenSMILES implicit-hydrogen rule.  Canonical SMILES is
+proving that nothing but bond orientation is lost. The parser checks syntax, not valence; the only chemistry
+applied is the OpenSMILES implicit-hydrogen rule. Canonical SMILES is
 color refinement plus exhaustive tie-breaking (lexicographically smallest
 string), and it is canonical by theorem (`Molecule.canonicalSmiles_relabel`)
 rather than by matching RDKit.
 
 Because the parser checks syntax only, `[C+123]` parses, round-trips and
-canonicalizes like any other atom (RDKit accepts it too).  The chemistry check
+canonicalizes like any other atom (RDKit accepts it too). The chemistry check
 available after parsing is `Molecule.checkCharges` (`LeanSMILES.Chem.Charge`):
 a decidable predicate, `Molecule.chargesConsistent`, saying every formal charge
 is one its element can physically carry — no more electrons lost than it has
 (`charge ≤ Z`), no more gained than complete its valence shell
 (`-shellVacancy ≤ charge`, the distance to the next noble gas: `C` −4, `O` −2,
 `Fe` −10), and OpenSMILES's ±15 for the wildcard `*` — with a message naming
-the offending atom.  It is deliberately not an invariant of `Molecule`, so the
+the offending atom. It is deliberately not an invariant of `Molecule`, so the
 canonicalization theorems carry no chemistry; relabeling and canonicalization
 preserve it (`chargesConsistent_relabel`, `chargesConsistent_canonicalize`).
 
@@ -161,21 +209,21 @@ comparison with the `canonical-smiles` branch in
 ### What the parser accepts
 
 The grammar is OpenSMILES's ([opensmiles.org](http://opensmiles.org/opensmiles.html),
-§2.2).  RDKit and the specification disagree on a handful of strings; where
+§2.2). RDKit and the specification disagree on a handful of strings; where
 they do, LeanSMILES follows the specification, with the decided exceptions
-below.  Every row is pinned by `lake exe parse-errors-test`.
+below. Every row is pinned by `lake exe parse-errors-test`.
 
-| String | RDKit | OpenSMILES | LeanSMILES |
-|---|---|---|---|
-| `C(C)1CC1` — ring-closure label after a branch | accepts | rejects: `atom ringbond* branch*` | rejects (`ringAfterBranch`).  Chlorothalonil in the Delaney set is written `…c(Cl)1` and is skipped by `oracle-test`. |
-| `C(.O)`, `C.(O)`, `C(C.)`, `C.1CC1` — dots next to branches and labels | rejects | allows only the first | rejects all four |
-| `" C"` — leading whitespace | methane | empty molecule, then a title | methane |
-| `[Fe+++]`, `[C+123]` — charge forms | rejects, accepts | rejects both: `++`/`--` only, two digits | accepts both; whether the element has the electrons is `Molecule.checkCharges`, a post-parse chemistry check, not a lexical one |
-| `[CH10]`, `[C:]` — two-digit H count, empty class | accepts, rejects | rejects both | rejects both |
-| `[C@TH1]` … `[Fe@OH30]` — named chirality classes | accepts | accepts | accepts, recorded as written (`@` is not rewritten to `@TH1`) |
-| `C=1CC-1` — different bond symbols on one ring closure | accepts, opening symbol wins | rejects | rejects (`conflictingRingBond`) |
-| `C%(123)CC%(123)` — RDKit's long ring labels | accepts | rejects | rejects |
-| `[02H]` — isotope with a leading zero | rejects | accepts | accepts |
+| String                                                                 | RDKit                        | OpenSMILES                               | LeanSMILES                                                                                                                      |
+| ---------------------------------------------------------------------- | ---------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `C(C)1CC1` — ring-closure label after a branch                         | accepts                      | rejects: `atom ringbond* branch*`        | rejects (`ringAfterBranch`). Chlorothalonil in the Delaney set is written `…c(Cl)1` and is skipped by `oracle-test`.            |
+| `C(.O)`, `C.(O)`, `C(C.)`, `C.1CC1` — dots next to branches and labels | rejects                      | allows only the first                    | rejects all four                                                                                                                |
+| `" C"` — leading whitespace                                            | methane                      | empty molecule, then a title             | methane                                                                                                                         |
+| `[Fe+++]`, `[C+123]` — charge forms                                    | rejects, accepts             | rejects both: `++`/`--` only, two digits | accepts both; whether the element has the electrons is `Molecule.checkCharges`, a post-parse chemistry check, not a lexical one |
+| `[CH10]`, `[C:]` — two-digit H count, empty class                      | accepts, rejects             | rejects both                             | rejects both                                                                                                                    |
+| `[C@TH1]` … `[Fe@OH30]` — named chirality classes                      | accepts                      | accepts                                  | accepts, recorded as written (`@` is not rewritten to `@TH1`)                                                                   |
+| `C=1CC-1` — different bond symbols on one ring closure                 | accepts, opening symbol wins | rejects                                  | rejects (`conflictingRingBond`)                                                                                                 |
+| `C%(123)CC%(123)` — RDKit's long ring labels                           | accepts                      | rejects                                  | rejects                                                                                                                         |
+| `[02H]` — isotope with a leading zero                                  | rejects                      | accepts                                  | accepts                                                                                                                         |
 
 Tests against RDKit's answers (oracle files from the `canonical-smiles` branch):
 
@@ -192,11 +240,11 @@ lake exe charge-test        # formal charges: [C+123], [H+++], [C-123] parse but
 `LeanSMILES.Fingerprint.Morgan` ports RDKit's `GetMorganGenerator(radius=2, fpSize=2048)`
 (from the `canonical-smiles` branch's port) onto `Molecule n`: `morganIds` (unfolded
 identifiers with counts), `morganBits` (sorted on-bits), `morganVector : Vector Bool 2048`,
-`inRingVector`, and an exact `tanimoto : … → ℚ`.  It hashes the graph *as written*, so the
+`inRingVector`, and an exact `tanimoto : … → ℚ`. It hashes the graph _as written_, so the
 bits equal RDKit's exactly where the as-written bond types and hydrogen counts equal RDKit's
-sanitized ones; run `Molecule.aromatize` first (below) to get RDKit's bits.  Up to radius 2 the
+sanitized ones; run `Molecule.aromatize` first (below) to get RDKit's bits. Up to radius 2 the
 fingerprint is proved independent of the atom order: `Molecule.morganBits_relabel`
-(`LeanSMILES/Fingerprint/MorganInvariance.lean`).  From radius 3 it is not, here or in
+(`LeanSMILES/Fingerprint/MorganInvariance.lean`). From radius 3 it is not, here or in
 RDKit, and that is a theorem too: `Molecule.not_forall_morganBits_relabel_three`
 (`LeanSMILES/Fingerprint/MorganRadius3.lean`), checked by the kernel on the molecule below
 (see "Findings about external tools").
@@ -206,7 +254,7 @@ RDKit, and that is a theorem too: `Molecule.not_forall_morganBits_relabel_three`
 #eval tanimoto (Mol.ofSmiles! "CCO").morganBits (Mol.ofSmiles! "CCCO").morganBits
 ```
 
-`LeanSMILES.Fingerprint.Tanimoto` answers *is Tanimoto a metric?* (Surendran et al. 2025).
+`LeanSMILES.Fingerprint.Tanimoto` answers _is Tanimoto a metric?_ (Surendran et al. 2025).
 On bit sets, the Tanimoto distance `|A ∆ B| / |A ∪ B|` is a metric
 (`Finset.tanimotoMetricSpace`, the Marczewski–Steinhaus / Lipkus theorem), and `tanimoto` on
 Morgan on-bits computes the bit-set similarity (`Molecule.tanimoto_morganBits`). On
@@ -269,9 +317,9 @@ distances (chains zigzag at 120°, rings become regular polygons), refined by
 stress majorisation; a component with three or more rings that cannot lie flat
 is laid out in three dimensions and projected obliquely, which is how chemists
 draw cubane or norbornane. The stereochemistry is read back from what the
-parser *recorded*: `Atom.chirality` is `@`/`@@` (or `@TH1`/`@TH2`) relative
+parser _recorded_: `Atom.chirality` is `@`/`@@` (or `@TH1`/`@TH2`) relative
 to the SMILES neighbor order, which `Depict.Graph.stereoNeighbors`
-reconstructs from the bond list (ring-closure bonds belong at the *opening*
+reconstructs from the bond list (ring-closure bonds belong at the _opening_
 digit, not where the parser created them), and one bond per centre becomes a
 wedge or a hash so that the signed volume of the drawn neighbors has the
 written sign; `Bond.dir` gives the cis/trans arrangement, enforced by target
@@ -301,17 +349,17 @@ plus seven textbook cases.
 
 The repository builds three Lean libraries, with one direction of dependency:
 
-| Library | What it is | Imports |
-|---|---|---|
-| [`LeanSMILES/`](LeanSMILES) | SMILES → typed molecular graph → canonical SMILES, Morgan fingerprints, matrices | Mathlib |
-| [`LeanLearn/`](LeanLearn) | learning algorithms on tabular data (`X`, `y`) and their proofs: linear regression in closed form and by certified iterative solvers, logistic regression, and the theorems over `ℝ` | Mathlib only — no chemistry |
-| [`Pipelines/`](Pipelines) | molecules as tabular data: representations `Mol → ℚᵈ`, labelled molecules, certified pipelines, the Delaney and EGFR walkthroughs, the tests against scikit-learn | both |
+| Library                     | What it is                                                                                                                                                                           | Imports                     |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------- |
+| [`LeanSMILES/`](LeanSMILES) | SMILES → typed molecular graph → canonical SMILES, Morgan fingerprints, matrices                                                                                                     | Mathlib                     |
+| [`LeanLearn/`](LeanLearn)   | learning algorithms on tabular data (`X`, `y`) and their proofs: linear regression in closed form and by certified iterative solvers, logistic regression, and the theorems over `ℝ` | Mathlib only — no chemistry |
+| [`Pipelines/`](Pipelines)   | molecules as tabular data: representations `Mol → ℚᵈ`, labelled molecules, certified pipelines, the Delaney and EGFR walkthroughs, the tests against scikit-learn                    | both                        |
 
 `LeanLearn` does not know what a molecule is — as scikit-learn does not import RDKit —
 and `LeanSMILES` does not know what a model is. `Pipelines` is the only code that imports
 both, and the join is thin: [`Pipelines/Representation.lean`](Pipelines/Representation.lean)
-is the one place the toolkit's fingerprints are read. *This split, and the name `Pipelines`,
-are provisional: architecture to review now that the code is in one place.*
+is the one place the toolkit's fingerprints are read. _This split, and the name `Pipelines`,
+are provisional: architecture to review now that the code is in one place._
 
 ## Learning algorithms: `LeanLearn`
 
@@ -323,7 +371,7 @@ theorems are about, and the polynomial fragment also runs exactly over `ℚ`.
 
 Two formulations of the same problem, by two authors, side by side:
 
-* **Closed form, over `ℝ`** ([`Proofs/LeastSquares/OLS.lean`](LeanLearn/Proofs/LeastSquares/OLS.lean),
+- **Closed form, over `ℝ`** ([`Proofs/LeastSquares/OLS.lean`](LeanLearn/Proofs/LeastSquares/OLS.lean),
   [`Ridge.lean`](LeanLearn/Proofs/LeastSquares/Ridge.lean); Hao Liu). `X : Matrix (Fin n) (Fin p) ℝ`,
   loss `‖Xw − y‖²`, plus `Σⱼ ρⱼ wⱼ²` for ridge. Any solution of the normal equations is a
   global minimizer, with no rank assumption; `fit = (XᵀX)⁻¹ Xᵀy` satisfies them and is the
@@ -341,7 +389,7 @@ Two formulations of the same problem, by two authors, side by side:
   in [`Examples/ols.lean`](LeanLearn/Examples/ols.lean) and
   [`ridge.lean`](LeanLearn/Examples/ridge.lean); details in
   [`LeanLearn/README.md`](LeanLearn/README.md).
-* **Iterative, over any scalar** ([`Regression/Problem.lean`](LeanLearn/Regression/Problem.lean),
+- **Iterative, over any scalar** ([`Regression/Problem.lean`](LeanLearn/Regression/Problem.lean),
   [`Solvers.lean`](LeanLearn/Regression/Solvers.lean); DeMarko Fulcher). The ridge problem
   `(1/m) Σᵣ (⟪xᵣ, θ⟫ − yᵣ)² + λ‖θ‖²` with an intercept, its normal equations `Aθ = b`, and
   gradient descent, Jacobi and Gauss–Seidel on them, started from `0`; `Algorithm` is the
@@ -353,7 +401,7 @@ Two formulations of the same problem, by two authors, side by side:
   `XᵀX + mλI = m·A`, `Xᵀy = m·b` — so for `m > 0` they share normal equations and minimizers,
   and the closed form `(XᵀX + mλI)⁻¹Xᵀy` with its uniqueness for `λ > 0` transfers to
   `Problem`, which also gets the ridge-vs-OLS shrinkage trade-off.
-* **Sparse, for fingerprints** ([`Regression/SparseRidge.lean`](LeanLearn/Regression/SparseRidge.lean);
+- **Sparse, for fingerprints** ([`Regression/SparseRidge.lean`](LeanLearn/Regression/SparseRidge.lean);
   Samiha Sharlin). scikit-learn's `Ridge(alpha)` objective, intercept not penalized, on
   sparse `0/1` features: conjugate gradients on the centered normal equations, using only
   products with the on-bits, so 2048 fingerprint bits never form a dense matrix.
@@ -381,22 +429,22 @@ threshold at once: the ROC curve and its area, as scikit-learn's `roc_curve` and
 [`Proofs/`](LeanLearn/Proofs): `LeastSquares/` is the closed form on Mathlib matrices (the bullets
 above); `Regression/` reads the executable code in `ℝ`:
 
-* **The loss is an exact quadratic**: `L(θ + v) = L(θ) + 2⟪Aθ − b, v⟫ + vᵀAv`; so solutions
+- **The loss is an exact quadratic**: `L(θ + v) = L(θ) + 2⟪Aθ − b, v⟫ + vᵀAv`; so solutions
   of the normal equations are global minimizers.
-* **The two formulations are one problem** (`MatrixBridge.lean`): the averaged `Vec` loss is
+- **The two formulations are one problem** (`MatrixBridge.lean`): the averaged `Vec` loss is
   the matrix ridge loss with weights `mλ`, divided by `m`, entry for entry (`m·A = XᵀX + mλI`,
   `m·b = Xᵀy`); so `Problem` inherits the closed form and its uniqueness for `λ > 0` from
   `Ridge.lean`, and the shrinkage trade-off — `‖θ‖²` falls and the mean squared error rises
   with `λ` — holds for it directly.
-* **Gradient descent**: sufficient decrease, monotone loss, and the `O(1/k)` rate
+- **Gradient descent**: sufficient decrease, monotone loss, and the `O(1/k)` rate
   `L(θₖ) ≤ L(u) + ‖u‖²/(2ηk)` for every `u`, when `2η((1/m)Σ‖xᵣ‖² + λ) ≤ 1`.
-* **Jacobi and Gauss–Seidel**, for any linear system with weighted diagonal dominance
+- **Jacobi and Gauss–Seidel**, for any linear system with weighted diagonal dominance
   (`∑_{j≠i} |Aᵢⱼ| wⱼ ≤ ρ Aᵢᵢ wᵢ`, `ρ < 1`): a solution exists (Gershgorin), both iterations
   contract by `ρ` per step in the weighted max-norm, and on the normal equations
   `L(θₖ) ≤ L(u) + Γβ²ρ²ᵏ`.
-* **Gauss–Seidel is coordinate descent**: it never increases the loss, for any data. A fixed
+- **Gauss–Seidel is coordinate descent**: it never increases the loss, for any data. A fixed
   point of Jacobi is optimal.
-* **The certificate is sound** (`SolverWitness.check_sound`): a passing exact `ℚ` check
+- **The certificate is sound** (`SolverWitness.check_sound`): a passing exact `ℚ` check
   gives the hypotheses above in `ℝ`.
 
 ## Molecules as tabular data: `Pipelines`
@@ -466,11 +514,11 @@ enough ridge penalty — a pipeline that, run on `Float`, diverges.
 What is proved ([`Pipelines/Proofs/Certificates.lean`](Pipelines/Proofs/Certificates.lean),
 [`Representation.lean`](Pipelines/Proofs/Representation.lean)); `L` is the training loss:
 
-| Solver | Conditions (checked without training) | Guarantee |
-|---|---|---|
-| Gradient descent | `‖φ(M)‖² ≤ R²` for the representation, `λ ≥ 0`, `η > 0`, `2η(R² + 1 + λ) ≤ 1`, `B ≤ 2ηkε` | `L(θ) ≤ L(u) + ε` for every `u` with `‖u‖² ≤ B`, for **every dataset** (`GDCertificate.sound`) |
-| Jacobi, Gauss–Seidel | the exact `ℚ` check of weighted diagonal dominance (`checkSolver`) | `L(θ) ≤ L(u) + ε` for **every** `u`: `θ` is `ε`-optimal (`checkSolver_sound`) |
-| Gauss–Seidel | none (`λ ≥ 0`) | the loss never increases with more sweeps (`gaussSeidel_antitone`) |
+| Solver               | Conditions (checked without training)                                                     | Guarantee                                                                                      |
+| -------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Gradient descent     | `‖φ(M)‖² ≤ R²` for the representation, `λ ≥ 0`, `η > 0`, `2η(R² + 1 + λ) ≤ 1`, `B ≤ 2ηkε` | `L(θ) ≤ L(u) + ε` for every `u` with `‖u‖² ≤ B`, for **every dataset** (`GDCertificate.sound`) |
+| Jacobi, Gauss–Seidel | the exact `ℚ` check of weighted diagonal dominance (`checkSolver`)                        | `L(θ) ≤ L(u) + ε` for **every** `u`: `θ` is `ε`-optimal (`checkSolver_sound`)                  |
+| Gauss–Seidel         | none (`λ ≥ 0`)                                                                            | the loss never increases with more sweeps (`gaussSeidel_antitone`)                             |
 
 and about representations: `bondOrder_eq_adjMatrix` (the kernel-evaluable bond-order
 features are the toolkit's `adjMatrix`), `canonical_relabel` (a representation read through
@@ -515,10 +563,10 @@ Delaney's measured log solubility from the same 2048 Morgan bits, with
 ridge-test` checks it against scikit-learn's `Ridge` (`tools/sklearn_delaney.py`,
 `datasets/delaney-ridge.csv`) and computes R², RMSE and MAE in Lean:
 
-| | R² | RMSE | MAE |
-|---|---|---|---|
+|                                                                 | R²    | RMSE | MAE  |
+| --------------------------------------------------------------- | ----- | ---- | ---- |
 | on RDKit's bits (= scikit-learn, predictions within 10⁻⁶), test | 0.671 | 1.26 | 0.94 |
-| on Lean's own features, test | 0.662 | 1.27 | 0.96 |
+| on Lean's own features, test                                    | 0.662 | 1.27 | 0.96 |
 
 Lean's own features equal RDKit's on 1 068 of the 1 127 molecules the parser accepts
 (chlorothalonil's ring label after a branch is rejected); the rest need RDKit's `cleanUp`,
@@ -532,65 +580,23 @@ lake exe ridge-test --svg docs/figures/delaney-ridge-parity.svg   # also writes 
 [`docs/figures/delaney-ridge-parity.svg`](docs/figures/delaney-ridge-parity.svg) is that plot,
 written by `LeanLearn.Plot.paritySvg`, with R², RMSE and MAE for each split.
 
-## Project layout
-
-```
-LeanSMILES/           the typed SMILES toolkit (imports Mathlib)
-  Chem/               Element, Atom, Bond, Molecule n, Mathlib graph and matrix views, charges
-  SMILES/             tokenizer, parser, writer, canonical SMILES and its canonicity proof
-  Fingerprint/        RDKit-compatible Morgan fingerprints on Molecule n; order-invariance proof
-  Aromaticity/        Molecule.aromatize: RDKit's ring set, kekulization, aromaticity perception
-  Depict/             2D depiction: layout, SVG, mol blocks, #draw for the Infoview, lake exe depict
-  Data/               CSV parser (columns by header name) for the Delaney dataset
-  Tests/              validity, oracle, Morgan, aromaticity, charge, parse-error and depiction tests (lake exe …-test)
-  Examples/           caffeine.lean, smiles.lean, parsercsv.lean, depict.lean
-LeanLearn/            learning algorithms on tabular data (imports Mathlib only); see its README.md
-  Scalar.lean         ScalarLike: the scalar interface, Float to run and ℝ to prove (from LeanCatalyst)
-  Regression/         executable, over any scalar: Problem, Solvers, Certificates (iterative);
-                      LinearModel (the objectives on a matrix); OLSFloat, RidgeFloat (QR, Float);
-                      SparseRidge (conjugate gradients, sparse 0/1); Metrics (R², RMSE, MAE)
-  Classification/     Logistic, ROC (ROC curve, AUC)
-  Plot/               parity plots as SVG
-  Proofs/             over ℝ. LeastSquares/: OLS, Ridge, RidgeOLS — the closed form on Mathlib
-                      matrices. Regression/: the executable code read in ℝ — the quadratic loss,
-                      gradient descent, Jacobi and Gauss–Seidel, certificate soundness, and the
-                      bridges to the closed form (MatrixBridge, LinearModel)
-  Examples/           ols.lean, ridge.lean (worked proofs), olsFloat.lean, ridgeFloat.lean (runs)
-  Tests/              OLSFloat, RidgeFloat, LinearModel (lake exe …-test)
-Pipelines/            molecules as tabular data (imports both)
-  Representation.lean morgan, bondOrders, counts, canonical, clip, ++; morganFeatures (aromatized)
-  Pipeline.lean       LabelledMolecules (from SMILES), Pipeline, model, losses, predictions
-  Data.lean           LabelledMolecules from the CSV tables in datasets/ (via CSVparser)
-  Certificates.lean   the exact checks on a pipeline: checkGD, checkSolver, certifiedSolverExcess
-  Proofs/             representations (bounds, canonicity), certificate soundness
-  Examples/           delaney.lean (certified solubility regression), egfr.lean (classification)
-  Tests/              Logistic, Ridge (lake exe logistic-test, ridge-test)
-datasets/             Delaney (ESOL) data, RDKit oracle files (as written and Kekulé), the EGFR and
-                      Delaney-ridge answer files
-tools/                RDKit oracle and fuzz generators; sklearn_egfr.py and sklearn_delaney.py write
-                      the scikit-learn answer files; check_depiction.py reads the drawings back with
-                      RDKit; rdkit_reference/ holds the pure-Python references the RDKit ports follow
-docs/                 design notes, REFERENCES.md and references.bib; figures/ holds plots written by Lean
-ench470-content/      ENCH 470 course notebooks and data
-```
-
 ### Module system
 
 Every file is a Lean `module`, so what a file exports is a decision, not an accident:
 
-* `public import` re-exports a dependency to whoever imports the file; a plain `import` is
+- `public import` re-exports a dependency to whoever imports the file; a plain `import` is
   private to the file. Project modules and the Mathlib modules whose types appear in
   signatures are public; tactic-only imports (`Mathlib.Tactic.*`, `Std`, `Lean`) are private.
   So `import LeanSMILES.SMILES.Canon` still brings the whole toolkit, and
   `import LeanLearn.Regression.Solvers` the scalar interface and the regression problem.
-* Library files open `@[expose] public section`: their declarations are public and their
+- Library files open `@[expose] public section`: their declarations are public and their
   definition bodies can be unfolded downstream — which `decide +kernel`, `rfl` and
   `simp [f]` need (the Delaney certificates reduce the SMILES parser in the kernel).
   Theorem-only files open `public section`.
-* Examples and tests open `public section` too, so their theorems can be cited. A file
+- Examples and tests open `public section` too, so their theorems can be cited. A file
   whose `#eval`s run code from another module also `meta import`s that module: under the
   module system, code that runs at elaboration time is a separate phase, and a `meta
-  import` is what loads it there. The one file that proves certificates by `decide +kernel`
+import` is what loads it there. The one file that proves certificates by `decide +kernel`
   (`Pipelines/Examples/delaney.lean`) also `import all`s the three core modules whose array
   loops the kernel has to run — core does not expose their bodies.
 
@@ -604,19 +610,19 @@ Shahmoradi and Tyler R. Josephson, and was prepared as part of the
 [Open Scientific Intelligence Hackathon](https://llmhackathon.github.io). Every Lean file
 names its authors in its header; by area:
 
-* **DeMarko Fulcher** — the iterative formulation of linear regression (`Problem`; gradient
+- **DeMarko Fulcher** — the iterative formulation of linear regression (`Problem`; gradient
   descent, Jacobi and Gauss–Seidel with their exact `ℚ` certificates) and its proofs over `ℝ`;
   `Pipelines`: representations, certified pipelines, and the Delaney walkthrough.
-* **Ejike David Ugwuanyi** — 2D depiction: layout, SVG, mol blocks, `#draw`, `lake exe depict`.
-* **Kevin Ishimwe** — the initial Lake project and the CSV parser for the Delaney table.
-* **Samiha Sharlin** — the RDKit port and its Python references: Morgan fingerprints and the
+- **Ejike David Ugwuanyi** — 2D depiction: layout, SVG, mol blocks, `#draw`, `lake exe depict`.
+- **Kevin Ishimwe** — the initial Lake project and the CSV parser for the Delaney table.
+- **Samiha Sharlin** — the RDKit port and its Python references: Morgan fingerprints and the
   proof that they are independent of atom order, aromaticity perception, the oracle datasets;
   logistic regression, sparse ridge regression, metrics and parity plots; the EGFR and Delaney
   walkthroughs against scikit-learn; the ENCH 470 course content.
-* **Hao Liu** — ordinary least squares and ridge regression in closed form over `ℝ`, the
+- **Hao Liu** — ordinary least squares and ridge regression in closed form over `ℝ`, the
   Householder-QR solvers on `Float`, and the parser's error messages and their tests.
-* **Alex Haibel** and **Izzy Shahmoradi**.
-* **Tyler R. Josephson** — the typed molecular graph and its Mathlib views, the SMILES grammar,
+- **Alex Haibel** and **Izzy Shahmoradi**.
+- **Tyler R. Josephson** — the typed molecular graph and its Mathlib views, the SMILES grammar,
   parser, writer and canonicity proof, charges, Tanimoto, the scalar interface, ridge against
   OLS and the bridge between the two regression formulations.
 
@@ -631,7 +637,7 @@ what it is credited for; [`docs/references.bib`](docs/references.bib) has the Bi
 Things the formalization turned up in the tools and specifications it is
 checked against.
 
-* **RDKit canonical SMILES is not always canonical.** Its tie-breaking
+- **RDKit canonical SMILES is not always canonical.** Its tie-breaking
   individualizes one atom of the lowest tied class and never backtracks, which
   is only canonical when the tied atoms are symmetry-equivalent. On a 12-carbon
   cubic graph where they are not, RDKit 2026.09.1 returns eight different
@@ -642,16 +648,16 @@ checked against.
   independent of input order for every molecule, with no budget:
   `Mol.canonicalSmiles_relabel` (`LeanSMILES/SMILES/Canonicity.lean`).
   nauty-style automorphism pruning, checked at every use, keeps symmetric
-  molecules tractable — a 53-atom *tert*-butyl dendrimer with about 7 × 10¹³
+  molecules tractable — a 53-atom _tert_-butyl dendrimer with about 7 × 10¹³
   tie-breaking leaves canonicalizes in seconds.
-* **OpenSMILES underdetermines implicit hydrogens on aromatic atoms.** §3.1.5
+- **OpenSMILES underdetermines implicit hydrogens on aromatic atoms.** §3.1.5
   computes the count from a sum of bond orders but never says what an
   aromatic bond contributes; §3.5 only requires that electrons be assignable
   without violating valence. Read literally with aromatic bonds at `3/2`, the
   nitrogen of `Cn1cccc1` and the sulfur of thiophene get a hydrogen they
   cannot have. Toolkits agree on a fix the spec does not state
   (`Molecule.implicitHydrogens`).
-* **RDKit Morgan fingerprints depend on atom order from radius 3.** When two
+- **RDKit Morgan fingerprints depend on atom order from radius 3.** When two
   atoms' environments cover the same bonds, RDKit keeps the one with the
   smaller (identifier, atom index) and the other stops growing. If the
   identifiers are equal too, the atom index decides, and the survivor's
@@ -661,8 +667,7 @@ checked against.
   single-bonded to the ethyl-bearing carbon and double-bonded to the other,
   the second the reverse). Over all 8! atom orders, RDKit 2026.09.1 gives one
   fingerprint at radii 1 and 2 and two at radii 3 and 4; the spelling
-  `C1(CC)=CC(CO)=C1` has a different radius-3 identifier (58732580 instead of
-  837408524) and different folded bits. So ECFP6 is not a function of the
+  `C1(CC)=CC(CO)=C1` has a different radius-3 identifier (58732580 instead of 837408524) and different folded bits. So ECFP6 is not a function of the
   molecule. LeanSMILES reproduces RDKit's fingerprint bit for bit, including
   this, and proves the fingerprint independent of atom order up to radius 2,
   the default: `Molecule.morganBits_relabel`
