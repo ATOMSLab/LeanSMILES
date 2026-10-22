@@ -123,6 +123,12 @@ scikit-learn's to 10⁻⁶, and on Lean's own `morganFeatures`, which differ fro
 RDKit's sanitized fingerprints on 30 of the 205 molecules (no aromaticity
 perception yet) but give the same predicted class for every molecule.
 
+RDKit's sanitization (aromaticity, cleanup, valence checks, removeHs) was
+ported to Lean on an earlier array-based representation and verified against
+RDKit; `docs/scope-canonical-smiles-morgan.md` records that port, the commit
+that holds its code, the oracle datasets and the Python references, for moving
+it onto `Molecule n`.
+
 ## References
 
 LeanSMILES builds on prior work in Lean, cheminformatics, and chemistry

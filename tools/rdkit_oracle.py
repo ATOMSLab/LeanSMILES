@@ -5,7 +5,8 @@ Morgan fingerprint (radius 2, 2048 bits), and per-atom data the Lean parser
 should reproduce. Read by `lake exe oracle-test` and `lake exe morgan-test`.
 
 Optionally also writes a second file with the same molecules re-written in
-Kekulé form (no lowercase aromatic atoms), to test aromaticity perception.
+Kekulé form (no lowercase aromatic atoms), to test aromaticity perception
+(datasets/delaney-kekule-oracle.csv was made this way).
 
 Usage:
     python tools/rdkit_oracle.py [input.csv] [output.csv] [kekule-output.csv]
