@@ -2,15 +2,3 @@ import LeanSMILES.main
 import LeanSMILES.Scalar
 import LeanSMILES.Data.CSVparser
 import LeanSMILES.Examples.parsercsv
-import LeanSMILES.Chem.Element
-import LeanSMILES.Chem.Atom
-import LeanSMILES.Chem.Bond
-import LeanSMILES.Chem.Molecule
-import LeanSMILES.Chem.Graph
-import LeanSMILES.Chem.BondMatrix
-import LeanSMILES.SMILES.Token
-import LeanSMILES.SMILES.Parse
-import LeanSMILES.SMILES.Write
-import LeanSMILES.SMILES.Canon
-import LeanSMILES.Fingerprint.Morgan
-import LeanSMILES.Examples.smiles
