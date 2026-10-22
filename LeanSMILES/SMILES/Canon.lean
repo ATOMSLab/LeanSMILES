@@ -3,6 +3,7 @@ Copyright (c) 2026 Tyler Josephson. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Tyler Josephson
 -/
+import LeanSMILES.Chem.Charge
 import LeanSMILES.Chem.Graph
 import LeanSMILES.SMILES.Parse
 import LeanSMILES.SMILES.Write
@@ -353,6 +354,20 @@ graph is isomorphic to the original's. -/
 def canonicalizeIso : SimpleGraph.Iso m.graph m.canonicalize.graph :=
   m.graph_canonicalize ▸ m.relabelIso m.canonicalPerm
 
+/-! ### Chemistry predicates survive the pipeline
+
+`chargesConsistent` (`LeanSMILES.Chem.Charge`) is not an invariant of
+`Molecule` and the pipeline carries no chemistry; but it is a property of the
+atoms alone, and canonicalization only permutes them. -/
+
+lemma chargesConsistent_normalize : m.normalize.chargesConsistent ↔ m.chargesConsistent :=
+  Iff.rfl
+
+/-- Canonicalization neither creates nor removes an inconsistent charge. -/
+theorem chargesConsistent_canonicalize :
+    m.canonicalize.chargesConsistent ↔ m.chargesConsistent := by
+  rw [canonicalize_eq_normalize_relabel, chargesConsistent_normalize, chargesConsistent_relabel]
+
 end Molecule
 
 /-- The canonical SMILES of a bundled molecule. -/
@@ -363,5 +378,13 @@ def Mol.canonicalize (M : Mol) : Mol := ⟨M.n, M.mol.canonicalize⟩
 
 /-- Relabel the atoms of a bundled molecule. -/
 def Mol.relabel (M : Mol) (σ : Equiv.Perm (Fin M.n)) : Mol := ⟨M.n, M.mol.relabel σ⟩
+
+theorem Mol.chargesConsistent_relabel (M : Mol) (σ : Equiv.Perm (Fin M.n)) :
+    (M.relabel σ).chargesConsistent ↔ M.chargesConsistent :=
+  M.mol.chargesConsistent_relabel σ
+
+theorem Mol.chargesConsistent_canonicalize (M : Mol) :
+    M.canonicalize.chargesConsistent ↔ M.chargesConsistent :=
+  M.mol.chargesConsistent_canonicalize
 
 end LeanSMILES
