@@ -1,3 +1,8 @@
+/-
+Copyright (c) 2026 Tyler Josephson. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Tyler Josephson
+-/
 import LeanSMILES.SMILES.Canon
 
 /-!
@@ -75,23 +80,23 @@ def rdkitType : BondKind → ℕ
   | .aromatic => 12
 
 def sortTriples (l : List (ℕ × ℕ × ℕ)) : List (ℕ × ℕ × ℕ) :=
-  l.mergeSort fun a b => decide (a.1 < b.1 ∨ (a.1 = b.1 ∧ a.2.1 ≤ b.2.1))
+  l.mergeSort fun a b ↦ decide (a.1 < b.1 ∨ (a.1 = b.1 ∧ a.2.1 ≤ b.2.1))
 
 /-- The molecule's bonds as sorted `(i, j, t)` triples, `i < j`. -/
 def bondTriples (M : Mol) : List (ℕ × ℕ × ℕ) :=
-  sortTriples <| M.mol.bonds.map fun b =>
+  sortTriples <| M.mol.bonds.map fun b ↦
     (min b.src.val b.dst.val, max b.src.val b.dst.val, rdkitType b.kind)
 
 def symbolsOf (M : Mol) : List String :=
-  (List.finRange M.n).map fun i => ((M.mol.atom i).element.map Element.symbol).getD "*"
+  (List.finRange M.n).map fun i ↦ ((M.mol.atom i).element.map Element.symbol).getD "*"
 
-def totalHsOf (M : Mol) : List ℕ := (List.finRange M.n).map fun i => (M.mol.atom i).totalH
+def totalHsOf (M : Mol) : List ℕ := (List.finRange M.n).map fun i ↦ (M.mol.atom i).totalH
 
 /-- Same atoms, same bonds between the same atoms (syntax). -/
 def connectivityAgrees (row : Row) (M : Mol) : Bool :=
   M.n == row.numAtoms && M.mol.numBonds == row.numBonds && symbolsOf M == row.symbols
-    && (bondTriples M).map (fun t => (t.1, t.2.1))
-      == (sortTriples row.bonds).map (fun t => (t.1, t.2.1))
+    && (bondTriples M).map (fun t ↦ (t.1, t.2.1))
+      == (sortTriples row.bonds).map (fun t ↦ (t.1, t.2.1))
 
 /-- The as-written bond types equal RDKit's after its aromaticity model. -/
 def bondTypesAgree (row : Row) (M : Mol) : Bool := bondTriples M == sortTriples row.bonds

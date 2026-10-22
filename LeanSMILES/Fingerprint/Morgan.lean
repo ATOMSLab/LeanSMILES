@@ -1,3 +1,8 @@
+/-
+Copyright (c) 2026 Tyler Josephson. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Tyler Josephson
+-/
 import LeanSMILES.SMILES.Parse
 
 /-!
@@ -103,7 +108,7 @@ zero) for element `z` with isotope `iso` (`none` or `some 0`: no isotope). -/
 def isotopeMassShift (z : ℕ) : Option ℕ → ℤ
   | none | some 0 => 0
   | some iso =>
-    match isotopeShiftExceptions.find? (fun (z', i, _) => z' == z && i == iso) with
+    match isotopeShiftExceptions.find? (fun (z', i, _) ↦ z' == z && i == iso) with
     | some (_, _, d) => d
     | none =>
       match atomicWeightMicro.lookup z with
@@ -140,7 +145,7 @@ def ringEdges (m : Molecule n) : List (Sym2 (Fin n)) :=
 /-- For every atom, whether it touches a ring bond. -/
 def inRingVector (m : Molecule n) : Vector Bool n :=
   let ring := m.ringEdges
-  Vector.ofFn fun i => (m.bondsAt i).any fun b => ring.contains b.edge
+  Vector.ofFn fun i ↦ (m.bondsAt i).any fun b ↦ ring.contains b.edge
 
 /-! ### The fingerprint -/
 
@@ -153,15 +158,13 @@ def adjacency (m : Molecule n) : Vector (List (ℕ × Fin n)) n := Id.run do
     adj := adj.set b.dst.val (adj[b.dst] ++ [(k, b.src)]) b.dst.isLt
   return adj
 
-/-- Radius-0 identifiers of all atoms (`getConnectivityInvariants`,
-`FingerprintUtil.cpp:240-263`): element, total degree, total H count (counting
-neighbouring `[H]` atoms, as `getTotalNumHs(includeNeighbors=true)`), charge,
-isotope mass shift, and a trailing 1 for ring atoms. -/
+/-- Radius-0 identifiers (`getConnectivityInvariants`): element, total degree, total H
+count (counting neighbouring `[H]` atoms), charge, isotope mass shift, and a ring flag. -/
 def morganAtomInvariants (m : Molecule n) : Vector UInt32 n :=
   let inRing := m.inRingVector
-  Vector.ofFn fun i =>
+  Vector.ofFn fun i ↦
     let a := m.atom i
-    let hNeighbors := ((m.neighbors i).filter fun o => (m.atom o).element == some .H).length
+    let hNeighbors := ((m.neighbors i).filter fun o ↦ (m.atom o).element == some .H).length
     let base := [a.atomicNumber.toUInt32, (m.degree i + a.totalH).toUInt32,
       (a.totalH + hNeighbors).toUInt32, intToUInt32 a.charge,
       intToUInt32 (isotopeMassShift a.atomicNumber a.isotope)]
@@ -172,10 +175,10 @@ def morganAtomInvariants (m : Molecule n) : Vector UInt32 n :=
 def morganEnvironments (m : Molecule n) (radius : ℕ := 2) : List (UInt32 × Fin n × ℕ) :=
   Id.run do
     let adj := m.adjacency
-    let kinds : Array UInt32 := m.bonds.toArray.map fun b => rdkitBondType b.kind
+    let kinds : Array UInt32 := m.bonds.toArray.map fun b ↦ rdkitBondType b.kind
     let mut cur : Vector UInt32 n := m.morganAtomInvariants
     -- radius 0: every atom, always included
-    let mut result : List (UInt32 × Fin n × ℕ) := (List.finRange n).map fun i => (cur[i], i, 0)
+    let mut result : List (UInt32 × Fin n × ℕ) := (List.finRange n).map fun i ↦ (cur[i], i, 0)
     let mut prevEnv : Vector ℕ n := Vector.replicate n 0    -- bonds covered, previous round
     let mut roundEnv : Vector ℕ n := Vector.replicate n 0   -- bonds covered, this round
     let mut seen : List ℕ := []                             -- bond sets already emitted
@@ -195,14 +198,14 @@ def morganEnvironments (m : Molecule n) (radius : ℕ := 2) : List (UInt32 × Fi
           env := env ||| (1 <<< k) ||| prevEnv[o]
         roundEnv := roundEnv.set a.val env a.isLt
         -- sorted (bond type, neighbour identifier) pairs, hashed onto (layer, own identifier)
-        let pairs := (nbrs.map fun (k, o) => (kinds[k]!, cur[o])).mergeSort
-          fun p q => p.1 < q.1 || (p.1 == q.1 && p.2 ≤ q.2)
-        let h := pairs.foldl (fun h (t, v) => hashCombine h (hashPair t v))
+        let pairs := (nbrs.map fun (k, o) ↦ (kinds[k]!, cur[o])).mergeSort
+          fun p q ↦ p.1 < q.1 || (p.1 == q.1 && p.2 ≤ q.2)
+        let h := pairs.foldl (fun h (t, v) ↦ hashCombine h (hashPair t v))
           (hashCombine layer.toUInt32 cur[a])
         next := next.set a.val h a.isLt
         thisRound := thisRound ++ [(h, a, env)]
       -- keep one atom per new bond set: the smallest (identifier, atom)
-      let sorted := thisRound.mergeSort fun p q =>
+      let sorted := thisRound.mergeSort fun p q ↦
         p.1 < q.1 || (p.1 == q.1 && p.2.1.val ≤ q.2.1.val)
       for (h, a, env) in sorted do
         if seen.contains env then dead := dead.set a.val true a.isLt
@@ -218,15 +221,15 @@ sorted by identifier (RDKit's `GetSparseCountFingerprint`). -/
 def morganIds (m : Molecule n) (radius : ℕ := 2) : List (UInt32 × ℕ) :=
   let ids := (m.morganEnvironments radius).map (·.1)
   let sorted := ids.mergeSort (· ≤ ·)
-  sorted.eraseDups.map fun id => (id, sorted.count id)
+  sorted.eraseDups.map fun id ↦ (id, sorted.count id)
 
 /-- Folded Morgan fingerprint: the sorted on-bits (RDKit's `GetFingerprint`). -/
 def morganBits (m : Molecule n) (radius : ℕ := 2) (fpSize : ℕ := 2048) : List ℕ :=
-  ((m.morganIds radius).map fun (id, _) => id.toNat % fpSize).eraseDups.mergeSort (· ≤ ·)
+  ((m.morganIds radius).map fun (id, _) ↦ id.toNat % fpSize).eraseDups.mergeSort (· ≤ ·)
 
 /-- The fingerprint as a bit vector of length `fpSize`, for featurization. -/
 def morganVector (m : Molecule n) (radius : ℕ := 2) (fpSize : ℕ := 2048) : Vector Bool fpSize :=
-  (m.morganBits radius fpSize).foldl (init := Vector.replicate fpSize false) fun v b =>
+  (m.morganBits radius fpSize).foldl (init := Vector.replicate fpSize false) fun v b ↦
     if h : b < fpSize then v.set b true h else v
 
 end LeanSMILES.Molecule
@@ -239,8 +242,10 @@ def tanimoto (a b : List ℕ) : ℚ :=
   let union := a.length + b.length - common
   if union == 0 then 0 else (common : ℚ) / (union : ℚ)
 
+/-- Unfolded Morgan fingerprint of a bundled molecule. -/
 def Mol.morganIds (M : Mol) (radius : ℕ := 2) : List (UInt32 × ℕ) := M.mol.morganIds radius
 
+/-- Folded Morgan fingerprint of a bundled molecule. -/
 def Mol.morganBits (M : Mol) (radius : ℕ := 2) (fpSize : ℕ := 2048) : List ℕ :=
   M.mol.morganBits radius fpSize
 

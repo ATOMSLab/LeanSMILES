@@ -1,3 +1,8 @@
+/-
+Copyright (c) 2026 Tyler Josephson. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Tyler Josephson
+-/
 import LeanSMILES.Chem.Molecule
 
 /-!
@@ -45,18 +50,22 @@ def rankLE (rank : Fin n → ℕ) (i j : Fin n) : Bool :=
 
 /-- The bonds at `a`, by the rank of the atom at the other end. -/
 def sortedBondsAt (m : Molecule n) (rank : Fin n → ℕ) (a : Fin n) : List (Bond n) :=
-  (m.bondsAt a).mergeSort fun b c => rankLE rank (b.other a) (c.other a)
+  (m.bondsAt a).mergeSort fun b c ↦ rankLE rank (b.other a) (c.other a)
 
 /-! ### Pass 1: the spanning forest and the ring closures -/
 
+/-- The state of the depth-first walk. -/
 structure Walk (n : ℕ) where
+  /-- Atoms visited so far. -/
   visited : Vector Bool n
+  /-- Each atom's parent in the spanning forest. -/
   parent : Vector (Option (Fin n)) n
   /-- Tree children, in visit order. -/
   children : Vector (List (Fin n)) n
   /-- Bonds that close rings, each once. -/
   closures : List (Bond n)
 
+/-- The walk before any atom is visited. -/
 def Walk.init : Walk n :=
   ⟨Vector.replicate n false, Vector.replicate n none, Vector.replicate n [], []⟩
 
@@ -65,7 +74,7 @@ def dfs (m : Molecule n) (rank : Fin n → ℕ) : ℕ → Fin n → Walk n → W
   | 0, _, w => w
   | fuel + 1, a, w₀ =>
     let w₀ := { w₀ with visited := w₀.visited.set a.val true a.isLt }
-    (m.sortedBondsAt rank a).foldl (init := w₀) fun w b =>
+    (m.sortedBondsAt rank a).foldl (init := w₀) fun w b ↦
       let o := b.other a
       if w.parent[a] = some o then w
       else if w.visited[o] then
@@ -78,7 +87,9 @@ def dfs (m : Molecule n) (rank : Fin n → ℕ) : ℕ → Fin n → Walk n → W
 
 /-! ### Pass 2: the string -/
 
+/-- The state of the writer. -/
 structure Emit (n : ℕ) where
+  /-- The string so far. -/
   out : String
   /-- Ring closures opened and not yet closed, with their digit. -/
   opened : List (Sym2 (Fin n) × ℕ)
@@ -86,13 +97,14 @@ structure Emit (n : ℕ) where
 /-- The smallest digit from `1` not in use. -/
 def freeDigit (used : List ℕ) : ℕ := go (used.length + 1) 1
 where
+  /-- The first candidate from `d` not in use, with fuel. -/
   go : ℕ → ℕ → ℕ
     | 0, d => d
     | fuel + 1, d => if used.contains d then go fuel (d + 1) else d
 
 /-- Write the ring-closure digits at `a`. -/
 def emitClosures (m : Molecule n) (a : Fin n) (cls : List (Bond n)) (e : Emit n) : Emit n :=
-  cls.foldl (init := e) fun e c =>
+  cls.foldl (init := e) fun e c ↦
     match e.opened.lookup c.edge with
     | some d => { out := e.out ++ ringDigit d, opened := e.opened.filter (·.1 != c.edge) }
     | none =>
@@ -105,12 +117,12 @@ def emit (m : Molecule n) (rank : Fin n → ℕ) (w : Walk n) : ℕ → Fin n �
   | 0, _, e => e
   | fuel + 1, a, e =>
     let e := { e with out := e.out ++ (m.atom a).toSmiles }
-    let cls := (w.closures.filter (·.touches a)).mergeSort fun b c =>
+    let cls := (w.closures.filter (·.touches a)).mergeSort fun b c ↦
       rankLE rank (b.other a) (c.other a)
     let e := emitClosures m a cls e
     let kids := w.children[a]
     let numKids := kids.length
-    kids.zipIdx.foldl (init := e) fun e ⟨o, k⟩ =>
+    kids.zipIdx.foldl (init := e) fun e ⟨o, k⟩ ↦
       let sym := match m.bondBetween a o with
         | some b => bondSymbol (m.atom a) (m.atom o) b.kind
         | none => ""
@@ -125,9 +137,9 @@ their start atom. -/
 def write (m : Molecule n) (rank : Fin n → ℕ) : String :=
   let order := (List.finRange n).mergeSort (rankLE rank)
   let ⟨w, roots⟩ := order.foldl (init := ((Walk.init : Walk n), ([] : List (Fin n))))
-    fun ⟨w, roots⟩ s =>
+    fun ⟨w, roots⟩ s ↦
       if w.visited[s] then (w, roots) else (dfs m rank (n + 1) s w, roots ++ [s])
-  let e := roots.foldl (init := (⟨"", []⟩ : Emit n)) fun e r =>
+  let e := roots.foldl (init := (⟨"", []⟩ : Emit n)) fun e r ↦
     let e := if e.out.isEmpty then e else { e with out := e.out ++ "." }
     emit m rank w (n + 1) r e
   e.out
@@ -139,6 +151,7 @@ end LeanSMILES.Molecule
 
 namespace LeanSMILES
 
+/-- A bundled molecule written in its stored atom order. -/
 def Mol.toSmiles (M : Mol) : String := M.mol.toSmiles
 
 end LeanSMILES

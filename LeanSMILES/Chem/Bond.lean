@@ -1,3 +1,8 @@
+/-
+Copyright (c) 2026 Tyler Josephson. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Tyler Josephson
+-/
 import Mathlib.Data.Sym.Sym2
 import Mathlib.Data.Rat.Defs
 import Mathlib.Tactic.NormNum
@@ -22,8 +27,7 @@ what Mathlib's `SimpleGraph` sees.
 namespace LeanSMILES
 
 /-- The kind of a bond, as SMILES writes it. There is no zero-order kind: the
-SMILES dot `.` is the *absence* of a bond, and a molecule with a dot is a
-disconnected graph. -/
+SMILES dot `.` is the *absence* of a bond. -/
 inductive BondKind
   | single
   | double
@@ -42,10 +46,10 @@ def order : BondKind → ℚ
   | quadruple => 4
   | aromatic => 3 / 2
 
-theorem order_pos (k : BondKind) : 0 < k.order := by
+lemma order_pos (k : BondKind) : 0 < k.order := by
   cases k <;> norm_num [order]
 
-theorem order_ne_zero (k : BondKind) : k.order ≠ 0 := (order_pos k).ne'
+lemma order_ne_zero (k : BondKind) : k.order ≠ 0 := (order_pos k).ne'
 
 /-- The SMILES bond symbol. -/
 def symbol : BondKind → String
@@ -55,6 +59,7 @@ def symbol : BondKind → String
   | quadruple => "$"
   | aromatic => ":"
 
+/-- The kind written by a bond symbol, if the character is one. -/
 def ofChar? : Char → Option BondKind
   | '-' => some single
   | '=' => some double
@@ -72,10 +77,10 @@ def ofOrder? (q : ℚ) : Option BondKind :=
   else if q = 3 / 2 then some aromatic
   else none
 
-@[simp] theorem ofOrder?_order (k : BondKind) : ofOrder? k.order = some k := by
+@[simp] lemma ofOrder?_order (k : BondKind) : ofOrder? k.order = some k := by
   cases k <;> norm_num [ofOrder?, order]
 
-theorem ofOrder?_eq_some {q : ℚ} {k : BondKind} (h : ofOrder? q = some k) : q = k.order := by
+lemma ofOrder?_eq_some {q : ℚ} {k : BondKind} (h : ofOrder? q = some k) : q = k.order := by
   unfold ofOrder? at h
   split_ifs at h with h1 h2 h3 h4 h5
   · obtain rfl := Option.some.inj h; exact h1
@@ -85,7 +90,7 @@ theorem ofOrder?_eq_some {q : ℚ} {k : BondKind} (h : ofOrder? q = some k) : q 
   · obtain rfl := Option.some.inj h; exact h5
 
 /-- Distinct kinds have distinct orders: an order determines the kind. -/
-theorem order_injective : Function.Injective order := by
+lemma order_injective : Function.Injective order := by
   intro k k' h
   have := congrArg ofOrder? h
   rwa [ofOrder?_order, ofOrder?_order, Option.some.injEq] at this
@@ -102,6 +107,7 @@ inductive BondDir
 
 namespace BondDir
 
+/-- The SMILES character: `/` or `\\`. -/
 def toChar : BondDir → Char
   | up => '/'
   | down => '\\'
@@ -115,9 +121,13 @@ end BondDir
 
 /-- A bond between two distinct atoms of an `n`-atom molecule. -/
 structure Bond (n : ℕ) where
+  /-- The atom the SMILES string introduced first. -/
   src : Fin n
+  /-- The other atom. -/
   dst : Fin n
+  /-- The bond kind. -/
   kind : BondKind := .single
+  /-- The `/` `\\` mark, if written, relative to `src → dst`. -/
   dir : Option BondDir := none
   ne : src ≠ dst
   deriving DecidableEq
@@ -143,26 +153,26 @@ def flip (b : Bond n) : Bond n :=
 def map (σ : Fin n → Fin m) (hσ : Function.Injective σ) (b : Bond n) : Bond m :=
   { src := σ b.src, dst := σ b.dst, kind := b.kind, dir := b.dir, ne := hσ.ne b.ne }
 
-@[simp] theorem edge_map (σ : Fin n → Fin m) (hσ : Function.Injective σ) (b : Bond n) :
+@[simp] lemma edge_map (σ : Fin n → Fin m) (hσ : Function.Injective σ) (b : Bond n) :
     (b.map σ hσ).edge = Sym2.map σ b.edge := rfl
 
-@[simp] theorem edge_flip (b : Bond n) : b.flip.edge = b.edge := Sym2.eq_swap
+@[simp] lemma edge_flip (b : Bond n) : b.flip.edge = b.edge := Sym2.eq_swap
 
-theorem edge_not_isDiag (b : Bond n) : ¬ b.edge.IsDiag := by
+lemma edge_not_isDiag (b : Bond n) : ¬ b.edge.IsDiag := by
   simpa [edge, Sym2.mk_isDiag_iff] using b.ne
 
-theorem edge_eq_mk_iff {b : Bond n} {i j : Fin n} :
+lemma edge_eq_mk_iff {b : Bond n} {i j : Fin n} :
     b.edge = s(i, j) ↔ (b.src = i ∧ b.dst = j) ∨ (b.src = j ∧ b.dst = i) :=
   Sym2.eq_iff
 
 /-- A bond never joins an atom to itself. -/
-theorem edge_ne_diag (b : Bond n) (i : Fin n) : b.edge ≠ s(i, i) := by
+lemma edge_ne_diag (b : Bond n) (i : Fin n) : b.edge ≠ s(i, i) := by
   intro h
   rcases edge_eq_mk_iff.mp h with ⟨h1, h2⟩ | ⟨h1, h2⟩ <;> exact b.ne (h1.trans h2.symm)
 
-theorem touches_iff {b : Bond n} {i : Fin n} : b.touches i = true ↔ i ∈ b.edge := by
+lemma touches_iff {b : Bond n} {i : Fin n} : b.touches i = true ↔ i ∈ b.edge := by
   simp only [touches, edge, Bool.or_eq_true, beq_iff_eq, Sym2.mem_iff]
-  exact ⟨fun h => h.imp Eq.symm Eq.symm, fun h => h.imp Eq.symm Eq.symm⟩
+  exact ⟨fun h ↦ h.imp Eq.symm Eq.symm, fun h ↦ h.imp Eq.symm Eq.symm⟩
 
 /-- `0-1`, `1=2`, `2:3`, … -/
 def toString (b : Bond n) : String :=
@@ -170,7 +180,7 @@ def toString (b : Bond n) : String :=
 
 instance : ToString (Bond n) := ⟨toString⟩
 
-instance : Repr (Bond n) := ⟨fun b _ => Std.Format.text b.toString⟩
+instance : Repr (Bond n) := ⟨fun b _ ↦ Std.Format.text b.toString⟩
 
 end Bond
 

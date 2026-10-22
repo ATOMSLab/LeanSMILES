@@ -71,13 +71,13 @@ Design choices, and the reason for each:
 | Definition / theorem | Statement |
 |---|---|
 | `graph : SimpleGraph (Fin n)` | adjacent ⇔ some bond joins them; `DecidableRel` |
-| `adjMatrix : Matrix (Fin n) (Fin n) ℚ` | bond-order weighted; `adjMatrix_isSymm`, `adjMatrix_self` |
+| `adjMatrix : Matrix (Fin n) (Fin n) ℚ` | bond-order weighted; `isSymm_adjMatrix`, `adjMatrix_apply_self` |
 | `adjMatrix_ne_zero_iff` | weighted entry nonzero ⇔ `graph.Adj` |
 | `graph_adjMatrix_eq` | Mathlib's 0/1 `adjMatrix` is the indicator of the weighted one |
 | `edgeFinset_eq`, `card_edgeFinset` | Mathlib's edge set is the bond list; its size is `numBonds` |
 | `sum_degrees` | handshake lemma: `∑ degree = 2 * numBonds` |
 | `relabelIso σ` | `graph ≃g (relabel σ).graph` |
-| `canonicalize_iso` | canonicalization is a graph isomorphism |
+| `canonicalizeIso` | canonicalization is a graph isomorphism |
 
 Both views are *derived* from the bond list, so the theorems above say the
 two derivations agree.  The matrix → graph direction closes the loop:
@@ -89,7 +89,7 @@ two derivations agree.  The matrix → graph direction closes the loop:
 | `adjMatrix_eq_order_iff` | `adjMatrix i j = k.order ↔ ∃ b ∈ bonds, b.edge = s(i,j) ∧ b.kind = k` |
 | `toGraph_adjMatrix` | Mathlib's 0/1 round trip, instantiated at `graph` |
 | `graphOfMatrix`, `graphOfMatrix_adjMatrix` | the graph of the nonzero entries; `graphOfMatrix adjMatrix = graph` |
-| `IsBondMatrix` | symmetric, zero diagonal, nonzero entries are bond orders; `adjMatrix_isBondMatrix` |
+| `IsBondMatrix` | symmetric, zero diagonal, nonzero entries are bond orders; `isBondMatrix_adjMatrix` |
 | `ofAdjMatrix atoms A : Molecule n` | total decoder: one bond per pair `i < j` whose entry is a bond order |
 | `adjMatrix_ofAdjMatrix` | `IsBondMatrix A → (ofAdjMatrix atoms A).adjMatrix = A` |
 | `graph_ofAdjMatrix_adjMatrix`, `bondKind_ofAdjMatrix_adjMatrix` | molecule → matrix → molecule keeps the graph and every bond kind |
@@ -107,7 +107,7 @@ molecule" is in the type.
 | `BondMatrix.check`, `check_iff`, `ofMatrix?` | `IsBondMatrix` is decidable; any matrix can be checked into the subtype at run time |
 | `FlatMatrix n := {A // A.IsAdjMatrix}` | the 0/1 matrix, Mathlib's predicate; `F.graph` by `IsAdjMatrix.toGraph` |
 | `BondMatrix.flatten`, `graph_flatten` | forget the orders; the graph is unchanged |
-| `Molecule.toBondMatrix` | backed by the materialized `adjTable`, so `B i j` is O(1); `toBondMatrix_val : B.1 = adjMatrix` |
+| `Molecule.toBondMatrix` | backed by the materialized `adjTable`, so `B i j` is O(1); `val_toBondMatrix : B.1 = adjMatrix` |
 | `Molecule.toFlatMatrix`, `flatten_toBondMatrix` | the graph's own 0/1 matrix; flattening the bond matrix gives it |
 | `normalize`, `IsNormal` | forget bond orientation and bond-list order; a fixed point of `normalize` (decidable) |
 | `IsNormal.bond_spec` | in normal form every bond runs `src < dst` with no direction mark |

@@ -1,3 +1,8 @@
+/-
+Copyright (c) 2026 Tyler Josephson. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Tyler Josephson
+-/
 import LeanSMILES.SMILES.Token
 import LeanSMILES.Chem.Molecule
 
@@ -30,37 +35,55 @@ namespace LeanSMILES.SMILES
 
 /-- A bond symbol read and not yet attached. -/
 structure PendingBond where
+  /-- The kind written, if any. -/
   kind : Option BondKind := none
+  /-- The `/` `\\` mark, if written. -/
   dir : Option BondDir := none
+  /-- Position of the symbol. -/
   pos : ℕ
   deriving Repr, Inhabited
 
 /-- A bond between atom indices, before they are known to be in range. -/
 structure RawBond where
+  /-- Index of the first atom. -/
   src : ℕ
+  /-- Index of the second atom. -/
   dst : ℕ
+  /-- The bond kind. -/
   kind : BondKind
+  /-- The `/` `\\` mark, if written. -/
   dir : Option BondDir
+  /-- Position of the token that created the bond. -/
   pos : ℕ
   deriving Repr, Inhabited
 
 /-- A ring-closure label waiting for its partner. -/
 structure RingOpen where
+  /-- The atom that opened the ring. -/
   atom : ℕ
+  /-- The bond symbol written at the opening, if any. -/
   bond : Option PendingBond
+  /-- Position of the opening label. -/
   pos : ℕ
   deriving Repr, Inhabited
 
 /-- Parser state. -/
 structure State where
+  /-- Atoms so far, in order of appearance. -/
   atoms : Array Atom := #[]
+  /-- Bonds so far. -/
   bonds : Array RawBond := #[]
+  /-- The atom the next bond attaches to. -/
   anchor : Option ℕ := none
+  /-- A bond symbol read and not yet attached. -/
   pending : Option PendingBond := none
+  /-- The next atom starts a new component. -/
   afterDot : Bool := false
   /-- The previous token was `(`: RDKit rejects `()` and a ring digit here. -/
   justOpened : Bool := false
+  /-- Anchors saved by `(`, innermost first. -/
   branches : List ℕ := []
+  /-- Open ring labels with the atom and bond symbol that opened them. -/
   rings : List (ℕ × RingOpen) := []
   deriving Repr, Inhabited
 
@@ -71,17 +94,21 @@ single otherwise. -/
 def implicitKind (a b : Atom) : BondKind :=
   if a.aromatic && b.aromatic then .aromatic else .single
 
+/-- The atom with index `i` (a default atom if out of range). -/
 def atomAt (st : State) (i : ℕ) : Atom := st.atoms.getD i default
 
+/-- Whether a bond between `i` and `j` has already been created. -/
 def hasBond (st : State) (i j : ℕ) : Bool :=
-  st.bonds.any fun b => (b.src == i && b.dst == j) || (b.src == j && b.dst == i)
+  st.bonds.any fun b ↦ (b.src == i && b.dst == j) || (b.src == j && b.dst == i)
 
+/-- Add a bond, rejecting self-bonds and duplicates. -/
 def addBond (st : State) (src dst : ℕ) (kind : BondKind) (dir : Option BondDir) (pos : ℕ) :
     Except ParseError State :=
   if src == dst then .error (.selfBond pos src)
   else if st.hasBond src dst then .error (.duplicateBond pos src dst)
   else .ok { st with bonds := st.bonds.push ⟨src, dst, kind, dir, pos⟩ }
 
+/-- Record a bond symbol, rejecting two in a row. -/
 def setPending (st : State) (p : PendingBond) : Except ParseError State :=
   match st.pending with
   | some q => .error (.bondWithoutAtom q.pos)
@@ -157,7 +184,7 @@ def finish (st : State) : Except ParseError State :=
 /-- Package the state as a `Molecule`, discharging the type's invariants by
 decision: endpoints in range, no self-bond, no duplicate edge. -/
 def toMolecule (st : State) : Except ParseError Mol := do
-  let bonds ← st.bonds.toList.mapM fun (b : RawBond) =>
+  let bonds ← st.bonds.toList.mapM fun (b : RawBond) ↦
     if h₁ : b.src < st.atoms.size then
       if h₂ : b.dst < st.atoms.size then
         if h₃ : b.src ≠ b.dst then

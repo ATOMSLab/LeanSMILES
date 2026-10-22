@@ -1,3 +1,8 @@
+/-
+Copyright (c) 2026 Tyler Josephson. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Tyler Josephson
+-/
 import LeanSMILES.Tests.OracleRow
 import Mathlib.Logic.Equiv.Fin.Basic
 import Mathlib.Logic.Equiv.Fin.Rotate

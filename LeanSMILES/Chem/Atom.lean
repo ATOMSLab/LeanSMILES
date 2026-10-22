@@ -1,3 +1,8 @@
+/-
+Copyright (c) 2026 Tyler Josephson. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Tyler Josephson
+-/
 import LeanSMILES.Chem.Element
 
 /-!
@@ -27,6 +32,7 @@ inductive Chirality
 
 namespace Chirality
 
+/-- The SMILES mark: `@` or `@@`. -/
 def toSmiles : Chirality → String
   | anticlockwise => "@"
   | clockwise => "@@"
@@ -47,9 +53,8 @@ structure Atom where
   /-- The hydrogen count written inside brackets (`[CH3]` is `some 3`, `[C]` is
   `some 0`); `none` for an atom written without brackets. -/
   explicitH : Option ℕ := none
-  /-- Hydrogens implied by the default-valence rule for a bare organic-subset
-  atom; `0` until `Molecule.assignImplicitH` runs, and always `0` for bracket
-  atoms, whose hydrogen count is exactly what was written. -/
+  /-- Hydrogens implied by the default-valence rule; `0` until
+  `Molecule.assignImplicitH` runs, and always `0` for bracket atoms. -/
   implicitH : ℕ := 0
   /-- Chirality mark, when written. -/
   chirality : Option Chirality := none
@@ -65,6 +70,7 @@ def ofElement (e : Element) : Atom := { element := some e }
 /-- The wildcard atom `*`. -/
 def wildcard : Atom := {}
 
+/-- Whether the atom is the wildcard `*`. -/
 def isWildcard (a : Atom) : Bool := a.element.isNone
 
 /-- Atomic number, with `0` for the wildcard. -/
@@ -112,7 +118,7 @@ def toBracket (a : Atom) : String :=
     ++ (a.chirality.map Chirality.toSmiles).getD ""
     ++ hString a.totalH
     ++ chargeString a.charge
-    ++ (a.atomClass.map fun c => s!":{c}").getD ""
+    ++ (a.atomClass.map fun c ↦ s!":{c}").getD ""
     ++ "]"
 
 /-- The atom as SMILES writes it: bare when it can be, bracketed otherwise. -/

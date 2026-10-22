@@ -1,3 +1,8 @@
+/-
+Copyright (c) 2026 Tyler Josephson. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Tyler Josephson
+-/
 import LeanSMILES.Chem.Atom
 import LeanSMILES.Chem.Bond
 
@@ -40,6 +45,7 @@ inductive ParseError
 
 namespace ParseError
 
+/-- A message with the position. -/
 def toString : ParseError → String
   | unexpectedChar pos c => s!"unexpected character '{c}' at {pos}"
   | unexpectedEnd expected => s!"unexpected end of input, expected {expected}"
@@ -79,7 +85,9 @@ inductive TokenKind
   | ring (num : ℕ)
   deriving Repr, DecidableEq, Inhabited
 
+/-- A token with its position. -/
 structure Token where
+  /-- What the token is. -/
   kind : TokenKind
   /-- Offset of the token's first character in the input. -/
   pos : ℕ
@@ -90,8 +98,9 @@ namespace Tokenizer
 /-- Split off a (possibly empty) run of digits. -/
 def takeDigits (cs : List Char) : List Char × List Char := cs.span Char.isDigit
 
+/-- The number a run of digits denotes. -/
 def digitsToNat (ds : List Char) : ℕ :=
-  ds.foldl (fun n d => 10 * n + (d.toNat - '0'.toNat)) 0
+  ds.foldl (fun n d ↦ 10 * n + (d.toNat - '0'.toNat)) 0
 
 /-! ### Bracket atoms
 
@@ -101,9 +110,8 @@ def digitsToNat (ds : List Char) : ℕ :=
 lowercase, and the remaining characters. -/
 abbrev BracketSymbol := Option Element × Bool × List Char
 
-/-- The element symbol inside brackets, greedy on two-letter symbols as the
-grammar requires (`[Sc]` is scandium, `[Co]` cobalt). Lowercase symbols are
-aromatic and must be `b c n o p s se as`. -/
+/-- The element symbol inside brackets, greedy on two-letter symbols (`[Sc]` is scandium,
+`[Co]` cobalt); lowercase symbols are aromatic. -/
 def bracketSymbol (pos : ℕ) : List Char → Except ParseError BracketSymbol
   | '*' :: rest => .ok (none, false, rest)
   | c :: rest =>
@@ -129,10 +137,12 @@ def bracketSymbol (pos : ℕ) : List Char → Except ParseError BracketSymbol
     else .error (.unexpectedChar pos c)
   | [] => .error (.unexpectedEnd "an element symbol")
 where
+  /-- A one-letter uppercase symbol. -/
   oneLetter (c : Char) (rest : List Char) : Except ParseError BracketSymbol :=
     match Element.ofSymbol? (String.ofList [c]) with
     | some e => .ok (some e, false, rest)
     | none => .error (.unknownElement pos (String.ofList [c]))
+  /-- A one-letter aromatic (lowercase) symbol. -/
   aromaticOne (c : Char) (rest : List Char) : Except ParseError BracketSymbol :=
     match Element.ofSymbol? (String.ofList [c.toUpper]) with
     | some e =>
@@ -140,6 +150,7 @@ where
       else .error (.badBracket pos s!"'{c}' may not be written aromatic")
     | none => .error (.unknownElement pos (String.ofList [c]))
 
+/-- `@@`, `@`, or nothing. -/
 def parseChirality : List Char → Option Chirality × List Char
   | '@' :: '@' :: rest => (some .clockwise, rest)
   | '@' :: rest => (some .anticlockwise, rest)
@@ -168,6 +179,7 @@ def parseCharge : List Char → ℤ × List Char
     else (-((digitsToNat ds : ℕ) : ℤ), rest')
   | cs => (0, cs)
 
+/-- `:n`, or nothing. -/
 def parseClass : List Char → Option ℕ × List Char
   | ':' :: rest =>
     let (ds, rest') := takeDigits rest

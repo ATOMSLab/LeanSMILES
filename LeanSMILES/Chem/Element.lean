@@ -1,3 +1,8 @@
+/-
+Copyright (c) 2026 Tyler Josephson. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Tyler Josephson
+-/
 import Mathlib.Tactic.DeriveFintype
 import Mathlib.Data.Fintype.Card
 
@@ -54,7 +59,7 @@ theorem atomicNumber_injective : Function.Injective atomicNumber := by
 def ofAtomicNumber? (z : ℕ) : Option Element :=
   if 1 ≤ z ∧ z ≤ 118 then some (Element.ofNat (z - 1)) else none
 
-theorem card : Fintype.card Element = 118 := by decide
+lemma card : Fintype.card Element = 118 := by decide
 
 /-- The element's symbol as written in SMILES (and everywhere else). -/
 def symbol : Element → String

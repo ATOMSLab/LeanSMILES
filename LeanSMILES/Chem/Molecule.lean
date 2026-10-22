@@ -1,3 +1,8 @@
+/-
+Copyright (c) 2026 Tyler Josephson. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Tyler Josephson
+-/
 import LeanSMILES.Chem.Atom
 import LeanSMILES.Chem.Bond
 
@@ -23,7 +28,9 @@ namespace LeanSMILES
 
 /-- A molecule with `n` atoms. -/
 structure Molecule (n : ℕ) where
+  /-- The atoms, numbered in order of appearance in the SMILES string. -/
   atoms : Vector Atom n
+  /-- The bonds, in the order the SMILES string introduced them. -/
   bonds : List (Bond n)
   /-- No two bonds join the same pair of atoms: the molecular graph is simple. -/
   nodup : (bonds.map Bond.edge).Nodup
@@ -31,17 +38,19 @@ structure Molecule (n : ℕ) where
 /-- A molecule whose size is not known at the type level — what a parser
 returns. -/
 structure Mol where
+  /-- The number of atoms. -/
   n : ℕ
+  /-- The molecule. -/
   mol : Molecule n
 
 namespace Molecule
 
 variable {n : ℕ} (m : Molecule n)
 
-def numAtoms (_ : Molecule n) : ℕ := n
-
+/-- The number of bonds. -/
 def numBonds : ℕ := m.bonds.length
 
+/-- The atom with index `i`. -/
 def atom (i : Fin n) : Atom := m.atoms[i]
 
 /-- The undirected edges, as Mathlib sees them. -/
@@ -62,13 +71,14 @@ def bondOrderSum (i : Fin n) : ℚ := ((m.bondsAt i).map (·.kind.order)).sum
 
 /-- The bond joining `i` and `j`, if any. Unique by `nodup`. -/
 def bondBetween (i j : Fin n) : Option (Bond n) :=
-  m.bonds.find? fun b => decide (b.edge = s(i, j))
+  m.bonds.find? fun b ↦ decide (b.edge = s(i, j))
 
+/-- Whether some bond joins `i` and `j`. -/
 def adjacent (i j : Fin n) : Bool := (m.bondBetween i j).isSome
 
 /-- Replace every atom, keeping the bonds. -/
 def mapAtoms (f : Fin n → Atom → Atom) : Molecule n :=
-  { m with atoms := Vector.ofFn fun i => f i m.atoms[i] }
+  { m with atoms := Vector.ofFn fun i ↦ f i m.atoms[i] }
 
 /-! ### Implicit hydrogens
 
@@ -81,7 +91,7 @@ element have exactly the hydrogens that were written. -/
 def implicitHydrogens (a : Atom) (orderSum : ℚ) : ℕ :=
   match a.element, a.explicitH with
   | some e, none =>
-    match e.defaultValences.find? (fun v => decide (orderSum ≤ (v : ℚ))) with
+    match e.defaultValences.find? (fun v ↦ decide (orderSum ≤ (v : ℚ))) with
     | some v => (Rat.floor ((v : ℚ) - orderSum)).toNat
     | none => 0
   | _, _ => 0
@@ -89,13 +99,13 @@ def implicitHydrogens (a : Atom) (orderSum : ℚ) : ℕ :=
 /-- Fill in `Atom.implicitH` for every atom from its bonds. The RDKit
 "sanitize" step, cut down to the one rule SMILES itself specifies. -/
 def assignImplicitH : Molecule n :=
-  m.mapAtoms fun i a => { a with implicitH := implicitHydrogens a (m.bondOrderSum i) }
+  m.mapAtoms fun i a ↦ { a with implicitH := implicitHydrogens a (m.bondOrderSum i) }
 
 /-! ### Relabelling -/
 
 /-- Relabel the atoms by a permutation: atom `i` becomes atom `σ i`. -/
 def relabel (σ : Equiv.Perm (Fin n)) : Molecule n where
-  atoms := Vector.ofFn fun i => m.atoms[σ.symm i]
+  atoms := Vector.ofFn fun i ↦ m.atoms[σ.symm i]
   bonds := m.bonds.map (Bond.map σ σ.injective)
   nodup := by
     have h : (m.bonds.map (Bond.map σ σ.injective)).map Bond.edge
@@ -104,15 +114,15 @@ def relabel (σ : Equiv.Perm (Fin n)) : Molecule n where
     rw [h]
     exact m.nodup.map (Sym2.map.injective σ.injective)
 
-theorem edges_relabel (σ : Equiv.Perm (Fin n)) :
+lemma edges_relabel (σ : Equiv.Perm (Fin n)) :
     (m.relabel σ).edges = m.edges.map (Sym2.map σ) := by
   simp [edges, relabel, List.map_map, Function.comp_def]
 
-@[simp] theorem atom_relabel (σ : Equiv.Perm (Fin n)) (i : Fin n) :
+@[simp] lemma atom_relabel (σ : Equiv.Perm (Fin n)) (i : Fin n) :
     (m.relabel σ).atom (σ i) = m.atom i := by
   simp [relabel, atom]
 
-theorem numBonds_relabel (σ : Equiv.Perm (Fin n)) : (m.relabel σ).numBonds = m.numBonds := by
+lemma numBonds_relabel (σ : Equiv.Perm (Fin n)) : (m.relabel σ).numBonds = m.numBonds := by
   simp [relabel, numBonds]
 
 /-! ### Printing -/
@@ -123,6 +133,6 @@ instance : Repr (Molecule n) where
 
 end Molecule
 
-instance : Repr Mol := ⟨fun M _ => repr M.mol⟩
+instance : Repr Mol := ⟨fun M _ ↦ repr M.mol⟩
 
 end LeanSMILES
