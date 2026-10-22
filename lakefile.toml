@@ -32,3 +32,6 @@ root = "LeanSMILES.Tests.Oracle"
 name = "morgan-test"
 root = "LeanSMILES.Tests.Morgan"
 
+[[lean_exe]]
+name = "charge-test"
+root = "LeanSMILES.Tests.Charge"

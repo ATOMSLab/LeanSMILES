@@ -74,6 +74,23 @@ color refinement plus exhaustive tie-breaking (lexicographically smallest
 string), and it is canonical by theorem (`Molecule.canonicalSmiles_relabel`)
 rather than by matching RDKit.
 
+Because the parser checks syntax only, `[C+123]` parses, round-trips and
+canonicalizes like any other atom (RDKit accepts it too).  The chemistry check
+available after parsing is `Molecule.checkCharges` (`LeanSMILES.Chem.Charge`):
+a decidable predicate, `Molecule.chargesConsistent`, saying every formal charge
+is one its element can physically carry — no more electrons lost than it has
+(`charge ≤ Z`), no more gained than complete its valence shell
+(`-shellVacancy ≤ charge`, the distance to the next noble gas: `C` −4, `O` −2,
+`Fe` −10), and OpenSMILES's ±15 for the wildcard `*` — with a message naming
+the offending atom.  It is deliberately not an invariant of `Molecule`, so the
+canonicalization theorems carry no chemistry; relabeling and canonicalization
+preserve it (`chargesConsistent_relabel`, `chargesConsistent_canonicalize`).
+
+```lean
+#eval (Mol.ofSmiles! "[NH4+].[Cl-]").checkCharges  -- Except.ok ()
+#eval (Mol.ofSmiles! "C[C+123]").checkCharges      -- Except.error "atom 1 (C) has formal charge +123; C can carry -4 to +6"
+```
+
 Open `LeanSMILES/Examples/caffeine.lean` for one molecule walked through every
 representation — tokens, atoms, bonds, graph, matrices, normal form, canonical
 ranks, fingerprint — and `LeanSMILES/Examples/smiles.lean` for more; design and
@@ -86,6 +103,7 @@ Tests against RDKit's answers (oracle files from the `canonical-smiles` branch):
 lake exe validity-test   # 10 000 broken SMILES: accepts everything RDKit accepts (0 parser bugs)
 lake exe oracle-test     # 1 128 Delaney molecules: graph = RDKit's, canonical SMILES round-trips and is relabeling-invariant, 1128/1128
 lake exe morgan-test     # Morgan fingerprints: ring membership = RDKit's, bits = RDKit's wherever the graph is, relabeling-invariant
+lake exe charge-test     # formal charges: [C+123], [H+++], [C-123] parse but fail checkCharges; [Na+], [O-2], [Fe+3], [NH4+] pass
 ```
 
 ### Morgan fingerprints

@@ -6,6 +6,7 @@ import LeanSMILES.Chem.Element
 import LeanSMILES.Chem.Atom
 import LeanSMILES.Chem.Bond
 import LeanSMILES.Chem.Molecule
+import LeanSMILES.Chem.Charge
 import LeanSMILES.Chem.Graph
 import LeanSMILES.Chem.BondMatrix
 import LeanSMILES.SMILES.Token
