@@ -35,3 +35,8 @@ root = "LeanSMILES.Tests.Morgan"
 [[lean_exe]]
 name = "charge-test"
 root = "LeanSMILES.Tests.Charge"
+
+# Parse error message tests added by Hao Liu.
+[[lean_exe]]
+name = "parse-errors-test"
+root = "LeanSMILES.Tests.ParseErrors"

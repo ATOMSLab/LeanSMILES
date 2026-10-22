@@ -18,24 +18,57 @@ organic-subset atom.  Their sum is `totalH`.
 Chirality is *recorded*, not *interpreted*: `@`/`@@` are relative to the order
 in which the atom's neighbors appear in the SMILES string, which is a property
 of the string and of the bond order in `Molecule.bonds`, not of the atom alone.
+The named classes `@TH1` … `@OH30` are recorded the same way, as written; the
+shorthand equivalence (`@` for `@TH1`) is not applied.
 -/
 
 namespace LeanSMILES
 
-/-- The tetrahedral chirality mark of a bracket atom: `@` (anticlockwise) or
-`@@` (clockwise), viewed from the first neighbor towards the atom, with the
-remaining neighbors taken in the order the SMILES string lists them. -/
+/-- The chirality mark of a bracket atom, as written.  `@` (anticlockwise) and
+`@@` (clockwise) are the tetrahedral shorthands: viewed from the first
+neighbor towards the atom, the remaining neighbors are taken in the order
+the SMILES string lists them.  The named classes of OpenSMILES §3.7 carry
+their index, one-based in the string and zero-based here: tetrahedral
+`@TH1`–`@TH2`, allenal `@AL1`–`@AL2`, square-planar `@SP1`–`@SP3`,
+trigonal-bipyramidal `@TB1`–`@TB20` and octahedral `@OH1`–`@OH30`.  The
+shorthand equivalence (`@` for `@TH1`, and so on) is not applied. -/
 inductive Chirality
   | anticlockwise
   | clockwise
+  /-- `@TH1`, `@TH2`. -/
+  | th (k : Fin 2)
+  /-- `@AL1`, `@AL2`. -/
+  | al (k : Fin 2)
+  /-- `@SP1`–`@SP3`. -/
+  | sp (k : Fin 3)
+  /-- `@TB1`–`@TB20`. -/
+  | tb (k : Fin 20)
+  /-- `@OH1`–`@OH30`. -/
+  | oh (k : Fin 30)
   deriving DecidableEq, Repr, Inhabited, Ord
 
 namespace Chirality
 
-/-- The SMILES mark: `@` or `@@`. -/
+/-- The SMILES mark: `@`, `@@`, or a named class with its one-based index. -/
 def toSmiles : Chirality → String
   | anticlockwise => "@"
   | clockwise => "@@"
+  | th k => s!"@TH{k.val + 1}"
+  | al k => s!"@AL{k.val + 1}"
+  | sp k => s!"@SP{k.val + 1}"
+  | tb k => s!"@TB{k.val + 1}"
+  | oh k => s!"@OH{k.val + 1}"
+
+/-- An injective numeric code, for invariant vectors: `@` is 1, `@@` is 2 and
+the named classes follow in order, `@OH30` last at 59. -/
+def code : Chirality → ℕ
+  | anticlockwise => 1
+  | clockwise => 2
+  | th k => 3 + k.val
+  | al k => 5 + k.val
+  | sp k => 7 + k.val
+  | tb k => 10 + k.val
+  | oh k => 30 + k.val
 
 end Chirality
 
