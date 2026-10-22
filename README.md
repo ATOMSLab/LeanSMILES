@@ -535,6 +535,30 @@ Every file is a Lean `module`, so what a file exports is a decision, not an acci
 
 Merging this branch into `main`: see [`MERGE-NOTES.md`](MERGE-NOTES.md).
 
+## Authors
+
+LeanSMILES is written in the [ATOMS Lab](https://github.com/ATOMSLab) at UMBC by DeMarko
+Fulcher, Ejike David Ugwuanyi, Kevin Ishimwe, Samiha Sharlin, Hao Liu, Alex Haibel, Izzy
+Shahmoradi and Tyler R. Josephson, and was prepared as part of the
+[Open Scientific Intelligence Hackathon](https://llmhackathon.github.io). Every Lean file
+names its authors in its header; by area:
+
+* **DeMarko Fulcher** — the iterative formulation of linear regression (`Problem`; gradient
+  descent, Jacobi and Gauss–Seidel with their exact `ℚ` certificates) and its proofs over `ℝ`;
+  `Pipelines`: representations, certified pipelines, and the Delaney walkthrough.
+* **Ejike David Ugwuanyi** — 2D depiction: layout, SVG, mol blocks, `#draw`, `lake exe depict`.
+* **Kevin Ishimwe** — the initial Lake project and the CSV parser for the Delaney table.
+* **Samiha Sharlin** — the RDKit port and its Python references: Morgan fingerprints and the
+  proof that they are independent of atom order, aromaticity perception, the oracle datasets;
+  logistic regression, sparse ridge regression, metrics and parity plots; the EGFR and Delaney
+  walkthroughs against scikit-learn; the ENCH 470 course content.
+* **Hao Liu** — ordinary least squares and ridge regression in closed form over `ℝ`, the
+  Householder-QR solvers on `Float`, and the parser's error messages and their tests.
+* **Alex Haibel** and **Izzy Shahmoradi**.
+* **Tyler R. Josephson** — the typed molecular graph and its Mathlib views, the SMILES grammar,
+  parser, writer and canonicity proof, charges, Tanimoto, the scalar interface, ridge against
+  OLS and the bridge between the two regression formulations.
+
 ## References
 
 LeanSMILES builds on prior work in Lean, cheminformatics, and chemistry
