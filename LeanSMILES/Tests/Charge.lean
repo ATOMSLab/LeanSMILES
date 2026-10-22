@@ -3,7 +3,9 @@ Copyright (c) 2026 Tyler Josephson. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Tyler Josephson
 -/
-import LeanSMILES.SMILES.Canon
+module
+
+public import LeanSMILES.SMILES.Canon
 
 /-!
 # LeanSMILES.Tests.Charge
@@ -39,7 +41,7 @@ def inconsistent : List String :=
 
 def hasSubstring (s sub : String) : Bool := (s.splitOn sub).length > 1
 
-def main : IO UInt32 := do
+public def main : IO UInt32 := do
   let mut failures : Array String := #[]
   for s in consistent do
     match parse s with

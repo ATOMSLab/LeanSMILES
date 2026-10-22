@@ -1,7 +1,7 @@
 name = "LeanSMILES"
 version = "0.1.0"
-keywords = ["math", "chemistry", "kinetics"]
-defaultTargets = ["LeanSMILES"]
+keywords = ["math", "chemistry", "machine learning"]
+defaultTargets = ["LeanSMILES", "LeanLearn", "Pipelines"]
 
 [leanOptions]
 pp.unicode.fun = true # pretty-prints `fun a ↦ b`
@@ -15,9 +15,22 @@ scope = "leanprover-community"
 rev = "v4.30.0-rc1"
 
 
+# Three libraries, one direction of dependency:
+#   LeanSMILES  — SMILES → typed molecular graph → canonical SMILES, fingerprints (imports Mathlib)
+#   LeanLearn   — learning algorithms on tabular data and their proofs (imports Mathlib only)
+#   Pipelines   — molecules as tabular data: representations, certified pipelines, walkthroughs
+#                 (the only library that imports both)
 [[lean_lib]]
 name = "LeanSMILES"
 globs = ["LeanSMILES.*"]
+
+[[lean_lib]]
+name = "LeanLearn"
+globs = ["LeanLearn.*"]
+
+[[lean_lib]]
+name = "Pipelines"
+globs = ["Pipelines.*"]
 
 # Tests against RDKit's answers in datasets/ (run from the repository root)
 [[lean_exe]]
@@ -40,3 +53,26 @@ root = "LeanSMILES.Tests.Charge"
 [[lean_exe]]
 name = "parse-errors-test"
 root = "LeanSMILES.Tests.ParseErrors"
+
+# LeanLearn: the Float solvers and the shared regression definitions (Hao Liu)
+[[lean_exe]]
+name = "ols-float-test"
+root = "LeanLearn.Tests.OLSFloat"
+
+[[lean_exe]]
+name = "ridge-float-test"
+root = "LeanLearn.Tests.RidgeFloat"
+
+[[lean_exe]]
+name = "linear-model-test"
+root = "LeanLearn.Tests.LinearModel"
+
+# Pipelines: logistic regression on Morgan fingerprints vs scikit-learn (tools/sklearn_egfr.py)
+[[lean_exe]]
+name = "logistic-test"
+root = "Pipelines.Tests.Logistic"
+
+# Molecule.aromatize vs RDKit: bond types, hydrogens, Morgan
+[[lean_exe]]
+name = "aromaticity-test"
+root = "LeanSMILES.Tests.Aromaticity"

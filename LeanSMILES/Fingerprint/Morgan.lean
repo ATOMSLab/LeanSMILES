@@ -3,7 +3,9 @@ Copyright (c) 2026 Tyler Josephson. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Tyler Josephson
 -/
-import LeanSMILES.SMILES.Parse
+module
+
+public import LeanSMILES.SMILES.Parse
 
 /-!
 # LeanSMILES.Fingerprint.Morgan
@@ -30,13 +32,19 @@ All arithmetic is unsigned 32-bit with wrap-around (boost's `hash_combine`).
 written*: no aromaticity perception, no nitro rewrite, and hydrogens written
 as `[H]` atoms stay atoms (RDKit removes them).  So the bits equal RDKit's
 exactly when the as-written bond types and hydrogen counts equal RDKit's
-sanitized ones — which `lake exe morgan-test` checks — and the fingerprint is
-always invariant under relabeling of the atoms, which is the property that is
-ours to guarantee.
+sanitized ones — which `lake exe morgan-test` checks.  `Molecule.aromatize`
+(`LeanSMILES/Aromaticity/`) gives a molecule RDKit's bonds and hydrogens first.
+
+**Atom order.** Up to radius 2 the fingerprint does not depend on the order of
+the atoms: `Molecule.morganBits_relabel` (`Fingerprint/MorganInvariance.lean`).
+From radius 3 it can, here and in RDKit, because duplicate environments are
+broken by atom index (README, "Findings about external tools").
 
 Every intermediate is `Vector`/`Array` data, never a function returned from a
 definition (see `docs/design-molecular-representation.md` §8).
 -/
+
+@[expose] public section
 
 namespace LeanSMILES.Molecule
 
@@ -122,17 +130,20 @@ iff it is not a bridge (`SimpleGraph.IsBridge`, whose Mathlib lemma
 `isBridge_iff_adj_and_forall_cycle_notMem` is the theorem this definition
 would be related to). -/
 
-/-- Atoms reachable from `start` without using the bond `skip`; `n` rounds of
-relaxation over the bond list always suffice. -/
+/-- One sweep over the bond list: every bond other than `skip` with exactly one
+endpoint in `seen` adds the other endpoint. -/
+def reachStep (m : Molecule n) (skip : Sym2 (Fin n)) (seen : Vector Bool n) : Vector Bool n :=
+  m.bonds.foldl (init := seen) fun seen b ↦
+    if b.edge != skip then
+      if seen[b.src] && !seen[b.dst] then seen.set b.dst.val true b.dst.isLt
+      else if seen[b.dst] && !seen[b.src] then seen.set b.src.val true b.src.isLt
+      else seen
+    else seen
+
+/-- Atoms reachable from `start` without using the bond `skip`; `n` sweeps over
+the bond list always suffice. -/
 def reachableWithout (m : Molecule n) (skip : Sym2 (Fin n)) (start : Fin n) : Vector Bool n :=
-  Id.run do
-    let mut seen := (Vector.replicate n false).set start.val true start.isLt
-    for _ in [0:n] do
-      for b in m.bonds do
-        if b.edge != skip then
-          if seen[b.src] && !seen[b.dst] then seen := seen.set b.dst.val true b.dst.isLt
-          else if seen[b.dst] && !seen[b.src] then seen := seen.set b.src.val true b.src.isLt
-    return seen
+  (m.reachStep skip)^[n] ((Vector.replicate n false).set start.val true start.isLt)
 
 /-- The bond lies on a cycle. -/
 def bondInRing (m : Molecule n) (b : Bond n) : Bool :=
@@ -151,12 +162,12 @@ def inRingVector (m : Molecule n) : Vector Bool n :=
 
 /-- Each atom's neighbors as (bond index, neighbor), in bond-list order —
 RDKit's adjacency order. -/
-def adjacency (m : Molecule n) : Vector (List (ℕ × Fin n)) n := Id.run do
-  let mut adj : Vector (List (ℕ × Fin n)) n := Vector.replicate n []
-  for (b, k) in m.bonds.zipIdx do
-    adj := adj.set b.src.val (adj[b.src] ++ [(k, b.dst)]) b.src.isLt
-    adj := adj.set b.dst.val (adj[b.dst] ++ [(k, b.src)]) b.dst.isLt
-  return adj
+def adjacency (m : Molecule n) : Vector (List (ℕ × Fin n)) n :=
+  Vector.ofFn fun i ↦ m.bonds.zipIdx.filterMap fun (b, k) ↦
+    if b.src = i then some (k, b.dst) else if b.dst = i then some (k, b.src) else none
+
+/-- RDKit's bond type of every bond, by bond index. -/
+def bondKinds (m : Molecule n) : Array UInt32 := m.bonds.toArray.map fun b ↦ rdkitBondType b.kind
 
 /-- Radius-0 identifiers (`getConnectivityInvariants`): element, total degree, total H
 count (counting neighboring `[H]` atoms), charge, isotope mass shift, and a ring flag. -/
@@ -170,51 +181,78 @@ def morganAtomInvariants (m : Molecule n) : Vector UInt32 n :=
       intToUInt32 (isotopeMassShift a.atomicNumber a.isotope)]
     hashList (if inRing[i] then base ++ [1] else base)
 
+/-- What one radius hands to the next. -/
+structure MorganState (n : ℕ) where
+  /-- Identifiers from the previous radius (dead atoms: 0). -/
+  cur : Vector UInt32 n
+  /-- The bonds each atom's environment covers, as a bitmask over bond indices. -/
+  prevEnv : Vector ℕ n
+  /-- Atoms that have stopped growing. -/
+  dead : Vector Bool n
+  /-- Bond sets already emitted. -/
+  seen : List ℕ
+  /-- The environments emitted so far, as (identifier, atom, radius). -/
+  result : List (UInt32 × Fin n × ℕ)
+
+/-- The bonds an atom's environment covers one radius further out: what it
+covered, its own bonds, and its neighbors' previous environments. -/
+def growEnv (adj : Vector (List (ℕ × Fin n)) n) (prevEnv : Vector ℕ n) (a : Fin n) : ℕ :=
+  adj[a].foldl (fun env (k, o) ↦ env ||| (1 <<< k) ||| prevEnv[o]) prevEnv[a]
+
+/-- An atom's identifier one radius further out: its sorted (bond type, neighbor
+identifier) pairs, hashed onto (layer, own identifier). -/
+def growId (adj : Vector (List (ℕ × Fin n)) n) (kinds : Array UInt32) (cur : Vector UInt32 n)
+    (layer : ℕ) (a : Fin n) : UInt32 :=
+  let pairs := (adj[a].map fun (k, o) ↦ (kinds[k]!, cur[o])).mergeSort
+    fun p q ↦ p.1 < q.1 || (p.1 == q.1 && p.2 ≤ q.2)
+  pairs.foldl (fun h (t, v) ↦ hashCombine h (hashPair t v)) (hashCombine layer.toUInt32 cur[a])
+
+/-- One step of duplicate removal: an environment whose bond set was already
+emitted kills its atom; otherwise it is emitted at radius `layer + 1`. -/
+def dedupStep (layer : ℕ) (acc : Vector Bool n × List (UInt32 × Fin n × ℕ) × List ℕ)
+    (t : UInt32 × Fin n × ℕ) : Vector Bool n × List (UInt32 × Fin n × ℕ) × List ℕ :=
+  if acc.2.2.contains t.2.2 then (acc.1.set t.2.1.val true t.2.1.isLt, acc.2.1, acc.2.2)
+  else (acc.1, acc.2.1 ++ [(t.1, t.2.1, layer + 1)], t.2.2 :: acc.2.2)
+
+/-- RDKit's order for duplicate removal: by identifier, then by atom index. -/
+def envLE (p q : UInt32 × Fin n × ℕ) : Bool := p.1 < q.1 || (p.1 == q.1 && p.2.1.val ≤ q.2.1.val)
+
+/-- The atoms that grow this round: not dead, and with at least one neighbor. -/
+def roundAlive (adj : Vector (List (ℕ × Fin n)) n) (s : MorganState n) : Vector Bool n :=
+  Vector.ofFn fun a ↦ !s.dead[a] && !adj[a].isEmpty
+
+/-- This round's (identifier, atom, bond set) triples, one per live atom, in atom order. -/
+def roundTriples (adj : Vector (List (ℕ × Fin n)) n) (kinds : Array UInt32) (layer : ℕ)
+    (s : MorganState n) : List (UInt32 × Fin n × ℕ) :=
+  let alive := roundAlive adj s
+  (List.finRange n).filterMap fun a ↦
+    if alive[a] then some (growId adj kinds s.cur layer a, a, growEnv adj s.prevEnv a) else none
+
+/-- One radius (`MorganGenerator.cpp:280-503`). Every live atom grows its
+environment and identifier; then, in (identifier, atom) order, one atom per new
+bond set is emitted and the others die. Atoms with no neighbors die too. -/
+def morganLayer (adj : Vector (List (ℕ × Fin n)) n) (kinds : Array UInt32) (layer : ℕ)
+    (s : MorganState n) : MorganState n :=
+  let alive := roundAlive adj s
+  let acc := ((roundTriples adj kinds layer s).mergeSort envLE).foldl (dedupStep layer)
+    (Vector.ofFn fun a ↦ s.dead[a] || adj[a].isEmpty, s.result, s.seen)
+  { cur := Vector.ofFn fun a ↦ if alive[a] then growId adj kinds s.cur layer a else 0
+    prevEnv := Vector.ofFn fun a ↦ if alive[a] then growEnv adj s.prevEnv a else s.prevEnv[a]
+    dead := acc.1
+    seen := acc.2.2
+    result := acc.2.1 }
+
+/-- The state before radius 1: every atom's radius-0 identifier, already emitted. -/
+def morganInit (m : Molecule n) : MorganState n :=
+  let inv := m.morganAtomInvariants
+  { cur := inv, prevEnv := Vector.replicate n 0, dead := Vector.replicate n false, seen := [],
+    result := (List.finRange n).map fun i ↦ (inv[i], i, 0) }
+
 /-- All Morgan environments as (identifier, atom, radius), in RDKit's order
 (`MorganGenerator.cpp:280-503`). Bond sets are bitmasks over bond indices. -/
 def morganEnvironments (m : Molecule n) (radius : ℕ := 2) : List (UInt32 × Fin n × ℕ) :=
-  Id.run do
-    let adj := m.adjacency
-    let kinds : Array UInt32 := m.bonds.toArray.map fun b ↦ rdkitBondType b.kind
-    let mut cur : Vector UInt32 n := m.morganAtomInvariants
-    -- radius 0: every atom, always included
-    let mut result : List (UInt32 × Fin n × ℕ) := (List.finRange n).map fun i ↦ (cur[i], i, 0)
-    let mut prevEnv : Vector ℕ n := Vector.replicate n 0    -- bonds covered, previous round
-    let mut roundEnv : Vector ℕ n := Vector.replicate n 0   -- bonds covered, this round
-    let mut seen : List ℕ := []                             -- bond sets already emitted
-    let mut dead : Vector Bool n := Vector.replicate n false
-    for layer in [0:radius] do
-      let mut next : Vector UInt32 n := Vector.replicate n 0  -- dead atoms contribute 0
-      let mut thisRound : List (UInt32 × Fin n × ℕ) := []    -- (identifier, atom, bond set)
-      for a in List.finRange n do
-        if dead[a] then continue
-        let nbrs := adj[a]
-        if nbrs.isEmpty then
-          dead := dead.set a.val true a.isLt
-          continue
-        -- the environment grows by the atom's bonds and its neighbors' previous environments
-        let mut env := roundEnv[a]
-        for (k, o) in nbrs do
-          env := env ||| (1 <<< k) ||| prevEnv[o]
-        roundEnv := roundEnv.set a.val env a.isLt
-        -- sorted (bond type, neighbor identifier) pairs, hashed onto (layer, own identifier)
-        let pairs := (nbrs.map fun (k, o) ↦ (kinds[k]!, cur[o])).mergeSort
-          fun p q ↦ p.1 < q.1 || (p.1 == q.1 && p.2 ≤ q.2)
-        let h := pairs.foldl (fun h (t, v) ↦ hashCombine h (hashPair t v))
-          (hashCombine layer.toUInt32 cur[a])
-        next := next.set a.val h a.isLt
-        thisRound := thisRound ++ [(h, a, env)]
-      -- keep one atom per new bond set: the smallest (identifier, atom)
-      let sorted := thisRound.mergeSort fun p q ↦
-        p.1 < q.1 || (p.1 == q.1 && p.2.1.val ≤ q.2.1.val)
-      for (h, a, env) in sorted do
-        if seen.contains env then dead := dead.set a.val true a.isLt
-        else
-          result := result ++ [(h, a, layer + 1)]
-          seen := env :: seen
-      cur := next
-      prevEnv := roundEnv
-    return result
+  ((List.range radius).foldl (fun s layer ↦ morganLayer m.adjacency m.bondKinds layer s)
+    m.morganInit).result
 
 /-- Unfolded Morgan fingerprint: each distinct identifier with its count,
 sorted by identifier (RDKit's `GetSparseCountFingerprint`). -/

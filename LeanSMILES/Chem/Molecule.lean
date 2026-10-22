@@ -3,8 +3,10 @@ Copyright (c) 2026 Tyler Josephson. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Tyler Josephson
 -/
-import LeanSMILES.Chem.Atom
-import LeanSMILES.Chem.Bond
+module
+
+public import LeanSMILES.Chem.Atom
+public import LeanSMILES.Chem.Bond
 
 /-!
 # LeanSMILES.Chem.Molecule
@@ -23,6 +25,8 @@ duplicate bond — are the type here: a `Molecule n` cannot violate them.
 The one piece of chemistry in this file is `assignImplicitH`, the OpenSMILES
 default-valence rule for bare organic-subset atoms.  Everything else is graph.
 -/
+
+@[expose] public section
 
 namespace LeanSMILES
 

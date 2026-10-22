@@ -3,7 +3,9 @@ Copyright (c) 2026 Tyler Josephson. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Tyler Josephson
 -/
-import LeanSMILES.Chem.Molecule
+module
+
+public import LeanSMILES.Chem.Molecule
 
 /-!
 # LeanSMILES.Chem.Charge
@@ -34,6 +36,8 @@ relabeling (`chargesConsistent_relabel`) and, in `LeanSMILES.SMILES.Canon`, by
 canonicalization.  `Molecule.checkCharges` is the same predicate as an
 `Except` whose message names the offending atom (`checkCharges_eq_ok_iff`).
 -/
+
+@[expose] public section
 
 namespace LeanSMILES
 

@@ -15,7 +15,7 @@ follows each entry.
 - The mathlib Community (2020), *The Lean mathematical library*, CPP 2020,
   367–381. [doi:10.1145/3372885.3373824](https://doi.org/10.1145/3372885.3373824).
   Supplies `ℝ`, `Real.sqrt`, `Real.rpow`, `Finset.sum` and the tactics used in
-  [`LeanSMILES/Scalar.lean`](LeanSMILES/Scalar.lean).
+  [`LeanLearn/Scalar.lean`](LeanLearn/Scalar.lean).
   `mathlibcommunityLeanMathematicalLibrary2020`
 - The Lean Community, [*Batteries*](https://github.com/leanprover-community/batteries).
   Supplies the `Rat`-to-`Float` conversion behind the `RatEmbed Float`
@@ -25,7 +25,7 @@ follows each entry.
 
 - ATOMS Lab, *LeanCatalyst: Formally verified microkinetic modeling*
   ([repository](https://github.com/ATOMSLab/LeanCatalyst), private).
-  [`LeanSMILES/Scalar.lean`](LeanSMILES/Scalar.lean) is extracted from
+  [`LeanLearn/Scalar.lean`](LeanLearn/Scalar.lean) is extracted from
   `LeanCatalyst/Scalar.lean` at commit `65d1e87`, unchanged apart from the
   namespace and docstrings. `atomslabLeanCatalyst2026`
 - Matemb, O., [*LeanBisection*](https://github.com/Oscario0/LeanBisection).
@@ -33,6 +33,16 @@ follows each entry.
   scalar-polymorphic design: generic code, a `Real` proof surface, and
   executable instantiations. `Scalar.lean` inherits that design.
   `matembLeanBisection2025`
+- Lean Dojo, [*TorchLean*](https://github.com/lean-dojo/TorchLean) (MIT;
+  [`LICENSES/TorchLean-MIT.txt`](LICENSES/TorchLean-MIT.txt)).
+  [`LeanLearn/Optimization/`](LeanLearn/Optimization) and
+  [`LeanLearn/LearningTheory/Stability/`](LeanLearn/LearningTheory/Stability)
+  are adapted from TorchLean at commit `772b6b8`: the operator-form
+  gradient-descent contraction and convergence theorems, the bridge from
+  strong convexity to a strongly monotone gradient, the algorithmic-stability
+  vocabulary, and the replace-one uniform stability of 1D ridge regression.
+  Each file's header records the source and every change;
+  `RidgeRegression1D/Minimizer.lean` is written here. `leandojoTorchLean2026`
 
 ## Formalizing chemistry in Lean
 
@@ -255,4 +265,4 @@ follows each entry.
 3. Name the key `authorFirstThreeWordsYear`, as in the entries above.
 4. When code is adapted from another project, also name the source, and the
    commit if there is one, in the adapted file's module docstring, as
-   [`Scalar.lean`](LeanSMILES/Scalar.lean) does.
+   [`Scalar.lean`](LeanLearn/Scalar.lean) does.

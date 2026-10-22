@@ -3,7 +3,9 @@ Copyright (c) 2026 Tyler Josephson. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Tyler Josephson
 -/
-import LeanSMILES.SMILES.Canon
+module
+
+public import LeanSMILES.SMILES.Canon
 
 /-!
 # LeanSMILES.SMILES.Canonicity
@@ -41,6 +43,8 @@ writes the same string as some leaf the pruned search keeps
 the full search (`search_subset_leavesAll`); the two minima agree
 (`min?_search_eq`).
 -/
+
+public section
 
 namespace LeanSMILES
 

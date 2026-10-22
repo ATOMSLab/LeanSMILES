@@ -3,12 +3,14 @@ Copyright (c) 2026 Tyler Josephson. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Tyler Josephson
 -/
-import LeanSMILES.Chem.Charge
-import LeanSMILES.Chem.Graph
-import LeanSMILES.SMILES.Parse
-import LeanSMILES.SMILES.Write
-import Mathlib.Data.Fintype.Inv
-import Mathlib.Data.String.Basic
+module
+
+public import LeanSMILES.Chem.Charge
+public import LeanSMILES.Chem.Graph
+public import LeanSMILES.SMILES.Parse
+public import LeanSMILES.SMILES.Write
+public import Mathlib.Data.Fintype.Inv
+public import Mathlib.Data.String.Basic
 
 /-!
 # LeanSMILES.SMILES.Canon
@@ -61,6 +63,8 @@ Ranks are `Vector ℕ n` *data*, never functions: Lean eta-expands a definition
 that returns a closure, so a rank-as-function would recompute every rank on
 every lookup, and nested refinement rounds would compound that exponentially.
 -/
+
+@[expose] public section
 
 namespace LeanSMILES
 

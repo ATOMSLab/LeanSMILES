@@ -3,10 +3,12 @@ Copyright (c) 2026 Tyler Josephson. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Tyler Josephson
 -/
-import LeanSMILES.Chem.Bond
-import Mathlib.Combinatorics.SimpleGraph.AdjMatrix
-import Mathlib.LinearAlgebra.Matrix.Notation
-import Mathlib.LinearAlgebra.Matrix.Symmetric
+module
+
+public import LeanSMILES.Chem.Bond
+public import Mathlib.Combinatorics.SimpleGraph.AdjMatrix
+public import Mathlib.LinearAlgebra.Matrix.Notation
+public import Mathlib.LinearAlgebra.Matrix.Symmetric
 
 /-!
 # LeanSMILES.Chem.BondMatrix
@@ -28,6 +30,8 @@ graph off the nonzero entries.  That a `Molecule`'s own matrix is a bond
 matrix, and that a bond matrix decodes back into a molecule, is
 `LeanSMILES.Chem.Graph`, which imports this file.
 -/
+
+@[expose] public section
 
 namespace LeanSMILES
 
