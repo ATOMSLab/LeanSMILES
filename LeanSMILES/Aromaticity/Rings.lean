@@ -3,7 +3,9 @@ Copyright (c) 2026 Samiha Sharlin. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Samiha Sharlin
 -/
-import LeanSMILES.Aromaticity.Basic
+module
+
+public import LeanSMILES.Aromaticity.Basic
 
 /-!
 # LeanSMILES.Aromaticity.Rings
@@ -26,8 +28,9 @@ Ring membership (`Molecule.inRingVector`) does not need this: it only asks
 *whether* a bond is on some cycle.
 -/
 
-namespace LeanSMILES.Aromaticity
+@[expose] public section
 
+namespace LeanSMILES.Aromaticity
 
 /-- Number of set bits. -/
 def popcount (n : Nat) : Nat := (List.range (n.log2 + 1)).countP n.testBit
@@ -38,7 +41,6 @@ def listLt : List Nat → List Nat → Bool
   | [], _ :: _ => true
   | _ :: _, [] => false
   | a :: as, b :: bs => a < b || (a == b && listLt as bs)
-
 
 /-- Breadth-first distances from `r` (`none` = unreachable) and the visiting order. -/
 def Work.bfs (m : Work) (r : Nat) : Array (Option Nat) × Array Nat := Id.run do

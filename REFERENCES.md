@@ -15,7 +15,7 @@ follows each entry.
 - The mathlib Community (2020), *The Lean mathematical library*, CPP 2020,
   367–381. [doi:10.1145/3372885.3373824](https://doi.org/10.1145/3372885.3373824).
   Supplies `ℝ`, `Real.sqrt`, `Real.rpow`, `Finset.sum` and the tactics used in
-  [`LeanSMILES/Scalar.lean`](LeanSMILES/Scalar.lean).
+  [`LeanLearn/Scalar.lean`](LeanLearn/Scalar.lean).
   `mathlibcommunityLeanMathematicalLibrary2020`
 - The Lean Community, [*Batteries*](https://github.com/leanprover-community/batteries).
   Supplies the `Rat`-to-`Float` conversion behind the `RatEmbed Float`
@@ -25,7 +25,7 @@ follows each entry.
 
 - ATOMS Lab, *LeanCatalyst: Formally verified microkinetic modeling*
   ([repository](https://github.com/ATOMSLab/LeanCatalyst), private).
-  [`LeanSMILES/Scalar.lean`](LeanSMILES/Scalar.lean) is extracted from
+  [`LeanLearn/Scalar.lean`](LeanLearn/Scalar.lean) is extracted from
   `LeanCatalyst/Scalar.lean` at commit `65d1e87`, unchanged apart from the
   namespace and docstrings. `atomslabLeanCatalyst2026`
 - Matemb, O., [*LeanBisection*](https://github.com/Oscario0/LeanBisection).
@@ -33,6 +33,16 @@ follows each entry.
   scalar-polymorphic design: generic code, a `Real` proof surface, and
   executable instantiations. `Scalar.lean` inherits that design.
   `matembLeanBisection2025`
+- Lean Dojo, [*TorchLean*](https://github.com/lean-dojo/TorchLean) (MIT;
+  [`LICENSES/TorchLean-MIT.txt`](LICENSES/TorchLean-MIT.txt)).
+  [`LeanLearn/Optimization/`](LeanLearn/Optimization) and
+  [`LeanLearn/LearningTheory/Stability/`](LeanLearn/LearningTheory/Stability)
+  are adapted from TorchLean at commit `772b6b8`: the operator-form
+  gradient-descent contraction and convergence theorems, the bridge from
+  strong convexity to a strongly monotone gradient, the algorithmic-stability
+  vocabulary, and the replace-one uniform stability of 1D ridge regression.
+  Each file's header records the source and every change;
+  `RidgeRegression1D/Minimizer.lean` is written here. `leandojoTorchLean2026`
 
 ## Formalizing chemistry in Lean
 
@@ -82,6 +92,32 @@ follows each entry.
   [doi:10.1002/wcms.1603](https://doi.org/10.1002/wcms.1603). A survey of the
   representations above and their alternatives.
   `wighReviewMolecularRepresentation2022`
+
+## Similarity metrics
+
+- Marczewski, E. & Steinhaus, H. (1958), *On a certain distance of sets and the
+  corresponding distance of functions*, Colloquium Mathematicum 6(1), 319–327.
+  [doi:10.4064/cm-6-1-319-327](https://doi.org/10.4064/cm-6-1-319-327). The
+  Jaccard distance `|A ∆ B| / |A ∪ B|` is a metric, which
+  [`Finset.tanimotoMetricSpace`](LeanSMILES/Fingerprint/Tanimoto.lean) proves.
+  `marczewskiCertainDistanceSets1958`
+- Lipkus, A.H. (1999), *A proof of the triangle inequality for the Tanimoto
+  distance*, Journal of Mathematical Chemistry 26(1–3), 263–265.
+  [doi:10.1023/A:1019154432472](https://doi.org/10.1023/A:1019154432472). The
+  same theorem for chemists, on binary fingerprints.
+  `lipkusProofTriangleInequality1999`
+- Kosub, S. (2019), *A note on the triangle inequality for the Jaccard distance*,
+  Pattern Recognition Letters 120, 36–38.
+  [doi:10.1016/j.patrec.2018.12.007](https://doi.org/10.1016/j.patrec.2018.12.007).
+  A self-contained proof of the triangle inequality;
+  `Finset.tanimotoDist_triangle` goes through the Steinhaus transform instead.
+  `kosubNoteTriangleInequality2019`
+- Surendran, A., Zsigmond, K., López-Pérez, K. & Miranda-Quintana, R.A. (2025),
+  *Is Tanimoto a metric?*, bioRxiv.
+  [doi:10.1101/2025.02.18.638904](https://doi.org/10.1101/2025.02.18.638904).
+  Answers no for real-valued vectors and proposes `√(1 − T)` instead;
+  `LeanSMILES.not_tanimotoVec_dist_triangle` formalizes the counterexample.
+  `surendranTanimotoMetric2025`
 
 ## Datasets
 
@@ -257,4 +293,4 @@ follows each entry.
 3. Name the key `authorFirstThreeWordsYear`, as in the entries above.
 4. When code is adapted from another project, also name the source, and the
    commit if there is one, in the adapted file's module docstring, as
-   [`Scalar.lean`](LeanSMILES/Scalar.lean) does.
+   [`Scalar.lean`](LeanLearn/Scalar.lean) does.

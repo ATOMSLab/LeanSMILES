@@ -3,14 +3,17 @@ Copyright (c) 2026 Samiha Sharlin. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Samiha Sharlin
 -/
-import LeanSMILES.ML.Logistic
+module
+
+public import LeanLearn.Scalar
 
 /-!
-# Ridge regression on Morgan fingerprints
+# Ridge regression on sparse `0/1` features
 
-Regression of a continuous property (here Delaney's measured log solubility)
-on fingerprint bits, with scikit-learn's `Ridge(alpha)` objective: a weight per
-bit and an intercept that is not penalized,
+Regression of a continuous target on sparse `0/1` features (a sample is the
+list of its on-bits, as a Morgan fingerprint is) with scikit-learn's
+`Ridge(alpha)` objective: a weight per bit and an intercept that is not
+penalized,
 
     minimize  Σᵢ (yᵢ − w · xᵢ − b)² + α ‖w‖².
 
@@ -21,26 +24,30 @@ conjugate gradients solve it; each step needs only products with the sparse
 `X` (about 40 of 2048 bits per molecule), with the centering applied on the
 fly rather than by forming the dense `X_c`.
 
-Fit quality: `r2` (coefficient of determination, scikit-learn's `r2_score`),
-`rmse` (root mean squared error) and `mae` (mean absolute error), the last two
-in the units of `y`.
+Hao Liu's `RidgeFloat` solves the same objective by Householder QR on a dense
+design; this solver is for many sparse features (2048 fingerprint bits), where a
+dense factorization is the expensive part. Fit quality is measured with
+`LeanLearn/Regression/Metrics.lean`; `Pipelines/Tests/Ridge.lean` runs it on
+Delaney's log solubility against scikit-learn.
 
-Written over `ScalarLike` (`LeanSMILES/Scalar.lean`), like `ML.Logistic`.
+Written over `ScalarLike` (`LeanLearn/Scalar.lean`), like the logistic model.
 -/
 
-namespace LeanSMILES.ML
+@[expose] public section
+
+namespace LeanLearn.Regression.SparseRidge
 
 variable {K : Type} [ScalarLike K]
 
-structure RidgeModel (K : Type) where
+structure Model (K : Type) where
   weights : Array K
   bias : K
 
 /-- Predicted value w · x + b. -/
-def RidgeModel.predict (m : RidgeModel K) (x : SparseBits) : K :=
+def Model.predict (m : Model K) (x : Array ℕ) : K :=
   x.foldl (fun s j ↦ s + m.weights.getD j 0) m.bias
 
-structure RidgeConfig (K : Type) [ScalarLike K] where
+structure Config (K : Type) [ScalarLike K] where
   /-- Penalty strength, as scikit-learn's `alpha`. -/
   alpha : K := 1
   maxIter : ℕ := 10000
@@ -52,8 +59,8 @@ def dot (u v : Array K) : K := (u.zip v).foldl (fun s (a, b) ↦ s + a * b) 0
 
 /-- Train a ridge model on samples with `nFeatures` 0/1 features and targets.
 Returns the model and the number of conjugate-gradient steps used. -/
-def fitRidge (cfg : RidgeConfig K) (nFeatures : ℕ) (data : Array (SparseBits × K)) :
-    RidgeModel K × ℕ := Id.run do
+def fit (cfg : Config K) (nFeatures : ℕ) (data : Array (Array ℕ × K)) :
+    Model K × ℕ := Id.run do
   let count : K := data.foldl (fun s _ ↦ s + 1) 0
   let ybar := data.foldl (fun s (_, y) ↦ s + y) 0 / count
   -- feature means x̄
@@ -99,25 +106,4 @@ def fitRidge (cfg : RidgeConfig K) (nFeatures : ℕ) (data : Array (SparseBits �
     rs := rsNew
   return ({ weights := w, bias := ybar - dot xbar w }, iters)
 
-/-! ## Fit quality -/
-
-/-- Coefficient of determination `1 − SS_res / SS_tot` of predictions against
-measured values (scikit-learn's `r2_score`). -/
-def r2 (pairs : Array (K × K)) : K :=
-  let count : K := pairs.foldl (fun s _ ↦ s + 1) 0
-  let mean := pairs.foldl (fun s (y, _) ↦ s + y) 0 / count
-  let ssRes := pairs.foldl (fun s (y, p) ↦ s + (y - p) * (y - p)) 0
-  let ssTot := pairs.foldl (fun s (y, _) ↦ s + (y - mean) * (y - mean)) 0
-  1 - ssRes / ssTot
-
-/-- Root mean squared error of predictions against measured values. -/
-def rmse (pairs : Array (K × K)) : K :=
-  let count : K := pairs.foldl (fun s _ ↦ s + 1) 0
-  ScalarLike.sqrt (pairs.foldl (fun s (y, p) ↦ s + (y - p) * (y - p)) 0 / count)
-
-/-- Mean absolute error of predictions against measured values. -/
-def mae (pairs : Array (K × K)) : K :=
-  let count : K := pairs.foldl (fun s _ ↦ s + 1) 0
-  pairs.foldl (fun s (y, p) ↦ s + ScalarLike.abs (y - p)) 0 / count
-
-end LeanSMILES.ML
+end LeanLearn.Regression.SparseRidge

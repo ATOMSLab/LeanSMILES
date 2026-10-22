@@ -3,9 +3,11 @@ Copyright (c) 2026 Samiha Sharlin. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Samiha Sharlin
 -/
-import LeanSMILES.Aromaticity.Perceive
-import LeanSMILES.Fingerprint.Morgan
-import LeanSMILES.Tests.OracleRow
+module
+
+public import LeanSMILES.Aromaticity.Perceive
+public import LeanSMILES.Fingerprint.Morgan
+public import LeanSMILES.Tests.OracleRow
 
 /-!
 # Aromaticity test: `Molecule.aromatize` against RDKit
@@ -109,7 +111,7 @@ def checkFuzz (path : String) : IO Bool := do
     IO.println s!"    {s}"
   return wrong.isEmpty
 
-def main (args : List String) : IO UInt32 := do
+public def main (args : List String) : IO UInt32 := do
   let paths := if args.isEmpty then
       ["datasets/delaney-oracle.csv", "datasets/delaney-kekule-oracle.csv",
        "datasets/aromaticity-cases-oracle.csv", "datasets/aromaticity-cases-kekule-oracle.csv",

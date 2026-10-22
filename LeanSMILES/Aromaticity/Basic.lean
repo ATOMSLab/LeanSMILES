@@ -3,7 +3,9 @@ Copyright (c) 2026 Samiha Sharlin. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Samiha Sharlin
 -/
-import LeanSMILES.Chem.Molecule
+module
+
+public import LeanSMILES.Chem.Molecule
 
 /-!
 # LeanSMILES.Aromaticity.Basic
@@ -23,6 +25,8 @@ Ported from the `canonical-smiles` branch's `Canonical/Sanitize.lean` (commit
 `5b5fe9e`), which matches RDKit 2026.09.1 on the oracle datasets; RDKit file and
 line references are to `Release_2026_09_1`.
 -/
+
+@[expose] public section
 
 namespace LeanSMILES.Aromaticity
 

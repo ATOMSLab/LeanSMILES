@@ -3,10 +3,12 @@ Copyright (c) 2026 Tyler Josephson. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Tyler Josephson
 -/
-import LeanSMILES.Fingerprint.Morgan
-import LeanSMILES.Tests.OracleRow
-import Mathlib.Logic.Equiv.Fin.Basic
-import Mathlib.Logic.Equiv.Fin.Rotate
+module
+
+public import LeanSMILES.Fingerprint.Morgan
+public import LeanSMILES.Tests.OracleRow
+public import Mathlib.Logic.Equiv.Fin.Basic
+public import Mathlib.Logic.Equiv.Fin.Rotate
 
 /-!
 # LeanSMILES.Tests.Morgan
@@ -48,7 +50,7 @@ def idsString (M : Mol) : String :=
 
 def inRingList (M : Mol) : List ℕ := M.mol.inRingVector.toList.map fun b ↦ if b then 1 else 0
 
-def main (args : List String) : IO UInt32 := do
+public def main (args : List String) : IO UInt32 := do
   let path := args.headD "datasets/delaney-oracle.csv"
   let rows ← readRows path
   let mut parsed := 0
@@ -59,9 +61,12 @@ def main (args : List String) : IO UInt32 := do
   let mut idsOk := 0
   let mut invariant := 0
   let mut failures : Array String := #[]
+  let mut skipped : Array String := #[]
   for row in rows do
     match parse row.smiles with
-    | .error e => failures := failures.push s!"parse error on {row.smiles}: {e}"
+    | .error e =>
+      if e.isGrammarDeviation then skipped := skipped.push s!"{row.smiles}: {e}"
+      else failures := failures.push s!"parse error on {row.smiles}: {e}"
     | .ok M =>
       parsed := parsed + 1
       if inRingList M == row.inRing then ringOk := ringOk + 1
@@ -82,7 +87,10 @@ def main (args : List String) : IO UInt32 := do
       let ids₂ := (M.relabel Fin.revPerm).morganIds
       if ids₁ == M.morganIds && ids₂ == M.morganIds then invariant := invariant + 1
       else failures := failures.push s!"relabeling changed the fingerprint of {row.smiles}"
-  IO.println s!"{rows.length} molecules, {parsed} parsed"
+  IO.println s!"{rows.length} molecules, {parsed} parsed, \
+    {skipped.size} rejected by the OpenSMILES grammar (deliberate)"
+  for f in skipped.toList do
+    IO.println s!"  {f}"
   IO.println s!"ring membership = RDKit: {ringOk}/{parsed}  [must be all]"
   IO.println
     s!"fingerprint = RDKit where the graph = RDKit's: {graphOkFpOk}/{graphOk}  [must be all]"
@@ -97,6 +105,6 @@ def main (args : List String) : IO UInt32 := do
   IO.println s!"identifiers+counts = RDKit overall: {idsOk}/{parsed}  [info: graph as written]"
   for f in failures.toList.take 10 do
     IO.println s!"  {f}"
-  let ok := parsed == rows.length && ringOk == parsed
+  let ok := parsed + skipped.size == rows.length && ringOk == parsed
     && graphOkFpOk == graphOk && invariant == parsed && r3ok
   return if ok then 0 else 1

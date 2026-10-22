@@ -3,17 +3,27 @@ Copyright (c) 2026 Tyler Josephson. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Tyler Josephson
 -/
-import LeanSMILES.SMILES.Canon
-import LeanSMILES.Chem.Graph
-import LeanSMILES.Chem.BondMatrix
-import LeanSMILES.Fingerprint.Morgan
-import LeanSMILES.Data.CSVparser
+module
+
+public import LeanSMILES.SMILES.Canon
+public import LeanSMILES.Chem.Graph
+public import LeanSMILES.Chem.BondMatrix
+public import LeanSMILES.Fingerprint.Morgan
+public import LeanSMILES.Data.CSVparser
+-- The same modules again as `meta` imports: the `#eval`s run their code at elaboration time.
+meta import LeanSMILES.SMILES.Canon
+meta import LeanSMILES.Chem.Graph
+meta import LeanSMILES.Chem.BondMatrix
+meta import LeanSMILES.Fingerprint.Morgan
+meta import LeanSMILES.Data.CSVparser
 
 /-!
 # Examples: SMILES → molecule → graph → canonical SMILES
 
 Open this file in the editor; the Infoview shows each `#eval`.
 -/
+
+public section
 
 open LeanSMILES LeanSMILES.SMILES
 

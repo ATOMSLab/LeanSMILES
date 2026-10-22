@@ -3,7 +3,9 @@ Copyright (c) 2026 Tyler Josephson. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Tyler Josephson
 -/
-import LeanSMILES.SMILES.Parse
+module
+
+public import LeanSMILES.SMILES.Parse
 
 /-!
 # LeanSMILES.Fingerprint.Morgan
@@ -41,6 +43,8 @@ broken by atom index (README, "Findings about external tools").
 Every intermediate is `Vector`/`Array` data, never a function returned from a
 definition (see `docs/design-molecular-representation.md` §8).
 -/
+
+@[expose] public section
 
 namespace LeanSMILES.Molecule
 

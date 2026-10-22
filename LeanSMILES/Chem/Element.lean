@@ -3,8 +3,10 @@ Copyright (c) 2026 Tyler Josephson. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Tyler Josephson
 -/
+module
+
 import Mathlib.Tactic.DeriveFintype
-import Mathlib.Data.Fintype.Card
+public import Mathlib.Data.Fintype.Card
 
 /-!
 # LeanSMILES.Chem.Element
@@ -21,6 +23,8 @@ uses.  The valence table is deliberately the thin OpenSMILES one — this
 library aims at a syntactically faithful reading of SMILES, not at agreeing
 with any one toolkit's chemistry model on edge cases.
 -/
+
+@[expose] public section
 
 namespace LeanSMILES
 

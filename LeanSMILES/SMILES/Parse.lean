@@ -1,10 +1,12 @@
 /-
 Copyright (c) 2026 Tyler Josephson. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
-Authors: Tyler Josephson
+Authors: Tyler Josephson, Hao Liu
 -/
-import LeanSMILES.SMILES.Token
-import LeanSMILES.Chem.Molecule
+module
+
+public import LeanSMILES.SMILES.Token
+public import LeanSMILES.Chem.Molecule
 
 /-!
 # LeanSMILES.SMILES.Parse
@@ -17,7 +19,12 @@ one RDKit and pysmiles run:
 * a **branch stack** — anchors saved by `(` and restored by `)`;
 * **open rings** — ring-closure labels waiting for their partner, each
   remembering the atom that opened it and any bond symbol written there;
-* an **after-dot** flag — the next atom starts a new component.
+* an **after-dot** flag — the next atom starts a new component;
+* an **after-branch** flag — `)` was just read, so a ring-closure label is an
+  error: OpenSMILES puts labels before branches (`atom ringbond* branch*`),
+  which RDKit does not enforce.  This is the one place the grammar is
+  deliberately stricter than RDKit on real-world input; see "What the parser
+  accepts" in the README.
 
 Atom indices are the order of appearance in the string, exactly as in RDKit,
 so a `Molecule` remembers the string's traversal order (which is what `@`/`@@`
@@ -30,6 +37,8 @@ and no duplicate bonds, so the checks are not repeated downstream.
 
 `parse` also runs `Molecule.assignImplicitH`; `parseRaw` does not.
 -/
+
+@[expose] public section
 
 namespace LeanSMILES.SMILES
 
@@ -81,6 +90,10 @@ structure State where
   afterDot : Bool := false
   /-- The previous token was `(`: RDKit rejects `()` and a ring digit here. -/
   justOpened : Bool := false
+  /-- The previous token was `)` (possibly followed by a bond symbol): a
+  ring-closure label here is rejected, as OpenSMILES orders labels before
+  branches. -/
+  afterBranch : Bool := false
   /-- Anchors saved by `(`, innermost first. -/
   branches : List ℕ := []
   /-- Open ring labels with the atom and bond symbol that opened them. -/
@@ -125,11 +138,13 @@ def step (st : State) (t : Token) : Except ParseError State :=
       let kind := (st.pending.bind (·.kind)).getD (implicitKind (st.atomAt k) a)
       let dir := st.pending.bind (·.dir)
       let st'' ← st'.addBond k idx kind dir t.pos
-      pure { st'' with anchor := some idx, pending := none, justOpened := false }
+      pure { st'' with anchor := some idx, pending := none, justOpened := false,
+                       afterBranch := false }
     | _, _ =>
       match st.pending with
       | some p => .error (.bondWithoutAtom p.pos)
-      | none => .ok { st' with anchor := some idx, afterDot := false, justOpened := false }
+      | none => .ok { st' with anchor := some idx, afterDot := false, justOpened := false,
+                               afterBranch := false }
   | .bond k => st.setPending ⟨some k, none, t.pos⟩
   -- `/` and `\` leave the kind implicit: between two aromatic atoms the bond
   -- stays aromatic (RDKit's reading), otherwise it is single.
@@ -139,25 +154,31 @@ def step (st : State) (t : Token) : Except ParseError State :=
     match st.pending with
     | some p => .error (.bondWithoutAtom p.pos)
     | none =>
-      if st.anchor.isNone || st.afterDot then .error (.danglingDot t.pos)
+      if st.anchor.isNone || st.afterDot || st.justOpened then .error (.danglingDot t.pos)
       else .ok { st with afterDot := true, justOpened := false }
   | .branchOpen =>
     match st.anchor, st.pending with
     | none, _ => .error (.branchWithoutAtom t.pos)
     | _, some p => .error (.bondWithoutAtom p.pos)
-    | some k, none => .ok { st with branches := k :: st.branches, justOpened := true }
+    | some k, none =>
+      if st.afterDot then .error (.branchWithoutAtom t.pos)
+      else .ok { st with branches := k :: st.branches, justOpened := true, afterBranch := false }
   | .branchClose =>
     match st.branches, st.pending with
     | [], _ => .error (.unmatchedBranchClose t.pos)
     | _, some p => .error (.bondWithoutAtom p.pos)
     | k :: rest, none =>
-      if st.justOpened then .error (.emptyBranch t.pos)
-      else .ok { st with anchor := some k, branches := rest, afterDot := false }
+      if st.afterDot then .error (.danglingDot (t.pos - 1))
+      else if st.justOpened then .error (.emptyBranch t.pos)
+      else .ok { st with anchor := some k, branches := rest, afterDot := false,
+                         afterBranch := true }
   | .ring num =>
     match st.anchor with
     | none => .error (.ringWithoutAtom t.pos)
     | some a =>
-      if st.justOpened then .error (.ringAfterBranchOpen t.pos) else
+      if st.afterDot then .error (.ringWithoutAtom t.pos)
+      else if st.justOpened then .error (.ringAfterBranchOpen t.pos)
+      else if st.afterBranch then .error (.ringAfterBranch t.pos) else
       match st.rings.lookup num with
       | some ro => do
         let kind ← match ro.bond.bind (·.kind), st.pending.bind (·.kind) with
@@ -178,7 +199,7 @@ def finish (st : State) : Except ParseError State :=
   | none =>
     if st.afterDot then .error (.unexpectedEnd "an atom after '.'")
     else if !st.branches.isEmpty then .error (.unclosedBranch st.branches.length)
-    else if !st.rings.isEmpty then .error (.unclosedRing (st.rings.map (·.1)))
+    else if !st.rings.isEmpty then .error (.unclosedRing (st.rings.reverse.map (·.1)))
     else .ok st
 
 /-- Package the state as a `Molecule`, discharging the type's invariants by

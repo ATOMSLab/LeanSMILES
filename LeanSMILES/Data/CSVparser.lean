@@ -1,4 +1,8 @@
-import Lean
+module
+
+public import Lean.Data.Json
+
+public section
 
 namespace CSVparser
 
@@ -85,5 +89,4 @@ instance : Repr Molecule where
     "{ " ++ ", ".intercalate fields ++ " }"
 
 end CSVparser
-
 

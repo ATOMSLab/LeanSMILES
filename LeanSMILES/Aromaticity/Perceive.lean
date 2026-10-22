@@ -3,8 +3,10 @@ Copyright (c) 2026 Samiha Sharlin. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Samiha Sharlin
 -/
-import LeanSMILES.Aromaticity.Kekulize
-import LeanSMILES.SMILES.Parse
+module
+
+public import LeanSMILES.Aromaticity.Kekulize
+public import LeanSMILES.SMILES.Parse
 
 /-!
 # LeanSMILES.Aromaticity.Perceive
@@ -23,6 +25,8 @@ from `docs/reference/aromaticity_ref.py` (`assign_radicals`, `set_aromaticity`).
    groups of up to 6 rings are tried (`applyHuckelToFused`, `Aromaticity.cpp:334`).
    When a group passes, every bond that occurs once in the group becomes aromatic.
 -/
+
+@[expose] public section
 
 namespace LeanSMILES.Aromaticity
 

@@ -3,7 +3,9 @@ Copyright (c) 2026 Tyler Josephson. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Tyler Josephson
 -/
-import LeanSMILES.Chem.Molecule
+module
+
+public import LeanSMILES.Chem.Molecule
 
 /-!
 # LeanSMILES.SMILES.Write
@@ -28,6 +30,8 @@ Not written: the `/` `\` direction marks (recorded on bonds, but their meaning
 depends on the walk, so writing them correctly needs the parity bookkeeping
 that is out of scope here).  Chirality marks are written as recorded.
 -/
+
+@[expose] public section
 
 namespace LeanSMILES.Molecule
 

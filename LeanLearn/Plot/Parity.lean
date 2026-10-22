@@ -3,6 +3,7 @@ Copyright (c) 2026 Samiha Sharlin. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Samiha Sharlin
 -/
+module
 
 /-!
 # Parity plots as SVG
@@ -14,7 +15,9 @@ band of ±1 unit around it, training points hollow, test points filled, and a
 legend with each set's size, R², RMSE and MAE.
 -/
 
-namespace LeanSMILES.Plot
+@[expose] public section
+
+namespace LeanLearn.Plot
 
 /-- `x` with `d` decimals, `minus` as the minus sign ("-" for coordinates,
 "−" for labels). -/
@@ -108,4 +111,4 @@ def paritySvg (title subtitle axis : String) (series : List Series) : String := 
     text-anchor=\"middle\" fill=\"#172026\">Predicted {axis}</text>\n"
   return out ++ "</svg>\n"
 
-end LeanSMILES.Plot
+end LeanLearn.Plot

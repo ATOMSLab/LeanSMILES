@@ -3,9 +3,11 @@ Copyright (c) 2026 Tyler Josephson. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Tyler Josephson
 -/
-import LeanSMILES.Tests.OracleRow
-import Mathlib.Logic.Equiv.Fin.Basic
-import Mathlib.Logic.Equiv.Fin.Rotate
+module
+
+public import LeanSMILES.Tests.OracleRow
+public import Mathlib.Logic.Equiv.Fin.Basic
+public import Mathlib.Logic.Equiv.Fin.Rotate
 
 /-!
 # LeanSMILES.Tests.Oracle
@@ -15,6 +17,9 @@ The parser and canonicalizer against RDKit on the 1 128 Delaney molecules
 
 **Syntax, which must match:** atom count, bond count, element symbols and
 bond connectivity are properties of the string, so they must agree exactly.
+A row the parser rejects by a deliberate OpenSMILES rule
+(`ParseError.isGrammarDeviation`: a ring-closure label after a branch, as
+chlorothalonil's `…c(Cl)1` is written) is listed and left out of the counts.
 
 **Semantics, reported for information:** bond types and hydrogen counts are
 RDKit's *after* aromaticity perception and the nitro rewrite, which this
@@ -33,7 +38,7 @@ lake exe oracle-test [datasets/delaney-oracle.csv]
 
 open LeanSMILES LeanSMILES.SMILES LeanSMILES.Tests
 
-def main (args : List String) : IO UInt32 := do
+public def main (args : List String) : IO UInt32 := do
   let path := args.headD "datasets/delaney-oracle.csv"
   let rows ← readRows path
   let mut parsed := 0
@@ -45,9 +50,12 @@ def main (args : List String) : IO UInt32 := do
   let mut canonicalizeOk := 0
   let mut sameAsRdkit := 0
   let mut failures : Array String := #[]
+  let mut skipped : Array String := #[]
   for row in rows do
     match parse row.smiles with
-    | .error e => failures := failures.push s!"parse error on {row.smiles}: {e}"
+    | .error e =>
+      if e.isGrammarDeviation then skipped := skipped.push s!"{row.smiles}: {e}"
+      else failures := failures.push s!"parse error on {row.smiles}: {e}"
     | .ok M =>
       parsed := parsed + 1
       if connectivityAgrees row M then syntaxOk := syntaxOk + 1
@@ -77,7 +85,10 @@ def main (args : List String) : IO UInt32 := do
       if c == row.rdkitCanon then sameAsRdkit := sameAsRdkit + 1
   let line (label : String) (k : ℕ) (tag : String) : String :=
     s!"{label}: {k}/{parsed}  [{tag}]"
-  IO.println s!"{rows.length} molecules, {parsed} parsed"
+  IO.println s!"{rows.length} molecules, {parsed} parsed, \
+    {skipped.size} rejected by the OpenSMILES grammar (deliberate)"
+  for f in skipped.toList do
+    IO.println s!"  {f}"
   IO.println (line "syntax (atoms, bonds, symbols, connectivity) = RDKit" syntaxOk "must be all")
   IO.println (line "canonical SMILES survives reparse" roundTrip "must be all")
   IO.println (line "canonical SMILES invariant under relabeling" invariant "must be all")
@@ -87,7 +98,7 @@ def main (args : List String) : IO UInt32 := do
   IO.println (line "canonical string = RDKit's string" sameAsRdkit "info")
   for f in failures.toList.take 20 do
     IO.println s!"  {f}"
-  let ok := parsed == rows.length && syntaxOk == parsed
+  let ok := parsed + skipped.size == rows.length && syntaxOk == parsed
     && roundTrip == parsed && invariant == parsed && canonicalizeOk == parsed
     && hydrogensOk == parsed
   return if ok then 0 else 1

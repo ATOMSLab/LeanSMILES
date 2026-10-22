@@ -3,9 +3,12 @@ Copyright (c) 2026 Tyler Josephson. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Tyler Josephson
 -/
-import LeanSMILES.Chem.Molecule
-import LeanSMILES.Chem.BondMatrix
-import Mathlib.Combinatorics.SimpleGraph.DegreeSum
+module
+
+public import LeanSMILES.Chem.Molecule
+public import LeanSMILES.Chem.BondMatrix
+public import Mathlib.Combinatorics.SimpleGraph.DegreeSum
+import Mathlib.Tactic.NormNum
 
 /-!
 # LeanSMILES.Chem.Graph
@@ -34,6 +37,8 @@ Relabeling the atoms by a permutation gives an isomorphic graph
 (`relabelIso`) — which is what makes canonicalization (`LeanSMILES.SMILES.Canon`)
 a change of *labels* and nothing else.
 -/
+
+@[expose] public section
 
 namespace LeanSMILES
 
@@ -527,7 +532,7 @@ structure MolData (n : ℕ) where
   /-- The weighted adjacency matrix, as a table. -/
   table : Vector (Vector ℚ n) n
   /-- The table is a bond matrix. -/
-  isBondMatrix : IsBondMatrix (Matrix.of fun i j ↦ table[i][j])
+  isBondMatrix : IsBondMatrix (Matrix.of fun i j : Fin n ↦ table[i][j])
 
 namespace MolData
 

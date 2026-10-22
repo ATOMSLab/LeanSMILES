@@ -3,8 +3,10 @@ Copyright (c) 2026 Tyler Josephson. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Tyler Josephson
 -/
-import Mathlib.Data.Sym.Sym2
-import Mathlib.Data.Rat.Defs
+module
+
+public import Mathlib.Data.Sym.Sym2
+public import Mathlib.Data.Rat.Defs
 import Mathlib.Tactic.NormNum
 
 /-!
@@ -23,6 +25,8 @@ order the SMILES string introduced the endpoints in, which is what the `/` `\`
 stereo marks refer to; the undirected edge `s(src, dst) : Sym2 (Fin n)` is
 what Mathlib's `SimpleGraph` sees.
 -/
+
+@[expose] public section
 
 namespace LeanSMILES
 

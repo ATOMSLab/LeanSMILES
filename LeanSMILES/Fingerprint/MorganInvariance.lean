@@ -3,8 +3,10 @@ Copyright (c) 2026 Samiha Sharlin. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Samiha Sharlin
 -/
-import LeanSMILES.Fingerprint.Morgan
-import LeanSMILES.SMILES.Canonicity
+module
+
+public import LeanSMILES.Fingerprint.Morgan
+public import LeanSMILES.SMILES.Canonicity
 
 /-!
 # LeanSMILES.Fingerprint.MorganInvariance
@@ -38,6 +40,8 @@ stops at radius 2.  At radius 3 it is false, for RDKit as well:
 `C1=C(CO)C=C1CC` and `C1(CC)=CC(CO)=C1` are one molecule with different
 radius-3 fingerprints (README, "Findings about external tools").
 -/
+
+@[expose] public section
 
 namespace LeanSMILES.Molecule
 

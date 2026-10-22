@@ -1,0 +1,277 @@
+# Ordinary least squares and ridge regression
+
+Author: Hao Liu
+
+The algorithm-definition and proof part of linear regression. Its interface is
+**a numerical feature matrix `X`, targets `y`, and coefficients `w`**; nothing
+here assumes that a feature came from a SMILES string or a Morgan fingerprint.
+Feature generation and training/evaluation belong to the calling pipeline
+(`Pipelines/`). Solubility is one possible real-valued target; the theorems
+apply equally to other numerical properties.
+
+Two generations of this code existed on the `algorithms` branch
+(`Algorithms/` and `Algorithms/Update/`). This folder keeps the updated
+exact-real specifications and the executable Float solvers:
+
+| File | Role |
+|---|---|
+| `OLS.lean` | Exact-real OLS definitions, inverse formula, optimality, uniqueness |
+| `Ridge.lean` | Exact-real diagonal ridge definitions, optimality, positive-ridge existence and uniqueness |
+| `LinearModel.lean` | Shared executable prediction/loss/stationarity definitions and proofs connecting their real interpretation to OLS/ridge |
+| `OLSFloat.lean` | Executable OLS on floating-point arrays using Householder QR |
+| `RidgeFloat.lean` | Executable ridge regression using augmented Householder QR |
+| `../Examples/ols.lean`, `../Examples/ridge.lean` | Exact, noisy, singular, exempt-intercept, duplicate-column and underdetermined examples proved in Lean |
+| `../Examples/olsFloat.lean`, `../Examples/ridgeFloat.lean` | Runnable fitting and prediction demonstrations (`#eval`) |
+| `../Tests/OLSFloat.lean`, `../Tests/RidgeFloat.lean` | Numerical regression and input-validation checks (`lake exe ols-float-test`, `ridge-float-test`) |
+| `../Tests/LinearModel.lean` | Float checks of the shared definitions on supplied coefficients (`lake exe linear-model-test`) |
+
+The iterative solvers for the same problem (gradient descent, Jacobi,
+Gauss–Seidel, written over the scalar interface with their certificates) are
+`Problem.lean`, `Solvers.lean` and `Certificates.lean` in this folder, by
+DeMarko Fulcher; see the repository README.
+
+- **The exact-real fitting definitions are noncomputable.** Use `OLSFloat.lean`
+  and `RidgeFloat.lean` for executable Float fitting. Neither establishes
+  floating-point rounding-error bounds.
+- **Scalar convention.** Executable arithmetic is written with `PolynomialLike`,
+  the polynomial fragment of `ScalarLike` (`LeanLearn/Scalar.lean`); proofs
+  specialize it to `ℝ`. `Float` is not assigned a lawful `Field` instance, which
+  avoids assuming false identities such as associative floating-point addition.
+
+## Input contract
+
+```lean
+X : Matrix (Fin n) (Fin p) K
+y : Fin n → K
+w : Fin p → K
+```
+
+Rows represent observations and columns represent features. `Fin` indices make
+the dimensions part of the types. The feature order must remain the same for
+prediction. Include an explicit column of ones for an intercept; its coefficient
+is then an ordinary entry of `w`. No intercept or feature normalization is
+inserted implicitly.
+
+`K := Float` runs the shared definitions; `K := ℝ` is their proved mathematical
+interpretation. The shared polynomial definitions also support `ℚ`.
+
+For simple linear regression `y ≈ b + a x`, use two columns: a column of ones
+for the intercept and a column containing `x`. The coefficient vector is then
+`[b, a]`, in that order. For example:
+
+```lean
+import LeanLearn.Regression.OLS
+
+open Matrix
+open scoped Matrix
+
+-- Three observations with x = 0, 1, 2.
+def X : Matrix (Fin 3) (Fin 2) ℝ := !![1, 0; 1, 1; 1, 2]
+def y : Fin 3 → ℝ := ![1, 3, 5]
+```
+
+## Algorithms and guarantees
+
+OLS minimizes the unaveraged sum of squared errors:
+
+```text
+L(w) = Σᵢ ((Xw)ᵢ − yᵢ)²
+normal equations: Xᵀ(Xw − y) = 0
+exact fit: (XᵀX)⁻¹ Xᵀy
+```
+
+`OLS.fit` requires an explicit proof that `det(XᵀX) ≠ 0`.
+`OLS.fit_normalEquations`, `OLS.fit_minimizes`, and `OLS.fit_unique` prove that
+its output satisfies the normal equations and is the unique global minimizer.
+`OLS.normalEquations_minimize` proves global optimality of any normal-equation
+solution even when the design is singular. Singular OLS can have multiple
+minimizers; no full-rank hypothesis is silently inferred from fingerprint data.
+
+| OLS theorem | Meaning |
+|---|---|
+| `loss_eq_sum` | The dot-product definition equals the usual sum of squared errors |
+| `loss_nonneg` | Squared-error loss cannot be negative |
+| `normalEquations_iff` | The residual and Gram-matrix forms of the normal equations agree |
+| `loss_add_of_normalEquations` | Perturbing a normal-equation solution by `d` adds exactly `‖Xd‖²` to its loss |
+| `normalEquations_minimize` | Every normal-equation solution is a global minimizer, even when `XᵀX` is singular |
+| `fit_normalEquations` | The closed-form solution satisfies the normal equations under the nonsingularity hypothesis |
+| `fit_minimizes` | The coefficients returned by `fit` globally minimize the loss |
+| `fit_unique` | Every global minimizer equals those coefficients under the same hypothesis |
+
+The central proof expands the square:
+
+```text
+‖X(w + d) - y‖²
+  = ‖Xw - y‖² + 2 (Xw - y)ᵀXd + ‖Xd‖²
+  = ‖Xw - y‖² + ‖Xd‖².
+```
+
+The middle term vanishes because the normal equations make the residual
+orthogonal to every feature column. The remaining extra term is nonnegative.
+
+Ridge minimizes a diagonally weighted coefficient penalty:
+
+```text
+Lρ(w) = L(w) + Σⱼ ρⱼ wⱼ²
+normal equations: (XᵀX + diag ρ)w = Xᵀy
+exact fit: (XᵀX + diag ρ)⁻¹ Xᵀy
+```
+
+Use `ρ := fun _ => strength` for ordinary ridge. To exempt an intercept, set
+its weight to zero. The penalty uses the original supplied feature units;
+there is no implicit standardization or division by the observation count.
+
+| Ridge theorem | Guarantee |
+|---|---|
+| `loss_nonneg` | Nonnegative weights imply nonnegative loss |
+| `normalEquations_iff` | Gram and residual equations are equivalent |
+| `loss_add_of_normalEquations` | Exact objective increase under any coefficient perturbation |
+| `normalEquations_minimize` | Every solution is globally optimal for nonnegative weights |
+| `fit_normalEquations`, `fit_minimizes` | Correctness of the inverse formula under nonsingularity |
+| `gram_posDef`, `gram_det_ne_zero` | Strictly positive weights guarantee invertibility for every design |
+| `fitPositive_minimizes`, `fitPositive_unique` | Positive ridge's exact fit is optimal and unique |
+| `exists_unique_minimizer` | Positive ridge has a unique minimizer even for singular or underdetermined designs |
+| `normalEquations_unique` | Uniqueness when the regularized Gram matrix is positive definite |
+| `loss_zero_penalty`, `normalEquations_zero_penalty`, `fit_zero_penalty` | Exact reduction to OLS at zero penalty |
+| `augmented_loss` | Ridge equals OLS on the square-root-penalty augmented design |
+
+An exempt intercept means not all weights are positive, so the automatic
+positive-ridge uniqueness theorem does not apply directly. General optimality
+still holds for nonnegative weights. Uniqueness requires a separate regularized
+Gram positive-definiteness argument; a zero unpenalized feature column, for
+example, prevents uniqueness.
+
+All global-optimality statements quantify over **every real coefficient
+vector**, rather than a finite collection of candidates.
+
+## Shared definitions and their proofs
+
+`LinearModel` provides `predictRow`, `predict`, `residual`, `squaredError`,
+`penalty`, `ridgeLoss`, and `normalResidual`. They use `sumGen` over
+`List.finRange`, which fixes an evaluation order and works with Float.
+
+The bridge theorems `predict_real`, `squaredError_real`, `ridgeLoss_real`, and
+`normalResidual_eq_zero_iff` prove that the same definitions, interpreted at
+`ℝ`, agree with the exact specifications. `ols_fit_minimizes`,
+`stationary_minimizes`, and `ridge_fit_minimizes` express correctness directly
+using these shared objective definitions.
+
+For example, a downstream caller can compute predictions and losses:
+
+```lean
+import LeanLearn.Regression.LinearModel
+open LeanLearn.Regression
+open Matrix
+open scoped Matrix
+
+def X : LinearModel.Design Float 3 2 := !![1, 0; 1, 1; 1, 2]
+def y : Fin 3 → Float := ![1, 3, 5]
+def coefficients : Fin 2 → Float := ![2, 1]
+def weights : Fin 2 → Float := ![0, 2]
+
+#eval LinearModel.predictRow ![1, 3] coefficients  -- 5
+#eval LinearModel.squaredError X y coefficients   -- 2
+#eval LinearModel.ridgeLoss X y weights coefficients -- 4
+```
+
+## Run OLS on floating-point data
+
+`OLSFloat.fit X y` accepts rows of numerical features and one target per row.
+Include a column of ones in `X` to fit an intercept. The solver scales columns
+and targets, performs Householder QR, and solves the resulting triangular
+system; it does not form or invert `XᵀX`.
+
+```lean
+import LeanLearn.Regression.OLSFloat
+
+open LeanLearn.Regression.OLSFloat
+
+-- Rows are observations. The first column of ones supplies an intercept.
+def X : Design := #[#[1.0, 0.0], #[1.0, 1.0], #[1.0, 2.0]]
+def y : Array Float := #[1.0, 3.0, 5.0]
+
+#eval do
+  let model ← fit X y
+  let prediction ← model.predict #[1.0, 3.0]
+  pure (model.coefficients, prediction)
+-- Approximately: Except.ok (#[1.0, 2.0], 7.0)
+```
+
+`Design` abbreviates `Array (Array Float)`. `fit` returns
+`Except Error Model`: `.ok model` on success, or `.error reason` on failure.
+
+| API | Result |
+|---|---|
+| `fit X y` | A model whose coefficient order matches the columns of `X` |
+| `model.predict row` | One predicted target |
+| `model.predictAll X` | An array of predicted targets |
+| `model.sumSquaredError X y` | Sum of squared residuals, without averaging |
+
+The solver checks dimensions, nonempty fitting data, finite inputs, and the
+requirement that the number of observations is at least the number of columns.
+The default `rankTolerance` is `1e-10`; it compares each column's remaining QR
+norm with that column's original scaled norm (`fit X y { rankTolerance := 1e-8 }`).
+Singular, underdetermined, and numerically rank-deficient designs return
+errors; no pseudoinverse or regularized fallback is used. Non-finite numerical
+results are also errors. Finite results remain subject to rounding, especially
+on ill-conditioned data.
+
+## Run ridge regression on floating-point data
+
+`RidgeFloat.fit` minimizes `Σᵢ ((Xw)ᵢ - yᵢ)² + penalty * Σⱼ wⱼ²`. The default
+penalty is `1.0`, and every supplied coefficient is penalized. Use
+`unpenalizedColumn` to exempt an explicit intercept column:
+
+```lean
+import LeanLearn.Regression.RidgeFloat
+
+open LeanLearn.Regression.RidgeFloat
+
+def ridgeX : Design := #[#[1.0, 0.0], #[1.0, 1.0], #[1.0, 2.0]]
+def ridgeY : Array Float := #[1.0, 3.0, 5.0]
+
+#eval do
+  let model ← fit ridgeX ridgeY { penalty := 2.0, unpenalizedColumn := some 0 }
+  let prediction ← model.predict #[1.0, 3.0]
+  let objective ← model.penalizedLoss ridgeX ridgeY
+  pure (model.coefficients, prediction, objective)
+-- Approximately: Except.ok (#[2.0, 1.0], 5.0, 4.0)
+```
+
+`penalty` must be finite and nonnegative. A positive penalty can make a
+singular or underdetermined design identifiable; an exempt column must still
+be independent of the penalized columns in the augmented design. At zero
+penalty, the solver behaves like OLS and rejects underdetermined or
+rank-deficient designs. The same relative `rankTolerance` check applies.
+
+## Build and inspect
+
+From the repository root:
+
+```bash
+lake build LeanLearn
+lake exe ols-float-test
+lake exe ridge-float-test
+lake exe linear-model-test
+```
+
+A successful build of `OLS.lean`, `Ridge.lean` and `LinearModel.lean` means Lean
+has checked the proofs. Open the repository in a Lean-enabled editor and inspect
+`LeanLearn/Examples/ols.lean` and `ridge.lean` in the Infoview to follow the
+worked proofs step by step; `olsFloat.lean` and `ridgeFloat.lean` show the Float
+solvers running.
+
+## Scope of the guarantee
+
+Theorems about real arithmetic establish exact optimization properties. A
+definition's availability at Float does not transfer those theorems to IEEE
+arithmetic: rounding, NaN, overflow, and underflow require separate analysis.
+Callers must supply finite numerical values and interpret Float outputs as
+approximations. No Float conditioning bound or verified numerical solver is
+claimed here. The Float QR implementation is tested on known solutions, scale
+changes, and invalid inputs; no theorem yet connects its finite-precision output
+to the exact-real solution or bounds its rounding error.
+
+This folder makes no assertion about SMILES canonicalization, data quality,
+Morgan invariance, optimizer convergence, train/test leakage, generalization,
+or physical accuracy of a solubility prediction.

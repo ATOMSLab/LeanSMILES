@@ -1,9 +1,9 @@
-import LeanSMILES.Scalar
-import LeanSMILES.Fingerprint.Morgan
-import LeanSMILES.Aromaticity.Perceive
+module
+
+public import LeanLearn.Scalar
 
 /-!
-# Logistic regression on Morgan fingerprints
+# Logistic regression on sparse `0/1` features
 
 Binary classification with L2-regularized logistic regression, the model of
 ENCH 470 Lecture 21 (`sklearn.linear_model.LogisticRegression()`): it learns a
@@ -20,14 +20,17 @@ with Nesterov-accelerated gradient descent until the gradient is (nearly) zero.
 The objective is strongly convex in `w`, so this reaches the same optimum as
 scikit-learn's solver.
 
-Fingerprints are sparse (about 40 of 2048 bits set), so a sample is stored as
-the list of its on-bits and `w · x` is a sum over those bits.
+Samples are sparse `0/1` vectors — a Morgan fingerprint sets about 40 of 2048 bits — so a
+sample is stored as the list of its on-bits (`SparseBits`) and `w · x` is a sum over those
+bits. `Pipelines.morganFeatures` produces them from a SMILES string.
 
-Everything is written once over Tyler's `ScalarLike` (`LeanSMILES/Scalar.lean`):
+Everything is written once over `ScalarLike` (`LeanLearn/Scalar.lean`):
 run it at `Float`; state theorems at `ℝ`.
 -/
 
-namespace LeanSMILES.ML
+@[expose] public section
+
+namespace LeanLearn.Classification
 
 /-- A scalar with `exp` and `log`, which the logistic function needs and
 `ScalarLike` does not provide. -/
@@ -174,12 +177,4 @@ def confusionMatrix (m : LogisticModel K) (data : Array (SparseBits × Bool)) : 
   let count (y p : Bool) := (data.filter fun (x, y') => y' == y && m.predict x == p).size
   [[count false false, count false true], [count true false, count true true]]
 
-/-- Morgan on-bits of a SMILES string as a sparse feature vector (radius 2,
-2048 bits by default), ready for `fitLogistic`. The molecule is aromatized first
-(`Molecule.aromatize`), so the bits are RDKit's. -/
-def morganFeatures (s : String) (radius : ℕ := 2) (fpSize : ℕ := 2048) :
-    Except String SparseBits := do
-  let M ← SMILES.parseAromatized s
-  return (M.morganBits radius fpSize).toArray
-
-end LeanSMILES.ML
+end LeanLearn.Classification

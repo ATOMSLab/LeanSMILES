@@ -3,7 +3,9 @@ Copyright (c) 2026 Samiha Sharlin. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Samiha Sharlin
 -/
-import LeanSMILES.Aromaticity.Rings
+module
+
+public import LeanSMILES.Aromaticity.Rings
 
 /-!
 # LeanSMILES.Aromaticity.Kekulize
@@ -28,6 +30,8 @@ Works one **fused ring system** at a time (rings sharing at least one bond):
    then the double-bond positions are visible in the result (`Cc1cccc2ncc12`).
 3. **Clear aromatic flags** (`markAtomsBonds`, `Kekulize.cpp:748-777`).
 -/
+
+@[expose] public section
 
 namespace LeanSMILES.Aromaticity
 namespace Work

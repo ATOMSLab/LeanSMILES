@@ -1,5 +1,12 @@
-import LeanSMILES.ML.Logistic
-open LeanSMILES.ML
+module
+
+public import LeanLearn.Classification.Logistic
+public import Pipelines.Representation
+-- The same modules again as `meta` imports: the `#eval`s run their code at elaboration time.
+meta import LeanLearn.Classification.Logistic
+meta import Pipelines.Representation
+
+open LeanLearn.Classification Pipelines
 
 /-!
 # Example: EGFR classification with Morgan fingerprints (ENCH 470 Lecture 21)
@@ -22,6 +29,8 @@ molecule. Click on an `#eval` line to see its result in the Infoview. The big
 `#eval` trains the model (about half a minute in the editor; the compiled test
 takes about a second).
 -/
+
+public section
 
 -- A molecule becomes the list of its on-bits (about 40 of 2048 for drug-like molecules)
 #eval morganFeatures "CCO"                    -- ethanol: 6 bits
