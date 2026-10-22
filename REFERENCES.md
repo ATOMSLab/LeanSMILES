@@ -83,6 +83,32 @@ follows each entry.
   representations above and their alternatives.
   `wighReviewMolecularRepresentation2022`
 
+## Similarity metrics
+
+- Marczewski, E. & Steinhaus, H. (1958), *On a certain distance of sets and the
+  corresponding distance of functions*, Colloquium Mathematicum 6(1), 319–327.
+  [doi:10.4064/cm-6-1-319-327](https://doi.org/10.4064/cm-6-1-319-327). The
+  Jaccard distance `|A ∆ B| / |A ∪ B|` is a metric; the theorem
+  [`Finset.tanimotoMetricSpace`](LeanSMILES/Fingerprint/Tanimoto.lean) proves.
+  `marczewskiCertainDistanceSets1958`
+- Lipkus, A.H. (1999), *A proof of the triangle inequality for the Tanimoto
+  distance*, Journal of Mathematical Chemistry 26(1–3), 263–265.
+  [doi:10.1023/A:1019154432472](https://doi.org/10.1023/A:1019154432472). The
+  same theorem for chemists, on binary fingerprints.
+  `lipkusProofTriangleInequality1999`
+- Kosub, S. (2019), *A note on the triangle inequality for the Jaccard distance*,
+  Pattern Recognition Letters 120, 36–38.
+  [doi:10.1016/j.patrec.2018.12.007](https://doi.org/10.1016/j.patrec.2018.12.007).
+  A self-contained proof of the triangle inequality;
+  `Finset.tanimotoDist_triangle` goes through the Steinhaus transform instead.
+  `kosubNoteTriangleInequality2019`
+- Surendran, A., Zsigmond, K., López-Pérez, K. & Miranda-Quintana, R.A. (2025),
+  *Is Tanimoto a metric?*, bioRxiv.
+  [doi:10.1101/2025.02.18.638904](https://doi.org/10.1101/2025.02.18.638904).
+  Answers no for real-valued vectors and proposes `√(1 − T)` instead;
+  `LeanSMILES.not_tanimotoVec_dist_triangle` formalizes the counterexample.
+  `surendranTanimotoMetric2025`
+
 ## Datasets
 
 - [`datasets/delaney-processed.csv`](datasets/delaney-processed.csv), read by
