@@ -94,12 +94,11 @@ prediction equals scikit-learn's to within 10⁻⁶; the table is the full Lean 
 |                    | R²    | RMSE | MAE  |
 | ------------------ | ----- | ---- | ---- |
 | Training (n = 901) | 0.959 | 0.42 | 0.26 |
-| Test (n = 226)     | 0.662 | 1.27 | 0.96 |
+| Test (n = 226)     | 0.671 | 1.26 | 0.94 |
 
-scikit-learn's `Ridge` on RDKit's fingerprints gets test R² 0.671, RMSE 1.26 and MAE 0.94,
-which Lean reproduces exactly when given the same bits. The full Lean pipeline is slightly
-lower because its own fingerprints differ from RDKit's on 59 molecules, the ones RDKit's
-nitro-group cleanup rewrites (not yet ported).
+scikit-learn's `Ridge` on RDKit's fingerprints gets the same test R², RMSE and MAE. Lean's
+fingerprints equal RDKit's on all 1 127 molecules; the predictions differ by at most 0.06
+only because chlorothalonil, which the parser rejects, is left out of training.
 
 ![Parity plot: predicted vs measured log solubility, written by Lean](docs/figures/delaney-ridge-parity.svg)
 
@@ -270,8 +269,9 @@ ring set (relevant cycles), kekulization, aromaticity perception (default model:
 donor types, Hückel 4n + 2, fused systems) and final hydrogen counts. So
 `C1=CC=CC=C1` becomes aromatic benzene, the bond between the rings of
 `c1ccccc1c1ccccc1` becomes single, and `c1cccc1` fails as it does in RDKit
-("Can't kekulize mol"). RDKit's `cleanUp` (nitro and similar rewrites), valence
-rejection and removal of `[H]` atoms are not included yet.
+("Can't kekulize mol"). It starts with RDKit's `cleanUp`, so nitro `N(=O)=O` becomes
+`[N+](=O)[O-]` (likewise N-oxides, azides, P=O and halogen oxides). Valence rejection
+and removal of `[H]` atoms are not included yet.
 
 ```lean
 #eval (SMILES.parseAromatized "C1=CC=CC=C1").map (·.morganBits)   -- RDKit's benzene bits
@@ -282,9 +282,9 @@ lake exe aromaticity-test   # bond types, hydrogens and Morgan bits = RDKit's on
 ```
 
 On every oracle file, as written and in Kekulé form (Delaney, 56 hand-picked
-aromaticity cases, isotope cases, hydrogen cases), every molecule that `cleanUp`
-and `[H]` removal do not touch gets RDKit's bond types, hydrogen counts and
-Morgan fingerprint: 3 368 of 3 368 (chlorothalonil, which the parser rejects, is not counted). On 10 000 fuzzed strings it never fails on
+aromaticity cases, isotope cases, hydrogen cases), every molecule without `[H]`
+atoms gets RDKit's bond types, hydrogen counts and Morgan fingerprint:
+3 464 of 3 464 (chlorothalonil, which the parser rejects, is not counted). On 10 000 fuzzed strings it never fails on
 one RDKit accepts. The code is ported from the `canonical-smiles` branch's
 array-based sanitization (commit `5b5fe9e`) and still runs on an index-based
 working copy inside; its interface is `Molecule n → Except String (Molecule n)`.
@@ -566,11 +566,10 @@ ridge-test` checks it against scikit-learn's `Ridge` (`tools/sklearn_delaney.py`
 |                                                                 | R²    | RMSE | MAE  |
 | --------------------------------------------------------------- | ----- | ---- | ---- |
 | on RDKit's bits (= scikit-learn, predictions within 10⁻⁶), test | 0.671 | 1.26 | 0.94 |
-| on Lean's own features, test                                    | 0.662 | 1.27 | 0.96 |
+| on Lean's own features, test                                    | 0.671 | 1.26 | 0.94 |
 
-Lean's own features equal RDKit's on 1 068 of the 1 127 molecules the parser accepts
-(chlorothalonil's ring label after a branch is rejected); the rest need RDKit's `cleanUp`,
-which `aromatize` does not do yet. The training fit is much closer (R² 0.96), the usual
+Lean's own features equal RDKit's on all 1 127 molecules the parser accepts
+(chlorothalonil's ring label after a branch is rejected). The training fit is much closer (R² 0.96), the usual
 sign of more features than molecules.
 
 ```bash

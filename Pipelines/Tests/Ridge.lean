@@ -23,10 +23,9 @@ scikit-learn's `Ridge(alpha=1.0)` predictions. Two checks:
 2. **Pipeline.** Train on Lean's own features (`morganFeatures`: parse,
    `Molecule.aromatize`, Morgan). SMILES the parser rejects (OpenSMILES
    grammar deviations such as a ring label after a branch) are left out and
-   listed. The features differ from RDKit's on the molecules RDKit's
-   `cleanUp` rewrites (nitro groups and the like), which `aromatize` does not
-   do yet, so R², RMSE, MAE and the largest difference from scikit-learn are
-   reported.
+   listed. R², RMSE, MAE and the largest difference from scikit-learn are
+   reported; the predictions differ slightly because the model is trained
+   without the rejected molecules.
 
 R², RMSE and MAE are computed in Lean for both. With `--svg PATH`, the pipeline
 model's parity plot is written to `PATH`:
@@ -99,8 +98,7 @@ public def main (args : List String) : IO UInt32 := do
   IO.println s!"  {kept.size}/{rows.size} parsed; skipped {skipped.size} the parser rejects:"
   for s in skipped do
     IO.println s!"    {s}"
-  IO.println s!"  Lean's Morgan bits = RDKit's: {same}/{kept.size} \
-    (the rest are molecules RDKit's cleanUp rewrites)"
+  IO.println s!"  Lean's Morgan bits = RDKit's: {same}/{kept.size}"
   let preds ← fitAndReport kept feats
   IO.println s!"  max |prediction − scikit-learn| over {kept.size} molecules: {maxDiff kept preds}"
   -- parity plot of the Lean pipeline
