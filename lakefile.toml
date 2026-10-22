@@ -41,3 +41,8 @@ root = "LeanSMILES.Tests.Logistic"
 [[lean_exe]]
 name = "aromaticity-test"
 root = "LeanSMILES.Tests.Aromaticity"
+
+# Ridge regression of Delaney log solubility vs scikit-learn (+ parity plot)
+[[lean_exe]]
+name = "ridge-test"
+root = "LeanSMILES.Tests.Ridge"

@@ -19,3 +19,5 @@ import LeanSMILES.Aromaticity.Perceive
 import LeanSMILES.Examples.smiles
 import LeanSMILES.Examples.caffeine
 import LeanSMILES.ML.Logistic
+import LeanSMILES.ML.Ridge
+import LeanSMILES.Plot.Parity
