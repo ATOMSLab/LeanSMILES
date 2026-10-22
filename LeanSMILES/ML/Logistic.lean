@@ -1,5 +1,5 @@
 import LeanSMILES.Scalar
-import LeanSMILES.Fingerprint.Morgan
+import LeanSMILES.Canonical.Morgan
 
 /-!
 # Logistic regression on Morgan fingerprints

@@ -127,7 +127,7 @@ LeanSMILES/
   Canonical/Sanitize.lean      ✅ implicit H, ring membership, cleanUp, valence checks, ring set,
                                   kekulization, aromaticity; molFromSmiles
   Canonical/Write.lean         ✅ canonical ranking + DFS writer; canonicalSmiles
-  Fingerprint/Morgan.lean      ✅ port of reference/morgan_ref.py; morganBits, morganIds, tanimoto
+  Canonical/Morgan.lean        ✅ port of reference/morgan_ref.py; morganBits, morganIds, tanimoto
   Proofs/...                   theorems (section 5)
 tools/rdkit_oracle.py          ✅ dumps RDKit's answers per molecule → CSV for Lean tests
 ```
@@ -147,7 +147,7 @@ tools/rdkit_oracle.py          ✅ dumps RDKit's answers per molecule → CSV fo
 |---|---|---|---|
 | **0. Oracle** ✅ | `tools/rdkit_oracle.py` writes `datasets/delaney-oracle.csv` (see 4.1) | CSV exists | done |
 | **1. Graph** ✅ | `Mol` types, SMILES parser, implicit H, ring membership, **RDKit sanitization incl. aromaticity** | Per-atom and per-bond data agrees with RDKit (see 4.2) | done |
-| **2. Morgan** ✅ | `Fingerprint/Morgan.lean` (port of the reference) | 1,128/1,128 exact bit match (see 4.4) | done |
+| **2. Morgan** ✅ | `Canonical/Morgan.lean` (port of the reference) | 1,128/1,128 exact bit match (see 4.4) | done |
 | **3. Canonical SMILES** ✅ | `Canonical/Write.lean` (`Chem.canonicalSmiles`) | 1,128/1,128 exact string match (see 4.3) | done |
 | **4. Proofs** | Theorems from section 5, easiest first | Each one `sorry`-free | open-ended |
 | 5. Optional | Stereo | — | large |
@@ -192,7 +192,7 @@ Run the test from the repository root:
 ```bash
 lake exe phase1-test                     # Delaney, as written and in Kekulé form
 lake exe phase1-test datasets/aromaticity-cases-oracle.csv datasets/aromaticity-cases-kekule-oracle.csv
-lake exe validity-test                   # broken SMILES: accepted/rejected exactly like RDKit?
+lake exe canonical-validity-test                   # broken SMILES: accepted/rejected exactly like RDKit?
 ```
 
 **Result:** every molecule matches RDKit atom by atom and bond by bond (atom and bond counts, element symbols, total H counts, formal charges, ring membership, bond types including aromatic), and Lean rejects exactly the SMILES RDKit rejects.
@@ -221,7 +221,7 @@ lake exe validity-test                   # broken SMILES: accepted/rejected exac
 | `Canonical/Parse.lean` | `Smiles.parse`: a hand-written left-to-right scanner covering organic subset, lowercase aromatic atoms, bracket atoms, `- = # : / \`, branches, ring closures `1`–`9` and `%nn`, and `.`, with RDKit's syntax rules |
 | `Canonical/Sanitize.lean` | One section per step: implicit H (port of `Atom.cpp:350-613`, half-units), ring membership (a bond is in a ring iff not a bridge, the Mathlib `IsBridge` notion), RDKit `cleanUp` (`MolOps.cpp:51-329`), ring set (relevant cycles), kekulization (RDKit's walk), aromaticity (donor types, Hückel 4n+2, fused groups ≤ 6 rings); `Chem.molFromSmiles` |
 | `Tests/Phase1.lean` | `lake exe phase1-test`: per-atom / per-bond comparison with an oracle file |
-| `Tests/Validity.lean` | `lake exe validity-test`: accept/reject agreement on `datasets/fuzz-validity.tsv` (made by `tools/rdkit_fuzz.py`) |
+| `Tests/CanonicalValidity.lean` | `lake exe canonical-validity-test`: accept/reject agreement on `datasets/fuzz-validity.tsv` (made by `tools/rdkit_fuzz.py`) |
 | `Examples/molgraph.lean` | Small `#eval` examples |
 
 **Things learned while matching RDKit:**
@@ -246,11 +246,11 @@ It equals RDKit's `MolToSmiles(mol, isomericSmiles=False)` on all Delaney molecu
 
 ### 4.4 Phase 2 status: Morgan fingerprints
 
-`Chem.morganBits` / `Mol.morganIds` (`Fingerprint/Morgan.lean`) port `docs/reference/morgan_ref.py`: radius-0 invariants (element, degree incl. H, H count, charge as uint32, mass shift, in-ring), layer-seeded `hash_combine` over sorted (bond type, neighbour id) pairs, bond-set deduplication keeping the smallest (id, atom), dead atoms contributing 0, folding by `id mod fpSize`.
+`Chem.morganBits` / `Mol.morganIds` (`Canonical/Morgan.lean`) port `docs/reference/morgan_ref.py`: radius-0 invariants (element, degree incl. H, H count, charge as uint32, mass shift, in-ring), layer-seeded `hash_combine` over sorted (bond type, neighbour id) pairs, bond-set deduplication keeping the smallest (id, atom), dead atoms contributing 0, folding by `id mod fpSize`.
 
 ```bash
-lake exe morgan-test           # Delaney, as written and in Kekulé form
-lake exe morgan-test datasets/aromaticity-cases-oracle.csv datasets/aromaticity-cases-kekule-oracle.csv
+lake exe canonical-morgan-test           # Delaney, as written and in Kekulé form
+lake exe canonical-morgan-test datasets/aromaticity-cases-oracle.csv datasets/aromaticity-cases-kekule-oracle.csv
 ```
 
 Both the folded bits and the unfolded identifiers with counts equal RDKit's (`radius=2, fpSize=2048`) on all Delaney molecules, the 56 hard cases and 500 isotope-labelled molecules (`datasets/isotope-cases*.csv`), in both forms. One-off checks outside the repo also matched on the NCI sample (4,830), the ENCH 470 ThermoProperties and EGFR sets, 3,997 fuzzed SMILES and 3,000 more isotope-labelled molecules, in both forms.

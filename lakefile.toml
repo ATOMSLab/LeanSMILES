@@ -19,8 +19,20 @@ rev = "v4.30.0-rc1"
 name = "LeanSMILES"
 globs = ["LeanSMILES.*"]
 
+# Tests against RDKit's answers in datasets/ (run from the repository root)
+[[lean_exe]]
+name = "validity-test"
+root = "LeanSMILES.Tests.Validity"
 
-# Tests for LeanSMILES.Canonical (run from the repository root)
+[[lean_exe]]
+name = "oracle-test"
+root = "LeanSMILES.Tests.Oracle"
+
+[[lean_exe]]
+name = "morgan-test"
+root = "LeanSMILES.Tests.Morgan"
+
+# Tests for LeanSMILES.Canonical, the RDKit port with full sanitization
 [[lean_exe]]
 name = "canonical-test"
 root = "LeanSMILES.Tests.Canonical"
@@ -30,13 +42,14 @@ name = "phase1-test"
 root = "LeanSMILES.Tests.Phase1"
 
 [[lean_exe]]
-name = "validity-test"
-root = "LeanSMILES.Tests.Validity"
+name = "canonical-validity-test"
+root = "LeanSMILES.Tests.CanonicalValidity"
 
 [[lean_exe]]
-name = "morgan-test"
-root = "LeanSMILES.Tests.Morgan"
+name = "canonical-morgan-test"
+root = "LeanSMILES.Tests.CanonicalMorgan"
 
+# Logistic regression on Morgan fingerprints vs scikit-learn
 [[lean_exe]]
 name = "logistic-test"
 root = "LeanSMILES.Tests.Logistic"

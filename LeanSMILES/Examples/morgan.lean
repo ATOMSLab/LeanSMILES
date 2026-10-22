@@ -1,5 +1,5 @@
 import LeanSMILES.Data.CSVparser
-import LeanSMILES.Fingerprint.Morgan
+import LeanSMILES.Canonical.Morgan
 open CSVparser Chem
 
 /-!

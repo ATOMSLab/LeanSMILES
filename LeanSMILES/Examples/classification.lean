@@ -30,14 +30,14 @@ takes about a second).
 #eval [-4.0, -1.0, 0.0, 1.0, 4.0].map (sigmoid (K := Float))
 
 /-- One row of `datasets/egfr-classification.csv`: name, SMILES, label (active?), split. -/
-structure Molecule where
+structure Compound where
   name : String
   smiles : String
   active : Option Bool
   split : String
 
 /-- The 200 ChEMBL molecules (with scikit-learn's train/test split) and the 5 FDA drugs. -/
-def loadMolecules : IO (Array Molecule) := do
+def loadMolecules : IO (Array Compound) := do
   let lines := (← IO.FS.lines "datasets/egfr-classification.csv").toList.drop 1
   return (lines.filterMap fun l => match l.splitOn "," with
     | [n, s, y, sp, _, _] =>
@@ -45,7 +45,7 @@ def loadMolecules : IO (Array Molecule) := do
     | _ => none).toArray
 
 /-- Features and labels of the molecules in one split. -/
-def dataset (mols : Array Molecule) (split : String) : Array (SparseBits × Bool) :=
+def dataset (mols : Array Compound) (split : String) : Array (SparseBits × Bool) :=
   mols.filterMap fun m => match m.split == split, m.active, Chem.morganFeatures m.smiles with
     | true, some y, .ok x => some (x, y)
     | _, _, _ => none

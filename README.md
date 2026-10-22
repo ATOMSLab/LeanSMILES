@@ -46,9 +46,73 @@ the project.
    right shows each `#eval` result: the solubility dataset in `datasets/`, read
    in as SMILES strings with their numeric features.
 
-## SMILES → canonical SMILES
+## SMILES → typed molecular graph → canonical SMILES
 
-`LeanSMILES.Canonical` turns any SMILES into its canonical SMILES, the same
+`LeanSMILES.SMILES.Canon` is the one import for the SMILES toolkit:
+
+```lean
+import LeanSMILES.SMILES.Canon
+import LeanSMILES.Chem.Graph            -- the Mathlib views
+open LeanSMILES LeanSMILES.SMILES
+
+#eval parse "c1cc[nH]c1"                                  -- Except.ok (Molecule 5 ["c","c","c","[nH]","c"] [0:1, 1:2, 2:3, 3:4, 0:4])
+#eval (Mol.ofSmiles! "C(O)C").canonicalSmiles             -- "CCO"
+#eval (Mol.ofSmiles! "C=CO").mol.adjMatrix                -- !![0, 2, 0; 2, 0, 1; 0, 1, 0]  (over ℚ)
+#eval (Mol.ofSmiles! "C=CO").mol.graph.adjMatrix ℚ        -- Mathlib's 0/1 matrix
+```
+
+A `Molecule n` is a `Vector Atom n` and a list of `Bond n` between distinct
+atoms with no duplicate bonds — the invariants are the type, so
+`Molecule.graph : SimpleGraph (Fin n)` and `Molecule.adjMatrix : Matrix (Fin n) (Fin n) ℚ`
+come with Mathlib's theorems (`sum_degrees`, `card_edgeFinset`, `relabelIso`,
+`canonicalizeIso`).  The matrices also exist as subtypes that say they come
+from a molecule — `BondMatrix n` (bond orders, O(1) lookups) and `FlatMatrix n`
+(0/1, Mathlib's `IsAdjMatrix`) — with `normalEquiv : {m // m.IsNormal} ≃ Vector Atom n × BondMatrix n`
+proving that nothing but bond orientation is lost.  The parser checks syntax, not valence; the only chemistry
+applied is the OpenSMILES implicit-hydrogen rule.  Canonical SMILES is
+color refinement plus exhaustive tie-breaking (lexicographically smallest
+string), and it is canonical by theorem (`Molecule.canonicalSmiles_relabel`)
+rather than by matching RDKit.
+
+Open `LeanSMILES/Examples/caffeine.lean` for one molecule walked through every
+representation — tokens, atoms, bonds, graph, matrices, normal form, canonical
+ranks, fingerprint — and `LeanSMILES/Examples/smiles.lean` for more; design and
+comparison with `LeanSMILES.Canonical` (below) in
+`docs/design-molecular-representation.md`.
+
+Tests against RDKit's answers (oracle files made by `tools/rdkit_oracle.py` and `tools/rdkit_fuzz.py`):
+
+```bash
+lake exe validity-test   # 10 000 broken SMILES: accepts everything RDKit accepts (0 parser bugs)
+lake exe oracle-test     # 1 128 Delaney molecules: graph = RDKit's, canonical SMILES round-trips and is relabeling-invariant, 1128/1128
+lake exe morgan-test     # Morgan fingerprints: ring membership = RDKit's, bits = RDKit's wherever the graph is, relabeling-invariant
+```
+
+### Morgan fingerprints
+
+`LeanSMILES.Fingerprint.Morgan` ports RDKit's `GetMorganGenerator(radius=2, fpSize=2048)`
+(from the port in `LeanSMILES/Canonical/Morgan.lean`) onto `Molecule n`: `morganIds` (unfolded
+identifiers with counts), `morganBits` (sorted on-bits), `morganVector : Vector Bool 2048`,
+`inRingVector`, and an exact `tanimoto : … → ℚ`.  It hashes the graph *as written*, so the
+bits equal RDKit's exactly where the as-written bond types and hydrogen counts equal RDKit's
+sanitized ones (no aromaticity perception here, by design), and they are always invariant
+under relabeling of the atoms.
+
+```lean
+#eval (Mol.ofSmiles! "CCO").morganBits        -- [80, 222, 294, 807, 1057, 1410, ...]
+#eval tanimoto (Mol.ofSmiles! "CCO").morganBits (Mol.ofSmiles! "CCCO").morganBits
+```
+
+## RDKit-exact pipeline: `LeanSMILES.Canonical`
+
+A second, untyped pipeline (`Chem.Mol`, arrays) that ports RDKit's sanitization
+(hydrogens, cleanup, valence checks, kekulization, aromaticity, removeHs) and so
+matches RDKit exactly, where the typed toolkit above deliberately stops at syntax.
+The plan is to move these passes onto `Molecule n`.
+
+### SMILES → canonical SMILES (RDKit's string)
+
+`LeanSMILES.Canonical` turns any SMILES into the same canonical
 string as RDKit's `Chem.MolToSmiles(Chem.MolFromSmiles(s), isomericSmiles=False)`:
 
 ```lean
@@ -66,29 +130,29 @@ Tests against RDKit (answers in `datasets/*-oracle.csv`, made by
 `tools/rdkit_oracle.py`):
 
 ```bash
-lake exe canonical-test   # canonical SMILES
-lake exe morgan-test      # Morgan fingerprints (bits and unfolded identifiers)
-lake exe logistic-test    # EGFR classification vs scikit-learn
-lake exe phase1-test      # every atom and bond of the molecule graph
-lake exe validity-test    # invalid SMILES rejected exactly when RDKit rejects them
+lake exe canonical-test          # canonical SMILES
+lake exe canonical-morgan-test   # Morgan fingerprints (bits and unfolded identifiers)
+lake exe logistic-test           # EGFR classification vs scikit-learn
+lake exe phase1-test             # every atom and bond of the molecule graph
+lake exe canonical-validity-test # invalid SMILES rejected exactly when RDKit rejects them
 ```
 
-## Morgan fingerprints
+### Morgan fingerprints (after sanitization)
 
-`LeanSMILES.Fingerprint.Morgan` computes Morgan (ECFP-like) fingerprints with the
+`LeanSMILES.Canonical.Morgan` computes Morgan (ECFP-like) fingerprints with the
 same bits as RDKit's `GetMorganGenerator(radius=2, fpSize=2048)`:
 
 ```lean
-import LeanSMILES.Fingerprint.Morgan
+import LeanSMILES.Canonical.Morgan
 #eval Chem.morganBits "CCO"                 -- Except.ok [80, 222, 294, 807, 1057, 1410]
 ```
 
 `LeanSMILES/Examples/morgan.lean` also shows Tanimoto similarity, isotopes and
-the bit vector for ML. Test: `lake exe morgan-test` (bits and unfolded
-identifiers); `lake exe morgan-test datasets/isotope-cases-oracle.csv` for
+the bit vector for ML. Test: `lake exe canonical-morgan-test` (bits and unfolded
+identifiers); `lake exe canonical-morgan-test datasets/isotope-cases-oracle.csv` for
 isotope-labelled molecules.
 
-## Classification with Morgan fingerprints
+### Classification with Morgan fingerprints
 
 `LeanSMILES.ML.Logistic` trains L2-regularized logistic regression (scikit-learn's
 `LogisticRegression()` objective) on Morgan fingerprint bits. It is written over
@@ -104,3 +168,35 @@ atoms are folded into their neighbour's H count (`[H]C([H])([H])[H]` → `C`),
 while isotopic, charged and stereo-defining ones stay atoms.
 
 Design notes, RDKit references and results: `docs/scope-canonical-smiles-morgan.md`.
+
+## References
+
+LeanSMILES builds on prior work in Lean, cheminformatics, and chemistry
+education. [`REFERENCES.md`](REFERENCES.md) credits each source and says what
+it is credited for; [`references.bib`](references.bib) has the BibTeX.
+
+## Findings about external tools
+
+Things the formalization turned up in the tools and specifications it is
+checked against.
+
+* **RDKit canonical SMILES is not always canonical.** Its tie-breaking
+  individualizes one atom of the lowest tied class and never backtracks, which
+  is only canonical when the tied atoms are symmetry-equivalent. On a 12-carbon
+  cubic graph where they are not, RDKit 2026.09.1 returns eight different
+  canonical SMILES depending on input atom order
+  (`LeanSMILES/Examples/smiles.lean`). Found by searching random cubic graphs;
+  20 of 1 989 showed it. LeanSMILES tries every tied atom and keeps the
+  lexicographically smallest string, and its canonical SMILES is proved
+  independent of input order for every molecule, with no budget:
+  `Mol.canonicalSmiles_relabel` (`LeanSMILES/SMILES/Canonicity.lean`).
+  nauty-style automorphism pruning, checked at every use, keeps symmetric
+  molecules tractable — a 53-atom *tert*-butyl dendrimer with about 7 × 10¹³
+  tie-breaking leaves canonicalizes in seconds.
+* **OpenSMILES underdetermines implicit hydrogens on aromatic atoms.** §3.1.5
+  computes the count from a sum of bond orders but never says what an
+  aromatic bond contributes; §3.5 only requires that electrons be assignable
+  without violating valence. Read literally with aromatic bonds at `3/2`, the
+  nitrogen of `Cn1cccc1` and the sulfur of thiophene get a hydrogen they
+  cannot have. Toolkits agree on a fix the spec does not state
+  (`Molecule.implicitHydrogens`).
