@@ -19,5 +19,10 @@ public import LeanSMILES.Fingerprint.Morgan
 public import LeanSMILES.Fingerprint.MorganInvariance
 public import LeanSMILES.Fingerprint.Tanimoto
 public import LeanSMILES.Aromaticity.Perceive
+public import LeanSMILES.Depict.Graph
+public import LeanSMILES.Depict.Layout
+public import LeanSMILES.Depict.Svg
+public import LeanSMILES.Depict.Widget
 public import LeanSMILES.Examples.smiles
 public import LeanSMILES.Examples.caffeine
+public import LeanSMILES.Examples.depict

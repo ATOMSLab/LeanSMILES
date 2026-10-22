@@ -185,6 +185,59 @@ RDKit's remaining sanitization steps were ported on that earlier representation;
 `docs/scope-canonical-smiles-morgan.md` records the port, the commit that holds
 its code, the oracle datasets and the Python references.
 
+### Drawing molecules
+
+`LeanSMILES.Depict` draws any `Molecule n` the parser accepts — chains,
+fused rings, cages, sugars, stereocentres, cis/trans alkenes, charges and
+isotopes — with no dependency beyond Lean itself. In the editor:
+
+```lean
+import LeanSMILES.Depict.Widget
+meta import LeanSMILES.Depict.Widget
+
+#draw "OC[C@H]1O[C@@H](O)[C@H](O)[C@@H](O)[C@@H]1O"   -- β-D-glucose, wedges and hashes
+#draw "C1C2CC3CC1CC(C2)C3"                              -- adamantane, in perspective
+#draw "F/C=C\\F"                                        -- cis-difluoroethene
+```
+
+and from the command line, `lake exe depict "<smiles>" [out.svg]` writes the
+SVG, `lake exe depict --mol "<smiles>"` an MDL mol block with wedge/hash flags
+that any other toolkit reads back, and `lake exe depict --html in.smi out.html`
+a gallery. `LeanSMILES/Examples/depict.lean` shows the range.
+
+The layout is deterministic: classical multidimensional scaling on the graph
+distances (chains zigzag at 120°, rings become regular polygons), refined by
+stress majorisation; a component with three or more rings that cannot lie flat
+is laid out in three dimensions and projected obliquely, which is how chemists
+draw cubane or norbornane. The stereochemistry is read back from what the
+parser *recorded*: `Atom.chirality` is `@`/`@@` (or `@TH1`/`@TH2`) relative
+to the SMILES neighbor order, which `Depict.Graph.stereoNeighbors`
+reconstructs from the bond list (ring-closure bonds belong at the *opening*
+digit, not where the parser created them), and one bond per centre becomes a
+wedge or a hash so that the signed volume of the drawn neighbors has the
+written sign; `Bond.dir` gives the cis/trans arrangement, enforced by target
+distances and, if the layout still came out the other way, by reflecting one
+side of the double bond. Bonds are drawn as written; to draw RDKit's view of
+an aromatic system, `aromatize` first.
+
+Tests:
+
+```bash
+lake exe depict-test                        # datasets/stereo.smi: every centre wedged, every
+                                            # marked double bond cis/trans as written, sane geometry
+python3 tools/check_depiction.py out/stereo.sdf   # RDKit reads the mol blocks back: same isomeric SMILES
+```
+
+The Lean check passes 552 of the 557 drawings (the five misses are crowded
+tri- and tetrasubstituted alkenes); RDKit recovers the written
+stereochemistry exactly from 481 of them (86 %), the rest being mostly
+bridged bicyclics, where one wedge per centre is not always enough for a
+reader to settle the configuration, and double bonds in large rings, for
+which RDKit assigns an E/Z the SMILES did not specify.
+`datasets/stereo.smi` is drawn from RDKit's example data (ESOL, WEHI, CDK2,
+ChEMBL document CHEMBL2321810 — CC BY-SA 3.0 — and the NIBR PubChem examples)
+plus seven textbook cases.
+
 ## Three libraries
 
 The repository builds three Lean libraries, with one direction of dependency:
@@ -445,9 +498,10 @@ LeanSMILES/           the typed SMILES toolkit (imports Mathlib)
   SMILES/             tokenizer, parser, writer, canonical SMILES and its canonicity proof
   Fingerprint/        RDKit-compatible Morgan fingerprints on Molecule n; order-invariance proof
   Aromaticity/        Molecule.aromatize: RDKit's ring set, kekulization, aromaticity perception
+  Depict/             2D depiction: layout, SVG, mol blocks, #draw for the Infoview, lake exe depict
   Data/               CSV parser (columns by header name) for the Delaney dataset
-  Tests/              validity, oracle, Morgan, aromaticity, charge and parse-error tests (lake exe …-test)
-  Examples/           caffeine.lean, smiles.lean, parsercsv.lean
+  Tests/              validity, oracle, Morgan, aromaticity, charge, parse-error and depiction tests (lake exe …-test)
+  Examples/           caffeine.lean, smiles.lean, parsercsv.lean, depict.lean
 LeanLearn/            learning algorithms on tabular data (imports Mathlib only)
   Scalar.lean         ScalarLike: the scalar interface, Float to run and ℝ to prove (from LeanCatalyst)
   Regression/         Problem, Solvers, Certificates (iterative, any scalar);
@@ -472,6 +526,7 @@ datasets/             Delaney (ESOL) data, RDKit oracle files (as written and Ke
                       Delaney-ridge answer files
 tools/                RDKit oracle and fuzz generators; sklearn_egfr.py and sklearn_delaney.py write
                       the scikit-learn answer files
+                      check_depiction.py reads the drawings back with RDKit
 docs/                 design notes; figures/ holds plots written by Lean
 ench470-content/      ENCH 470 course notebooks and data
 LICENSES/             TorchLean's MIT license
