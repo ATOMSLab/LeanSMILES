@@ -321,11 +321,11 @@ lemma envLE_iff (p q : UInt32 × Fin n × ℕ) :
     envLE p q = true ↔ p.1.toNat < q.1.toNat ∨ (p.1.toNat = q.1.toNat ∧ p.2.1.val ≤ q.2.1.val) := by
   simp [envLE, UInt32.lt_iff_toNat_lt, ← UInt32.toNat_inj]
 
-lemma idSorted_mergeSort_envLE (l : List (UInt32 × Fin n × ℕ)) : IdSorted (l.mergeSort envLE) := by
-  have h := List.pairwise_mergeSort (le := envLE)
-    (fun a b c hab hbc ↦ by rw [envLE_iff] at *; omega)
+lemma idSorted_sortBy_envLE (l : List (UInt32 × Fin n × ℕ)) : IdSorted (sortBy envLE l) := by
+  have h := pairwise_sortBy (le := envLE)
     (fun a b ↦ by
-      rw [Bool.or_eq_true, envLE_iff, envLE_iff]; omega) l
+      rw [Bool.or_eq_true, envLE_iff, envLE_iff]; omega)
+    (fun a b c hab hbc ↦ by rw [envLE_iff] at *; omega) l
   refine h.imp fun {p q} hpq ↦ ?_
   rw [envLE_iff] at hpq
   rw [UInt32.le_iff_toNat_le]
@@ -415,7 +415,7 @@ variable {adj : Vector (List (ℕ × Fin n)) n} {kinds : Array UInt32} {layer : 
 
 lemma morganLayer_result (s : MorganState n) :
     (morganLayer adj kinds layer s).result
-      = s.result ++ emitted layer ((roundTriples adj kinds layer s).mergeSort envLE) s.seen :=
+      = s.result ++ emitted layer (sortBy envLE (roundTriples adj kinds layer s)) s.seen :=
   foldl_dedupStep_result _ _ _ _ _
 
 lemma mem_morganLayer_seen (s : MorganState n) (e : ℕ) :
@@ -424,7 +424,7 @@ lemma mem_morganLayer_seen (s : MorganState n) (e : ℕ) :
   unfold morganLayer
   dsimp only
   rw [mem_foldl_dedupStep_seen]
-  simp only [List.mem_mergeSort]
+  simp only [mem_sortBy]
 
 lemma mem_roundTriples {s : MorganState n} {t : UInt32 × Fin n × ℕ} :
     t ∈ roundTriples adj kinds layer s ↔ (roundAlive adj s)[t.2.1] = true ∧
@@ -491,7 +491,7 @@ lemma morganLayer_prevEnv (s : MorganState n) :
 
 lemma morganLayer_dead (s : MorganState n) :
     (morganLayer adj kinds layer s).dead
-      = (((roundTriples adj kinds layer s).mergeSort envLE).foldl (dedupStep layer)
+      = ((sortBy envLE (roundTriples adj kinds layer s)).foldl (dedupStep layer)
           (Vector.ofFn fun a ↦ s.dead[a] || adj[a].isEmpty, s.result, s.seen)).1 :=
   rfl
 
@@ -624,8 +624,9 @@ lemma grown_mem_seen_of_killed (t : UInt32 × Fin n × ℕ)
     rw [getElem_roundAlive] at halive
     simp only [Bool.and_eq_true, Bool.not_eq_true'] at halive
     exact halive.2
-  have hnodup := (List.mergeSort_perm (roundTriples m.adjacency m.bondKinds 0 m.morganInit)
-    envLE).map (·.2.1) |>.nodup_iff.mpr (nodup_roundTriples _)
+  have hnodup := (perm_sortBy (le := envLE)
+    (roundTriples m.adjacency m.bondKinds 0 m.morganInit)).map (·.2.1)
+    |>.nodup_iff.mpr (nodup_roundTriples _)
   rw [layer1, morganLayer_dead] at hdead
   rcases dead_of_foldl_dedupStep 0 _ hnodup _ _ _ t.2.1 hdead with h0 | ⟨t₀, ht₀, ht₀a, h⟩
   · simp only [Fin.getElem_fin, Vector.getElem_ofFn, morganInit, Vector.getElem_replicate,
@@ -635,7 +636,7 @@ lemma grown_mem_seen_of_killed (t : UInt32 × Fin n × ℕ)
     exact absurd h0 Bool.false_ne_true
   rcases h with h | ⟨t₁, ht₁, ht₁a, ht₁e⟩
   · simp [morganInit] at h
-  rw [List.mem_mergeSort] at ht₀ ht₁
+  rw [mem_sortBy] at ht₀ ht₁
   obtain ⟨-, ht₀eq⟩ := mem_roundTriples.mp ht₀
   obtain ⟨hb, ht₁eq⟩ := mem_roundTriples.mp ht₁
   have hb' : m.adjacency[t₁.2.1].isEmpty = false := by
@@ -673,13 +674,13 @@ lemma grown_mem_seen_of_killed (t : UInt32 × Fin n × ℕ)
 /-- Radius 2 emits from the live atoms exactly what it would emit if radius 1 had
 killed no duplicates. -/
 lemma mem_layer2_iff {e : ℕ} (he : e ∉ m.layer1.seen) (x : UInt32) :
-    (∃ t ∈ (roundTriples m.adjacency m.bondKinds 1 m.layer1).mergeSort envLE,
+    (∃ t ∈ sortBy envLE (roundTriples m.adjacency m.bondKinds 1 m.layer1),
         t.2.2 = e ∧ t.1 = x)
       ↔ ∃ t ∈ roundTriples m.adjacency m.bondKinds 1 m.layer1Full, t.2.2 = e ∧ t.1 = x := by
   have hd : ∀ a : Fin n, m.layer1Full.dead[a] = true → m.layer1.dead[a] = true := fun a ha ↦ by
     rw [layer1, morganLayer_dead]
     exact foldl_dedupStep_dead_mono _ _ _ _ _ ha
-  simp only [List.mem_mergeSort]
+  simp only [mem_sortBy]
   rw [roundTriples_eq_filter m.layer1 m.layer1Full.dead hd]
   simp only [List.mem_filter, Bool.not_eq_true']
   constructor
@@ -757,9 +758,9 @@ lemma ids_layer1_relabel :
   rw [layer1, layer1, morganLayer_result, morganLayer_result, List.map_append, List.map_append,
     ← Multiset.coe_add, ← Multiset.coe_add, ids_init_relabel]
   congr 1
-  refine emitted_ids_eq 0 (idSorted_mergeSort_envLE _) (idSorted_mergeSort_envLE _)
+  refine emitted_ids_eq 0 (idSorted_sortBy_envLE _) (idSorted_sortBy_envLE _)
     (by simp [morganInit]) fun e x _ ↦ ?_
-  simp only [List.mem_mergeSort]
+  simp only [mem_sortBy]
   constructor
   · rintro ⟨t, ht, h⟩
     obtain ⟨u, hu, rfl⟩ := List.mem_map.mp ((m.roundTriples_init_relabel σ).mem_iff.mp ht)
@@ -778,7 +779,7 @@ lemma ids_layer2_relabel :
   congr 1
   have hfull := roundTriples_relabel m σ 1 (s := m.layer1Full) (s' := (m.relabel σ).layer1Full)
     (m.layer1_cur_relabel σ) (m.layer1_prevEnv_relabel σ) (m.layer1Full_dead_relabel σ)
-  refine emitted_ids_eq 1 (idSorted_mergeSort_envLE _) (idSorted_mergeSort_envLE _)
+  refine emitted_ids_eq 1 (idSorted_sortBy_envLE _) (idSorted_sortBy_envLE _)
     (m.mem_layer1_seen_relabel σ) fun e x he ↦ ?_
   have he' : e ∉ m.layer1.seen := fun h ↦ he ((m.mem_layer1_seen_relabel σ e).mpr h)
   rw [(m.relabel σ).mem_layer2_iff he, m.mem_layer2_iff he']
@@ -804,19 +805,19 @@ theorem morganEnvironments_ids_relabel {radius : ℕ} (hr : radius ≤ 2) :
 theorem morganIds_relabel {radius : ℕ} (hr : radius ≤ 2) :
     (m.relabel σ).morganIds radius = m.morganIds radius := by
   have hperm := Multiset.coe_eq_coe.mp (m.morganEnvironments_ids_relabel σ hr)
-  have hsort : ∀ l : List UInt32, (l.mergeSort fun a b ↦ decide (a ≤ b)).Pairwise
+  have hsort : ∀ l : List UInt32, (sortBy (fun a b ↦ decide (a ≤ b)) l).Pairwise
       fun a b ↦ decide (a ≤ b) = true :=
-    List.pairwise_mergeSort (fun a b c hab hbc ↦ by
-        simp only [decide_eq_true_eq] at *; exact UInt32.le_trans hab hbc)
+    pairwise_sortBy
       (fun a b ↦ by
         rcases UInt32.le_total a b with h | h <;> simp [h])
-  have heq : (((m.relabel σ).morganEnvironments radius).map (·.1)).mergeSort
-        (fun a b ↦ decide (a ≤ b))
-      = ((m.morganEnvironments radius).map (·.1)).mergeSort (fun a b ↦ decide (a ≤ b)) :=
+      (fun a b c hab hbc ↦ by
+        simp only [decide_eq_true_eq] at *; exact UInt32.le_trans hab hbc)
+  have heq : sortBy (fun a b ↦ decide (a ≤ b)) (((m.relabel σ).morganEnvironments radius).map (·.1))
+      = sortBy (fun a b ↦ decide (a ≤ b)) ((m.morganEnvironments radius).map (·.1)) :=
     List.Perm.eq_of_pairwise (le := fun a b ↦ decide (a ≤ b) = true)
       (fun a b _ _ hab hba ↦ UInt32.le_antisymm (by simpa using hab) (by simpa using hba))
       (hsort _) (hsort _)
-      (((List.mergeSort_perm _ _).trans hperm).trans (List.mergeSort_perm _ _).symm)
+      (((perm_sortBy _).trans hperm).trans (perm_sortBy _).symm)
   unfold morganIds
   simp only [heq]
 
