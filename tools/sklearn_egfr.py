@@ -29,7 +29,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, confusion_matrix
 from sklearn.model_selection import train_test_split
 
-DATA = "ench470-content/"
+DATA = "datasets/"
 OUT = "datasets/egfr-classification.csv"
 
 
