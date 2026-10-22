@@ -140,14 +140,17 @@ LeanSMILES/
   Float/              the Float instance and precompiled specializations (runs the code)
   Real/               the ℝ instance (used by the proofs)
   Proofs/             all theorems, mirroring Polymorphic/
+  Optimization/       gradient-descent convergence theorems over ℝ (from TorchLean)
+  LearningTheory/     algorithmic stability; 1D ridge regression: closed form, uniform
+                      stability, unique minimizer (over ℝ)
   Examples/           CertifiedPipeline.lean
 notebooks/            the original Python (RDKit + scikit-learn) project notebook
 ```
 
 `Polymorphic/` and `Float/` form the `LeanSMILESExec` library. It imports no Mathlib and is
 precompiled to native code, so `#eval` runs at compiled speed (use `lake lean`, not
-`lake env lean`, to load the native code). `Real/`, `Proofs/` and `Examples/` form the
-`LeanSMILES` library.
+`lake env lean`, to load the native code). `Real/`, `Proofs/`, `Optimization/`,
+`LearningTheory/` and `Examples/` form the `LeanSMILES` library.
 
 ## What the guarantees do not cover
 
@@ -159,3 +162,27 @@ precompiled to native code, so `#eval` runs at compiled speed (use `lake lean`, 
   available bound is the Lipschitz one: predictions move by at most `‖w‖ · √hamming`.
 * **Canonical SMILES** is proved to be a function of the molecule. That it determines the molecule
   up to renumbering is not yet proved.
+
+## Theorems ported from TorchLean
+
+`Optimization/` and `LearningTheory/` are proofs over `ℝ` that import only Mathlib. Nothing
+executable depends on them; `lake build` builds them, but the root module does not import
+them.
+
+- `Optimization/StronglyConvexGD.lean`: for a μ-strongly monotone, L-Lipschitz `g` on a real
+  inner product space, each step of `x ↦ x - η g(x)` shrinks the squared distance to the
+  root of `g` by the factor `1 - 2ημ + η²L²`, which is below 1 when `0 < η` and `ηL² < 2μ`;
+  the iterates converge to the root. `SmoothStrongConvexBridge.lean` derives strong
+  monotonicity of `∇f` from `StrongConvexOn`; the Lipschitz constant of `∇f` stays a
+  hypothesis.
+- `LearningTheory/Stability/RidgeRegression1D/Real.lean`: replace-one uniform stability of
+  the closed-form 1D ridge fit, with `β = 4X²Y²(λ+X²)²/(λ³N)`.
+- `LearningTheory/Stability/RidgeRegression1D/Minimizer.lean` (written here, not from
+  TorchLean): for `λ > 0` the closed form is the unique minimizer of
+  `(1/N) Σ (w xᵢ - yᵢ)² + λ w²`.
+
+To apply the gradient-descent theorems to `ML.gradientDescent`, instantiate them on
+`EuclideanSpace ℝ (Fin n)` (Mathlib's `Fin n → ℝ` carries the sup norm, not an inner
+product) and rewrite with `Primitives.iterate_eq_iterate`. The files are copied from
+[TorchLean](https://github.com/lean-dojo/TorchLean) (MIT; `LICENSES/TorchLean-MIT.txt`), and
+each file's header records the source commit and every change made here.

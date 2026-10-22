@@ -26,12 +26,15 @@ globs = [
   "LeanSMILES.Float.+",
 ]
 
-# The `ℝ` instance, the proofs (with Mathlib) and the examples.
+# The `ℝ` instance, the proofs (with Mathlib), the theorems ported from TorchLean, and the
+# examples.
 [[lean_lib]]
 name = "LeanSMILES"
 globs = [
   "LeanSMILES",
   "LeanSMILES.Real.+",
   "LeanSMILES.Proofs.+",
+  "LeanSMILES.Optimization.+",
+  "LeanSMILES.LearningTheory.+",
   "LeanSMILES.Examples.+",
 ]
