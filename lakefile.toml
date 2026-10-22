@@ -30,6 +30,10 @@ globs = [
 # examples.
 [[lean_lib]]
 name = "LeanSMILES"
+# No implicit root: Lake would otherwise treat every `LeanSMILES.*` module as a member of this
+# library (the last one declared wins), so nothing would ever belong to `LeanSMILESExec` and
+# `precompileModules` would never apply.
+roots = []
 globs = [
   "LeanSMILES",
   "LeanSMILES.Real.+",
