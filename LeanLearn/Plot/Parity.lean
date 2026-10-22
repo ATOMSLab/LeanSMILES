@@ -78,10 +78,10 @@ def paritySvg (title subtitle axis : String) (series : List Series) : String := 
   out := out ++ s!"<polygon points=\"{c (sx lo)},{c (sy (lo + 1))} {c (sx (hi - 1))},{c (sy hi)} \
     {c (sx hi)},{c (sy hi)} {c (sx hi)},{c (sy (hi - 1))} {c (sx (lo + 1))},{c (sy lo)} \
     {c (sx lo)},{c (sy lo)}\" fill=\"#3b3fa6\" fill-opacity=\"0.07\"/>\n"
-  out := out ++ s!"<line x1=\"{c (sx lo)}\" y1=\"{c (sy lo)}\" x2=\"{c (sx hi)}\" y2=\"{c (sy hi)}\" \
-    stroke=\"#3b3fa6\" stroke-width=\"1.2\" stroke-dasharray=\"5 4\"/>\n"
-  out := out ++ s!"<rect x=\"{c L}\" y=\"{c T}\" width=\"{c size}\" height=\"{c size}\" fill=\"none\" \
-    stroke=\"#9fb0b9\"/>\n"
+  out := out ++ s!"<line x1=\"{c (sx lo)}\" y1=\"{c (sy lo)}\" x2=\"{c (sx hi)}\" \
+    y2=\"{c (sy hi)}\" stroke=\"#3b3fa6\" stroke-width=\"1.2\" stroke-dasharray=\"5 4\"/>\n"
+  out := out ++ s!"<rect x=\"{c L}\" y=\"{c T}\" width=\"{c size}\" height=\"{c size}\" \
+    fill=\"none\" stroke=\"#9fb0b9\"/>\n"
   -- points: hollow series first, filled on top
   for s in series.filter (!·.filled) ++ series.filter (·.filled) do
     for (y, p) in s.points do
@@ -98,17 +98,17 @@ def paritySvg (title subtitle axis : String) (series : List Series) : String := 
         s!"<circle cx=\"{c (L + 18)}\" cy=\"{c (ly - 4)}\" r=\"4\" fill=\"#d0641c\"/>"
       else s!"<circle cx=\"{c (L + 18)}\" cy=\"{c (ly - 4)}\" r=\"3.6\" fill=\"none\" \
         stroke=\"#7d93a3\" stroke-width=\"1.2\"/>"
-    out := out ++ mark ++ s!"<text x=\"{c (L + 30)}\" y=\"{c ly}\" font-size=\"13\" fill=\"#172026\">\
-      {s.label} (n = {s.points.size}) · R² {fixed s.r2 3 "−"} · RMSE {fixed s.rmse 2 "−"} \
-      · MAE {fixed s.mae 2 "−"}</text>\n"
+    out := out ++ mark ++ s!"<text x=\"{c (L + 30)}\" y=\"{c ly}\" font-size=\"13\" \
+      fill=\"#172026\">{s.label} (n = {s.points.size}) · R² {fixed s.r2 3 "−"} \
+      · RMSE {fixed s.rmse 2 "−"} · MAE {fixed s.mae 2 "−"}</text>\n"
     ly := ly + 20
   out := out ++ s!"<text x=\"{c (L + 18)}\" y=\"{c ly}\" font-size=\"12\" fill=\"#5b6a73\">\
     shaded: within ±1 of the diagonal</text>\n"
   -- axis titles
   out := out ++ s!"<text x=\"{c (L + size / 2)}\" y=\"{c (H - 18)}\" font-size=\"14\" \
     text-anchor=\"middle\" fill=\"#172026\">Measured {axis}</text>\n"
-  out := out ++ s!"<text transform=\"translate(22 {c (T + size / 2)}) rotate(-90)\" font-size=\"14\" \
-    text-anchor=\"middle\" fill=\"#172026\">Predicted {axis}</text>\n"
+  out := out ++ s!"<text transform=\"translate(22 {c (T + size / 2)}) rotate(-90)\" \
+    font-size=\"14\" text-anchor=\"middle\" fill=\"#172026\">Predicted {axis}</text>\n"
   return out ++ "</svg>\n"
 
 end LeanLearn.Plot

@@ -19,7 +19,7 @@ the resulting triangular system. It does not form or invert `XᵀX`.
 It requires at least as many observations as coefficients and rejects
 numerical rank deficiency using a configurable relative tolerance.
 
-This implements the OLS objective specified in `OLS.lean`, but the exact-real
+This implements the OLS objective specified in `Proofs/LeastSquares/OLS.lean`, but the exact-real
 proofs there do not certify this program's floating-point rounding errors.
 -/
 
@@ -150,9 +150,9 @@ def fit (X : Design) (y : Array Float) (cfg : Config := {}) : Except Error Model
     for i in [0:m] do
       scales := scales.set! j (max scales[j]! X[i]![j]!.abs)
     if scales[j]! == 0 then throw (.rankDeficient j)
-  let targetMax := y.foldl (fun s v => max s v.abs) 0.0
+  let targetMax := y.foldl (fun s v ↦ max s v.abs) 0.0
   let targetScale := if targetMax == 0 then 1.0 else targetMax
-  let mut a := X.map fun row => row.mapIdx fun j v => v / scales[j]!
+  let mut a := X.map fun row ↦ row.mapIdx fun j v ↦ v / scales[j]!
   let mut b := y.map (· / targetScale)
   let mut originalNorms := Array.replicate p 0.0
   for j in [0:p] do
@@ -174,7 +174,7 @@ def fit (X : Design) (y : Array Float) (cfg : Config := {}) : Except Error Model
     for i in [k:m] do
       v := v.set! i a[i]![k]!
     v := v.set! k (v[k]! - alpha)
-    let vnormSq := v.foldl (fun s vi => s + vi * vi) 0.0
+    let vnormSq := v.foldl (fun s vi ↦ s + vi * vi) 0.0
     if !vnormSq.isFinite || vnormSq == 0 then
       throw (.numericalFailure s!"Householder reflection {k}")
     for j in [k:p] do

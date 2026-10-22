@@ -1,4 +1,28 @@
-# Ordinary least squares and ridge regression
+# LeanLearn
+
+Learning algorithms on tabular data `(X, y)` and their proofs. The library imports Mathlib only
+— no chemistry; the molecules are `LeanSMILES`'s, and `Pipelines/` is where the two meet.
+
+Every executable algorithm is written once over the scalar interface of
+[`Scalar.lean`](Scalar.lean): `Float` is what runs, `ℝ` is what the theorems are about, and the
+polynomial fragment also runs exactly over `ℚ`. The layout follows that split:
+
+| Folder | What it is |
+|---|---|
+| [`Regression/`](Regression) | executable linear regression, over any scalar: the ridge `Problem`, its iterative `Solvers` (gradient descent, Jacobi, Gauss–Seidel) and their exact `ℚ` `Certificates`; the `LinearModel` objectives on a Mathlib matrix; the Householder-QR solvers `OLSFloat` and `RidgeFloat`; `SparseRidge` (conjugate gradients on sparse 0/1 features) and `Metrics` (R², RMSE, MAE) |
+| [`Classification/`](Classification) | L2-regularized logistic regression on sparse 0/1 features |
+| [`Plot/`](Plot) | parity plots as SVG |
+| [`Proofs/LeastSquares/`](Proofs/LeastSquares) | over `ℝ`, on Mathlib matrices: ordinary least squares (`OLS`), diagonal ridge (`Ridge`), and the two against each other (`RidgeOLS`: the trade-off, shrinkage, the ridge path) |
+| [`Proofs/Regression/`](Proofs/Regression) | over `ℝ`, about the executable code: the loss is an exact quadratic (`Basic`), gradient descent's `O(1/k)` rate (`GradientDescent`), Jacobi and Gauss–Seidel under weighted diagonal dominance (`Iterative`), certificate soundness (`Certificates`), and the bridges to the closed form (`MatrixBridge`: `Problem` is `Ridge` up to the factor `m`; `LinearModel`: the executable objectives are the specifications) |
+| [`Examples/`](Examples) | `ols.lean`, `ridge.lean`: worked proofs on small exact designs; `olsFloat.lean`, `ridgeFloat.lean`: the `Float` solvers running |
+| [`Tests/`](Tests) | `lake exe ols-float-test`, `ridge-float-test`, `linear-model-test` |
+
+Executable files open `@[expose] public section`, so downstream code (and `decide +kernel`)
+can unfold their definitions; theorem-only files open `public section`. The rest of this file
+is the guide to the closed-form formulation; the iterative formulation and its certificates are
+described in the repository README.
+
+## Ordinary least squares and ridge regression
 
 Author: Hao Liu
 
@@ -9,38 +33,35 @@ Feature generation and training/evaluation belong to the calling pipeline
 (`Pipelines/`). Solubility is one possible real-valued target; the theorems
 apply equally to other numerical properties.
 
-Two generations of this code existed on the `algorithms` branch
-(`Algorithms/` and `Algorithms/Update/`). This folder keeps the updated
-exact-real specifications and the executable Float solvers:
-
 | File | Role |
 |---|---|
-| `OLS.lean` | Exact-real OLS definitions, inverse formula, optimality, uniqueness |
-| `Ridge.lean` | Exact-real diagonal ridge definitions, optimality, positive-ridge existence and uniqueness |
-| `RidgeOLS.lean` | Ridge against OLS: the shrinkage trade-off, ridge as a linear image of OLS, the ridge path's limits at `λ → 0` and `λ → ∞` |
-| `LinearModel.lean` | Shared executable prediction/loss/stationarity definitions and proofs connecting their real interpretation to OLS/ridge |
-| `../Proofs/Regression/MatrixBridge.lean` | The iterative `Problem` formulation (`Problem.lean`) is this problem up to the factor `m`: closed form and uniqueness transported, the shrinkage trade-off proved for it |
-| `OLSFloat.lean` | Executable OLS on floating-point arrays using Householder QR |
-| `RidgeFloat.lean` | Executable ridge regression using augmented Householder QR |
-| `../Examples/ols.lean`, `../Examples/ridge.lean` | Exact, noisy, singular, exempt-intercept, duplicate-column and underdetermined examples proved in Lean |
-| `../Examples/olsFloat.lean`, `../Examples/ridgeFloat.lean` | Runnable fitting and prediction demonstrations (`#eval`) |
-| `../Tests/OLSFloat.lean`, `../Tests/RidgeFloat.lean` | Numerical regression and input-validation checks (`lake exe ols-float-test`, `ridge-float-test`) |
-| `../Tests/LinearModel.lean` | Float checks of the shared definitions on supplied coefficients (`lake exe linear-model-test`) |
+| `Proofs/LeastSquares/OLS.lean` | Exact-real OLS definitions, inverse formula, optimality, uniqueness |
+| `Proofs/LeastSquares/Ridge.lean` | Exact-real diagonal ridge definitions, optimality, positive-ridge existence and uniqueness |
+| `Proofs/LeastSquares/RidgeOLS.lean` | Ridge against OLS: the shrinkage trade-off, ridge as a linear image of OLS, the ridge path's limits at `λ → 0` and `λ → ∞` |
+| `Regression/LinearModel.lean` | Shared executable prediction/loss/stationarity definitions |
+| `Proofs/Regression/LinearModel.lean` | Proofs connecting their real interpretation to OLS/ridge |
+| `Proofs/Regression/MatrixBridge.lean` | The iterative `Problem` formulation (`Regression/Problem.lean`) is this problem up to the factor `m`: closed form and uniqueness transported, the shrinkage trade-off proved for it |
+| `Regression/OLSFloat.lean` | Executable OLS on floating-point arrays using Householder QR |
+| `Regression/RidgeFloat.lean` | Executable ridge regression using augmented Householder QR |
+| `Examples/ols.lean`, `Examples/ridge.lean` | Exact, noisy, singular, exempt-intercept, duplicate-column and underdetermined examples proved in Lean |
+| `Examples/olsFloat.lean`, `Examples/ridgeFloat.lean` | Runnable fitting and prediction demonstrations (`#eval`) |
+| `Tests/OLSFloat.lean`, `Tests/RidgeFloat.lean` | Numerical regression and input-validation checks (`lake exe ols-float-test`, `ridge-float-test`) |
+| `Tests/LinearModel.lean` | Float checks of the shared definitions on supplied coefficients (`lake exe linear-model-test`) |
 
 The iterative solvers for the same problem (gradient descent, Jacobi,
 Gauss–Seidel, written over the scalar interface with their certificates) are
-`Problem.lean`, `Solvers.lean` and `Certificates.lean` in this folder, by
+`Problem.lean`, `Solvers.lean` and `Certificates.lean` in `Regression/`, by
 DeMarko Fulcher; see the repository README.
 
-- **The exact-real fitting definitions are noncomputable.** Use `OLSFloat.lean`
-  and `RidgeFloat.lean` for executable Float fitting. Neither establishes
+- **The exact-real fitting definitions are noncomputable.** Use `Regression/OLSFloat.lean`
+  and `Regression/RidgeFloat.lean` for executable Float fitting. Neither establishes
   floating-point rounding-error bounds.
 - **Scalar convention.** Executable arithmetic is written with `PolynomialLike`,
-  the polynomial fragment of `ScalarLike` (`LeanLearn/Scalar.lean`); proofs
+  the polynomial fragment of `ScalarLike` (`Scalar.lean`); proofs
   specialize it to `ℝ`. `Float` is not assigned a lawful `Field` instance, which
   avoids assuming false identities such as associative floating-point addition.
 
-## Input contract
+### Input contract
 
 ```lean
 X : Matrix (Fin n) (Fin p) K
@@ -62,7 +83,7 @@ for the intercept and a column containing `x`. The coefficient vector is then
 `[b, a]`, in that order. For example:
 
 ```lean
-import LeanLearn.Regression.OLS
+import LeanLearn.Proofs.LeastSquares.OLS
 
 open Matrix
 open scoped Matrix
@@ -72,7 +93,7 @@ def X : Matrix (Fin 3) (Fin 2) ℝ := !![1, 0; 1, 1; 1, 2]
 def y : Fin 3 → ℝ := ![1, 3, 5]
 ```
 
-## Algorithms and guarantees
+### Algorithms and guarantees
 
 OLS minimizes the unaveraged sum of squared errors:
 
@@ -161,13 +182,13 @@ example, prevents uniqueness.
 All global-optimality statements quantify over **every real coefficient
 vector**, rather than a finite collection of candidates.
 
-## Shared definitions and their proofs
+### Shared definitions and their proofs
 
-`LinearModel` provides `predictRow`, `predict`, `residual`, `squaredError`,
+`Regression/LinearModel.lean` provides `predictRow`, `predict`, `residual`, `squaredError`,
 `penalty`, `ridgeLoss`, and `normalResidual`. They use `sumGen` over
 `List.finRange`, which fixes an evaluation order and works with Float.
 
-The bridge theorems `predict_real`, `squaredError_real`, `ridgeLoss_real`, and
+The bridge theorems (`Proofs/Regression/LinearModel.lean`) `predict_real`, `squaredError_real`, `ridgeLoss_real`, and
 `normalResidual_eq_zero_iff` prove that the same definitions, interpreted at
 `ℝ`, agree with the exact specifications. `ols_fit_minimizes`,
 `stationary_minimizes`, and `ridge_fit_minimizes` express correctness directly
@@ -191,12 +212,12 @@ def weights : Fin 2 → Float := ![0, 2]
 #eval LinearModel.ridgeLoss X y weights coefficients -- 4
 ```
 
-## The iterative formulation is the same problem
+### The iterative formulation is the same problem
 
-`Problem.lean` (DeMarko Fulcher) writes ridge regression as the *averaged* loss
+`Regression/Problem.lean` (DeMarko Fulcher) writes ridge regression as the *averaged* loss
 `L(θ) = (1/m) Σᵣ (⟪xᵣ, θ⟫ − yᵣ)² + λ ‖θ‖²` over executable `Vec`s, a constant
 `1` appended to every sample for the intercept, with normal equations
-`A θ = b` for the iterative solvers. `../Proofs/Regression/MatrixBridge.lean`
+`A θ = b` for the iterative solvers. `Proofs/Regression/MatrixBridge.lean`
 proves, over `ℝ`, that this is the problem above up to the factor `m`: with
 `X = P.designMatrix` (every sample with its `1`), `y = P.target` and `ρ = m λ`
 on every coefficient,
@@ -228,7 +249,7 @@ identity still holds (both sides are `0`), but `L(θ) = λ‖θ‖²` while the 
 problem is empty, so the statements about normal equations and minimizers
 assume `m > 0`.
 
-## Run OLS on floating-point data
+### Run OLS on floating-point data
 
 `OLSFloat.fit X y` accepts rows of numerical features and one target per row.
 Include a column of ones in `X` to fit an intercept. The solver scales columns
@@ -270,7 +291,7 @@ errors; no pseudoinverse or regularized fallback is used. Non-finite numerical
 results are also errors. Finite results remain subject to rounding, especially
 on ill-conditioned data.
 
-## Run ridge regression on floating-point data
+### Run ridge regression on floating-point data
 
 `RidgeFloat.fit` minimizes `Σᵢ ((Xw)ᵢ - yᵢ)² + penalty * Σⱼ wⱼ²`. The default
 penalty is `1.0`, and every supplied coefficient is penalized. Use
@@ -298,7 +319,7 @@ be independent of the penalized columns in the augmented design. At zero
 penalty, the solver behaves like OLS and rejects underdetermined or
 rank-deficient designs. The same relative `rankTolerance` check applies.
 
-## Build and inspect
+### Build and inspect
 
 From the repository root:
 
@@ -309,13 +330,13 @@ lake exe ridge-float-test
 lake exe linear-model-test
 ```
 
-A successful build of `OLS.lean`, `Ridge.lean`, `RidgeOLS.lean` and `LinearModel.lean` means Lean
-has checked the proofs. Open the repository in a Lean-enabled editor and inspect
-`LeanLearn/Examples/ols.lean` and `ridge.lean` in the Infoview to follow the
+A successful build of `Proofs/LeastSquares/` and `Proofs/Regression/LinearModel.lean` means
+Lean has checked the proofs. Open the repository in a Lean-enabled editor and inspect
+`Examples/ols.lean` and `ridge.lean` in the Infoview to follow the
 worked proofs step by step; `olsFloat.lean` and `ridgeFloat.lean` show the Float
 solvers running.
 
-## Scope of the guarantee
+### Scope of the guarantee
 
 Theorems about real arithmetic establish exact optimization properties. A
 definition's availability at Float does not transfer those theorems to IEEE

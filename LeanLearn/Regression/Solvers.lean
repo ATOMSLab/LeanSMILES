@@ -12,7 +12,7 @@ public import LeanLearn.Regression.Problem
 
 Linear regression — iterative solvers.
 
-Three iterative methods for the normal equations `A θ = b` of `Basic.lean`, each started
+Three iterative methods for the normal equations `A θ = b` of `Problem.lean`, each started
 from `θ = 0`:
 
 * **Gradient descent**: `θ ← θ - η ∇L(θ) = θ - 2η (A θ - b)`.

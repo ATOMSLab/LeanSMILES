@@ -1,17 +1,20 @@
 module
 
--- The scalar interface every executable algorithm is written over: `Float` runs, `ℝ` proves
+-- LeanLearn: learning algorithms on tabular data `(X, y)` and their proofs. Imports Mathlib only.
+-- Every executable algorithm is written once over the scalar interface: `Float` is what runs,
+-- `ℝ` is what the theorems are about. The executable code is at the top level and exposes its
+-- definition bodies; everything under `Proofs/` is over `ℝ`.
+
+-- The scalar interface: `ScalarLike`, its polynomial fragment, and the `Float`-usable sums
 public import LeanLearn.Scalar
--- Linear regression: the problem, its iterative solvers and their certificate checks
+-- Linear regression over any scalar: the problem, its iterative solvers (gradient descent,
+-- Jacobi, Gauss–Seidel) and the exact `ℚ` certificate checks that run before them
 public import LeanLearn.Regression.Problem
 public import LeanLearn.Regression.Solvers
 public import LeanLearn.Regression.Certificates
--- Linear regression: exact specifications over ℝ (closed form) and the bridge to execution
-public import LeanLearn.Regression.OLS
-public import LeanLearn.Regression.Ridge
-public import LeanLearn.Regression.RidgeOLS
+-- The prediction, squared error and ridge objective on a Mathlib matrix, over any scalar
 public import LeanLearn.Regression.LinearModel
--- Linear regression: Householder-QR solvers on `Float`
+-- Householder-QR solvers on `Float` arrays
 public import LeanLearn.Regression.OLSFloat
 public import LeanLearn.Regression.RidgeFloat
 -- Ridge on sparse 0/1 features (conjugate gradients) and regression metrics: R², RMSE, MAE
@@ -21,19 +24,20 @@ public import LeanLearn.Regression.Metrics
 public import LeanLearn.Classification.Logistic
 -- Plots written as SVG
 public import LeanLearn.Plot.Parity
--- Proofs (over ℝ)
+-- Proofs over ℝ, part one: least squares in closed form on Mathlib matrices — OLS, ridge, and
+-- the two against each other (the trade-off, shrinkage, the ridge path)
+public import LeanLearn.Proofs.LeastSquares.OLS
+public import LeanLearn.Proofs.LeastSquares.Ridge
+public import LeanLearn.Proofs.LeastSquares.RidgeOLS
+-- Proofs over ℝ, part two: the executable code read in ℝ — the quadratic loss, gradient
+-- descent, Jacobi and Gauss–Seidel, certificate soundness, and the bridges to the closed form
 public import LeanLearn.Proofs.Regression.Basic
-public import LeanLearn.Proofs.Regression.MatrixBridge
 public import LeanLearn.Proofs.Regression.GradientDescent
 public import LeanLearn.Proofs.Regression.Iterative
 public import LeanLearn.Proofs.Regression.Certificates
--- Optimization and learning theory (from TorchLean)
-public import LeanLearn.Optimization.GDLinearConvergence
-public import LeanLearn.Optimization.StronglyConvexGD
-public import LeanLearn.Optimization.SmoothStrongConvexBridge
-public import LeanLearn.LearningTheory.Stability.Core
-public import LeanLearn.LearningTheory.Stability.RidgeRegression1D
--- Examples
+public import LeanLearn.Proofs.Regression.MatrixBridge
+public import LeanLearn.Proofs.Regression.LinearModel
+-- Examples: worked proofs (`ols`, `ridge`) and runs of the `Float` solvers
 public import LeanLearn.Examples.ols
 public import LeanLearn.Examples.ridge
 public import LeanLearn.Examples.olsFloat

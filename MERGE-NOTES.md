@@ -14,7 +14,7 @@ system; what it adds on top is listed here.
 | `Pipelines/Tests/Ridge.lean`, `lake exe ridge-test` | Delaney log solubility on Morgan bits vs scikit-learn; `--svg` writes the plot |
 | `tools/sklearn_delaney.py`, `datasets/delaney-ridge.csv` | the scikit-learn answer file |
 | `docs/figures/delaney-ridge-parity.svg` | the plot `ridge-test --svg` writes |
-| `docs/reference/*.py` | the Python reference implementations the RDKit port was written from |
+| `tools/rdkit_reference/*.py` | the Python reference implementations the RDKit port was written from |
 | `datasets/delaney-processed.csv`, `LeanSMILES/Data/CSVparser.lean` | three columns kept; parser reads by header (below) |
 
 `LeanLearn.lean` imports the three new modules; `lakefile.toml` adds `ridge-test`.

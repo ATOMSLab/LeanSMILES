@@ -1,13 +1,19 @@
+/-
+Copyright (c) 2026 Hao Liu. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Hao Liu
+-/
 module
 
 public import LeanLearn.Regression.LinearModel
+import Mathlib.LinearAlgebra.Matrix.Notation
 
 /-!
 # Executable Float checks for the shared regression definitions
 
 These are small numerical checks of predictions and objectives, not a training
 or evaluation pipeline. The coefficients are supplied explicitly. The general
-optimality proofs are in `OLS.lean`, `Ridge.lean`, and `LinearModel.lean`.
+optimality proofs are in `Proofs/LeastSquares/` and `Proofs/Regression/LinearModel.lean`.
 
 Run: `lake exe linear-model-test`
 -/

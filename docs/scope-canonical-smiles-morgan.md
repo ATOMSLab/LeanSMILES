@@ -13,7 +13,7 @@
 >
 > The `lake exe` commands in section 4 refer to that commit. Still in the repository: the oracle
 > datasets (`datasets/*-oracle.csv`), the tools that make them (`tools/`), the Python reference
-> implementations (`docs/reference/`), and the classifier (`LeanLearn/Classification/Logistic.lean`,
+> implementations (`tools/rdkit_reference/`), and the classifier (`LeanLearn/Classification/Logistic.lean`,
 > fed by `Pipelines.morganFeatures`, which uses main's `Fingerprint/Morgan.lean`). The ring set, kekulization, aromaticity
 > perception and final hydrogen counts of `Sanitize.lean` now run on `Molecule n` as
 > `Molecule.aromatize` (`LeanSMILES/Aromaticity/`, `lake exe aromaticity-test`); `cleanUp`,
@@ -193,7 +193,7 @@ python tools/rdkit_oracle.py
 | `bonds` | Phase 1, per bond `i-j:t` (i < j, sorted), `t` = RDKit bond type 1/2/3/12 (aromatic) |
 | `needs_aromaticity` | `1` if the old shortcut (graph as written + rules 1–2) could not match. Kept as a label for the hard cases; the Lean code no longer needs to exclude them. |
 
-`docs/reference/morgan_ref.py` reproduces `morgan_bits` and `morgan_ids` on all 1,128 rows. The output is deterministic: rerunning gives a byte-identical file.
+`tools/rdkit_reference/morgan_ref.py` reproduces `morgan_bits` and `morgan_ids` on all 1,128 rows. The output is deterministic: rerunning gives a byte-identical file.
 
 The same command writes further test files with the same columns:
 
@@ -223,7 +223,7 @@ lake exe validity-test                   # broken SMILES: accepted/rejected exac
 | `datasets/fuzz-validity.tsv`: 10,000 randomly broken SMILES, accept vs reject | **all agree**, except 63 with elements Lean does not support yet (reported separately) |
 | One-off checks (not in the repo), both forms each: NCI `first_5K.smi` (4,830), ENCH 470 EGFR actives / inactives / FDA drugs (100 / 100 / 5), ThermoProperties isomeric and canonical SMILES (5,618 and 4,250), 3,997 broken-but-valid fuzz SMILES | **all match** |
 
-`Chem.molFromSmiles` mirrors RDKit's `MolFromSmiles` (`Canonical/Sanitize.lean`): parse (with RDKit's syntax rules) → remove hydrogen atoms (`removeHs`) → freeze H counts → cleanup → **strict valence check** → cache valences → ring set → kekulize (RDKit's walk) → radicals → aromaticity → final H counts (`adjustHs`) → **strict valence check again**. The Python reference for the middle steps is `docs/reference/aromaticity_ref.py`, checked by `docs/reference/verify.py`.
+`Chem.molFromSmiles` mirrors RDKit's `MolFromSmiles` (`Canonical/Sanitize.lean`): parse (with RDKit's syntax rules) → remove hydrogen atoms (`removeHs`) → freeze H counts → cleanup → **strict valence check** → cache valences → ring set → kekulize (RDKit's walk) → radicals → aromaticity → final H counts (`adjustHs`) → **strict valence check again**. The Python reference for the middle steps is `tools/rdkit_reference/aromaticity_ref.py`, checked by `tools/rdkit_reference/verify.py`.
 
 **Hydrogens written as atoms** (`[H]C([H])([H])[H]`, `[H]O[H]`): like RDKit's `MolFromSmiles` (`removeHs` with `updateExplicitCount`, `SmilesParse.cpp:473-477`, `AddHs.cpp:840-1082`), ordinary hydrogen atoms are removed right after parsing and counted on their neighbour. Kept: hydrogens with no bond or several bonds, isotopes (`[2H]`), hydrides (`[H-]`), H bonded only to H (`[H][H]`), H on atoms with non-tetrahedral stereo (`@SP`, `@TB`, `@OH`), and H attached by `/` or `\` to a two-neighbour atom with a double bond (`[H]/C=C/F`). Test set: `datasets/hydrogen-cases*.csv` (494 molecules, all match on all three tests in both forms); one-off checks also matched on every NCI molecule (4,858) and every ThermoProperties molecule (5,618, of which 331 have a stereo bond to a hydrogen) written with all hydrogens as atoms.
 
@@ -252,7 +252,7 @@ lake exe validity-test                   # broken SMILES: accepted/rejected exac
 
 ### 4.3 Phase 3 status: canonical SMILES
 
-`Chem.canonicalSmiles` (`Canonical/Write.lean`) ports RDKit's canonical atom ranking (`new_canon.h/.cpp`: class refinement on degree, element, H count, charge compared as unsigned, neighbour classes; the special symmetry pass; tie breaking) and its SMILES writer (`Canon.cpp`, `SmilesWrite.cpp`), from the verified Python reference `docs/reference/canon_ref.py`.
+`Chem.canonicalSmiles` (`Canonical/Write.lean`) ports RDKit's canonical atom ranking (`new_canon.h/.cpp`: class refinement on degree, element, H count, charge compared as unsigned, neighbour classes; the special symmetry pass; tie breaking) and its SMILES writer (`Canon.cpp`, `SmilesWrite.cpp`), from the verified Python reference `tools/rdkit_reference/canon_ref.py`.
 
 ```bash
 lake exe canonical-test        # Delaney, as written and in Kekulé form
@@ -265,7 +265,7 @@ It equals RDKit's `MolToSmiles(mol, isomericSmiles=False)` on all Delaney molecu
 
 ### 4.4 Phase 2 status: Morgan fingerprints
 
-`Chem.morganBits` / `Mol.morganIds` (`Fingerprint/Morgan.lean`) port `docs/reference/morgan_ref.py`: radius-0 invariants (element, degree incl. H, H count, charge as uint32, mass shift, in-ring), layer-seeded `hash_combine` over sorted (bond type, neighbour id) pairs, bond-set deduplication keeping the smallest (id, atom), dead atoms contributing 0, folding by `id mod fpSize`.
+`Chem.morganBits` / `Mol.morganIds` (`Fingerprint/Morgan.lean`) port `tools/rdkit_reference/morgan_ref.py`: radius-0 invariants (element, degree incl. H, H count, charge as uint32, mass shift, in-ring), layer-seeded `hash_combine` over sorted (bond type, neighbour id) pairs, bond-set deduplication keeping the smallest (id, atom), dead atoms contributing 0, folding by `id mod fpSize`.
 
 ```bash
 lake exe morgan-test           # Delaney, as written and in Kekulé form

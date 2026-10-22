@@ -106,9 +106,9 @@ variable {m d : ℕ} (P : Problem ℝ m d)
 noncomputable abbrev x (r : Fin m) (i : Fin (d + 1)) : ℝ := (P.row r)[i]
 
 /-- The fitted value `⟪xᵣ, θ⟫`. -/
-noncomputable abbrev fit (r : Fin m) (θ : Vec ℝ (d + 1)) : ℝ := dot (P.row r) θ
+noncomputable abbrev fitted (r : Fin m) (θ : Vec ℝ (d + 1)) : ℝ := dot (P.row r) θ
 
-theorem fit_eq (r : Fin m) (θ : Vec ℝ (d + 1)) : P.fit r θ = ∑ i, P.x r i * θ[i] :=
+theorem fitted_eq (r : Fin m) (θ : Vec ℝ (d + 1)) : P.fitted r θ = ∑ i, P.x r i * θ[i] :=
   dot_eq_sum _ _
 
 @[simp] theorem design_getElem (r : Fin m) : P.design[r] = P.row r := by
@@ -131,21 +131,21 @@ theorem normalMatrix_symm (i j : Fin (d + 1)) : P.normalMatrix[i][j] = P.normalM
     · rw [if_neg h, if_neg (Ne.symm h)]
 
 theorem loss_eq (θ : Vec ℝ (d + 1)) :
-    P.loss θ = (∑ r, (P.fit r θ - P.y[r]) ^ 2) / m + P.ridge * ∑ i : Fin (d + 1), θ[i] ^ 2 := by
+    P.loss θ = (∑ r, (P.fitted r θ - P.y[r]) ^ 2) / m + P.ridge * ∑ i : Fin (d + 1), θ[i] ^ 2 := by
   simp only [loss, sumFin_eq_sum, count_real, sq]
   rw [dot_eq_sum]
 
 /-- `∑ⱼ (∑ᵣ xᵣᵢ xᵣⱼ) θⱼ = ∑ᵣ xᵣᵢ ⟪xᵣ, θ⟫`. -/
 theorem sum_gram_mul (i : Fin (d + 1)) (θ : Vec ℝ (d + 1)) :
-    ∑ j : Fin (d + 1), (∑ r, P.x r i * P.x r j) * θ[j] = ∑ r, P.x r i * P.fit r θ := by
-  simp only [fit_eq, sum_mul, mul_sum]
+    ∑ j : Fin (d + 1), (∑ r, P.x r i * P.x r j) * θ[j] = ∑ r, P.x r i * P.fitted r θ := by
+  simp only [fitted_eq, sum_mul, mul_sum]
   rw [sum_comm]
   exact sum_congr rfl fun r _ ↦ sum_congr rfl fun j _ ↦ by ring
 
 /-- The residual of the normal equations, `(A θ - b)ᵢ`. -/
 theorem residual_apply (θ : Vec ℝ (d + 1)) (i : Fin (d + 1)) :
     (residual P.normalMatrix P.normalVector θ)[i] =
-      (∑ r, P.x r i * (P.fit r θ - P.y[r])) / m + P.ridge * θ[i] := by
+      (∑ r, P.x r i * (P.fitted r θ - P.y[r])) / m + P.ridge * θ[i] := by
   rw [residual, vsub_getElem, matVec_getElem, normalVector_apply]
   have hA : ∀ j : Fin (d + 1), P.normalMatrix[i][j] * θ[j] =
       (∑ r, P.x r i * P.x r j) * θ[j] / m + if i = j then P.ridge * θ[j] else 0 := fun j ↦ by
@@ -159,7 +159,7 @@ theorem residual_apply (θ : Vec ℝ (d + 1)) (i : Fin (d + 1)) :
 /-- The curvature `C(v) = (1/m) ∑ᵣ ⟪xᵣ, v⟫² + λ ‖v‖²`: the second-order part of the
 loss. -/
 noncomputable def curvature (v : Vec ℝ (d + 1)) : ℝ :=
-  (∑ r, P.fit r v ^ 2) / m + P.ridge * ∑ i : Fin (d + 1), v[i] ^ 2
+  (∑ r, P.fitted r v ^ 2) / m + P.ridge * ∑ i : Fin (d + 1), v[i] ^ 2
 
 theorem curvature_nonneg (hridge : 0 ≤ P.ridge) (v : Vec ℝ (d + 1)) : 0 ≤ P.curvature v :=
   add_nonneg (div_nonneg (sum_nonneg fun _ _ ↦ sq_nonneg _) (Nat.cast_nonneg m))
@@ -173,14 +173,14 @@ theorem curvature_smul (c : ℝ) (v : Vec ℝ (d + 1)) :
 /-- `∑ᵢ (A θ - b)ᵢ vᵢ = (1/m) ∑ᵣ (⟪xᵣ, θ⟫ - yᵣ) ⟪xᵣ, v⟫ + λ ⟪θ, v⟫`. -/
 theorem sum_residual_mul (θ v : Vec ℝ (d + 1)) :
     ∑ i : Fin (d + 1), (residual P.normalMatrix P.normalVector θ)[i] * v[i] =
-      (∑ r, (P.fit r θ - P.y[r]) * P.fit r v) / m +
+      (∑ r, (P.fitted r θ - P.y[r]) * P.fitted r v) / m +
         P.ridge * ∑ i : Fin (d + 1), θ[i] * v[i] := by
   have h : ∀ i : Fin (d + 1), (residual P.normalMatrix P.normalVector θ)[i] * v[i] =
-      (∑ r, P.x r i * (P.fit r θ - P.y[r])) * v[i] / m + P.ridge * (θ[i] * v[i]) := fun i ↦ by
+      (∑ r, P.x r i * (P.fitted r θ - P.y[r])) * v[i] / m + P.ridge * (θ[i] * v[i]) := fun i ↦ by
     rw [residual_apply]; ring
   rw [sum_congr rfl fun i _ ↦ h i, sum_add_distrib, ← sum_div, ← mul_sum]
   congr 2
-  simp only [fit_eq, sum_mul, mul_sum]
+  simp only [fitted_eq, sum_mul, mul_sum]
   rw [sum_comm]
   exact sum_congr rfl fun r _ ↦ sum_congr rfl fun i _ ↦ by ring
 
@@ -190,7 +190,7 @@ theorem loss_add (θ v : Vec ℝ (d + 1)) :
       2 * ∑ i : Fin (d + 1), (residual P.normalMatrix P.normalVector θ)[i] * v[i] +
         P.curvature v := by
   rw [sum_residual_mul, loss_eq, loss_eq, curvature]
-  simp only [fit, dot_vadd, vadd_getElem]
+  simp only [fitted, dot_vadd, vadd_getElem]
   have h1 : ∀ r : Fin m, (dot (P.row r) θ + dot (P.row r) v - P.y[r]) ^ 2 =
       (dot (P.row r) θ - P.y[r]) ^ 2 + 2 * ((dot (P.row r) θ - P.y[r]) * dot (P.row r) v) +
         dot (P.row r) v ^ 2 := fun r ↦ by ring
@@ -230,7 +230,7 @@ theorem loss_le_of_residual_eq_zero (hridge : 0 ≤ P.ridge) {θ : Vec ℝ (d + 
 theorem curvature_eq (v : Vec ℝ (d + 1)) :
     P.curvature v =
       ∑ i : Fin (d + 1), ∑ j : Fin (d + 1), P.normalMatrix[i][j] * v[i] * v[j] := by
-  simp only [normalMatrix_apply, add_mul, sum_add_distrib, curvature, fit_eq]
+  simp only [normalMatrix_apply, add_mul, sum_add_distrib, curvature, fitted_eq]
   congr 1
   · simp only [div_mul_eq_mul_div, ← sum_div, sq, sum_mul, mul_sum]
     congr 1
@@ -248,46 +248,42 @@ theorem curvature_le (v : Vec ℝ (d + 1)) :
       ((∑ r, ∑ i, P.x r i ^ 2) / m + P.ridge) * ∑ i : Fin (d + 1), v[i] ^ 2 := by
   rw [curvature, add_mul, div_mul_eq_mul_div, sum_mul]
   gcongr with r _
-  rw [fit_eq]
+  rw [fitted_eq]
   exact sum_mul_sq_le_sq_mul_sq _ _ _
 
-/-- If the diagonal entry `Aᵢᵢ` vanishes (with `λ ≥ 0`), the `i`-th residual vanishes:
-feature `i` is zero on every sample and unpenalised, so equation `i` reads `0 = 0`. -/
+/-- If `Aᵢᵢ = 0` (with `λ ≥ 0`), the penalty is `0`: `Aᵢᵢ = (1/m) ∑ᵣ xᵣᵢ² + λ` is a sum of two
+non-negative terms. -/
+theorem ridge_eq_zero_of_diag_eq_zero (hridge : 0 ≤ P.ridge) {i : Fin (d + 1)}
+    (hA : P.normalMatrix[i][i] = 0) : P.ridge = 0 := by
+  rw [normalMatrix_apply, if_pos rfl] at hA
+  have hs : 0 ≤ (∑ r, P.x r i * P.x r i) / m :=
+    div_nonneg (sum_nonneg fun _ _ ↦ mul_self_nonneg _) (Nat.cast_nonneg m)
+  linarith
+
+/-- If `Aᵢᵢ = 0` (with `λ ≥ 0`), feature `i` is zero on every sample. -/
+theorem x_eq_zero_of_diag_eq_zero (hridge : 0 ≤ P.ridge) {i : Fin (d + 1)}
+    (hA : P.normalMatrix[i][i] = 0) (r : Fin m) : P.x r i = 0 := by
+  have hridge0 := P.ridge_eq_zero_of_diag_eq_zero hridge hA
+  rw [normalMatrix_apply, if_pos rfl, hridge0, add_zero, div_eq_zero_iff,
+    or_iff_left (Nat.cast_ne_zero.mpr r.pos.ne')] at hA
+  exact mul_self_eq_zero.mp
+    ((sum_eq_zero_iff_of_nonneg fun _ _ ↦ mul_self_nonneg _).mp hA r (mem_univ r))
+
+/-- If `Aᵢᵢ = 0` (with `λ ≥ 0`), the `i`-th residual vanishes for every `θ`: feature `i` is zero
+on every sample and unpenalised, so equation `i` reads `0 = 0` and Jacobi and Gauss–Seidel lose
+nothing by leaving coordinate `i` alone. -/
 theorem residual_eq_zero_of_diag_eq_zero (hridge : 0 ≤ P.ridge) {i : Fin (d + 1)}
     (hA : P.normalMatrix[i][i] = 0) (θ : Vec ℝ (d + 1)) :
     (residual P.normalMatrix P.normalVector θ)[i] = 0 := by
-  rw [normalMatrix_apply, if_pos rfl] at hA
-  have hs : 0 ≤ (∑ r, P.x r i * P.x r i) / m :=
-    div_nonneg (sum_nonneg fun _ _ ↦ mul_self_nonneg _) (Nat.cast_nonneg m)
-  have hridge0 : P.ridge = 0 := by linarith
-  have hsum : (∑ r, P.x r i * P.x r i) / m = 0 := by linarith
-  rw [residual_apply, hridge0, zero_mul, add_zero]
-  rcases Nat.eq_zero_or_pos m with hm | hm
-  · subst hm; simp
-  · have hm' : (m : ℝ) ≠ 0 := Nat.cast_ne_zero.mpr hm.ne'
-    rw [div_eq_zero_iff, or_iff_left hm'] at hsum
-    have hx : ∀ r, P.x r i = 0 := fun r ↦
-      mul_self_eq_zero.mp ((sum_eq_zero_iff_of_nonneg fun _ _ ↦ mul_self_nonneg _).mp hsum r
-        (mem_univ r))
-    simp [hx]
+  rw [residual_apply, P.ridge_eq_zero_of_diag_eq_zero hridge hA]
+  simp [P.x_eq_zero_of_diag_eq_zero hridge hA]
 
-/-- If `Aᵢᵢ = 0`, the curvature does not see coordinate `i`. -/
+/-- If `Aᵢᵢ = 0` (with `λ ≥ 0`), the whole row `i` of `A` vanishes: the curvature does not see
+coordinate `i`. -/
 theorem normalMatrix_row_eq_zero (hridge : 0 ≤ P.ridge) {i : Fin (d + 1)}
     (hA : P.normalMatrix[i][i] = 0) (j : Fin (d + 1)) : P.normalMatrix[i][j] = 0 := by
-  rw [normalMatrix_apply, if_pos rfl] at hA
-  have hs : 0 ≤ (∑ r, P.x r i * P.x r i) / m :=
-    div_nonneg (sum_nonneg fun _ _ ↦ mul_self_nonneg _) (Nat.cast_nonneg m)
-  have hridge0 : P.ridge = 0 := by linarith
-  have hsum : (∑ r, P.x r i * P.x r i) / m = 0 := by linarith
-  rw [normalMatrix_apply, hridge0]
-  rcases Nat.eq_zero_or_pos m with hm | hm
-  · subst hm; simp
-  · have hm' : (m : ℝ) ≠ 0 := Nat.cast_ne_zero.mpr hm.ne'
-    rw [div_eq_zero_iff, or_iff_left hm'] at hsum
-    have hx : ∀ r, P.x r i = 0 := fun r ↦
-      mul_self_eq_zero.mp ((sum_eq_zero_iff_of_nonneg fun _ _ ↦ mul_self_nonneg _).mp hsum r
-        (mem_univ r))
-    simp [hx]
+  rw [normalMatrix_apply, P.ridge_eq_zero_of_diag_eq_zero hridge hA]
+  simp [P.x_eq_zero_of_diag_eq_zero hridge hA]
 
 end Problem
 

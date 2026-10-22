@@ -16,7 +16,7 @@ Open this file in the editor: the Infoview shows the output of `#eval run` (and 
 `lake build`).
 
 These are executable computations. The exact-real proofs and worked proof
-examples are in `OLS.lean` and `OLSExamples.lean` respectively.
+examples are in `Proofs/LeastSquares/OLS.lean` and `Examples/ols.lean`.
 -/
 
 public section

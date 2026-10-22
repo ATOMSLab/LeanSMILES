@@ -5,7 +5,7 @@ Authors: Hao Liu
 -/
 module
 
-public import LeanLearn.Regression.OLS
+public import LeanLearn.Proofs.LeastSquares.OLS
 import Mathlib.Tactic.FinCases
 import Mathlib.Tactic.NormNum
 
@@ -21,7 +21,7 @@ public section
 namespace LeanLearn.Regression.OLS.Examples
 
 open Matrix
-open scoped Matrix BigOperators
+open scoped Matrix
 
 noncomputable section
 
