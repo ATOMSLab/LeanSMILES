@@ -621,7 +621,8 @@ names its authors in its header; by area:
   walkthroughs against scikit-learn; the ENCH 470 course content.
 - **Hao Liu** — ordinary least squares and ridge regression in closed form over `ℝ`, the
   Householder-QR solvers on `Float`, and the parser's error messages and their tests.
-- **Alex Haibel** and **Izzy Shahmoradi**.
+- **Alex Haibel** emotional support animal and README editor
+- **Izzy Shahmoradi**
 - **Tyler R. Josephson** — the typed molecular graph and its Mathlib views, the SMILES grammar,
   parser, writer and canonicity proof, charges, Tanimoto, the scalar interface, ridge against
   OLS and the bridge between the two regression formulations.
