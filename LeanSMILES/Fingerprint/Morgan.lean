@@ -30,7 +30,8 @@ All arithmetic is unsigned 32-bit with wrap-around (boost's `hash_combine`).
 written*: no aromaticity perception, no nitro rewrite, and hydrogens written
 as `[H]` atoms stay atoms (RDKit removes them).  So the bits equal RDKit's
 exactly when the as-written bond types and hydrogen counts equal RDKit's
-sanitized ones — which `lake exe morgan-test` checks.
+sanitized ones — which `lake exe morgan-test` checks.  `Molecule.aromatize`
+(`LeanSMILES/Aromaticity/`) gives a molecule RDKit's bonds and hydrogens first.
 
 **Atom order.** Up to radius 2 the fingerprint does not depend on the order of
 the atoms: `Molecule.morganBits_relabel` (`Fingerprint/MorganInvariance.lean`).

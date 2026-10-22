@@ -95,7 +95,7 @@ lake exe morgan-test     # Morgan fingerprints: ring membership = RDKit's, bits 
 identifiers with counts), `morganBits` (sorted on-bits), `morganVector : Vector Bool 2048`,
 `inRingVector`, and an exact `tanimoto : … → ℚ`.  It hashes the graph *as written*, so the
 bits equal RDKit's exactly where the as-written bond types and hydrogen counts equal RDKit's
-sanitized ones (no aromaticity perception here, by design).  Up to radius 2 the
+sanitized ones; run `Molecule.aromatize` first (below) to get RDKit's bits.  Up to radius 2 the
 fingerprint is proved independent of the atom order: `Molecule.morganBits_relabel`
 (`LeanSMILES/Fingerprint/MorganInvariance.lean`).  From radius 3 it is not, here or in
 RDKit (see "Findings about external tools").
@@ -105,11 +105,38 @@ RDKit (see "Findings about external tools").
 #eval tanimoto (Mol.ofSmiles! "CCO").morganBits (Mol.ofSmiles! "CCCO").morganBits
 ```
 
+### Aromaticity: RDKit's view of the bonds
+
+The parser reads bonds as written. `Molecule.aromatize` (`LeanSMILES/Aromaticity/`)
+gives a molecule RDKit's view of them, as a separate step after parsing: RDKit's
+ring set (relevant cycles), kekulization, aromaticity perception (default model:
+donor types, Hückel 4n + 2, fused systems) and final hydrogen counts. So
+`C1=CC=CC=C1` becomes aromatic benzene, the bond between the rings of
+`c1ccccc1c1ccccc1` becomes single, and `c1cccc1` fails as it does in RDKit
+("Can't kekulize mol"). RDKit's `cleanUp` (nitro and similar rewrites), valence
+rejection and removal of `[H]` atoms are not included yet.
+
+```lean
+#eval (SMILES.parseAromatized "C1=CC=CC=C1").map (·.morganBits)   -- RDKit's benzene bits
+```
+
+```bash
+lake exe aromaticity-test   # bond types, hydrogens and Morgan bits = RDKit's on every oracle file
+```
+
+On every oracle file, as written and in Kekulé form (Delaney, 56 hand-picked
+aromaticity cases, isotope cases, hydrogen cases), every molecule that `cleanUp`
+and `[H]` removal do not touch gets RDKit's bond types, hydrogen counts and
+Morgan fingerprint: 3 369 of 3 369. On 10 000 fuzzed strings it never fails on
+one RDKit accepts. The code is ported from the `canonical-smiles` branch's
+array-based sanitization (commit `5b5fe9e`) and still runs on an index-based
+working copy inside; its interface is `Molecule n → Except String (Molecule n)`.
+
 ## Classification with Morgan fingerprints
 
 `LeanSMILES.ML.Logistic` trains L2-regularized logistic regression (scikit-learn's
-`LogisticRegression()` objective) on Morgan fingerprint bits from
-`LeanSMILES.Fingerprint.Morgan`. It is written over `ScalarLike`
+`LogisticRegression()` objective) on Morgan fingerprint bits of the aromatized
+molecule (`morganFeatures`). It is written over `ScalarLike`
 (`LeanSMILES/Scalar.lean`), so it runs on `Float`.
 `LeanSMILES/Examples/classification.lean` redoes ENCH 470 Lecture 21: EGFR
 actives vs. inactives (`ench470-content/`), test accuracy 0.925, then the five
@@ -119,17 +146,15 @@ FDA-approved EGFR drugs.
 lake exe logistic-test   # EGFR classification vs scikit-learn (tools/sklearn_egfr.py)
 ```
 
-The test trains twice: on RDKit's fingerprint bits (stored in
-`datasets/egfr-classification.csv`), where every probability matches
-scikit-learn's to 10⁻⁶, and on Lean's own `morganFeatures`, which differ from
-RDKit's sanitized fingerprints on 30 of the 205 molecules (no aromaticity
-perception yet) but give the same predicted class for every molecule.
+The test trains twice, on RDKit's fingerprint bits (stored in
+`datasets/egfr-classification.csv`) and on Lean's own `morganFeatures`, which
+equal RDKit's on all 205 molecules; both match scikit-learn's probabilities to
+10⁻⁶.
 
-RDKit's sanitization (aromaticity, cleanup, valence checks, removeHs) was
-ported to Lean on an earlier array-based representation and verified against
-RDKit; `docs/scope-canonical-smiles-morgan.md` records that port, the commit
-that holds its code, the oracle datasets and the Python references, for moving
-it onto `Molecule n`.
+RDKit's remaining sanitization steps (`cleanUp`, valence rejection, removal of
+`[H]` atoms) were ported on an earlier array-based representation;
+`docs/scope-canonical-smiles-morgan.md` records that port, the commit that holds
+its code (`5b5fe9e`), the oracle datasets and the Python references.
 
 ## References
 

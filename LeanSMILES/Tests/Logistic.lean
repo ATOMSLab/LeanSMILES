@@ -13,10 +13,9 @@ repository root:
 
 1. **Solver.** Train `fitLogistic` on RDKit's bits, the exact features
    scikit-learn saw: every probability must agree to 10⁻⁶.
-2. **Pipeline.** Train on Lean's own features (`morganFeatures`, i.e.
-   `Fingerprint/Morgan.lean` on the graph as written). These differ from
-   RDKit's sanitized fingerprints on some molecules (no aromaticity perception
-   yet), so the predicted classes must agree and the probabilities are reported.
+2. **Pipeline.** Train on Lean's own features (`morganFeatures`: parse,
+   `Molecule.aromatize`, `Fingerprint/Morgan.lean`). They must equal RDKit's
+   bits on every molecule, and every probability must agree to 10⁻⁶.
 -/
 
 open LeanSMILES.ML
@@ -82,8 +81,8 @@ def main : IO UInt32 := do
     | .ok x => feats := feats.push x
     | .error e => do IO.println s!"cannot featurize {r.name}: {e}"; return 1
   let same := (List.range rows.size).countP fun i => feats[i]!.qsort (· < ·) == rows[i]!.rdkitBits
-  IO.println s!"2. pipeline, on Lean's features [classes must match scikit-learn]"
+  IO.println s!"2. pipeline, on Lean's features [must match scikit-learn to 1e-6]"
   IO.println s!"  Lean's Morgan bits = RDKit's: {same}/{rows.size}"
-  let (_, pipelineMismatch) ← compare rows feats
-  return if solverMismatch.isEmpty && solverDiff < 0.000001 && pipelineMismatch.isEmpty
-    then 0 else 1
+  let (pipelineDiff, pipelineMismatch) ← compare rows feats
+  return if solverMismatch.isEmpty && solverDiff < 0.000001 && same == rows.size
+      && pipelineMismatch.isEmpty && pipelineDiff < 0.000001 then 0 else 1

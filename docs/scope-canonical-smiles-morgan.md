@@ -14,8 +14,10 @@
 > The `lake exe` commands in section 4 refer to that commit. Still in the repository: the oracle
 > datasets (`datasets/*-oracle.csv`), the tools that make them (`tools/`), the Python reference
 > implementations (`docs/reference/`), and the classifier (`ML/Logistic.lean`, which now takes
-> its features from main's `Fingerprint/Morgan.lean`). The next step is to port `Sanitize.lean`
-> onto `Molecule n` (see `docs/design-molecular-representation.md`).
+> its features from main's `Fingerprint/Morgan.lean`). The ring set, kekulization, aromaticity
+> perception and final hydrogen counts of `Sanitize.lean` now run on `Molecule n` as
+> `Molecule.aromatize` (`LeanSMILES/Aromaticity/`, `lake exe aromaticity-test`); `cleanUp`,
+> valence rejection and `removeHs` are still to be moved.
 
 **Goal.** Starting from the SMILES strings that `CSVparser.load` already gives us, compute in Lean:
 

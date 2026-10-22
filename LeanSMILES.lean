@@ -15,6 +15,7 @@ import LeanSMILES.SMILES.Canon
 import LeanSMILES.SMILES.Canonicity
 import LeanSMILES.Fingerprint.Morgan
 import LeanSMILES.Fingerprint.MorganInvariance
+import LeanSMILES.Aromaticity.Perceive
 import LeanSMILES.Examples.smiles
 import LeanSMILES.Examples.caffeine
 import LeanSMILES.ML.Logistic

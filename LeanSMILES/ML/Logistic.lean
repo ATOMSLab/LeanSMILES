@@ -1,5 +1,6 @@
 import LeanSMILES.Scalar
 import LeanSMILES.Fingerprint.Morgan
+import LeanSMILES.Aromaticity.Perceive
 
 /-!
 # Logistic regression on Morgan fingerprints
@@ -174,9 +175,11 @@ def confusionMatrix (m : LogisticModel K) (data : Array (SparseBits × Bool)) : 
   [[count false false, count false true], [count true false, count true true]]
 
 /-- Morgan on-bits of a SMILES string as a sparse feature vector (radius 2,
-2048 bits by default), ready for `fitLogistic`. -/
+2048 bits by default), ready for `fitLogistic`. The molecule is aromatized first
+(`Molecule.aromatize`), so the bits are RDKit's. -/
 def morganFeatures (s : String) (radius : ℕ := 2) (fpSize : ℕ := 2048) :
-    Except SMILES.ParseError SparseBits :=
-  (SMILES.morganBits s radius fpSize).map List.toArray
+    Except String SparseBits := do
+  let M ← SMILES.parseAromatized s
+  return (M.morganBits radius fpSize).toArray
 
 end LeanSMILES.ML
