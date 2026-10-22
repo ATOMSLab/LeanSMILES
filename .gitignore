@@ -18,3 +18,7 @@ __pycache__/
 *.out
 *.toc
 *.synctex.gz
+node_modules
+dist
+server/.cache/
+
