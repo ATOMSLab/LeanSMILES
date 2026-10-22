@@ -11,7 +11,8 @@ LeanSMILES/           the typed SMILES toolkit (imports Mathlib)
   SMILES/             tokenizer, parser, writer, canonical SMILES and its canonicity proof
   Fingerprint/        RDKit-compatible Morgan fingerprints on Molecule n; order-invariance proof
   Aromaticity/        Molecule.aromatize: RDKit's ring set, kekulization, aromaticity perception
-  Depict/             2D depiction: layout, SVG, mol blocks, #draw for the Infoview, lake exe depict
+  Depict/             2D depiction: layout, SVG, mol blocks, #draw for the Infoview, lake exe depict;
+                      fingerprint grid/barcode (#fingerprint)
   Data/               CSV parser (columns by header name) for the Delaney dataset
   Tests/              validity, oracle, Morgan, aromaticity, charge, parse-error and depiction tests (lake exe …-test)
   Examples/           caffeine.lean, smiles.lean, parsercsv.lean, depict.lean
@@ -310,6 +311,20 @@ and from the command line, `lake exe depict "<smiles>" [out.svg]` writes the
 SVG, `lake exe depict --mol "<smiles>"` an MDL mol block with wedge/hash flags
 that any other toolkit reads back, and `lake exe depict --html in.smi out.html`
 a gallery. `LeanSMILES/Examples/depict.lean` shows the range.
+
+`#fingerprint` draws a molecule's Morgan fingerprint (radius 2, 2048 bits; the
+SMILES goes through `SMILES.parseAromatized`, so the bits are RDKit's) as a
+64 × 32 grid, QR-code style, and as a barcode. Given a second SMILES, the bits
+both share are highlighted and the Tanimoto similarity is printed
+(`LeanSMILES/Depict/Fingerprint.lean`):
+
+```lean
+#fingerprint "CC(=O)Oc1ccccc1C(=O)O"                                   -- aspirin
+#fingerprint "CC(=O)Oc1ccccc1C(=O)O", "Cn1cnc2c1c(=O)n(C)c(=O)n2C"     -- vs caffeine
+```
+
+`lake exe depict --fingerprint "<smiles>" ["<smiles2>"] out.svg` writes the same
+picture to a file.
 
 The layout is deterministic: classical multidimensional scaling on the graph
 distances (chains zigzag at 120°, rings become regular polygons), refined by

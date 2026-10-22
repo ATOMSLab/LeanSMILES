@@ -23,6 +23,7 @@ public import LeanSMILES.Aromaticity.Perceive
 public import LeanSMILES.Depict.Graph
 public import LeanSMILES.Depict.Layout
 public import LeanSMILES.Depict.Svg
+public import LeanSMILES.Depict.Fingerprint
 public import LeanSMILES.Depict.Widget
 public import LeanSMILES.Examples.smiles
 public import LeanSMILES.Examples.caffeine

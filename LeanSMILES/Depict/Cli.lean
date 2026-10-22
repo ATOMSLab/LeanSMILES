@@ -7,6 +7,7 @@ module
 
 public import LeanSMILES.SMILES.Parse
 public import LeanSMILES.Depict.Svg
+public import LeanSMILES.Depict.Fingerprint
 
 /-!
 # LeanSMILES.Depict.Cli
@@ -21,6 +22,10 @@ lake exe depict --mol "F/C=C/F"              MDL mol block (wedge/hash flags)
 lake exe depict --html in.smi out.html       a gallery page, one SMILES per line
 lake exe depict --sdf in.smi out.sdf         mol blocks of every line, SMILES as
                                              title, for tools/check_depiction.py
+lake exe depict --fingerprint <smiles> [<smiles2>] out.svg
+                                             Morgan fingerprint as a grid and a
+                                             barcode; bits shared with smiles2
+                                             highlighted
 ```
 -/
 
@@ -37,7 +42,9 @@ def usage : String :=
     "  lake exe depict <smiles> [out.svg]         SVG drawing",
     "  lake exe depict --mol <smiles>             MDL mol block with wedge/hash flags",
     "  lake exe depict --html <in.smi> <out.html> gallery of one SMILES per line",
-    "  lake exe depict --sdf <in.smi> <out.sdf>   mol blocks for tools/check_depiction.py"]
+    "  lake exe depict --sdf <in.smi> <out.sdf>   mol blocks for tools/check_depiction.py",
+    "  lake exe depict --fingerprint <smiles> [<smiles2>] <out.svg>",
+    "                                             Morgan fingerprint (grid and barcode)"]
 
 /-- The SMILES on each non-empty, non-comment line of a `.smi` file (the first
 whitespace-separated field). -/
@@ -81,6 +88,13 @@ def main (args : List String) : IO UInt32 := do
     IO.FS.writeFile out (gallery (← readSmi inp))
     IO.println s!"wrote {out}"
     return 0
+  | ["--fingerprint", s, out] | ["--fingerprint", s, _, out] =>
+    let other := match args with
+      | [_, _, t, _] => some t
+      | _ => none
+    match smilesFingerprintSvg s other with
+    | .ok x => IO.FS.writeFile out x.render; IO.println s!"wrote {out}"; return 0
+    | .error e => IO.eprintln e; return 1
   | ["--sdf", inp, out] =>
     IO.FS.writeFile out (sdf (← readSmi inp))
     IO.println s!"wrote {out}"

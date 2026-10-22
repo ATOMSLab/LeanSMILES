@@ -8,9 +8,11 @@ module
 public import ProofWidgets.Component.HtmlDisplay
 public import LeanSMILES.SMILES.Parse
 public import LeanSMILES.Depict.Svg
+public import LeanSMILES.Depict.Fingerprint
 -- `#draw` runs the parser and the drawing at elaboration time
 public meta import LeanSMILES.SMILES.Parse
 public meta import LeanSMILES.Depict.Svg
+public meta import LeanSMILES.Depict.Fingerprint
 
 /-!
 # LeanSMILES.Depict.Widget
@@ -22,6 +24,14 @@ public meta import LeanSMILES.Depict.Svg
 #draw "Cn1cnc2c1c(=O)n(C)c(=O)n2C"      -- a SMILES string
 #draw (Mol.ofSmiles! "C[C@H](N)C(=O)O")  -- a parsed molecule
 #draw caffeine.mol                       -- a `Molecule n`
+```
+
+`#fingerprint` shows a Morgan fingerprint (`LeanSMILES.Depict.Fingerprint`) as a
+grid and a barcode; with a second SMILES, the bits both share are highlighted:
+
+```lean
+#fingerprint "CC(=O)Oc1ccccc1C(=O)O"
+#fingerprint "CC(=O)Oc1ccccc1C(=O)O", "Cn1cnc2c1c(=O)n(C)c(=O)n2C"
 ```
 
 ProofWidgets comes with Mathlib, so nothing new is required; the picture
@@ -61,6 +71,13 @@ instance : Drawable String := ⟨Mol.ofSmiles!⟩
 meta def html {α : Type} [Drawable α] (x : α) : Html :=
   ((Drawable.toMol x).svg).toHtml
 
+/-- The Infoview picture of a SMILES string's Morgan fingerprint, compared with
+`other` if given. -/
+meta def fingerprintHtml (s : String) (other : Option String := none) : Html :=
+  match smilesFingerprintSvg s other with
+  | .ok x => x.toHtml
+  | .error e => .text e
+
 end LeanSMILES.Depict
 
 namespace LeanSMILES
@@ -68,5 +85,15 @@ namespace LeanSMILES
 /-- `#draw t`: show the molecule `t` (a SMILES string, a `Mol` or a
 `Molecule n`) in the Infoview. -/
 macro "#draw " t:term : command => `(#html LeanSMILES.Depict.html $t)
+
+/-- `#fingerprint s`: show the Morgan fingerprint (radius 2, 2048 bits) of the
+SMILES string `s` in the Infoview, as a grid and a barcode.
+`#fingerprint s, t` also highlights the bits `t` shares and gives the Tanimoto
+similarity. -/
+syntax "#fingerprint " term (", " term)? : command
+
+macro_rules
+  | `(#fingerprint $s) => `(#html LeanSMILES.Depict.fingerprintHtml $s)
+  | `(#fingerprint $s, $t) => `(#html LeanSMILES.Depict.fingerprintHtml $s (some $t))
 
 end LeanSMILES

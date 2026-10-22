@@ -59,6 +59,11 @@ set_option linter.hashCommand false
 #draw "[13CH3]C(=O)O[2H]"                    -- isotope labels, D for ²H
 #draw "O=[N+]([O-])c1ccccc1"                 -- nitrobenzene
 
+/-! ### Morgan fingerprints: grid and barcode, shared bits highlighted -/
+
+#fingerprint "COc1cc2ncnc(Nc3ccc(F)c(Cl)c3)c2cc1OCCCN1CCOCC1"   -- gefitinib: 60 bits on
+#fingerprint "CC(=O)Oc1ccccc1C(=O)O", "COc1cc2ncnc(Nc3ccc(F)c(Cl)c3)c2cc1OCCCN1CCOCC1"
+
 /-! ### The text forms -/
 
 #eval (Mol.ofSmiles! "C[C@H](N)C(=O)O").coordinates
