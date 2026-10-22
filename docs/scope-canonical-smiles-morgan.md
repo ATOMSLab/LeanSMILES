@@ -13,8 +13,8 @@
 >
 > The `lake exe` commands in section 4 refer to that commit. Still in the repository: the oracle
 > datasets (`datasets/*-oracle.csv`), the tools that make them (`tools/`), the Python reference
-> implementations (`docs/reference/`), and the classifier (`ML/Logistic.lean`, which now takes
-> its features from main's `Fingerprint/Morgan.lean`). The ring set, kekulization, aromaticity
+> implementations (`docs/reference/`), and the classifier (`LeanLearn/Classification/Logistic.lean`,
+> fed by `Pipelines.morganFeatures`, which uses main's `Fingerprint/Morgan.lean`). The ring set, kekulization, aromaticity
 > perception and final hydrogen counts of `Sanitize.lean` now run on `Molecule n` as
 > `Molecule.aromatize` (`LeanSMILES/Aromaticity/`, `lake exe aromaticity-test`); `cleanUp`,
 > valence rejection and `removeHs` are still to be moved.
@@ -280,7 +280,7 @@ Both the folded bits and the unfolded identifiers with counts equal RDKit's (`ra
 
 ### 4.5 Classification: logistic regression on Morgan fingerprints
 
-`LeanSMILES/ML/Logistic.lean` fits scikit-learn's L2-regularized logistic regression (`½‖w‖² + C Σ log(1 + e^(−ỹ score))`, intercept not penalized) by Nesterov-accelerated gradient descent with gradient-based restart. The step size comes from a power-iteration estimate of the curvature. Samples are sparse 0/1 vectors (Morgan on-bits). It is written over `ScalarLike` plus a small `ExpLog` class (`exp`, `log`), with `Float` and `ℝ` instances.
+`LeanLearn/Classification/Logistic.lean` (formerly `LeanSMILES/ML/Logistic.lean`) fits scikit-learn's L2-regularized logistic regression (`½‖w‖² + C Σ log(1 + e^(−ỹ score))`, intercept not penalized) by Nesterov-accelerated gradient descent with gradient-based restart. The step size comes from a power-iteration estimate of the curvature. Samples are sparse 0/1 vectors (Morgan on-bits). It is written over `ScalarLike` plus a small `ExpLog` class (`exp`, `log`), with `Float` and `ℝ` instances.
 
 Task (ENCH 470 Lecture 21): EGFR actives (100) vs inactives (100) from ChEMBL, radius-2 / 2048-bit Morgan bits, scikit-learn's `train_test_split(test_size=0.20, random_state=0)` (stored in `datasets/egfr-classification.csv` by `tools/sklearn_egfr.py`), `C = 1`.
 

@@ -147,6 +147,14 @@ RDKit (see "Findings about external tools").
 #eval tanimoto (Mol.ofSmiles! "CCO").morganBits (Mol.ofSmiles! "CCCO").morganBits
 ```
 
+`LeanSMILES.Fingerprint.Tanimoto` answers *is Tanimoto a metric?* (Surendran et al. 2025).
+On bit sets, the Tanimoto distance `|A ∆ B| / |A ∪ B|` is a metric
+(`Finset.tanimotoMetricSpace`, the Marczewski–Steinhaus / Lipkus theorem), and `tanimoto` on
+Morgan on-bits computes the bit-set similarity (`Molecule.tanimoto_morganBits`). On
+real-valued vectors the same formula, `⟨x,y⟩ / (⟨x,x⟩ + ⟨y,y⟩ − ⟨x,y⟩)`, fails the triangle
+inequality already for the scalars `1/3, 2/3, 1` (`not_tanimotoVec_dist_triangle`), so there
+is no such metric space (`not_exists_metricSpace_tanimotoVec`).
+
 ### Aromaticity: RDKit's view of the bonds
 
 The parser reads bonds as written. `Molecule.aromatize` (`LeanSMILES/Aromaticity/`)
@@ -169,7 +177,7 @@ lake exe aromaticity-test   # bond types, hydrogens and Morgan bits = RDKit's on
 On every oracle file, as written and in Kekulé form (Delaney, 56 hand-picked
 aromaticity cases, isotope cases, hydrogen cases), every molecule that `cleanUp`
 and `[H]` removal do not touch gets RDKit's bond types, hydrogen counts and
-Morgan fingerprint: 3 369 of 3 369. On 10 000 fuzzed strings it never fails on
+Morgan fingerprint: 3 368 of 3 368 (chlorothalonil, which the parser rejects, is not counted). On 10 000 fuzzed strings it never fails on
 one RDKit accepts. The code is ported from the `canonical-smiles` branch's
 array-based sanitization (commit `5b5fe9e`) and still runs on an index-based
 working copy inside; its interface is `Molecule n → Except String (Molecule n)`.
@@ -226,6 +234,12 @@ Two formulations of the same problem, by two authors, side by side:
   solver with its hyperparameters, as data. [`Certificates.lean`](LeanLearn/Regression/Certificates.lean)
   is the exact `ℚ` check (`SolverWitness`: weighted diagonal dominance) that certifies
   Jacobi and Gauss–Seidel before running them.
+* **Sparse, for fingerprints** ([`Regression/SparseRidge.lean`](LeanLearn/Regression/SparseRidge.lean);
+  Samiha Sharlin). scikit-learn's `Ridge(alpha)` objective, intercept not penalized, on
+  sparse `0/1` features: conjugate gradients on the centered normal equations, using only
+  products with the on-bits, so 2048 fingerprint bits never form a dense matrix.
+  [`Metrics.lean`](LeanLearn/Regression/Metrics.lean) has `r2`, `rmse` and `mae`, and
+  [`Plot/Parity.lean`](LeanLearn/Plot/Parity.lean) writes parity plots as SVG.
 
 ```bash
 lake exe ols-float-test      # Householder-QR OLS: known solutions, extreme scales, every rejected input
@@ -389,6 +403,30 @@ The test trains twice, on RDKit's fingerprint bits (stored in
 `datasets/egfr-classification.csv`) and on Lean's own `morganFeatures`, which equal RDKit's
 on all 205 molecules; both match scikit-learn's probabilities to 10⁻⁶.
 
+### Regression with Morgan fingerprints
+
+Delaney's measured log solubility from the same 2048 Morgan bits, with
+`LeanLearn.Regression.SparseRidge` (α = 1) and the lecture's 80/20 split. `lake exe
+ridge-test` checks it against scikit-learn's `Ridge` (`tools/sklearn_delaney.py`,
+`datasets/delaney-ridge.csv`) and computes R², RMSE and MAE in Lean:
+
+| | R² | RMSE | MAE |
+|---|---|---|---|
+| on RDKit's bits (= scikit-learn, predictions within 10⁻⁶), test | 0.671 | 1.26 | 0.94 |
+| on Lean's own features, test | 0.662 | 1.27 | 0.96 |
+
+Lean's own features equal RDKit's on 1 068 of the 1 127 molecules the parser accepts
+(chlorothalonil's ring label after a branch is rejected); the rest need RDKit's `cleanUp`,
+which `aromatize` does not do yet. The training fit is much closer (R² 0.96), the usual
+sign of more features than molecules.
+
+```bash
+lake exe ridge-test --svg docs/figures/delaney-ridge-parity.svg   # also writes the parity plot
+```
+
+[`docs/figures/delaney-ridge-parity.svg`](docs/figures/delaney-ridge-parity.svg) is that plot,
+written by `LeanLearn.Plot.paritySvg`, with R², RMSE and MAE for each split.
+
 ## Project layout
 
 ```
@@ -397,14 +435,16 @@ LeanSMILES/           the typed SMILES toolkit (imports Mathlib)
   SMILES/             tokenizer, parser, writer, canonical SMILES and its canonicity proof
   Fingerprint/        RDKit-compatible Morgan fingerprints on Molecule n; order-invariance proof
   Aromaticity/        Molecule.aromatize: RDKit's ring set, kekulization, aromaticity perception
-  Data/               CSV parser for the Delaney dataset
+  Data/               CSV parser (columns by header name) for the Delaney dataset
   Tests/              validity, oracle, Morgan, aromaticity, charge and parse-error tests (lake exe …-test)
   Examples/           caffeine.lean, smiles.lean, parsercsv.lean
 LeanLearn/            learning algorithms on tabular data (imports Mathlib only)
   Scalar.lean         ScalarLike: the scalar interface, Float to run and ℝ to prove (from LeanCatalyst)
   Regression/         Problem, Solvers, Certificates (iterative, any scalar);
-                      OLS, Ridge, LinearModel (closed form, ℝ); OLSFloat, RidgeFloat (QR, Float)
+                      OLS, Ridge, LinearModel (closed form, ℝ); OLSFloat, RidgeFloat (QR, Float);
+                      SparseRidge (conjugate gradients, sparse 0/1); Metrics (R², RMSE, MAE)
   Classification/     Logistic
+  Plot/               parity plots as SVG
   Proofs/Regression/  the quadratic loss, gradient descent, Jacobi and Gauss–Seidel, certificate soundness
   Optimization/       gradient-descent convergence over ℝ (from TorchLean)
   LearningTheory/     algorithmic stability; 1D ridge regression (from TorchLean)
@@ -417,10 +457,12 @@ Pipelines/            molecules as tabular data (imports both)
   Certificates.lean   the exact checks on a pipeline: checkGD, checkSolver, certifiedSolverExcess
   Proofs/             representations (bounds, canonicity), certificate soundness
   Examples/           delaney.lean (certified solubility regression), egfr.lean (classification)
-  Tests/              Logistic (lake exe logistic-test)
-datasets/             Delaney (ESOL) data, RDKit oracle files (as written and Kekulé), the EGFR answer file
-tools/                RDKit oracle and fuzz generators; sklearn_egfr.py writes the EGFR answer file
-docs/                 design notes
+  Tests/              Logistic, Ridge (lake exe logistic-test, ridge-test)
+datasets/             Delaney (ESOL) data, RDKit oracle files (as written and Kekulé), the EGFR and
+                      Delaney-ridge answer files
+tools/                RDKit oracle and fuzz generators; sklearn_egfr.py and sklearn_delaney.py write
+                      the scikit-learn answer files
+docs/                 design notes; figures/ holds plots written by Lean
 ench470-content/      ENCH 470 course notebooks and data
 LICENSES/             TorchLean's MIT license
 ```
@@ -444,6 +486,8 @@ Every file is a Lean `module`, so what a file exports is a decision, not an acci
   import` is what loads it there. The one file that proves certificates by `decide +kernel`
   (`Pipelines/Examples/delaney.lean`) also `import all`s the three core modules whose array
   loops the kernel has to run — core does not expose their bodies.
+
+Merging this branch into `main`: see [`MERGE-NOTES.md`](MERGE-NOTES.md).
 
 ## References
 

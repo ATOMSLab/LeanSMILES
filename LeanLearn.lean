@@ -14,8 +14,13 @@ public import LeanLearn.Regression.LinearModel
 -- Linear regression: Householder-QR solvers on `Float`
 public import LeanLearn.Regression.OLSFloat
 public import LeanLearn.Regression.RidgeFloat
+-- Ridge on sparse 0/1 features (conjugate gradients) and regression metrics: R², RMSE, MAE
+public import LeanLearn.Regression.SparseRidge
+public import LeanLearn.Regression.Metrics
 -- Classification
 public import LeanLearn.Classification.Logistic
+-- Plots written as SVG
+public import LeanLearn.Plot.Parity
 -- Proofs (over ℝ)
 public import LeanLearn.Proofs.Regression.Basic
 public import LeanLearn.Proofs.Regression.GradientDescent
