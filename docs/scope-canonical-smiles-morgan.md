@@ -15,8 +15,8 @@
 > datasets (`datasets/*-oracle.csv`), the tools that make them (`tools/`), the Python reference
 > implementations (`tools/rdkit_reference/`), and the classifier (`LeanLearn/Classification/Logistic.lean`,
 > fed by `Pipelines.morganFeatures`, which uses main's `Fingerprint/Morgan.lean`). The ring set, kekulization, aromaticity
-> perception and final hydrogen counts of `Sanitize.lean` now run on `Molecule n` as
-> `Molecule.aromatize` (`LeanSMILES/Aromaticity/`, `lake exe aromaticity-test`); `cleanUp`,
+> perception and final hydrogen counts of `Sanitize.lean`, and its `cleanUp`, now run on
+> `Molecule n` as `Molecule.aromatize` (`LeanSMILES/Aromaticity/`, `lake exe aromaticity-test`);
 > valence rejection and `removeHs` are still to be moved.
 
 **Goal.** Starting from the SMILES strings that `CSVparser.load` already gives us, compute in Lean:

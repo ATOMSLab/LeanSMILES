@@ -16,9 +16,9 @@ For every molecule of an oracle file (`tools/rdkit_oracle.py`), parse, run
 `Molecule.aromatize`, and compare with RDKit's sanitized molecule: bond types,
 hydrogen counts, and the Morgan fingerprint computed on the result.
 
-`aromatize` is RDKit's kekulization, aromaticity perception and final
-hydrogen counts. It leaves out `cleanUp` (`N(=O)=O` → `[N+](=O)[O-]`) and the
-removal of hydrogens written as atoms (`[H]`), so molecules those touch are
+`aromatize` is RDKit's `cleanUp` (`N(=O)=O` → `[N+](=O)[O-]` and the like),
+kekulization, aromaticity perception and final hydrogen counts. It leaves out
+the removal of hydrogens written as atoms (`[H]`), so molecules with those are
 counted separately and expected to differ.
 
     lake exe aromaticity-test [oracle.csv ...]
@@ -29,19 +29,9 @@ the 56 hand-picked aromaticity cases, the isotope cases and the hydrogen cases.
 
 open LeanSMILES LeanSMILES.Tests
 
-/-- Molecules `aromatize` is not meant to match: RDKit's `cleanUp` rewrites a
-neutral 5-valent N (nitro, N-oxide, azide) and a neutral P or halogen with a
-double bond to O, and RDKit removes `[H]` atoms. -/
+/-- Molecules `aromatize` is not meant to match: RDKit removes `[H]` atoms. -/
 def outOfScope (M : Mol) : Bool :=
-  (List.finRange M.n).any fun i ↦
-    let a := M.mol.atom i
-    a.element == some .H ||
-      (a.element == some .N && a.charge == 0 && M.mol.bondOrderSum i + a.totalH ≥ 5) ||
-      ((a.element == some .P || a.element == some .Cl || a.element == some .Br ||
-          a.element == some .I) && a.charge == 0 &&
-        (M.mol.bondsAt i).any fun b ↦
-          b.kind == .double && (M.mol.atom (b.other i)).element == some .O &&
-            (M.mol.atom (b.other i)).charge == 0)
+  (List.finRange M.n).any fun i ↦ (M.mol.atom i).element == some .H
 
 def check (path : String) : IO Bool := do
   let rows ← readRows path
@@ -83,7 +73,7 @@ def check (path : String) : IO Bool := do
   IO.println s!"  in scope {scope}: bond types = RDKit {bondsOk}, hydrogens = RDKit {hsOk}, \
     fingerprint = RDKit {fpOk}  [must be all]"
   IO.println
-    s!"  touched by cleanUp or [H] removal {outside}: fingerprint = RDKit {outsideFp}  [info]"
+    s!"  with [H] atoms {outside}: fingerprint = RDKit {outsideFp}  [info]"
   for f in misses.toList.take 8 do
     IO.println s!"    {f}"
   return failed == 0 && bondsOk == scope && hsOk == scope && fpOk == scope

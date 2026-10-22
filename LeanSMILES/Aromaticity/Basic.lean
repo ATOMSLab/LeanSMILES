@@ -256,6 +256,85 @@ def assignRadicals : Work := Id.run do
     w := w.modifyAtom i ({ · with radicals := nr.toNat })
   return w
 
+/-! ### Cleanup (`MolOps.cpp:51-329`)
+
+RDKit's `MolOps::cleanUp` rewrites a few "hypervalent" ways of writing groups
+into their charge-separated forms, before kekulization:
+
+* nitro and N-oxide: neutral 5-valent N with `=O`  →  `[N+]-[O-]`
+  (`CN(=O)=O` → `C[N+](=O)[O-]`, `n1=O` → `[n+]1[O-]`)
+* azide-like: such an N with `#N`  →  `[N+]=[N-]`
+* P with `=O` and `=C`/`=N`  →  `[P+]-[O-]`
+* Cl/Br/I bonded only to O, valence 3/5/7: each `=O` → `-[O-]` (perchlorate)
+-/
+
+/-- `MolOps.cpp:51-136`: nitro, N-oxide and azide-like nitrogens. -/
+def nitrogensCleanup : Work := Id.run do
+  let mut w := m
+  let mut consider : List ℕ := []
+  for i in [0:w.numAtoms] do
+    let a := w.atoms[i]!
+    if a.z != 7 || a.charge != 0 || w.explicitValence i != 5 then continue
+    consider := consider ++ [i]
+    -- the first neutral O on a double bond becomes -O⁻
+    let firstO := (w.neighbors i).find? fun (k, j) ↦
+      w.atoms[j]!.z == 8 && w.atoms[j]!.charge == 0 && w.bonds[k]!.kind == .double
+    if let some (k, j) := firstO then
+      w := ((w.setKind k .single).modifyAtom i ({ · with charge := 1 })).modifyAtom j
+        ({ · with charge := -1 })
+  for i in consider do
+    let firstN := (w.neighbors i).find? fun (k, j) ↦
+      w.atoms[j]!.z == 7 && w.atoms[j]!.charge == 0 && w.bonds[k]!.kind == .triple
+    if let some (k, j) := firstN then
+      w := ((w.setKind k .double).modifyAtom i ({ · with charge := 1 })).modifyAtom j
+        ({ · with charge := -1 })
+  return w
+
+/-- `MolOps.cpp:138-180`: neutral 5-valent P with three neighbours, `=O` and
+`=C`/`=N` (the C/N having ≥ 2 neighbours). The last such `=O` becomes `-O⁻`. -/
+def phosphorusCleanup (i : ℕ) : Work := Id.run do
+  let a := m.atoms[i]!
+  if a.charge != 0 || m.explicitValence i != 5 || m.degree i != 3 then return m
+  let mut dblO : Option (ℕ × ℕ) := none
+  let mut dblCN := false
+  for (k, j) in m.neighbors i do
+    let b := m.atoms[j]!
+    if b.z == 8 && b.charge == 0 && m.bonds[k]!.kind == .double then
+      dblO := some (k, j)
+    else if (b.z == 6 || b.z == 7) && m.degree j ≥ 2 && m.bonds[k]!.kind == .double then
+      dblCN := true
+  match dblO with
+  | some (k, j) =>
+    if dblCN then
+      return ((m.setKind k .single).modifyAtom j ({ · with charge := -1 })).modifyAtom i
+        ({ · with charge := 1 })
+    else return m
+  | none => return m
+
+/-- `MolOps.cpp:182-215`: neutral Cl/Br/I with valence 3, 5 or 7 bonded only to
+O. Every `=O` becomes `-O⁻`; the halogen's charge is the number changed. -/
+def halogenCleanup (i : ℕ) : Work := Id.run do
+  let a := m.atoms[i]!
+  if a.charge != 0 || ![3, 5, 7].contains (m.explicitValence i) then return m
+  let nbrs := m.neighbors i
+  if !nbrs.all (fun (_, j) ↦ m.atoms[j]!.z == 8) then return m
+  let mut w := m
+  let mut fc : ℤ := 0
+  for (k, j) in nbrs do
+    if w.bonds[k]!.kind == .double then
+      w := (w.setKind k .single).modifyAtom j ({ · with charge := -1 })
+      fc := fc + 1
+  return w.modifyAtom i ({ · with charge := fc })
+
+/-- `MolOps::cleanUp` (`MolOps.cpp:315-329`). -/
+def cleanUp : Work := Id.run do
+  let mut w := m.nitrogensCleanup
+  for i in [0:w.numAtoms] do
+    let z := w.atoms[i]!.z
+    if z == 15 then w := w.phosphorusCleanup i
+    else if z == 17 || z == 35 || z == 53 then w := w.halogenCleanup i
+  return w
+
 end Work
 
 end LeanSMILES.Aromaticity

@@ -208,14 +208,15 @@ lemma map_edge_withKinds {n : ℕ} (m : Molecule n) (w : Work) :
 end Aromaticity
 
 open Aromaticity in
-/-- RDKit's view of the molecule's bonds and hydrogens: kekulize, then perceive
+/-- RDKit's view of the molecule's bonds, charges and hydrogens: `cleanUp`
+(nitro `N(=O)=O` → `[N+](=O)[O-]` and the like), kekulize, then perceive
 aromaticity with RDKit's default model, then RDKit's final hydrogen counts
-(`MolOps::sanitizeMol` from `updatePropertyCache` to `adjustHs`, without
-`cleanUp`, valence rejection or hydrogen removal). Bond kinds, aromatic flags
-and implicit hydrogens change; atoms, bonds and everything else stay. Fails when
+(`MolOps::sanitizeMol` from `cleanUp` to `adjustHs`, without valence rejection
+or hydrogen removal). Bond kinds, charges, aromatic flags and implicit hydrogens
+change; atoms, bonds and everything else stay. Fails when
 RDKit's would ("Can't kekulize mol", e.g. `c1cccc1`). -/
 def Molecule.aromatize {n : ℕ} (m : Molecule n) : Except String (Molecule n) := do
-  let w := (Work.ofMolecule m).freezeHs.cacheValences
+  let w := (Work.ofMolecule m).freezeHs.cleanUp.cacheValences
   let rings := w.relevantCycles
   let w ← w.kekulize rings
   let w := (w.assignRadicals.setAromaticity rings).finalizeHs
@@ -223,7 +224,8 @@ def Molecule.aromatize {n : ℕ} (m : Molecule n) : Except String (Molecule n) :
     let a := m.atom i
     let wa := w.atoms[i.val]!
     let total := wa.frozenHs.getD (wa.explicitHs + w.implicitHs i.val)
-    { a with aromatic := w.isAromaticAtom i.val, implicitH := total - a.explicitH.getD 0 }
+    { a with aromatic := w.isAromaticAtom i.val, charge := wa.charge,
+             implicitH := total - a.explicitH.getD 0 }
   return { atoms, bonds := withKinds m w,
            nodup := by rw [map_edge_withKinds]; exact m.nodup }
 
