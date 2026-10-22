@@ -29,6 +29,8 @@ import LeanSMILES.Pipeline.Data
 import LeanSMILES.Proofs.Regression.Basic
 import LeanSMILES.Proofs.Regression.GradientDescent
 import LeanSMILES.Proofs.Regression.Iterative
+import LeanSMILES.Proofs.Regression.Minimization
+import LeanSMILES.Proofs.Regression.Convergence
 import LeanSMILES.Proofs.Pipeline.Representation
 import LeanSMILES.Proofs.Pipeline.Certificates
 -- Certified pipelines, by example

@@ -205,6 +205,13 @@ Write `L` for the training loss `(1/m) ∑ᵣ (⟪xᵣ, θ⟫ - yᵣ)² + λ ‖
 * **Gauss–Seidel is coordinate descent**: every update minimises the loss exactly along one
   coordinate, so it never increases the loss, for any data. A fixed point of Jacobi is
   optimal.
+* **Minimization and convergence** (`Minimization.lean`, `Convergence.lean`): the minimizers
+  of the loss are exactly the solutions of the normal equations, the fixed points of
+  gradient descent and the fixed points of Jacobi (and Gauss–Seidel fixes each of them).
+  With `λ > 0` the loss is strongly convex (`λ‖θ - θ*‖² ≤ L(θ) - L(θ*)`), so the minimizer
+  exists and is unique. Each solver then converges to it: gradient descent's loss to the
+  minimum at rate `‖θ*‖²/(2ηk)` and its iterates (with `λ > 0`) at rate `‖θ*‖²/(2ηkλ)`;
+  Jacobi's and Gauss–Seidel's iterates linearly under diagonal dominance.
 
 ### Representations ([`Proofs/Pipeline/Representation.lean`](LeanSMILES/Proofs/Pipeline/Representation.lean))
 
@@ -252,7 +259,8 @@ LeanSMILES/
     Data.lean           LabelledMolecules from the CSV tables in datasets/ (via CSVparser)
     Certificates.lean   the exact checks: checkGD, SolverWitness, certifiedSolverExcess
   Proofs/             all theorems, over ℝ
-    Regression/         the quadratic loss, gradient descent, Jacobi and Gauss–Seidel
+    Regression/         the quadratic loss, gradient descent, Jacobi and Gauss–Seidel,
+                        minimizers, and convergence to them
     Pipeline/           representations, certificate soundness
   Optimization/       gradient-descent convergence theorems over ℝ (from TorchLean)
   LearningTheory/     algorithmic stability; 1D ridge regression: closed form, uniform

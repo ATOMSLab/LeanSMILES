@@ -268,10 +268,10 @@ theorem det_ne_zero (hdd : DiagDominant A w ρ) : (toMatrix A).det ≠ 0 := by
   rw [Matrix.det_mul] at hB
   exact left_ne_zero_of_mul hB
 
-/-- **A solution exists** when `A` is weighted diagonally dominant. -/
-theorem exists_solution (hdd : DiagDominant A w ρ) (b : Vec ℝ n) :
+/-- A solution exists whenever `det A ≠ 0`. -/
+theorem exists_solution_of_det_ne_zero (hdet : (toMatrix A).det ≠ 0) (b : Vec ℝ n) :
     ∃ θs : Vec ℝ n, ∀ i : Fin n, (matVec A θs)[i] = b[i] := by
-  have hu : IsUnit (toMatrix A).det := isUnit_iff_ne_zero.mpr (det_ne_zero hdd)
+  have hu : IsUnit (toMatrix A).det := isUnit_iff_ne_zero.mpr hdet
   let v : Fin n → ℝ := (toMatrix A)⁻¹.mulVec fun j ↦ b[j]
   refine ⟨Vector.ofFn v, fun i ↦ ?_⟩
   have h : (toMatrix A).mulVec v = fun j ↦ b[j] := by
@@ -279,6 +279,11 @@ theorem exists_solution (hdd : DiagDominant A w ρ) (b : Vec ℝ n) :
   have := congrFun h i
   rw [matVec_getElem]
   simpa [toMatrix, Matrix.mulVec, dotProduct] using this
+
+/-- **A solution exists** when `A` is weighted diagonally dominant. -/
+theorem exists_solution (hdd : DiagDominant A w ρ) (b : Vec ℝ n) :
+    ∃ θs : Vec ℝ n, ∀ i : Fin n, (matVec A θs)[i] = b[i] :=
+  exists_solution_of_det_ne_zero (det_ne_zero hdd) b
 
 /-- **The size of the solution**: if `|bᵢ| ≤ (1 - ρ) Aᵢᵢ wᵢ β` for every row, then
 `|θ*ᵢ| ≤ β wᵢ`. -/
