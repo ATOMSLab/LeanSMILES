@@ -1,65 +1,161 @@
 # LeanSMILES
-Formalizing molecular representations in Lean: a SMILES → features → machine-learning
-pipeline whose algorithms are written once, run on `Float`, and are proved correct over `ℝ`.
+
+Formal guarantees for cheminformatics pipelines, in Lean. You describe a pipeline: labelled
+molecules, a molecular representation, a learning algorithm and its hyperparameters. You then
+prove what the trained model is guaranteed to satisfy, without training it.
+
+Every definition is written once, polymorphic over a scalar type `α`. Theorems are proved at
+`α := ℝ`, and the same code runs at `α := Float`.
 
 ## Getting started
 
-1. Download the project's dependencies and Mathlib's precompiled cache, then
-   check the project:
+```bash
+lake exe cache get   # Mathlib's precompiled cache
+lake build           # checks every definition, proof and example
+```
 
-   ```bash
-   lake exe cache get
-   lake build
-   ```
+The worked example is [`LeanSMILES/Examples/CertifiedPipeline.lean`](LeanSMILES/Examples/CertifiedPipeline.lean).
+Check it on its own with `lake build LeanSMILES.Examples.CertifiedPipeline`.
 
-2. `lake build` also runs the test suite. Each file in `LeanSMILES/Tests/` tests one part
-   of the system with `#test` checks, and a failing check fails the build. To run a single
-   test file:
+## Certifying a pipeline
 
-   ```bash
-   lake build LeanSMILES.Tests.CanonicalSMILES
-   ```
+**1. Write the pipeline**, once, for any scalar type:
 
-3. Run the example: load the Delaney (ESOL) solubility dataset, clean and validate the
-   SMILES, train a linear model on Morgan fingerprints, and predict the log solubility of
-   new SMILES strings with `predictSolubilityMessage`:
+```lean
+def esolPipeline (α : Type) [Scalar α] : Pipeline α 6 1024 where
+  data := esolData α                                  -- molecules + targets
+  representation := .morgan 2 1024                    -- radius-2, 1024-bit fingerprints
+  algorithm := .gradientDescent ⟨1 / Scalar.fromNat 2050, 41000⟩   -- step size, iterations
+```
 
-   ```bash
-   lake lean LeanSMILES/Examples/PredictSolubility.lean
-   ```
+**2. Fill in its certificate.** Each field is a condition on the parameters. The feature bound
+comes from a lemma about the representation, and the rest is arithmetic that `norm_num` closes:
 
-   Use `lake lean`, not `lake env lean`: only `lake lean` (and the editor) load the
-   precompiled native code, which is about 100× faster.
+```lean
+noncomputable def esolCertificate :
+    Pipeline.GDCertificate (esolPipeline ℝ).representation ⟨1 / Scalar.fromNat 2050, 41000⟩ where
+  R2 := (1024 : ℕ)                                    -- ‖φ(mol)‖² ≤ 1024 for every molecule
+  B := 1                                              -- compare with models of norm² ≤ 1
+  ε := 1 / 20                                         -- tolerated excess training error
+  bounded := Representation.morgan_bounded 2 1024
+  stepSize_pos := by norm_num
+  stepSize_small := by norm_num                       -- 2η(R² + 1) ≤ 1
+  iters_pos := by norm_num
+  iters_enough := by norm_num                         -- B ≤ 2ηkε
+```
+
+If a condition fails, for example a step size too large for the representation, `norm_num`
+proves its negation and there is no certificate.
+
+**3. Use the guarantee:**
+
+```lean
+theorem esol_guarantee (u : LinearModel ℝ 1024) (hu : normSq u.toParams ≤ 1) :
+    (esolPipeline ℝ).trainMSE ≤ mse u (esolPipeline ℝ).dataset + 1 / 20 :=
+  esolCertificate.sound (esolPipeline ℝ) rfl u hu
+```
+
+The certificate never mentions the data, so the guarantee holds for every dataset.
+
+**Perceptron pipelines** need a separator with a positive margin on the training molecules.
+For bit representations (such as Morgan fingerprints) you can give it as an integer
+`PerceptronWitness`. The kernel then parses the SMILES, computes the fingerprints and checks the
+witness:
+
+```lean
+theorem hydroxylWitness_check :
+    hydroxylWitness.check (fun m => (m.morganFingerprint 0 64).bits)
+      solubilityClassifier.data.molecules solubleLabels 45 = true := by
+  decide +kernel
+
+theorem solubility_guarantee (i : Fin 8) :   -- every training molecule classified correctly
+    solubilityClassifier.model.classify (solubilityClassifier.representation.featurize
+      solubilityClassifier.data.molecules[i]) = solubilityClassifier.data.targets[i] :=
+  (hydroxylWitness.certificate solubilityClassifier rfl rfl (by norm_num)
+    hydroxylWitness_check).sound rfl i
+```
+
+## What is proved
+
+### Pipelines ([`Proofs/Pipeline.lean`](LeanSMILES/Proofs/Pipeline.lean), [`Proofs/Certificates.lean`](LeanSMILES/Proofs/Certificates.lean))
+
+| Algorithm | Conditions (checked without training) | Guarantee |
+|---|---|---|
+| Gradient descent | `‖φ‖² ≤ R²` for the representation, `η > 0`, `2η(R² + 1) ≤ 1`, `B ≤ 2ηkε` | training MSE ≤ MSE of any model with `‖(w, b)‖² ≤ B`, plus `ε`, for **every dataset** (`GDCertificate.sound`); MSE non-increasing in `k` (`gd_antitone`); the `O(1/k)` rate (`gd_rate`) |
+| Perceptron | `±1` labels, a separator with `‖u‖ ≤ 1` and margin `γ`, `‖φ‖² ≤ R²` on the data, `(R² + 1)/γ² ≤ epochs` | every training molecule classified correctly, training accuracy 1 (`PerceptronCertificate.sound`) |
+| OLS | the augmented features of the training molecules are linearly independent | no linear model has a smaller training MSE (`ols_optimal_of_fullColumnRank`) |
+
+### Machine learning ([`Proofs/ML/`](LeanSMILES/Proofs/ML))
+
+* **Gradient descent converges at rate `O(1/k)`** (`mse_linRegGD_le`): with `2η ∑ᵢ‖xᵢ‖² ≤ m`, after `k` steps
+  `mse(θₖ) ≤ mse(u) + ‖u‖² / (2ηk)` for every linear model `u`. Proved through convexity,
+  sufficient decrease, and a telescoping distance argument.
+* **Gauss–Jordan elimination is correct** ([`Proofs/LinSolve.lean`](LeanSMILES/Proofs/LinSolve.lean)):
+  if `A` is invertible, `linSolve A b` (with partial pivoting) solves `A x = b`, and it is the
+  only solution (`linSolve_spec`, `linSolve_unique`, `linSolve_spec_of_det_ne_zero`).
+* Least squares: the loss is an exact quadratic; zero gradient ⟺ global minimum; normal equations,
+  solved by `linSolve` whenever the features have full column rank; a fixed point of gradient
+  descent is optimal; the sparse solver computes the same iterates.
+* Perceptron: Novikoff's mistake bound `mistakes ≤ (R/γ)²` (for any separator with `‖u‖ ≤ 1`),
+  convergence within `⌊(R/γ)²⌋` epochs, and stability afterwards.
+* Lipschitz predictions: `(score x − score x')² ≤ ‖w‖² ‖x − x'‖²`.
+
+### Molecular representations ([`Proofs/Chem/`](LeanSMILES/Proofs/Chem))
+
+* **Matrices** (`Matrices.lean`), for well-formed molecules:
+  * the adjacency, bond-order and weighted adjacency matrices are symmetric with zero diagonal;
+  * row sums are the degrees (or total bond orders), and `∑ deg = 2 · #bonds` (handshake lemma);
+  * for every Laplacian `L = D − W`: `L𝟙 = 0`, `tr L = 2∑w_b`, and
+    `xᵀLx = ∑_bonds w_b (x_s − x_d)²`, so `L` is positive semidefinite, and `xᵀLx = 0` forces
+    `x` to be constant along bonds;
+  * Zagreb indices: `M₁ = ∑ deg²` and `M₂ = ∑_bonds deg(s)·deg(d)`.
+* **Topological distance** (`Distance.lean`): breadth-first distance is a metric (zero exactly on
+  the diagonal, symmetric, triangle inequality), and bonded atoms are at distance 1. The distance
+  and topological Coulomb matrices are symmetric, and the Wiener index is non-negative.
+* **Fingerprints** (`Fingerprint.lean`): the squared feature distance between two fingerprints
+  equals their Hamming distance. So, for any linear model,
+  `(pred a − pred b)² ≤ ‖w‖² · hamming(a, b)`: molecules with similar fingerprints get similar
+  predictions.
+* **Feature bounds** (`Representation.lean`), for every molecule: `morgan` ≤ `nBits`,
+  `adjacency k` ≤ `k²`, `clip c r` ≤ `n c²`, `normalize r` ≤ 1, `scale c r` ≤ `c² R²`, and
+  `r₁ ++ r₂` ≤ `R₁² + R₂²`.
+
+All of these depend only on Lean's standard axioms (`propext`, `Classical.choice`, `Quot.sound`).
+Kernel checks use `decide +kernel`, never `native_decide`.
 
 ## Project layout
 
 ```
 LeanSMILES/
-  Primitives/       Scalar interface, Float instance, exact decimals, dense and sparse
-                    linear algebra, algorithm parameters; Real.lean is the ℝ instance
-  SMILES/           molecules: parsing, canonical SMILES, Morgan fingerprints, descriptors
-  MachineLearning/  linear regression (closed form, dense and sparse gradient descent),
-                    perceptron
-  API/              the pipeline: CSV loading, validation, features, train/test split,
-                    metrics, SMILES → prediction
-  MetaPrograms/     `#test` and `cached def` (notebook-style values computed once)
-  Tests/            one test file per component, run by `lake build`
-  Examples/         PredictSolubility.lean
-  Data/             delaney-processed.csv
-notebooks/          the original Python (RDKit + scikit-learn) project notebook
+  Polymorphic/        definitions, written once for any [Scalar α]; no Mathlib
+    Scalar.lean         the scalar interface
+    LinAlg.lean         vectors, matrices, sparse products, Laplacians, linear solves
+    Chem/               molecules: SMILES parsing and canonical form, graph, Morgan fingerprints,
+                        descriptors, matrix representations, topological distance,
+                        Representation (feature maps and combinators)
+    ML/                 linear models, gradient descent, least squares, perceptron, metrics,
+                        Algorithm (the learner as data)
+    Pipeline.lean       Pipeline = labelled molecules + representation + algorithm
+    Certificates.lean   integer witnesses that the kernel checks
+  Float/              the Float instance and precompiled specializations (runs the code)
+  Real/               the ℝ instance (used by the proofs)
+  Proofs/             all theorems, mirroring Polymorphic/
+  Examples/           CertifiedPipeline.lean
+notebooks/            the original Python (RDKit + scikit-learn) project notebook
 ```
 
-`SMILES/` and `MachineLearning/` each split into four layers:
+`Polymorphic/` and `Float/` form the `LeanSMILESExec` library. It imports no Mathlib and is
+precompiled to native code, so `#eval` runs at compiled speed (use `lake lean`, not
+`lake env lean`, to load the native code). `Real/`, `Proofs/` and `Examples/` form the
+`LeanSMILES` library.
 
-| File | Contents | Library |
-|---|---|---|
-| `Types.lean` | data types | `LeanSMILESExec` |
-| `Definitions.lean` | algorithms, generic over `[Scalar α]` | `LeanSMILESExec` |
-| `Executables.lean` | the definitions at `α := Float`; `*_eq` lemmas hold by `rfl` | `LeanSMILESExec` |
-| `Proofs.lean` | theorems at `α := ℝ`, with Mathlib | `LeanSMILES` |
+## What the guarantees do not cover
 
-`LeanSMILESExec` imports no Mathlib and is precompiled to native code. Because the code
-that runs is the generic definition, a theorem about it over `ℝ` describes the `Float`
-code up to rounding. Where the compiled code uses a faster implementation, the two are
-proved equal: `Molecule.morganFingerprint_eq_fast` (a `@[csimp]` lemma) and
-`ML.linRegGDSparse_eq` (sparse gradient descent = dense gradient descent).
+* **Floating-point rounding.** Theorems are about the definitions at `α := ℝ`, and the `Float`
+  code is the same definitions at `α := Float`. They agree up to rounding, which is not modelled.
+* **OLS on rank-deficient data.** When the features are linearly dependent, the normal equations
+  have many solutions and Gauss–Jordan hits a zero pivot. No guarantee is given then.
+* **Generalization.** The guarantees bound the training error. For unseen molecules, the
+  available bound is the Lipschitz one: predictions move by at most `‖w‖ · √hamming`.
+* **Canonical SMILES** is proved to be a function of the molecule. That it determines the molecule
+  up to renumbering is not yet proved.
