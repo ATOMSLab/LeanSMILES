@@ -98,7 +98,7 @@ follows each entry.
 - Marczewski, E. & Steinhaus, H. (1958), *On a certain distance of sets and the
   corresponding distance of functions*, Colloquium Mathematicum 6(1), 319–327.
   [doi:10.4064/cm-6-1-319-327](https://doi.org/10.4064/cm-6-1-319-327). The
-  Jaccard distance `|A ∆ B| / |A ∪ B|` is a metric; the theorem
+  Jaccard distance `|A ∆ B| / |A ∪ B|` is a metric, which
   [`Finset.tanimotoMetricSpace`](LeanSMILES/Fingerprint/Tanimoto.lean) proves.
   `marczewskiCertainDistanceSets1958`
 - Lipkus, A.H. (1999), *A proof of the triangle inequality for the Tanimoto
