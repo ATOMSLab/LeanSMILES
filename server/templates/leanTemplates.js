@@ -252,7 +252,7 @@ def runDataset (datasetId : String) : IO Unit := do
     ]
     IO.println s!"__JSON_START__{out.compress}__JSON_END__"
   else if datasetId == "egfr-fda" then
-    let path := "ench470-content/EGFR-FDA.csv"
+    let path := "datasets/EGFR-FDA.csv"
     let raw ← IO.FS.readFile path
     let lines := (raw.splitOn "\\n").map (fun l => (l.dropEndWhile (· == '\\r')).toString) |>.filter (fun l => !l.trimAscii.isEmpty)
     let rowsJson : Array Json := lines.toArray.map fun line =>
@@ -284,7 +284,7 @@ def runDataset (datasetId : String) : IO Unit := do
     ]
     IO.println s!"__JSON_START__{out.compress}__JSON_END__"
   else if datasetId == "egfr-actives" then
-    let path := "ench470-content/Chembl_EGFR_actives_ML.csv"
+    let path := "datasets/Chembl_EGFR_actives_ML.csv"
     let raw ← IO.FS.readFile path
     let lines := (raw.splitOn "\\n").map (fun l => (l.dropEndWhile (· == '\\r')).toString) |>.drop 1 |>.filter (fun l => !l.trimAscii.isEmpty)
     let slice := lines.take 25
@@ -317,7 +317,7 @@ def runDataset (datasetId : String) : IO Unit := do
     ]
     IO.println s!"__JSON_START__{out.compress}__JSON_END__"
   else
-    let path := "ench470-content/ThermoPropertiesSMILES.csv"
+    let path := "datasets/ThermoPropertiesSMILES.csv"
     let raw ← IO.FS.readFile path
     let lines := (raw.splitOn "\\n").map (fun l => (l.dropEndWhile (· == '\\r')).toString) |>.drop 1 |>.filter (fun l => !l.trimAscii.isEmpty)
     let slice := lines.take 25
