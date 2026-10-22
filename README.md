@@ -137,13 +137,45 @@ lake exe charge-test        # formal charges: [C+123], [H+++], [C-123] parse but
 identifiers with counts), `morganBits` (sorted on-bits), `morganVector : Vector Bool 2048`,
 `inRingVector`, and an exact `tanimoto : … → ℚ`.  It hashes the graph *as written*, so the
 bits equal RDKit's exactly where the as-written bond types and hydrogen counts equal RDKit's
-sanitized ones (no aromaticity perception here, by design), and they are always invariant
-under relabeling of the atoms.
+sanitized ones; run `Molecule.aromatize` first (below) to get RDKit's bits.  Up to radius 2 the
+fingerprint is proved independent of the atom order: `Molecule.morganBits_relabel`
+(`LeanSMILES/Fingerprint/MorganInvariance.lean`).  From radius 3 it is not, here or in
+RDKit (see "Findings about external tools").
 
 ```lean
 #eval (Mol.ofSmiles! "CCO").morganBits        -- [80, 222, 294, 807, 1057, 1410, ...]
 #eval tanimoto (Mol.ofSmiles! "CCO").morganBits (Mol.ofSmiles! "CCCO").morganBits
 ```
+
+### Aromaticity: RDKit's view of the bonds
+
+The parser reads bonds as written. `Molecule.aromatize` (`LeanSMILES/Aromaticity/`)
+gives a molecule RDKit's view of them, as a separate step after parsing: RDKit's
+ring set (relevant cycles), kekulization, aromaticity perception (default model:
+donor types, Hückel 4n + 2, fused systems) and final hydrogen counts. So
+`C1=CC=CC=C1` becomes aromatic benzene, the bond between the rings of
+`c1ccccc1c1ccccc1` becomes single, and `c1cccc1` fails as it does in RDKit
+("Can't kekulize mol"). RDKit's `cleanUp` (nitro and similar rewrites), valence
+rejection and removal of `[H]` atoms are not included yet.
+
+```lean
+#eval (SMILES.parseAromatized "C1=CC=CC=C1").map (·.morganBits)   -- RDKit's benzene bits
+```
+
+```bash
+lake exe aromaticity-test   # bond types, hydrogens and Morgan bits = RDKit's on every oracle file
+```
+
+On every oracle file, as written and in Kekulé form (Delaney, 56 hand-picked
+aromaticity cases, isotope cases, hydrogen cases), every molecule that `cleanUp`
+and `[H]` removal do not touch gets RDKit's bond types, hydrogen counts and
+Morgan fingerprint: 3 369 of 3 369. On 10 000 fuzzed strings it never fails on
+one RDKit accepts. The code is ported from the `canonical-smiles` branch's
+array-based sanitization (commit `5b5fe9e`) and still runs on an index-based
+working copy inside; its interface is `Molecule n → Except String (Molecule n)`.
+RDKit's remaining sanitization steps were ported on that earlier representation;
+`docs/scope-canonical-smiles-morgan.md` records the port, the commit that holds
+its code, the oracle datasets and the Python references.
 
 ## Three libraries
 
@@ -342,18 +374,17 @@ training loss.
 
 [`Pipelines/Examples/egfr.lean`](Pipelines/Examples/egfr.lean) redoes ENCH 470 Lecture 21 in
 Lean: EGFR actives vs. inactives (`ench470-content/`), featurized by `morganFeatures`
-(the toolkit's Morgan on-bits, 2048 bits), classified by `LeanLearn.Classification.fitLogistic`,
+(parse, `Molecule.aromatize`, the toolkit's Morgan on-bits, 2048 bits), classified by
+`LeanLearn.Classification.fitLogistic`,
 test accuracy 0.925, then the five FDA-approved EGFR drugs.
 
 ```bash
 lake exe logistic-test   # EGFR classification vs scikit-learn (tools/sklearn_egfr.py)
 ```
 
-The test trains twice: on RDKit's fingerprint bits (stored in
-`datasets/egfr-classification.csv`), where every probability matches scikit-learn's to 10⁻⁶,
-and on Lean's own `morganFeatures`, which differ from RDKit's sanitized fingerprints on some
-molecules (no aromaticity perception yet) but give the same predicted class for every
-molecule.
+The test trains twice, on RDKit's fingerprint bits (stored in
+`datasets/egfr-classification.csv`) and on Lean's own `morganFeatures`, which equal RDKit's
+on all 205 molecules; both match scikit-learn's probabilities to 10⁻⁶.
 
 ## Project layout
 
@@ -361,9 +392,10 @@ molecule.
 LeanSMILES/           the typed SMILES toolkit (imports Mathlib)
   Chem/               Element, Atom, Bond, Molecule n, Mathlib graph and matrix views, charges
   SMILES/             tokenizer, parser, writer, canonical SMILES and its canonicity proof
-  Fingerprint/        RDKit-compatible Morgan fingerprints on Molecule n
+  Fingerprint/        RDKit-compatible Morgan fingerprints on Molecule n; order-invariance proof
+  Aromaticity/        Molecule.aromatize: RDKit's ring set, kekulization, aromaticity perception
   Data/               CSV parser for the Delaney dataset
-  Tests/              validity, oracle, Morgan, charge and parse-error tests (lake exe …-test)
+  Tests/              validity, oracle, Morgan, aromaticity, charge and parse-error tests (lake exe …-test)
   Examples/           caffeine.lean, smiles.lean, parsercsv.lean
 LeanLearn/            learning algorithms on tabular data (imports Mathlib only)
   Scalar.lean         ScalarLike: the scalar interface, Float to run and ℝ to prove (from LeanCatalyst)
@@ -376,15 +408,15 @@ LeanLearn/            learning algorithms on tabular data (imports Mathlib only)
   Examples/           ols.lean, ridge.lean (worked proofs), olsFloat.lean, ridgeFloat.lean (runs)
   Tests/              OLSFloat, RidgeFloat, LinearModel (lake exe …-test)
 Pipelines/            molecules as tabular data (imports both)
-  Representation.lean morgan, bondOrders, counts, canonical, clip, ++; morganFeatures
+  Representation.lean morgan, bondOrders, counts, canonical, clip, ++; morganFeatures (aromatized)
   Pipeline.lean       LabelledMolecules (from SMILES), Pipeline, model, losses, predictions
   Data.lean           LabelledMolecules from the CSV tables in datasets/ (via CSVparser)
   Certificates.lean   the exact checks on a pipeline: checkGD, checkSolver, certifiedSolverExcess
   Proofs/             representations (bounds, canonicity), certificate soundness
   Examples/           delaney.lean (certified solubility regression), egfr.lean (classification)
   Tests/              Logistic (lake exe logistic-test)
-datasets/             Delaney (ESOL) data, RDKit oracle files, the EGFR answer file
-tools/                sklearn_egfr.py: writes the EGFR answer file
+datasets/             Delaney (ESOL) data, RDKit oracle files (as written and Kekulé), the EGFR answer file
+tools/                RDKit oracle and fuzz generators; sklearn_egfr.py writes the EGFR answer file
 docs/                 design notes
 ench470-content/      ENCH 470 course notebooks and data
 LICENSES/             TorchLean's MIT license
@@ -441,3 +473,21 @@ checked against.
   nitrogen of `Cn1cccc1` and the sulfur of thiophene get a hydrogen they
   cannot have. Toolkits agree on a fix the spec does not state
   (`Molecule.implicitHydrogens`).
+* **RDKit Morgan fingerprints depend on atom order from radius 3.** When two
+  atoms' environments cover the same bonds, RDKit keeps the one with the
+  smaller (identifier, atom index) and the other stops growing. If the
+  identifiers are equal too, the atom index decides, and the survivor's
+  identifiers at the next radius can differ from the loser's. In
+  `C1=C(CO)C=C1CC`, a cyclobutadiene with ethyl and hydroxymethyl groups, the
+  two ring CH carbons tie at radius 2 without being symmetric (one is
+  single-bonded to the ethyl-bearing carbon and double-bonded to the other,
+  the second the reverse). Over all 8! atom orders, RDKit 2026.09.1 gives one
+  fingerprint at radii 1 and 2 and two at radii 3 and 4; the spelling
+  `C1(CC)=CC(CO)=C1` has a different radius-3 identifier (58732580 instead of
+  837408524) and different folded bits. So ECFP6 is not a function of the
+  molecule. LeanSMILES reproduces RDKit's fingerprint bit for bit, including
+  this, and proves the fingerprint independent of atom order up to radius 2,
+  the default: `Molecule.morganBits_relabel`
+  (`LeanSMILES/Fingerprint/MorganInvariance.lean`). A tie at radius 1 can only
+  be a two-atom fragment, which emits nothing more whichever atom survives; a
+  tie at radius 2, as here, first shows at radius 3.

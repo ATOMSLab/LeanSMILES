@@ -71,3 +71,8 @@ root = "LeanLearn.Tests.LinearModel"
 [[lean_exe]]
 name = "logistic-test"
 root = "Pipelines.Tests.Logistic"
+
+# Molecule.aromatize vs RDKit: bond types, hydrogens, Morgan
+[[lean_exe]]
+name = "aromaticity-test"
+root = "LeanSMILES.Tests.Aromaticity"

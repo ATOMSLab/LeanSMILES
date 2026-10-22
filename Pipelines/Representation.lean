@@ -8,6 +8,7 @@ module
 public import LeanSMILES.SMILES.Canon
 public import LeanSMILES.Chem.Graph
 public import LeanSMILES.Fingerprint.Morgan
+public import LeanSMILES.Aromaticity.Perceive
 
 /-!
 # Pipelines.Representation
@@ -39,8 +40,8 @@ Feature bounds, used by the gradient-descent certificate, are in
 For classification, `morganFeatures` gives a SMILES string's Morgan on-bits as a sparse
 feature vector, the form `LeanLearn.Classification.fitLogistic` takes.
 
-This file and `morganFeatures` are the only places the toolkit's fingerprints are read
-(`Molecule.morganVector`, `SMILES.morganBits`).
+This file is the only place the toolkit's fingerprints are read (`Molecule.morganVector`,
+`SMILES.parseAromatized` and `Mol.morganBits`).
 -/
 
 @[expose] public section
@@ -125,9 +126,11 @@ end Representation
 
 /-- Morgan on-bits of a SMILES string as a sparse feature vector (radius 2, 2048 bits by
 default): the indices of its `1`s, which is how `LeanLearn.Classification.fitLogistic` takes a
-sample (`SparseBits`). -/
+sample (`SparseBits`). The molecule is aromatized first (`Molecule.aromatize`), so the bits
+are RDKit's. -/
 def morganFeatures (s : String) (radius : ℕ := 2) (fpSize : ℕ := 2048) :
-    Except SMILES.ParseError (Array ℕ) :=
-  (SMILES.morganBits s radius fpSize).map List.toArray
+    Except String (Array ℕ) := do
+  let M ← SMILES.parseAromatized s
+  return (M.morganBits radius fpSize).toArray
 
 end Pipelines
