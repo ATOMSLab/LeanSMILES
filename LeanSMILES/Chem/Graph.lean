@@ -3,7 +3,6 @@ Copyright (c) 2026 Tyler Josephson. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Tyler Josephson
 -/
-import LeanSMILES.Chem.Molecule
 import LeanSMILES.SMILES.Canon
 import Mathlib.Combinatorics.SimpleGraph.AdjMatrix
 import Mathlib.Combinatorics.SimpleGraph.DegreeSum

@@ -42,6 +42,7 @@ def main (args : List String) : IO UInt32 := do
   let mut hydrogensOk := 0
   let mut roundTrip := 0
   let mut invariant := 0
+  let mut canonicalizeOk := 0
   let mut sameAsRdkit := 0
   let mut failures : Array String := #[]
   for row in rows do
@@ -68,6 +69,10 @@ def main (args : List String) : IO UInt32 := do
       if c₁ == c && c₂ == c then invariant := invariant + 1
       else
         failures := failures.push s!"relabelling changed {row.smiles}: {c} / {c₁} / {c₂}"
+      -- the relabelled molecule, written in its new atom order, is the canonical string
+      let c₃ := M.canonicalize.toSmiles
+      if c₃ == c then canonicalizeOk := canonicalizeOk + 1
+      else failures := failures.push s!"canonicalize of {row.smiles} writes {c₃}, not {c}"
       if c == row.rdkitCanon then sameAsRdkit := sameAsRdkit + 1
   let line (label : String) (k : ℕ) (tag : String) : String :=
     s!"{label}: {k}/{parsed}  [{tag}]"
@@ -75,6 +80,7 @@ def main (args : List String) : IO UInt32 := do
   IO.println (line "syntax (atoms, bonds, symbols, connectivity) = RDKit" syntaxOk "must be all")
   IO.println (line "canonical SMILES survives reparse" roundTrip "must be all")
   IO.println (line "canonical SMILES invariant under relabelling" invariant "must be all")
+  IO.println (line "canonicalize.toSmiles = canonical SMILES" canonicalizeOk "must be all")
   IO.println (line "bond types = RDKit (after its aromaticity model)" bondTypesOk "info")
   IO.println (line "hydrogen counts = RDKit (after its sanitization)" hydrogensOk "info")
   IO.println (line "canonical string = RDKit's string" sameAsRdkit "info")

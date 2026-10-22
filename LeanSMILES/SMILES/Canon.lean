@@ -160,11 +160,18 @@ def canonicalRanks (m : Molecule n) (budget : ℕ := 1024) : Ranks n := (m.canon
 /-- The canonical SMILES string. -/
 def canonicalSmiles (m : Molecule n) (budget : ℕ := 1024) : String := (m.canonical budget).2
 
-/-- The canonical ranks as a permutation of the atoms (the identity if the ranks
-were not a bijection, which a discrete ranking rules out). -/
+/-- The canonical ranks as a permutation of the atoms: atom `i` goes to its
+position in rank order, the number of atoms ranked strictly below it. Ranks are
+discrete but not contiguous (tie-breaking doubles them), so this is the
+bijection, not the rank itself. The identity if the ranking was not discrete. -/
 def canonicalPerm (m : Molecule n) (budget : ℕ := 1024) : Equiv.Perm (Fin n) :=
   let rank := m.canonicalRanks budget
-  let f : Fin n → Fin n := fun i ↦ if h : rank[i] < n then ⟨rank[i], h⟩ else i
+  let f : Fin n → Fin n := fun i ↦
+    ⟨((List.finRange n).filter fun j ↦ decide (rank[j] < rank[i])).length, by
+      calc ((List.finRange n).filter fun j ↦ decide (rank[j] < rank[i])).length
+          < (List.finRange n).length :=
+            List.length_filter_lt_length_iff_exists.mpr ⟨i, List.mem_finRange i, by simp⟩
+        _ = n := List.length_finRange⟩
   if hf : Function.Bijective f then
     { toFun := f
       invFun := Fintype.bijInv hf
