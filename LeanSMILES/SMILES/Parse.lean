@@ -1,7 +1,7 @@
 /-
 Copyright (c) 2026 Tyler Josephson. All rights reserved.
 Released under Apache 2.0 license as described in the file LICENSE.
-Authors: Tyler Josephson
+Authors: Tyler Josephson, Hao Liu
 -/
 import LeanSMILES.SMILES.Token
 import LeanSMILES.Chem.Molecule
@@ -139,25 +139,29 @@ def step (st : State) (t : Token) : Except ParseError State :=
     match st.pending with
     | some p => .error (.bondWithoutAtom p.pos)
     | none =>
-      if st.anchor.isNone || st.afterDot then .error (.danglingDot t.pos)
+      if st.anchor.isNone || st.afterDot || st.justOpened then .error (.danglingDot t.pos)
       else .ok { st with afterDot := true, justOpened := false }
   | .branchOpen =>
     match st.anchor, st.pending with
     | none, _ => .error (.branchWithoutAtom t.pos)
     | _, some p => .error (.bondWithoutAtom p.pos)
-    | some k, none => .ok { st with branches := k :: st.branches, justOpened := true }
+    | some k, none =>
+      if st.afterDot then .error (.branchWithoutAtom t.pos)
+      else .ok { st with branches := k :: st.branches, justOpened := true }
   | .branchClose =>
     match st.branches, st.pending with
     | [], _ => .error (.unmatchedBranchClose t.pos)
     | _, some p => .error (.bondWithoutAtom p.pos)
     | k :: rest, none =>
-      if st.justOpened then .error (.emptyBranch t.pos)
+      if st.afterDot then .error (.danglingDot (t.pos - 1))
+      else if st.justOpened then .error (.emptyBranch t.pos)
       else .ok { st with anchor := some k, branches := rest, afterDot := false }
   | .ring num =>
     match st.anchor with
     | none => .error (.ringWithoutAtom t.pos)
     | some a =>
-      if st.justOpened then .error (.ringAfterBranchOpen t.pos) else
+      if st.afterDot then .error (.ringWithoutAtom t.pos)
+      else if st.justOpened then .error (.ringAfterBranchOpen t.pos) else
       match st.rings.lookup num with
       | some ro => do
         let kind ← match ro.bond.bind (·.kind), st.pending.bind (·.kind) with
@@ -178,7 +182,7 @@ def finish (st : State) : Except ParseError State :=
   | none =>
     if st.afterDot then .error (.unexpectedEnd "an atom after '.'")
     else if !st.branches.isEmpty then .error (.unclosedBranch st.branches.length)
-    else if !st.rings.isEmpty then .error (.unclosedRing (st.rings.map (·.1)))
+    else if !st.rings.isEmpty then .error (.unclosedRing (st.rings.reverse.map (·.1)))
     else .ok st
 
 /-- Package the state as a `Molecule`, discharging the type's invariants by
