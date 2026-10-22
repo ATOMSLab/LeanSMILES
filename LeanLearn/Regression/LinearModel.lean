@@ -30,9 +30,6 @@ abbrev Coefficients (K : Type) (p : ℕ) := Fin p → K
 section Executable
 variable [PolynomialLike K]
 
-/-- Finite sum in a fixed order, executable even without associative Float addition. -/
-def sumFin (f : Fin n → K) : K := sumGen (List.finRange n) f
-
 /-- Prediction for one feature vector, including a supplied intercept feature. -/
 def predictRow (x w : Fin p → K) : K := sumFin fun j => x j * w j
 
@@ -64,13 +61,8 @@ end Executable
 
 section RealProofs
 
-/-- The fixed-order executable sum agrees with the mathematical finite sum at `ℝ`. -/
-theorem sumFin_real (f : Fin n → ℝ) : sumFin f = ∑ i, f i := by
-  rw [sumFin, sumGen_eq, ← List.sum_toFinset f (List.nodup_finRange n)]
-  simp
-
 theorem predictRow_real (x w : Fin p → ℝ) : predictRow x w = x ⬝ᵥ w := by
-  simp [predictRow, sumFin_real, dotProduct]
+  simp [predictRow, sumFin_eq_sum, dotProduct]
 
 theorem predict_real (X : Design ℝ n p) (w : Fin p → ℝ) :
     predict X w = OLS.predict X w := by
@@ -85,10 +77,10 @@ theorem residual_real (X : Design ℝ n p) (y : Fin n → ℝ) (w : Fin p → �
 /-- The Float-usable OLS definition specializes to the formally verified real objective. -/
 theorem squaredError_real (X : Design ℝ n p) (y : Fin n → ℝ) (w : Fin p → ℝ) :
     squaredError X y w = OLS.loss X y w := by
-  simp [squaredError, sumFin_real, residual_real, OLS.loss, dotProduct]
+  simp [squaredError, sumFin_eq_sum, residual_real, OLS.loss, dotProduct]
 
 theorem penalty_real (weights w : Fin p → ℝ) : penalty weights w = Ridge.penalty weights w := by
-  simp [penalty, sumFin_real, Ridge.penalty, pow_two]
+  simp [penalty, sumFin_eq_sum, Ridge.penalty, pow_two]
 
 /-- The Float-usable ridge definition specializes to the formally verified real objective. -/
 theorem ridgeLoss_real (X : Design ℝ n p) (y : Fin n → ℝ) (weights w : Fin p → ℝ) :
@@ -103,7 +95,7 @@ theorem normalResidual_eq_zero_iff (X : Design ℝ n p) (y : Fin n → ℝ)
   have h : normalResidual X y weights w =
       Xᵀ *ᵥ OLS.residual X y w + diagonal weights *ᵥ w := by
     ext j
-    simp only [normalResidual, sumFin_real, residual_real, Pi.add_apply, mulVec_diagonal]
+    simp only [normalResidual, sumFin_eq_sum, residual_real, Pi.add_apply, mulVec_diagonal]
     rfl
   rw [h]
 

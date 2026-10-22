@@ -13,9 +13,9 @@ The scalar-arithmetic interface that LeanSMILES's numeric code — feature
 values and the classical ML algorithms that consume them — is written over:
 `ScalarLike`, a bundle of raw arithmetic classes — deliberately *not* `Field`,
 because `Float` carries no lawful algebraic instances — with `npowGen` /
-`nsmulGen` / `sumGen`, the `Float`-usable power, scalar multiple and sum, and
-`npowGen_eq` / `nsmulGen_eq` / `sumGen_eq` bridging them to `^`, `*` and
-`List.sum` over `ℝ`.
+`nsmulGen` / `sumGen` / `sumFin`, the `Float`-usable power, scalar multiple and
+sums, and `npowGen_eq` / `nsmulGen_eq` / `sumGen_eq` / `sumFin_eq_sum` bridging
+them to `^`, `*`, `List.sum` and `∑ i, f i` over `ℝ`.
 
 Extracted from LeanCatalyst (`LeanCatalyst/Scalar.lean`, `main` at `65d1e87`).
 The code is unchanged apart from the namespace; docstrings that pointed into
@@ -179,6 +179,10 @@ the order the index type declares. -/
 def sumGen [PolynomialLike K] {X : Type u} (l : List X) (f : X → K) : K :=
   l.foldr (fun s acc => f s + acc) 0
 
+/-- `∑ i : Fin n, f i`, as the executable fold `sumGen` over `List.finRange n` (usable at
+`Float`): an inner product, a squared error, a normal-equation entry. -/
+def sumFin [PolynomialLike K] {n : Nat} (f : Fin n → K) : K := sumGen (List.finRange n) f
+
 /-- Sum once over every distinct index in a list, in `List.dedup`'s stable
 last-occurrence order.
 
@@ -194,6 +198,10 @@ lemma sumGen_eq {X : Type u} (l : List X) (f : X → Real) :
   induction l with
   | nil => rfl
   | cons a l ih => rw [sumGen, List.foldr_cons]; rw [sumGen] at ih; simp [ih]
+
+/-- At `Real`, the executable sum over `Fin n` is the `Finset` sum. -/
+theorem sumFin_eq_sum {n : Nat} (f : Fin n → Real) : sumFin f = ∑ i, f i := by
+  rw [sumFin, sumGen_eq, Fin.sum_univ_def]
 
 /-- At `Real`, the distinct executable fold is exactly the corresponding
 finite-set sum. -/

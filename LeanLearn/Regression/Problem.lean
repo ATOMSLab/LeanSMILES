@@ -20,8 +20,8 @@ division are used, so the same definitions run in three readings:
 * `Float` — execution;
 * `ℝ` — the theorems in `Proofs/Regression/`.
 
-Sums are `sumGen` over `List.finRange n` (no `Finset.sum`, which `Float` lacks); over `ℝ`
-they are `Finset.sum`s (`sumFin_eq_sum`).
+Sums are `sumFin` from `LeanLearn.Scalar` (a fold over `List.finRange n`; `Float` has no
+`Finset.sum`); over `ℝ` they are `Finset.sum`s (`sumFin_eq_sum`).
 
 **The problem.** Write `xᵣ ∈ ℝᵈ⁺¹` for sample `r` with a constant `1` appended (so
 `θ = (w, b)` includes the bias), `yᵣ` for its target, and `λ ≥ 0` for the ridge penalty.
@@ -50,9 +50,6 @@ abbrev Mat (K : Type) (m n : ℕ) := Vector (Vector K n) m
 section Polynomial
 
 variable {K : Type} [PolynomialLike K] {m n : ℕ}
-
-/-- `∑ i, f i`, as the executable fold `sumGen`. -/
-def sumFin (f : Fin n → K) : K := sumGen (List.finRange n) f
 
 /-- The count `n` as a scalar, by repeated addition (no `NatCast` needed). -/
 def count (n : ℕ) : K := nsmulGen n 1
