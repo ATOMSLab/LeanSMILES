@@ -4,10 +4,10 @@ open CSVparser
 def records := load "datasets/delaney-processed.csv"
 #eval records
 #eval records[1].smiles
-#eval records[1].get .molecularWeight
+#eval records[1].get .measuredLogSolubility
 
 
 
-def recordsonlymolWeight := load "datasets/delaney-processed.csv" []
-#eval recordsonlymolWeight
-#eval recordsonlymolWeight[0]
+def recordsSmilesOnly := load "datasets/delaney-processed.csv" []
+#eval recordsSmilesOnly
+#eval recordsSmilesOnly[0]

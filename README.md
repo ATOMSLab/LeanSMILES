@@ -44,7 +44,7 @@ the project.
    `LeanSMILES` folder, not a single file, so the dataset paths resolve. Then
    open `LeanSMILES/Examples/parsercsv.lean`. The **Lean Infoview** panel on the
    right shows each `#eval` result: the solubility dataset in `datasets/`, read
-   in as SMILES strings with their numeric features.
+   in as SMILES strings with their measured log solubility.
 
 ## SMILES → typed molecular graph → canonical SMILES
 
@@ -174,6 +174,8 @@ RDKit's remaining sanitization steps (`cleanUp`, valence rejection, removal of
 `[H]` atoms) were ported on an earlier array-based representation;
 `docs/scope-canonical-smiles-morgan.md` records that port, the commit that holds
 its code (`5b5fe9e`), the oracle datasets and the Python references.
+
+Merging this branch into `main`: see [`MERGE-NOTES.md`](MERGE-NOTES.md).
 
 ## References
 

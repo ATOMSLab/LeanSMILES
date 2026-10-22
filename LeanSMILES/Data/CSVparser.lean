@@ -2,27 +2,32 @@ import Lean
 
 namespace CSVparser
 
+/-!
+# CSVparser
+
+Reads a molecule table such as `datasets/delaney-processed.csv`: one row per
+molecule, a `smiles` column, and numeric columns. Columns are found by their
+header names, so their order and any extra columns do not matter; fields may be
+quoted (`"2,2',3,4,6-PCB"`), with `""` for a quote inside a quoted field.
+-/
+
+/-- The numeric columns the parser knows, by header name. -/
 inductive Feature where
-  | esolPredicted
-  | minDegree
-  | molecularWeight
-  | numHBondDonors
-  | numRings
-  | numRotatableBonds
-  | polarSurfaceArea
   | measuredLogSolubility
   deriving BEq, Inhabited, Repr
 
-def Feature.all : List Feature :=
-  [.esolPredicted, .minDegree, .molecularWeight, .numHBondDonors,
-   .numRings, .numRotatableBonds, .polarSurfaceArea, .measuredLogSolubility]
+def Feature.all : List Feature := [.measuredLogSolubility]
+
+/-- The column header that holds the feature. -/
+def Feature.header : Feature → String
+  | .measuredLogSolubility => "measured log solubility in mols per litre"
 
 structure Molecule where
   smiles : String
   values : List (Feature × Float)
   deriving Inhabited
 
-/-- Get a single feature value (e.g. `m.get .molecularWeight`). -/
+/-- Get a single feature value (e.g. `m.get .measuredLogSolubility`). -/
 def Molecule.get (m : Molecule) (f : Feature) : Float :=
   m.values.lookup f |>.getD 0.0
 
@@ -35,12 +40,29 @@ private def parseFloat (s : String) : Float :=
   | .ok (.num n) => n.toFloat
   | _            => 0.0
 
+/-- The fields of one CSV line, with quotes removed. -/
+def splitLine (line : String) : List String :=
+  let rec go : List Char → Bool → List Char → List String → List String
+    | [], _, cur, acc => (acc ++ [String.ofList cur.reverse])
+    | '"' :: '"' :: cs, true, cur, acc => go cs true ('"' :: cur) acc
+    | '"' :: cs, q, cur, acc => go cs (!q) cur acc
+    | ',' :: cs, false, cur, acc => go cs false [] (acc ++ [String.ofList cur.reverse])
+    | c :: cs, q, cur, acc => go cs q (c :: cur) acc
+  go line.toList false [] []
+
 def parse (contents : String) (features := Feature.all) : Array Molecule :=
-  (contents.splitOn "\n").drop 1 |>.foldl (init := #[]) fun acc line =>
+  let lines := (contents.splitOn "\n").map fun l ↦ (l.dropEndWhile (· == '\r')).toString
+  let header := (splitLine (lines.headD "")).map fun h ↦ h.trimAscii.toString
+  let column (name : String) : Option Nat := header.idxOf? name
+  let smilesCol := (column "smiles").getD header.length
+  lines.drop 1 |>.foldl (init := #[]) fun acc line =>
     if line.trimAscii.isEmpty then acc else
-      let cells := (line.splitOn ",").reverse.take 9 |>.reverse
-      let values := features.map fun f => (f, parseFloat (cells.getD f.ctorIdx ""))
-      acc.push { smiles := cells.getD 8 "" |>.trimAscii.toString, values }
+      let cells := splitLine line
+      let values := features.map fun f =>
+        (f, match column f.header with
+          | some i => parseFloat (cells.getD i "")
+          | none => 0.0)
+      acc.push { smiles := cells.getD smilesCol "" |>.trimAscii.toString, values }
 
 private unsafe def readFileUnsafe (path : System.FilePath) : String :=
   match unsafeIO (IO.FS.readFile path) with

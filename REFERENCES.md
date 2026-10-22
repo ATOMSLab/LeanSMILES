@@ -87,7 +87,9 @@ follows each entry.
 
 - [`datasets/delaney-processed.csv`](datasets/delaney-processed.csv), read by
   [`LeanSMILES/Data/CSVparser.lean`](LeanSMILES/Data/CSVparser.lean): measured
-  aqueous solubilities and ESOL predictions for 1,128 compounds.
+  aqueous solubilities of 1,128 compounds (name, SMILES and measured log
+  solubility; the original file's ESOL predictions and descriptors were
+  dropped, see `MERGE-NOTES.md`).
   - Delaney, J.S. (2004), *ESOL: Estimating aqueous solubility directly from
     molecular structure*, Journal of Chemical Information and Computer Sciences
     44(3), 1000–1005.
