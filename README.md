@@ -47,7 +47,6 @@ tools/                RDKit oracle and fuzz generators; sklearn file writes; dra
 
 docs/                 design notes, REFERENCES.md and references.bib; figures/ holds plots written by Lean
 
-ench470-content/      ENCH 470 course notebooks and data
 ```
 
 ## Results
@@ -541,7 +540,7 @@ training loss.
 ### Classification with Morgan fingerprints
 
 [`Pipelines/Examples/egfr.lean`](Pipelines/Examples/egfr.lean) redoes ENCH 470 Lecture 21 in
-Lean: EGFR actives vs. inactives (`ench470-content/`), featurized by `morganFeatures`
+Lean: EGFR actives vs. inactives (`datasets/`), featurized by `morganFeatures`
 (parse, `Molecule.aromatize`, the toolkit's Morgan on-bits, 2048 bits), classified by
 `LeanLearn.Classification.fitLogistic`,
 test accuracy 0.925, then the five FDA-approved EGFR drugs.

@@ -5,7 +5,7 @@ import { Card, Badge, Button, SectionHeader, DataTable, SpinnerPill, LogConsole 
 
 const DATASET_TABS = [
   { id: 'delaney', label: 'Delaney ESOL (datasets/delaney-processed.csv)' },
-  { id: 'egfr-fda', label: 'EGFR FDA Drugs (ench470-content/EGFR-FDA.csv)' },
+  { id: 'egfr-fda', label: 'EGFR FDA Drugs (datasets/EGFR-FDA.csv)' },
   { id: 'egfr-actives', label: 'ChEMBL EGFR Actives' },
   { id: 'thermo', label: 'ThermoProperties SMILES' },
 ]
