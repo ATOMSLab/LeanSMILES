@@ -19,6 +19,7 @@ public import LeanLearn.Regression.SparseRidge
 public import LeanLearn.Regression.Metrics
 -- Classification
 public import LeanLearn.Classification.Logistic
+public import LeanLearn.Classification.ROC
 -- Plots written as SVG
 public import LeanLearn.Plot.Parity
 -- Proofs (over ℝ)

@@ -2,6 +2,63 @@
 Formalizing molecular representations in Lean — and, downstream of them, the
 learning algorithms that consume them.
 
+## Results
+
+The machine-learning pipeline runs end to end in Lean: SMILES → parse →
+`Molecule.aromatize` → Morgan fingerprint (radius 2, 2048 bits) → model. Each result below is
+printed by a test executable and checked against scikit-learn on the same data split
+(ENCH 470 Lecture 21: `train_test_split(test_size=0.20, random_state=0)`).
+
+### EGFR inhibitors: classification
+
+200 ChEMBL molecules, active or inactive against EGFR, classified by L2-regularized
+logistic regression (`lake exe logistic-test`). Every predicted probability equals
+scikit-learn's to within 10⁻⁶, and Lean's fingerprints equal RDKit's on all 205 molecules.
+
+| Metric (active = positive) | Training (n = 160) | Test (n = 40) |
+|---|---|---|
+| Accuracy | 0.994 | 0.925 |
+| Precision | | 0.895 |
+| Recall | | 0.944 |
+| F1 | | 0.919 |
+| ROC AUC | | 0.942 |
+
+scikit-learn's `LogisticRegression` on the same split gives exactly these values, metric for
+metric.
+
+Test confusion matrix:
+
+| | Predicted inactive | Predicted active |
+|---|---|---|
+| **Actual inactive** (22) | 20 | 2 |
+| **Actual active** (18) | 1 | 17 |
+
+P(active) for the five FDA-approved EGFR inhibitors: gefitinib 0.988, erlotinib 0.991,
+lapatinib 0.991, afatinib 0.999, osimertinib 0.136 (the one the model misses).
+
+### Delaney: aqueous solubility regression
+
+Measured log solubility (log mol/L) of the Delaney molecules, predicted by ridge regression
+(α = 1) on the same fingerprints (`lake exe ridge-test`). On RDKit's fingerprint bits every
+prediction equals scikit-learn's to within 10⁻⁶; the table is the full Lean pipeline, on the
+1 127 molecules the parser accepts.
+
+| | R² | RMSE | MAE |
+|---|---|---|---|
+| Training (n = 901) | 0.959 | 0.42 | 0.26 |
+| Test (n = 226) | 0.662 | 1.27 | 0.96 |
+
+scikit-learn's `Ridge` on RDKit's fingerprints gets test R² 0.671, RMSE 1.26 and MAE 0.94,
+which Lean reproduces exactly when given the same bits. The full Lean pipeline is slightly
+lower because its own fingerprints differ from RDKit's on 59 molecules, the ones RDKit's
+nitro-group cleanup rewrites (not yet ported).
+
+![Parity plot: predicted vs measured log solubility, written by Lean](docs/figures/delaney-ridge-parity.svg)
+
+The gap between training and test fit is the usual sign of more features (2048 bits) than
+training molecules (901). Lean writes the plot itself (`LeanLearn.Plot.paritySvg`):
+`lake exe ridge-test --svg docs/figures/delaney-ridge-parity.svg`.
+
 ## Installation
 
 No Lean experience needed. Setup is a one-time job, and most of it is download
@@ -466,7 +523,9 @@ lake exe logistic-test   # EGFR classification vs scikit-learn (tools/sklearn_eg
 
 The test trains twice, on RDKit's fingerprint bits (stored in
 `datasets/egfr-classification.csv`) and on Lean's own `morganFeatures`, which equal RDKit's
-on all 205 molecules; both match scikit-learn's probabilities to 10⁻⁶.
+on all 205 molecules; both match scikit-learn's probabilities to 10⁻⁶. Each also reports
+test-set precision, recall, F1 and ROC AUC (`LeanLearn.Classification.rocAuc`); the numbers
+are in [Results](#results) at the top.
 
 ### Regression with Morgan fingerprints
 
@@ -509,7 +568,7 @@ LeanLearn/            learning algorithms on tabular data (imports Mathlib only)
   Regression/         Problem, Solvers, Certificates (iterative, any scalar);
                       OLS, Ridge, LinearModel (closed form, ℝ); OLSFloat, RidgeFloat (QR, Float);
                       SparseRidge (conjugate gradients, sparse 0/1); Metrics (R², RMSE, MAE)
-  Classification/     Logistic
+  Classification/     Logistic, ROC (ROC curve, AUC)
   Plot/               parity plots as SVG
   Proofs/Regression/  the quadratic loss, gradient descent, Jacobi and Gauss–Seidel, certificate soundness
   Optimization/       gradient-descent convergence over ℝ (from TorchLean)
