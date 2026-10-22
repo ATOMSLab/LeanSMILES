@@ -166,10 +166,12 @@ def fitLogistic (cfg : LogisticConfig K) (nFeatures : Nat) (data : Array (Sparse
 
 /-! ## Evaluation -/
 
-/-- Fraction of samples whose predicted class equals the label. -/
-def accuracy (m : LogisticModel K) (data : Array (SparseBits × Bool)) : Float :=
+/-- Fraction of samples whose predicted class equals the label (scikit-learn's `score`).
+Over the scalar `K`, like everything else here: `Float.ofNat ok / Float.ofNat n` at `Float`,
+`(ok : ℝ) / n` at `ℝ`. -/
+def accuracy (m : LogisticModel K) (data : Array (SparseBits × Bool)) : K :=
   let ok := (data.filter fun (x, y) => m.predict x == y).size
-  ok.toFloat / data.size.toFloat
+  ScalarLike.ofNat ok / ScalarLike.ofNat data.size
 
 /-- Confusion matrix in scikit-learn's layout: rows = true class (0, 1),
 columns = predicted class (0, 1), i.e. [[TN, FP], [FN, TP]]. -/

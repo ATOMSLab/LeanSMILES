@@ -44,9 +44,6 @@ section Sums
 
 variable {n : ℕ}
 
-theorem sumFin_eq_sum (f : Fin n → ℝ) : sumFin f = ∑ i, f i := by
-  rw [sumFin, sumGen_eq, Fin.sum_univ_def]
-
 @[simp] theorem count_real (k : ℕ) : (count k : ℝ) = k := by
   rw [count, nsmulGen_eq, mul_one]
 

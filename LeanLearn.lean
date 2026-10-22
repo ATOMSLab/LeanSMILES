@@ -9,6 +9,7 @@ public import LeanLearn.Regression.Certificates
 -- Linear regression: exact specifications over ℝ (closed form) and the bridge to execution
 public import LeanLearn.Regression.OLS
 public import LeanLearn.Regression.Ridge
+public import LeanLearn.Regression.RidgeOLS
 public import LeanLearn.Regression.LinearModel
 -- Linear regression: Householder-QR solvers on `Float`
 public import LeanLearn.Regression.OLSFloat

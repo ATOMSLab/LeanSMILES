@@ -1,6 +1,6 @@
 module
 
-public import LeanLearn.Regression.Ridge
+public import LeanLearn.Regression.RidgeOLS
 import Mathlib.Tactic.FinCases
 import Mathlib.Tactic.NormNum
 
@@ -62,6 +62,47 @@ theorem underdetermined_minimizes :
   ext j
   fin_cases j <;> norm_num [gram, OLS.gram, Matrix.mulVec, Matrix.mul_apply,
     dotProduct, Fin.sum_univ_succ, diagonal]
+
+/-! ## Ridge against OLS on the same data -/
+
+/-- Without a penalty, the line `y = 1 + 2x` fits `lineX`, `lineY` exactly. -/
+theorem ols_normalEquations : OLS.NormalEquations lineX lineY ![1, 2] := by
+  rw [OLS.normalEquations_iff]
+  ext j
+  fin_cases j <;> norm_num [OLS.gram, lineX, lineY, Matrix.mulVec, Matrix.mul_apply,
+    dotProduct, Fin.sum_univ_succ]
+
+/-- The trade-off, by theorem rather than by computation: the exempt-intercept ridge fit
+`![2, 1]` has a smaller penalized norm than the OLS fit `![1, 2]` ... -/
+theorem exempt_penalty_le : penalty ![0, 2] ![2, 1] ≤ penalty ![0, 2] ![1, 2] :=
+  penalty_le_of_isMinimizer lineX lineY
+    (OLS.normalEquations_minimize lineX lineY ols_normalEquations) exempt_minimizes
+
+/-- ... namely `2 ≤ 8`, having given up squared error `0 ≤ 2` for it. -/
+theorem exempt_tradeoff :
+    penalty ![0, 2] ![2, 1] = 2 ∧ penalty ![0, 2] ![1, 2] = 8 ∧
+      OLS.loss lineX lineY ![1, 2] = 0 ∧ OLS.loss lineX lineY ![2, 1] = 2 := by
+  norm_num [penalty, OLS.loss_eq_sum, OLS.predict, lineX, lineY, Matrix.mulVec, dotProduct,
+    Fin.sum_univ_succ]
+
+/-- Orthonormal columns. -/
+def orthoX : Matrix (Fin 3) (Fin 2) ℝ := !![1, 0; 0, 1; 0, 0]
+
+theorem orthoX_gram : OLS.gram orthoX = 1 := by
+  ext i j
+  fin_cases i <;> fin_cases j <;>
+    norm_num [OLS.gram, orthoX, Matrix.mul_apply, Matrix.one_apply, Fin.sum_univ_succ]
+
+theorem orthoX_transpose : orthoXᵀ = !![1, 0, 0; 0, 1, 0] := by
+  ext i j
+  fin_cases i <;> fin_cases j <;> rfl
+
+/-- With orthonormal columns, unit ridge halves the OLS coefficients `Xᵀy = ![2, 4]`. -/
+theorem ortho_halves :
+    fitPositive orthoX ![2, 4, 6] (fun _ => 1) (fun _ => one_pos) = ![1, 2] := by
+  rw [fitPositive_eq_smul_of_gram_eq_one orthoX _ orthoX_gram one_pos, orthoX_transpose]
+  ext j
+  fin_cases j <;> norm_num [Matrix.mulVec, dotProduct, Fin.sum_univ_succ]
 
 end
 end LeanLearn.Regression.Ridge.Examples
