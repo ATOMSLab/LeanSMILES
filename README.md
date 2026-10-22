@@ -155,17 +155,18 @@ equal RDKit's on all 205 molecules; both match scikit-learn's probabilities to
 
 `LeanSMILES.ML.Ridge` fits ridge regression (scikit-learn's `Ridge(alpha)`:
 squared error plus α‖w‖², intercept not penalized) by conjugate gradients on
-the sparse fingerprint bits, and computes R² and RMSE. On Delaney's measured
+the sparse fingerprint bits, and computes R², RMSE and MAE. On Delaney's measured
 log solubility, with the lecture's 80/20 split, `lake exe ridge-test` checks it
 against scikit-learn (`tools/sklearn_delaney.py`, `datasets/delaney-ridge.csv`):
 
 * on RDKit's fingerprint bits, every prediction matches scikit-learn's to
-  10⁻⁶ (test R² 0.671, RMSE 1.26 log units, for both);
+  10⁻⁶ (test R² 0.671, RMSE 1.26, MAE 0.94 log units, for both);
 * on Lean's own features (parse, aromatize, Morgan), which equal RDKit's on
   1 069 of 1 128 molecules because RDKit's `cleanUp` is not ported yet, test
-  R² is 0.662 and RMSE 1.27.
+  R² is 0.662, RMSE 1.27 and MAE 0.96.
 
-`LeanSMILES.Plot.Parity` writes parity plots as SVG from Lean:
+`LeanSMILES.Plot.Parity` writes parity plots as SVG from Lean, with R², RMSE
+and MAE for each split in the legend:
 `lake exe ridge-test --svg docs/figures/delaney-ridge-parity.svg` produced
 [`docs/figures/delaney-ridge-parity.svg`](docs/figures/delaney-ridge-parity.svg).
 

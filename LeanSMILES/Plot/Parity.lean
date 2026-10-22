@@ -11,7 +11,7 @@ A parity plot puts each molecule at (measured, predicted): a perfect model puts
 every point on the diagonal. `paritySvg` writes one as a self-contained SVG
 document — square axes on a shared scale with integer ticks, the diagonal, a
 band of ±1 unit around it, training points hollow, test points filled, and a
-legend with each set's size, R² and RMSE.
+legend with each set's size, R², RMSE and MAE.
 -/
 
 namespace LeanSMILES.Plot
@@ -35,6 +35,7 @@ structure Series where
   points : Array (Float × Float)
   r2 : Float
   rmse : Float
+  mae : Float
   /-- Filled points (test) or hollow (training). -/
   filled : Bool
 
@@ -95,7 +96,8 @@ def paritySvg (title subtitle axis : String) (series : List Series) : String := 
       else s!"<circle cx=\"{c (L + 18)}\" cy=\"{c (ly - 4)}\" r=\"3.6\" fill=\"none\" \
         stroke=\"#7d93a3\" stroke-width=\"1.2\"/>"
     out := out ++ mark ++ s!"<text x=\"{c (L + 30)}\" y=\"{c ly}\" font-size=\"13\" fill=\"#172026\">\
-      {s.label} (n = {s.points.size}) · R² {fixed s.r2 3 "−"} · RMSE {fixed s.rmse 2 "−"}</text>\n"
+      {s.label} (n = {s.points.size}) · R² {fixed s.r2 3 "−"} · RMSE {fixed s.rmse 2 "−"} \
+      · MAE {fixed s.mae 2 "−"}</text>\n"
     ly := ly + 20
   out := out ++ s!"<text x=\"{c (L + 18)}\" y=\"{c ly}\" font-size=\"12\" fill=\"#5b6a73\">\
     shaded: within ±1 of the diagonal</text>\n"

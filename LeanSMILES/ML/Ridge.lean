@@ -21,8 +21,9 @@ conjugate gradients solve it; each step needs only products with the sparse
 `X` (about 40 of 2048 bits per molecule), with the centering applied on the
 fly rather than by forming the dense `X_c`.
 
-Fit quality: `r2` (coefficient of determination, scikit-learn's `r2_score`) and
-`rmse` (root mean squared error, in the units of `y`).
+Fit quality: `r2` (coefficient of determination, scikit-learn's `r2_score`),
+`rmse` (root mean squared error) and `mae` (mean absolute error), the last two
+in the units of `y`.
 
 Written over `ScalarLike` (`LeanSMILES/Scalar.lean`), like `ML.Logistic`.
 -/
@@ -113,5 +114,10 @@ def r2 (pairs : Array (K × K)) : K :=
 def rmse (pairs : Array (K × K)) : K :=
   let count : K := pairs.foldl (fun s _ ↦ s + 1) 0
   ScalarLike.sqrt (pairs.foldl (fun s (y, p) ↦ s + (y - p) * (y - p)) 0 / count)
+
+/-- Mean absolute error of predictions against measured values. -/
+def mae (pairs : Array (K × K)) : K :=
+  let count : K := pairs.foldl (fun s _ ↦ s + 1) 0
+  pairs.foldl (fun s (y, p) ↦ s + ScalarLike.abs (y - p)) 0 / count
 
 end LeanSMILES.ML

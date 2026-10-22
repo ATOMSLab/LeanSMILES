@@ -22,7 +22,7 @@ scikit-learn's `Ridge(alpha=1.0)` predictions. Two checks:
    `aromatize` does not do yet, so R², RMSE and the largest difference from
    scikit-learn are reported.
 
-R² and RMSE are computed in Lean for both. With `--svg PATH`, the pipeline
+R², RMSE and MAE are computed in Lean for both. With `--svg PATH`, the pipeline
 model's parity plot is written to `PATH`:
 
     lake exe ridge-test
@@ -62,8 +62,9 @@ def fitAndReport (rows : Array SolRow) (feats : Array SparseBits) : IO (Array Fl
     (r.logS, r.skPred)).toArray
   IO.println s!"  {train.size} training molecules, {iters} conjugate-gradient steps"
   for sp in ["train", "test"] do
-    IO.println s!"  {sp}: R² {fixed (r2 (pairs sp)) 4}, RMSE {fixed (rmse (pairs sp)) 4}   \
-      (scikit-learn: R² {fixed (r2 (skPairs sp)) 4}, RMSE {fixed (rmse (skPairs sp)) 4})"
+    let (l, k) := (pairs sp, skPairs sp)
+    IO.println s!"  {sp}: R² {fixed (r2 l) 4}, RMSE {fixed (rmse l) 4}, MAE {fixed (mae l) 4}   \
+      (scikit-learn: R² {fixed (r2 k) 4}, RMSE {fixed (rmse k) 4}, MAE {fixed (mae k) 4})"
   return preds
 
 def main (args : List String) : IO UInt32 := do
@@ -96,7 +97,7 @@ def main (args : List String) : IO UInt32 := do
     let series (sp label : String) (filled : Bool) : Series :=
       let pts := ((List.range rows.size).filterMap fun i ↦
         if rows[i]!.split == sp then some (rows[i]!.logS, preds[i]!) else none).toArray
-      { label, points := pts, r2 := r2 pts, rmse := rmse pts, filled }
+      { label, points := pts, r2 := r2 pts, rmse := rmse pts, mae := mae pts, filled }
     IO.FS.writeFile path <| paritySvg "Delaney solubility: ridge on Morgan fingerprints"
       "LeanSMILES: parse, aromatize, Morgan (r = 2, 2048 bits), ridge α = 1; computed in Lean"
       "log solubility (log mol/L)"

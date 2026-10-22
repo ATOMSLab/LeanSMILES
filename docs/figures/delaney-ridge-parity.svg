@@ -1165,8 +1165,8 @@
 <circle cx="348.7" cy="270.9" r="3.3" fill="#d0641c" fill-opacity="0.85" stroke="#ffffff" stroke-width="0.6"/>
 <circle cx="416.7" cy="273.4" r="3.3" fill="#d0641c" fill-opacity="0.85" stroke="#ffffff" stroke-width="0.6"/>
 <circle cx="390.5" cy="268.7" r="3.3" fill="#d0641c" fill-opacity="0.85" stroke="#ffffff" stroke-width="0.6"/>
-<circle cx="96.0" cy="110.0" r="3.6" fill="none" stroke="#7d93a3" stroke-width="1.2"/><text x="108.0" y="114.0" font-size="13" fill="#172026">Training (n = 902) · R² 0.959 · RMSE 0.42</text>
-<circle cx="96.0" cy="130.0" r="4" fill="#d0641c"/><text x="108.0" y="134.0" font-size="13" fill="#172026">Test (n = 226) · R² 0.662 · RMSE 1.27</text>
+<circle cx="96.0" cy="110.0" r="3.6" fill="none" stroke="#7d93a3" stroke-width="1.2"/><text x="108.0" y="114.0" font-size="13" fill="#172026">Training (n = 902) · R² 0.959 · RMSE 0.42 · MAE 0.26</text>
+<circle cx="96.0" cy="130.0" r="4" fill="#d0641c"/><text x="108.0" y="134.0" font-size="13" fill="#172026">Test (n = 226) · R² 0.662 · RMSE 1.27 · MAE 0.96</text>
 <text x="96.0" y="154.0" font-size="12" fill="#5b6a73">shaded: within ±1 of the diagonal</text>
 <text x="326.0" y="642.0" font-size="14" text-anchor="middle" fill="#172026">Measured log solubility (log mol/L)</text>
 <text transform="translate(22 340.0) rotate(-90)" font-size="14" text-anchor="middle" fill="#172026">Predicted log solubility (log mol/L)</text>

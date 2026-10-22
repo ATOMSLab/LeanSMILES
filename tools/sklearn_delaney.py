@@ -19,7 +19,7 @@ import numpy as np
 from rdkit import Chem
 from rdkit.Chem import rdFingerprintGenerator
 from sklearn.linear_model import Ridge
-from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 
 SRC = "datasets/delaney-processed.csv"
@@ -42,7 +42,8 @@ def main():
     pred = model.predict(X)
     for name, idx in (("train", idx_train), ("test", idx_test)):
         print(f"{name}: R² {r2_score(y[idx], pred[idx]):.4f}, "
-              f"RMSE {np.sqrt(mean_squared_error(y[idx], pred[idx])):.4f} log units, n = {len(idx)}")
+              f"RMSE {np.sqrt(mean_squared_error(y[idx], pred[idx])):.4f}, "
+              f"MAE {mean_absolute_error(y[idx], pred[idx]):.4f} log units, n = {len(idx)}")
     print(f"intercept {model.intercept_:.6f}")
 
     split = {int(i): "train" for i in idx_train} | {int(i): "test" for i in idx_test}
