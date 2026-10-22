@@ -605,7 +605,7 @@ Merging this branch into `main`: see [`MERGE-NOTES.md`](MERGE-NOTES.md).
 ## Authors
 
 LeanSMILES is written in the [ATOMS Lab](https://github.com/ATOMSLab) at UMBC by DeMarko
-Fulcher, Ejike David Ugwuanyi, Kevin Ishimwe, Samiha Sharlin, Hao Liu, Alex Haibel, Izzy
+Fulcher, Ejike David Ugwuanyi, Kevin Ishimwe, Samiha Sharlin, Hao Liu, Alex Haibel, Faezeh
 Shahmoradi and Tyler R. Josephson, and was prepared as part of the
 [Open Scientific Intelligence Hackathon](https://llmhackathon.github.io). Every Lean file
 names its authors in its header; by area:
@@ -622,7 +622,9 @@ names its authors in its header; by area:
 - **Hao Liu** — ordinary least squares and ridge regression in closed form over `ℝ`, the
   Householder-QR solvers on `Float`, and the parser's error messages and their tests.
 - **Alex Haibel** — emotional support animal and README editor
-- **Izzy Shahmoradi** —
+- **Faezeh Shahmoradi** — conceptualization of materials representations and regression workflows,
+  molecular representations, input features for property prediction, and regression and
+  classification functionality
 - **Tyler R. Josephson** — the typed molecular graph and its Mathlib views, the SMILES grammar,
   parser, writer and canonicity proof, charges, Tanimoto, the scalar interface, ridge against
   OLS and the bridge between the two regression formulations.
