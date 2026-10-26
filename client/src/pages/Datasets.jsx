@@ -1,38 +1,298 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Upload, Download, CheckCircle2, AlertTriangle, Sparkles } from 'lucide-react'
 import api from '../middleware/api'
 import { Card, Badge, Button, SectionHeader, DataTable, SpinnerPill, LogConsole } from '../components/UI'
 
 const DATASET_TABS = [
-  { id: 'delaney', label: 'Delaney ESOL (datasets/delaney-processed.csv)' },
-  { id: 'egfr-fda', label: 'EGFR FDA Drugs (datasets/EGFR-FDA.csv)' },
-  { id: 'egfr-actives', label: 'ChEMBL EGFR Actives' },
-  { id: 'thermo', label: 'ThermoProperties SMILES' },
+  {
+    id: 'delaney',
+    label: 'Delaney ESOL Solubility',
+    path: 'datasets/delaney-processed.csv',
+    defaultModel: 'sparse-ridge',
+    targetLabel: 'log solubility (log mol/L)',
+  },
+  {
+    id: 'egfr-actives',
+    label: 'ChEMBL EGFR Classification',
+    path: 'datasets/egfr-classification.csv',
+    defaultModel: 'logistic',
+    targetLabel: 'EGFR Active (0/1)',
+  },
+  {
+    id: 'thermo',
+    label: 'ThermoProperties Boiling Point',
+    path: 'datasets/ThermoPropertiesSMILES.csv',
+    defaultModel: 'sparse-ridge',
+    targetLabel: 'Boiling Point (K)',
+  },
+  {
+    id: 'egfr-fda',
+    label: 'EGFR FDA Drugs',
+    path: 'datasets/EGFR-FDA.csv',
+    defaultModel: 'logistic',
+    targetLabel: 'EGFR Active (0/1)',
+  },
 ]
+
+const MODEL_OPTIONS = [
+  { id: 'sparse-ridge', label: 'Sparse Ridge (2048 Morgan Bits)' },
+  { id: 'dense-qr', label: 'Householder-QR Ridge (Descriptors)' },
+  { id: 'gauss-seidel', label: 'Certified Gauss–Seidel (ℚ Pipeline)' },
+  { id: 'jacobi', label: 'Certified Jacobi (ℚ Pipeline)' },
+  { id: 'gradient-descent', label: 'Certified Gradient Descent (ℚ Pipeline)' },
+  { id: 'logistic', label: 'Logistic Classification (2048 Bits + ROC)' },
+]
+
+const PENALTY_OPTIONS = ['0.1', '1.0', '4.0', '16.0']
+
+function parseUploadedCsv(text) {
+  const lines = text
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+  if (lines.length < 2) return null
+
+  const splitRow = (row) => {
+    const sep = row.includes('\t') && !row.includes(',') ? '\t' : ','
+    const out = []
+    let cur = ''
+    let inQuotes = false
+    for (let i = 0; i < row.length; i++) {
+      const ch = row[i]
+      if (ch === '"') inQuotes = !inQuotes
+      else if (ch === sep && !inQuotes) {
+        out.push(cur.trim())
+        cur = ''
+      } else {
+        cur += ch
+      }
+    }
+    out.push(cur.trim())
+    return out
+  }
+
+  const headers = splitRow(lines[0]).map((h, i) => h || `Column_${i + 1}`)
+  const rawRows = lines.slice(1).map(splitRow)
+
+  let smilesIdx = headers.findIndex((h) => /smiles|smi|canon/i.test(h))
+  if (smilesIdx === -1) {
+    smilesIdx = headers.findIndex((_, colIdx) =>
+      rawRows.slice(0, 5).some((r) => /[CcNnOo][12=#()CcNnOo]/.test(r[colIdx] || ''))
+    )
+  }
+  if (smilesIdx === -1) smilesIdx = 0
+
+  let targetIdx = headers.findIndex(
+    (h, idx) =>
+      idx !== smilesIdx &&
+      /solubility|logs|target|label|active|bp|boiling|y|value|ic50|pic50|score/i.test(h) &&
+      !Number.isNaN(Number(rawRows[0]?.[idx]))
+  )
+  if (targetIdx === -1) {
+    targetIdx = headers.findIndex(
+      (_, idx) =>
+        idx !== smilesIdx &&
+        rawRows.slice(0, 5).filter((r) => r[idx] !== undefined && r[idx] !== '' && !Number.isNaN(Number(r[idx]))).length >= 3
+    )
+  }
+  if (targetIdx === -1) targetIdx = Math.min(1, headers.length - 1)
+
+  let nameIdx = headers.findIndex((h, idx) => idx !== smilesIdx && idx !== targetIdx && /name|id|compound|mol/i.test(h))
+  if (nameIdx === -1) nameIdx = 0
+
+  return { headers, rawRows, smilesIdx, targetIdx, nameIdx }
+}
 
 export default function Datasets() {
   const [datasetId, setDatasetId] = useState('delaney')
   const [query, setQuery] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [state, setState] = useState({ rows: [], totalCount: 0, logs: [], leanFeedback: null })
+  const [loadingTable, setLoadingTable] = useState(false)
+  const [tableState, setTableState] = useState({ rows: [], totalCount: 0, logs: [], leanFeedback: null })
+
+  const [modelType, setModelType] = useState('sparse-ridge')
+  const [alpha, setAlpha] = useState('1.0')
+  const [fitting, setFitting] = useState(false)
+  const [fitResult, setFitResult] = useState(null)
+  const [fitError, setFitError] = useState('')
+
+  const [uploadedCsv, setUploadedCsv] = useState(null)
+  const [smilesCol, setSmilesCol] = useState(0)
+  const [targetCol, setTargetCol] = useState(1)
+
+  const fileInputRef = useRef(null)
+  const fitReqId = useRef(0)
   const navigate = useNavigate()
 
-  const loadDataset = async (id) => {
-    setDatasetId(id)
-    setLoading(true)
+  const buildCustomRows = (csvObj, sIdx, tIdx) => {
+    if (!csvObj) return null
+    return csvObj.rawRows
+      .map((r, i) => ({
+        name: r[csvObj.nameIdx] || `Row_${i + 1}`,
+        smiles: r[sIdx] || '',
+        target: r[tIdx] ?? '',
+        canonicalSmiles: r[sIdx] || '',
+        atoms: '-',
+        bonds: '-',
+        metricLabel: csvObj.headers[tIdx] || 'Target',
+        metricValue: Number.isNaN(Number(r[tIdx])) ? r[tIdx] : Number(r[tIdx]),
+      }))
+      .filter((r) => r.smiles && r.target !== '' && !Number.isNaN(Number(r.target)))
+  }
+
+  const runPipelineFit = async ({
+    dsId = datasetId,
+    customRows = null,
+    model = modelType,
+    pen = alpha,
+    label = 'target',
+  }) => {
+    const reqId = ++fitReqId.current
+    setFitting(true)
+    setFitError('')
     try {
-      const res = await api.getDatasets(id)
-      setState(res)
+      const res = await api.fitPipeline({
+        datasetId: dsId,
+        customRows,
+        modelType: model,
+        alpha: pen,
+        targetLabel: label,
+      })
+      if (reqId !== fitReqId.current) return
+      setFitResult(res)
+    } catch (err) {
+      if (reqId !== fitReqId.current) return
+      setFitError(err.details?.error || err.message || 'Model fitting failed in Lean 4')
     } finally {
-      setLoading(false)
+      if (reqId === fitReqId.current) {
+        setFitting(false)
+      }
+    }
+  }
+
+  const selectBuiltinDataset = async (tabObj) => {
+    setUploadedCsv(null)
+    setDatasetId(tabObj.id)
+    setModelType(tabObj.defaultModel)
+    setLoadingTable(true)
+    runPipelineFit({
+      dsId: tabObj.id,
+      customRows: null,
+      model: tabObj.defaultModel,
+      pen: alpha,
+      label: tabObj.targetLabel,
+    })
+    try {
+      const res = await api.getDatasets(tabObj.id)
+      setTableState(res)
+    } finally {
+      setLoadingTable(false)
     }
   }
 
   useEffect(() => {
-    loadDataset('delaney')
+    selectBuiltinDataset(DATASET_TABS[0])
   }, [])
 
-  const rows = state.rows || []
+  const handleModelChange = (newModel) => {
+    setModelType(newModel)
+    const activeTab = DATASET_TABS.find((t) => t.id === datasetId) || DATASET_TABS[0]
+    const customRows = uploadedCsv ? buildCustomRows(uploadedCsv, smilesCol, targetCol) : null
+    const label = uploadedCsv ? uploadedCsv.headers[targetCol] || 'Target' : activeTab.targetLabel
+    runPipelineFit({
+      dsId: datasetId,
+      customRows,
+      model: newModel,
+      pen: alpha,
+      label,
+    })
+  }
+
+  const handleAlphaChange = (newAlpha) => {
+    setAlpha(newAlpha)
+    const activeTab = DATASET_TABS.find((t) => t.id === datasetId) || DATASET_TABS[0]
+    const customRows = uploadedCsv ? buildCustomRows(uploadedCsv, smilesCol, targetCol) : null
+    const label = uploadedCsv ? uploadedCsv.headers[targetCol] || 'Target' : activeTab.targetLabel
+    runPipelineFit({
+      dsId: datasetId,
+      customRows,
+      model: modelType,
+      pen: newAlpha,
+      label,
+    })
+  }
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      const parsed = parseUploadedCsv(String(ev.target?.result || ''))
+      if (!parsed || parsed.rawRows.length === 0) {
+        setFitError('Could not parse CSV file. Ensure it has a header row, a SMILES column, and a numeric target column.')
+        return
+      }
+      const csvMeta = { ...parsed, fileName: file.name }
+      setUploadedCsv(csvMeta)
+      setDatasetId('custom')
+      setSmilesCol(parsed.smilesIdx)
+      setTargetCol(parsed.targetIdx)
+
+      const customRows = buildCustomRows(csvMeta, parsed.smilesIdx, parsed.targetIdx)
+      const values = customRows.map((r) => Number(r.target))
+      const isBinary = values.length > 0 && values.every((v) => v === 0 || v === 1)
+      const chosenModel = isBinary ? 'logistic' : modelType === 'logistic' ? 'sparse-ridge' : modelType
+      setModelType(chosenModel)
+
+      setTableState({
+        rows: customRows.slice(0, 50),
+        totalCount: customRows.length,
+        logs: [`Uploaded "${file.name}" --> ${customRows.length} valid (SMILES, target) rows`],
+        leanFeedback: null,
+      })
+
+      runPipelineFit({
+        dsId: 'custom',
+        customRows,
+        model: chosenModel,
+        pen: alpha,
+        label: parsed.headers[parsed.targetIdx] || 'Target',
+      })
+    }
+    reader.readAsText(file)
+  }
+
+  const handleColumnChange = (newSmilesIdx, newTargetIdx) => {
+    setSmilesCol(newSmilesIdx)
+    setTargetCol(newTargetIdx)
+    if (!uploadedCsv) return
+    const customRows = buildCustomRows(uploadedCsv, newSmilesIdx, newTargetIdx)
+    setTableState((prev) => ({
+      ...prev,
+      rows: customRows.slice(0, 50),
+      totalCount: customRows.length,
+    }))
+    runPipelineFit({
+      dsId: 'custom',
+      customRows,
+      model: modelType,
+      pen: alpha,
+      label: uploadedCsv.headers[newTargetIdx] || 'Target',
+    })
+  }
+
+  const handleDownloadSvg = () => {
+    if (!fitResult?.svg) return
+    const blob = new Blob([fitResult.svg], { type: 'image/svg+xml' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `lean-${datasetId}-${modelType}-plot.svg`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const rows = tableState.rows || []
   const filtered = rows.filter(
     (d) =>
       d.name?.toLowerCase().includes(query.toLowerCase()) ||
@@ -40,51 +300,354 @@ export default function Datasets() {
       d.canonicalSmiles?.toLowerCase().includes(query.toLowerCase())
   )
 
+  const combinedLogs = [...(fitResult?.logs || []), ...(tableState.logs || [])]
+
   return (
     <div className="space-y-6">
       <SectionHeader
-        title="Datasets"
-        description="Real CSV datasets parsed directly by Lean's CSVparser and SMILES.parse into Molecule n and canonicalSmiles."
-        right={loading && <SpinnerPill label="Parsing CSV in Lean 4..." />}
+        title="Datasets & Lean ML Pipeline"
+        description="Select a built-in benchmark or upload any CSV with SMILES and a target column to automatically fit Sparse Ridge, Householder-QR, Certified ℚ Iterative Solvers, or Logistic Classification in Lean 4."
+        right={
+          (fitting || loadingTable) && (
+            <SpinnerPill label={fitting ? 'Fitting model & rendering SVG in Lean 4...' : 'Parsing CSV in Lean 4...'} />
+          )
+        }
       />
 
       <Card
-        title="Lean 4 CSV Datasets (CSVparser.lean)"
+        title="1. Dataset Source & Automated Model Fitting"
+        subtitle="Upload your own CSV (SMILES + target label) or pick a repository dataset"
+        action={
+          <div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,.tsv,.txt"
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+            <Button
+              variant="primary"
+              onClick={() => fileInputRef.current?.click()}
+              className="inline-flex items-center gap-1.5"
+            >
+              <Upload size={13} />
+              {uploadedCsv ? `Uploaded: ${uploadedCsv.fileName}` : 'Upload CSV (SMILES + Label)'}
+            </Button>
+          </div>
+        }
+      >
+        <div className="space-y-4">
+          <div className="flex flex-wrap gap-1.5">
+            {DATASET_TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => selectBuiltinDataset(t)}
+                className={`px-3 py-1.5 rounded-xl text-xs transition cursor-pointer ${
+                  datasetId === t.id && !uploadedCsv
+                    ? 'bg-slate-900 text-white font-medium'
+                    : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200/70'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {uploadedCsv && (
+            <div className="p-3.5 rounded-xl bg-teal-50/50 border border-teal-200/70 flex flex-wrap items-center justify-between gap-4 text-xs">
+              <div className="flex items-center gap-2 text-teal-900 font-medium">
+                <Sparkles size={14} className="text-teal-600" />
+                <span>
+                  Custom CSV: <code className="font-mono">{uploadedCsv.fileName}</code> ({tableState.totalCount} valid rows)
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="flex items-center gap-1.5 text-slate-600">
+                  <span>SMILES Column:</span>
+                  <select
+                    value={smilesCol}
+                    onChange={(e) => handleColumnChange(Number(e.target.value), targetCol)}
+                    className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-800 font-mono text-xs"
+                  >
+                    {uploadedCsv.headers.map((h, i) => (
+                      <option key={i} value={i}>
+                        {h}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex items-center gap-1.5 text-slate-600">
+                  <span>Target Label:</span>
+                  <select
+                    value={targetCol}
+                    onChange={(e) => handleColumnChange(smilesCol, Number(e.target.value))}
+                    className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-800 font-mono text-xs"
+                  >
+                    {uploadedCsv.headers.map((h, i) => (
+                      <option key={i} value={i}>
+                        {h}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            </div>
+          )}
+
+          <div className="pt-3 border-t border-slate-200/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1.5">
+              <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+                LeanLearn / Pipelines Model
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {MODEL_OPTIONS.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => handleModelChange(m.id)}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs transition cursor-pointer ${
+                      modelType === m.id
+                        ? 'bg-teal-700 text-white font-medium'
+                        : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200/70'
+                    }`}
+                  >
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-1.5 shrink-0">
+              <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
+                Penalty (α / λ)
+              </p>
+              <div className="flex items-center gap-1">
+                {PENALTY_OPTIONS.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => handleAlphaChange(p)}
+                    className={`px-2.5 py-1.5 rounded-lg font-mono text-xs transition cursor-pointer ${
+                      alpha === p
+                        ? 'bg-slate-900 text-white font-medium'
+                        : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200/70'
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {fitError && (
+            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200/70 text-xs text-rose-800 font-mono">
+              {fitError}
+            </div>
+          )}
+        </div>
+      </Card>
+
+      {fitResult && (
+        <div className={`grid md:grid-cols-12 gap-6 transition-opacity duration-150 ${fitting ? 'opacity-55' : 'opacity-100'}`}>
+          <Card
+            className="md:col-span-6"
+            title={
+              fitResult.taskType === 'classification'
+                ? 'Lean ROC Curve SVG (LeanLearn.Classification.ROC)'
+                : 'Lean Parity Plot SVG (LeanLearn.Plot.paritySvg)'
+            }
+            subtitle={`${fitResult.trainCount} train · ${fitResult.testCount} test molecules · ${fitResult.iterations} solver steps`}
+            action={
+              <Button
+                variant="secondary"
+                onClick={handleDownloadSvg}
+                className="px-2.5! py-1! inline-flex items-center gap-1"
+              >
+                <Download size={12} /> .svg
+              </Button>
+            }
+          >
+            <div
+              className="w-full rounded-xl bg-white border border-slate-200/70 p-2 flex items-center justify-center overflow-hidden [&>svg]:w-full [&>svg]:h-auto [&>svg]:max-h-405"
+              dangerouslySetInnerHTML={{ __html: fitResult.svg }}
+            />
+          </Card>
+
+          <Card
+            className="md:col-span-6"
+            title="Error Metrics, Certificates & Predictions"
+            subtitle={
+              fitResult.taskType === 'classification'
+                ? 'Evaluated by LeanLearn.Classification (accuracy, confusionMatrix, rocAuc)'
+                : 'Evaluated by LeanLearn.Regression.Metrics (r2, rmse, mae)'
+            }
+            action={
+              <Badge active>
+                {fitResult.taskType === 'classification' ? 'Classification' : 'Regression'}
+              </Badge>
+            }
+          >
+            <div className="space-y-4">
+              {fitResult.certificate && (
+                <div
+                  className={`p-3 rounded-xl border flex items-start gap-2.5 text-xs ${
+                    fitResult.certificate.certified
+                      ? 'bg-teal-50/60 border-teal-200/80 text-teal-900'
+                      : 'bg-amber-50/60 border-amber-200/80 text-amber-900'
+                  }`}
+                >
+                  {fitResult.certificate.certified ? (
+                    <CheckCircle2 size={15} className="text-teal-600 mt-0.5 shrink-0" />
+                  ) : (
+                    <AlertTriangle size={15} className="text-amber-600 mt-0.5 shrink-0" />
+                  )}
+                  <div>
+                    <div className="font-semibold">
+                      {fitResult.certificate.certified
+                        ? 'Formal ℚ Convergence Certificate Verified'
+                        : 'Pre-Training Certificate Not Met (Try Increasing λ)'}
+                    </div>
+                    <p className="font-mono text-[11px] mt-0.5 opacity-85">
+                      {fitResult.certificate.summary}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {fitResult.taskType === 'regression' ? (
+                <div className="grid grid-cols-3 gap-2.5">
+                  <div className="p-3 rounded-xl bg-slate-900/2 border border-slate-200/70">
+                    <p className="text-[11px] text-slate-400">Test R²</p>
+                    <p className="text-lg font-semibold font-mono text-slate-900 mt-0.5">
+                      {Number(fitResult.metrics.testR2).toFixed(3)}
+                    </p>
+                    <p className="text-[10px] font-mono text-slate-400">
+                      Train: {Number(fitResult.metrics.trainR2).toFixed(3)}
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-900/2 border border-slate-200/70">
+                    <p className="text-[11px] text-slate-400">Test RMSE</p>
+                    <p className="text-lg font-semibold font-mono text-teal-700 mt-0.5">
+                      {Number(fitResult.metrics.testRmse).toFixed(3)}
+                    </p>
+                    <p className="text-[10px] font-mono text-slate-400">
+                      Train: {Number(fitResult.metrics.trainRmse).toFixed(3)}
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-slate-900/2 border border-slate-200/70">
+                    <p className="text-[11px] text-slate-400">Test MAE</p>
+                    <p className="text-lg font-semibold font-mono text-slate-900 mt-0.5">
+                      {Number(fitResult.metrics.testMae).toFixed(3)}
+                    </p>
+                    <p className="text-[10px] font-mono text-slate-400">
+                      Train: {Number(fitResult.metrics.trainMae).toFixed(3)}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-3 gap-2.5">
+                    <div className="p-3 rounded-xl bg-slate-900/2 border border-slate-200/70">
+                      <p className="text-[11px] text-slate-400">Test ROC AUC</p>
+                      <p className="text-lg font-semibold font-mono text-teal-700 mt-0.5">
+                        {Number(fitResult.metrics.rocAuc).toFixed(3)}
+                      </p>
+                      <p className="text-[10px] font-mono text-slate-400">
+                        F1: {Number(fitResult.metrics.f1).toFixed(3)}
+                      </p>
+                    </div>
+                    <div className="p-3 rounded-xl bg-slate-900/2 border border-slate-200/70">
+                      <p className="text-[11px] text-slate-400">Test Accuracy</p>
+                      <p className="text-lg font-semibold font-mono text-slate-900 mt-0.5">
+                        {(Number(fitResult.metrics.testAccuracy) * 100).toFixed(1)}%
+                      </p>
+                      <p className="text-[10px] font-mono text-slate-400">
+                        Train: {(Number(fitResult.metrics.trainAccuracy) * 100).toFixed(1)}%
+                      </p>
+                    </div>
+                    <div className="p-3 rounded-xl bg-slate-900/2 border border-slate-200/70">
+                      <p className="text-[11px] text-slate-400">Confusion Matrix</p>
+                      <p className="text-xs font-mono text-slate-800 mt-1">
+                        TN:{fitResult.metrics.confusionMatrix?.[0]?.[0]} FP:{fitResult.metrics.confusionMatrix?.[0]?.[1]}
+                      </p>
+                      <p className="text-xs font-mono text-teal-700">
+                        FN:{fitResult.metrics.confusionMatrix?.[1]?.[0]} TP:{fitResult.metrics.confusionMatrix?.[1]?.[1]}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {fitResult.topFeatures?.length > 0 && (
+                <div>
+                  <p className="text-[11px] text-slate-400 mb-1.5">Largest Learned Feature / Morgan Bit Weights</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {fitResult.topFeatures.map((f, i) => (
+                      <Badge key={i} active={f.weight > 0}>
+                        {f.feature}: {f.weight >= 0 ? `+${Number(f.weight).toFixed(2)}` : Number(f.weight).toFixed(2)}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <p className="text-[11px] text-slate-400 mb-1.5">Sample Model Predictions</p>
+                <DataTable
+                  maxHeight="max-h-52"
+                  columns={[
+                    { key: 'name', label: 'Compound', render: (v) => <span className="font-medium text-slate-800">{v}</span> },
+                    {
+                      key: 'split',
+                      label: 'Split',
+                      render: (v) => <Badge active={v === 'test'}>{v}</Badge>,
+                    },
+                    {
+                      key: 'actual',
+                      label: 'Measured',
+                      render: (v) => <code className="font-mono text-slate-600">{typeof v === 'number' ? Number(v.toFixed(2)) : v}</code>,
+                    },
+                    {
+                      key: 'predicted',
+                      label: fitResult.taskType === 'classification' ? 'P(active)' : 'Predicted',
+                      render: (v) => (
+                        <code className="font-mono text-teal-700 font-semibold">
+                          {typeof v === 'number' ? Number(v.toFixed(3)) : v}
+                        </code>
+                      ),
+                    },
+                  ]}
+                  rows={fitResult.predictions || []}
+                />
+              </div>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      <Card
+        title="2. Dataset Rows Explorer (CSVparser.lean)"
         subtitle={
-          state.totalCount
-            ? `${state.totalCount} total rows in CSV · Scrollable table of parsed Molecule n & canonicalSmiles`
-            : 'Select a dataset to parse in Lean 4'
+          tableState.totalCount
+            ? `${tableState.totalCount} total rows · Click Interpret to inspect any molecule in SMILES Interpreter`
+            : 'Select or upload a dataset'
         }
         action={
           <div className="flex items-center gap-2">
-            {loading && <SpinnerPill label="Loading..." />}
+            {loadingTable && <SpinnerPill label="Loading..." />}
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Filter rows..."
-              className="px-3 py-1.5 rounded-xl bg-slate-900/[0.02] border border-slate-200/80 text-xs focus:outline-none"
+              className="px-3 py-1.5 rounded-xl bg-slate-900/2 border border-slate-200/80 text-xs focus:outline-none"
             />
           </div>
         }
       >
-        <div className="flex flex-wrap gap-1.5 mb-4">
-          {DATASET_TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => loadDataset(t.id)}
-              className={`px-3 py-1.5 rounded-xl text-xs transition cursor-pointer ${
-                datasetId === t.id
-                  ? 'bg-slate-900 text-white font-medium'
-                  : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200/70'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-
-        <div className={`transition-opacity duration-150 ${loading ? 'opacity-55' : 'opacity-100'}`}>
+        <div className={`transition-opacity duration-150 ${loadingTable ? 'opacity-55' : 'opacity-100'}`}>
           <DataTable
             maxHeight="max-h-96"
             columns={[
@@ -106,7 +669,7 @@ export default function Datasets() {
               },
               {
                 key: 'metricValue',
-                label: rows[0]?.metricLabel || 'Feature',
+                label: rows[0]?.metricLabel || 'Target',
                 render: (v) => <Badge active>{typeof v === 'number' ? Number(v.toFixed(3)) : v}</Badge>,
               },
               {
@@ -128,7 +691,11 @@ export default function Datasets() {
         </div>
       </Card>
 
-      <LogConsole logs={state.logs} feedback={state.leanFeedback} loading={loading} />
+      <LogConsole
+        logs={combinedLogs}
+        feedback={fitResult?.leanFeedback || tableState.leanFeedback}
+        loading={fitting || loadingTable}
+      />
     </div>
   )
 }

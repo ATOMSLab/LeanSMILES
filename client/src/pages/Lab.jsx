@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Plus, X } from 'lucide-react'
+import { Plus, X, Download, Copy, Check } from 'lucide-react'
 import api, { PRESET_MOLECULES } from '../middleware/api'
 import {
   Card,
@@ -19,6 +19,74 @@ const COMPARE_PRESETS = [
   { label: 'Ethanol (OCC)', smiles: 'OCC' },
 ]
 
+function buildDiagnostics(data, errorInfo) {
+  if (errorInfo) {
+    return {
+      status: 'error',
+      items: [
+        {
+          type: 'error',
+          label: errorInfo.isGrammarDeviation ? 'OpenSMILES §2.2 Rule' : 'SMILES Syntax Error',
+          tag: errorInfo.constructor || 'ParseError',
+          detail: errorInfo.error,
+        },
+        ...(errorInfo.explanation
+          ? [
+              {
+                type: 'warn',
+                label: 'How to Fix',
+                tag: 'LeanSMILES.SMILES.Parse',
+                detail: errorInfo.explanation,
+              },
+            ]
+          : []),
+      ],
+    }
+  }
+  if (!data) return null
+
+  const chargeOk = data.chargeCheck?.ok !== false
+  const aromOk = data.aromatized?.ok !== false
+  return {
+    status: !chargeOk || !aromOk ? 'warn' : 'ok',
+    items: [
+      {
+        type: 'ok',
+        label: 'OpenSMILES Syntax',
+        tag: `Molecule ${data.n}`,
+        detail: `Parsed ${data.tokens.length} tokens into ${data.n} atoms and ${data.numBonds} bonds (${data.symmetryClasses || data.n} symmetry classes).`,
+      },
+      {
+        type: chargeOk ? 'ok' : 'warn',
+        label: 'Formal Charge Check',
+        tag: 'Mol.checkCharges',
+        detail: chargeOk
+          ? 'All atoms within physical noble-gas shell bounds (-shellVacancy ≤ charge ≤ Z).'
+          : data.chargeCheck.message,
+      },
+      {
+        type: aromOk ? 'ok' : 'warn',
+        label: 'RDKit cleanUp & Hückel 4n+2',
+        tag: 'Mol.aromatize',
+        detail: aromOk
+          ? `Canonical sanitized: ${data.aromatized?.canonicalSmiles}`
+          : data.aromatized?.message,
+      },
+    ],
+  }
+}
+
+const ATOM_COLUMNS = [
+  { key: 'idx', label: 'Fin n', render: (v) => <code className="text-slate-400">{v}</code> },
+  { key: 'raw', label: 'Token', render: (v) => <code className="font-mono text-slate-800">{v}</code> },
+  { key: 'symbol', label: 'Element' },
+  { key: 'degree', label: 'Degree' },
+  { key: 'totalH', label: 'Hydrogens' },
+  { key: 'charge', label: 'Charge', render: (v) => <code className="font-mono">{v > 0 ? `+${v}` : v}</code> },
+  { key: 'symmetryRank', label: 'Symmetry', render: (v) => <Badge>Class {v}</Badge> },
+  { key: 'inRing', label: 'Topology', render: (v) => <Badge active={v}>{v ? 'Ring' : 'Chain'}</Badge> },
+]
+
 export default function Lab() {
   const [searchParams] = useSearchParams()
   const [smiles, setSmiles] = useState(searchParams.get('smiles') || PRESET_MOLECULES[0].smiles)
@@ -26,6 +94,8 @@ export default function Lab() {
   const [loading, setLoading] = useState(false)
   const [errorInfo, setErrorInfo] = useState(null)
   const [viewMode, setViewMode] = useState('depict')
+  const [chemMode, setChemMode] = useState('written')
+  const [copiedMol, setCopiedMol] = useState(false)
   const [tab, setTab] = useState('atoms')
 
   const [showCompare, setShowCompare] = useState(false)
@@ -107,70 +177,37 @@ export default function Lab() {
     runComparison(smiles, val)
   }
 
+  const isSanitized = chemMode === 'sanitized' && Boolean(data?.aromatized?.ok)
+  const mol = isSanitized ? { ...data, ...data.aromatized } : data
+
+  const handleCopyMolBlock = () => {
+    if (!mol?.molBlock) return
+    navigator.clipboard.writeText(mol.molBlock)
+    setCopiedMol(true)
+    setTimeout(() => setCopiedMol(false), 1500)
+  }
+
+  const handleDownloadMolBlock = () => {
+    if (!mol?.molBlock) return
+    const blob = new Blob([mol.molBlock], { type: 'chemical/x-mdl-molfile' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${(mol.canonicalSmiles || 'molecule').replace(/[^a-zA-Z0-9_-]/g, '_')}.mol`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const sharedSet = new Set(tanimotoData?.sharedBits || [])
   const activeLogs = errorInfo ? errorInfo.logs || [] : data?.logs || []
   const combinedLogs = [...activeLogs, ...(tanimotoData?.logs || [])]
-
-  let diagnostics = null
-  if (errorInfo) {
-    diagnostics = {
-      status: 'error',
-      items: [
-        {
-          type: 'error',
-          label: errorInfo.isGrammarDeviation ? 'OpenSMILES §2.2 Rule' : 'SMILES Syntax Error',
-          tag: errorInfo.constructor || 'ParseError',
-          detail: errorInfo.error,
-        },
-        ...(errorInfo.explanation
-          ? [
-              {
-                type: 'warn',
-                label: 'How to Fix',
-                tag: 'LeanSMILES.SMILES.Parse',
-                detail: errorInfo.explanation,
-              },
-            ]
-          : []),
-      ],
-    }
-  } else if (data) {
-    const chargeOk = data.chargeCheck?.ok !== false
-    const aromOk = data.aromatized?.ok !== false
-    diagnostics = {
-      status: !chargeOk || !aromOk ? 'warn' : 'ok',
-      items: [
-        {
-          type: 'ok',
-          label: 'OpenSMILES Syntax',
-          tag: `Molecule ${data.n}`,
-          detail: `Parsed ${data.tokens.length} tokens into ${data.n} atoms and ${data.numBonds} bonds.`,
-        },
-        {
-          type: chargeOk ? 'ok' : 'warn',
-          label: 'Formal Charge Check',
-          tag: 'Mol.checkCharges',
-          detail: chargeOk
-            ? 'All atoms within physical noble-gas shell bounds (-shellVacancy ≤ charge ≤ Z).'
-            : data.chargeCheck.message,
-        },
-        {
-          type: aromOk ? 'ok' : 'warn',
-          label: 'Hückel 4n+2 Aromaticity',
-          tag: 'Mol.aromatize',
-          detail: aromOk
-            ? `Canonical aromatized: ${data.aromatized?.canonicalSmiles}`
-            : data.aromatized?.message,
-        },
-      ],
-    }
-  }
+  const diagnostics = buildDiagnostics(data, errorInfo)
 
   return (
     <div className="space-y-6">
       <SectionHeader
         title="SMILES Interpreter"
-        description="Type any SMILES to immediately evaluate canonical LeanSMILES, toggle between Lean's 2D chemical depiction and SimpleGraph (Fin n), inspect Morgan fingerprints, and compare Tanimoto similarity."
+        description="Type any SMILES to evaluate canonical LeanSMILES, toggle between As-Written (M) and Sanitized (M.aromatize), inspect 2D depictions or V2000 Mol blocks, and compare Morgan fingerprints."
         right={loading && <SpinnerPill label="Evaluating in Lean 4..." />}
       />
 
@@ -180,7 +217,7 @@ export default function Lab() {
             value={smiles}
             onChange={(e) => handleSmilesChange(e.target.value)}
             placeholder="Write a SMILES string (e.g. Cn1cnc2c1c(=O)n(C)c(=O)n2C)..."
-            className="w-full bg-slate-900/[0.02] border border-slate-200/80 px-3.5 py-2.5 pr-10 rounded-xl font-mono text-xs text-slate-800 focus:outline-none focus:border-slate-400"
+            className="w-full bg-slate-900/2 border border-slate-200/80 px-3.5 py-2.5 pr-10 rounded-xl font-mono text-xs text-slate-800 focus:outline-none focus:border-slate-400"
           />
           {loading && (
             <span className="absolute right-3.5 w-3.5 h-3.5 rounded-full border-2 border-slate-300 border-t-teal-600 animate-spin" />
@@ -212,36 +249,68 @@ export default function Lab() {
         loading={loading}
       />
 
-      {data && (
+      {mol && (
         <div className={`space-y-6 transition-opacity duration-150 ${loading || errorInfo ? 'opacity-50' : 'opacity-100'}`}>
           <div className="grid md:grid-cols-2 gap-6">
             <Card
               title="Canonical LeanSMILES"
               subtitle="Color refinement + exhaustive tie-breaking (Mol.canonicalSmiles)"
+              action={
+                data.aromatized?.ok && (
+                  <div className="flex gap-1">
+                    <Button
+                      variant={!isSanitized ? 'primary' : 'secondary'}
+                      onClick={() => setChemMode('written')}
+                      className="!px-2.5 !py-1"
+                    >
+                      As-Written
+                    </Button>
+                    <Button
+                      variant={isSanitized ? 'primary' : 'secondary'}
+                      onClick={() => setChemMode('sanitized')}
+                      className="!px-2.5 !py-1"
+                    >
+                      Sanitized
+                    </Button>
+                  </div>
+                )
+              }
             >
               <div className="space-y-3">
-                <div>
+                <div onClick={() => setChemMode('written')} className="cursor-pointer">
                   <p className="text-[11px] text-slate-400 mb-1">As-Written Canonical SMILES</p>
-                  <div className="p-3 rounded-xl bg-slate-900/[0.02] border border-slate-200/70 font-mono text-xs text-teal-700 font-medium break-all">
+                  <div
+                    className={`p-3 rounded-xl bg-slate-900/2 border font-mono text-xs break-all transition ${
+                      !isSanitized
+                        ? 'border-teal-500/50 text-teal-700 font-medium'
+                        : 'border-slate-200/70 text-slate-600'
+                    }`}
+                  >
                     {data.canonicalSmiles}
                   </div>
                 </div>
 
                 {data.aromatized?.ok && (
-                  <div>
+                  <div onClick={() => setChemMode('sanitized')} className="cursor-pointer">
                     <p className="text-[11px] text-slate-400 mb-1">
-                      RDKit Hückel 4n+2 Aromatized (Mol.aromatize)
+                      RDKit cleanUp + Hückel 4n+2 Sanitized (Mol.aromatize)
                     </p>
-                    <div className="p-3 rounded-xl bg-slate-900/[0.02] border border-slate-200/70 font-mono text-xs text-slate-700 break-all">
+                    <div
+                      className={`p-3 rounded-xl bg-slate-900/2 border font-mono text-xs break-all transition ${
+                        isSanitized
+                          ? 'border-teal-500/50 text-teal-700 font-medium'
+                          : 'border-slate-200/70 text-slate-600'
+                      }`}
+                    >
                       {data.aromatized.canonicalSmiles}
                     </div>
                   </div>
                 )}
 
                 <div className="pt-1">
-                  <p className="text-[11px] text-slate-400 mb-1.5">Tokens ({data.tokens.length})</p>
+                  <p className="text-[11px] text-slate-400 mb-1.5">Tokens ({mol.tokens.length})</p>
                   <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
-                    {data.tokens.map((t, i) => (
+                    {mol.tokens.map((t, i) => (
                       <span
                         key={i}
                         className="px-2 py-0.5 rounded bg-slate-100/80 text-slate-600 font-mono text-[11px]"
@@ -255,8 +324,14 @@ export default function Lab() {
             </Card>
 
             <Card
-              title={viewMode === 'depict' ? '2D Molecule (LeanSMILES.Depict)' : 'SimpleGraph (Fin n)'}
-              subtitle={`${data.n} atoms · ${data.numBonds} bonds · ${data.totalHydrogens} hydrogens`}
+              title={
+                viewMode === 'depict'
+                  ? '2D Molecule (LeanSMILES.Depict)'
+                  : viewMode === 'graph'
+                  ? 'SimpleGraph (Fin n)'
+                  : 'MDL Mol Block (V2000)'
+              }
+              subtitle={`${mol.n} atoms · ${mol.numBonds} bonds · ${mol.totalHydrogens} hydrogens`}
               action={
                 <div className="flex gap-1">
                   <Button
@@ -273,22 +348,54 @@ export default function Lab() {
                   >
                     Graph (Fin n)
                   </Button>
+                  <Button
+                    variant={viewMode === 'molblock' ? 'primary' : 'secondary'}
+                    onClick={() => setViewMode('molblock')}
+                    className="!px-2.5 !py-1"
+                  >
+                    .mol
+                  </Button>
                 </div>
               }
             >
-              <MoleculeGraph
-                mode={viewMode}
-                svg={data.svg}
-                atoms={data.atoms}
-                bonds={data.bonds}
-                coordinates={data.coordinates}
-              />
+              {viewMode === 'molblock' ? (
+                <div className="relative">
+                  <div className="absolute top-2.5 right-2.5 flex gap-1">
+                    <Button
+                      variant="secondary"
+                      onClick={handleCopyMolBlock}
+                      className="!px-2 !py-1 inline-flex items-center gap-1"
+                    >
+                      {copiedMol ? <Check size={12} /> : <Copy size={12} />}
+                      {copiedMol ? 'Copied' : 'Copy'}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={handleDownloadMolBlock}
+                      className="!px-2 !py-1 inline-flex items-center gap-1"
+                    >
+                      <Download size={12} /> .mol
+                    </Button>
+                  </div>
+                  <pre className="w-full h-60 overflow-auto rounded-xl bg-slate-900/2 border border-slate-200/60 p-3 text-[11px] font-mono text-slate-700 leading-snug">
+                    {mol.molBlock}
+                  </pre>
+                </div>
+              ) : (
+                <MoleculeGraph
+                  mode={viewMode}
+                  svg={mol.svg}
+                  atoms={mol.atoms}
+                  bonds={mol.bonds}
+                  coordinates={mol.coordinates}
+                />
+              )}
             </Card>
           </div>
 
           <Card
             title="Morgan Fingerprint (Radius 2, 2048 Bits) & Tanimoto"
-            subtitle={`${data.morganBits.length} active bits set · Proved order-invariant (Molecule.morganBits_relabel)`}
+            subtitle={`${mol.morganBits.length} active bits set · Proved order-invariant (Molecule.morganBits_relabel)`}
             action={
               !showCompare ? (
                 <Button
@@ -317,7 +424,7 @@ export default function Lab() {
             }
           >
             <div className="flex flex-wrap gap-1.5">
-              {data.morganBits.map((bit) => (
+              {mol.morganBits.map((bit) => (
                 <Badge key={bit} active={showCompare && sharedSet.has(bit)}>
                   {bit}
                 </Badge>
@@ -331,7 +438,7 @@ export default function Lab() {
                     value={smilesB}
                     onChange={(e) => handleSmilesBChange(e.target.value)}
                     placeholder="Second SMILES for Tanimoto comparison..."
-                    className="w-full bg-slate-900/[0.02] border border-slate-200/80 px-3.5 py-2.5 pr-10 rounded-xl font-mono text-xs text-slate-800 focus:outline-none focus:border-slate-400"
+                    className="w-full bg-slate-900/2 border border-slate-200/80 px-3.5 py-2.5 pr-10 rounded-xl font-mono text-xs text-slate-800 focus:outline-none focus:border-slate-400"
                   />
                   {comparing && (
                     <span className="absolute right-3.5 w-3.5 h-3.5 rounded-full border-2 border-slate-300 border-t-teal-600 animate-spin" />
@@ -362,7 +469,7 @@ export default function Lab() {
 
                 {tanimotoData && (
                   <div className={`grid sm:grid-cols-2 gap-4 pt-1 transition-opacity duration-150 ${comparing ? 'opacity-60' : 'opacity-100'}`}>
-                    <div className="p-4 rounded-xl bg-slate-900/[0.02] border border-slate-200/70">
+                    <div className="p-4 rounded-xl bg-slate-900/2 border border-slate-200/70">
                       <p className="text-xs text-slate-400">Exact Tanimoto Similarity (over ℚ)</p>
                       <div className="flex items-baseline gap-3 mt-1">
                         <span className="text-2xl font-semibold font-mono text-slate-900">
@@ -377,7 +484,7 @@ export default function Lab() {
                       </p>
                     </div>
 
-                    <div className="p-4 rounded-xl bg-slate-900/[0.02] border border-slate-200/70">
+                    <div className="p-4 rounded-xl bg-slate-900/2 border border-slate-200/70">
                       <p className="text-xs text-slate-400 mb-2">
                         Molecule B Morgan Bits ({tanimotoData.molB.morganBits.length})
                       </p>
@@ -396,7 +503,7 @@ export default function Lab() {
           </Card>
 
           <Card
-            title={tab === 'atoms' ? `Atoms (Fin ${data.n})` : 'BondMatrix n (over ℚ)'}
+            title={tab === 'atoms' ? `Atoms (Fin ${mol.n})` : 'BondMatrix n (over ℚ)'}
             action={
               <div className="flex gap-1">
                 <Button variant={tab === 'atoms' ? 'primary' : 'secondary'} onClick={() => setTab('atoms')}>
@@ -409,32 +516,20 @@ export default function Lab() {
             }
           >
             {tab === 'atoms' ? (
-              <DataTable
-                maxHeight="max-h-72"
-                columns={[
-                  { key: 'idx', label: 'Fin n', render: (v) => <code className="text-slate-400">{v}</code> },
-                  { key: 'raw', label: 'Token', render: (v) => <code className="font-mono text-slate-800">{v}</code> },
-                  { key: 'symbol', label: 'Element' },
-                  { key: 'degree', label: 'Degree' },
-                  { key: 'totalH', label: 'Hydrogens' },
-                  { key: 'charge', label: 'Charge', render: (v) => <code className="font-mono">{v > 0 ? `+${v}` : v}</code> },
-                  { key: 'inRing', label: 'Topology', render: (v) => <Badge active={v}>{v ? 'Ring' : 'Chain'}</Badge> },
-                ]}
-                rows={data.atoms}
-              />
+              <DataTable maxHeight="max-h-72" columns={ATOM_COLUMNS} rows={mol.atoms} />
             ) : (
               <div className="overflow-auto max-h-72 rounded-xl border border-slate-200/60 bg-white/50 p-2">
                 <table className="w-full text-center font-mono text-xs">
                   <thead>
                     <tr className="text-slate-400">
                       <th className="p-1.5">#</th>
-                      {data.atoms.map((a) => (
+                      {mol.atoms.map((a) => (
                         <th key={a.idx} className="p-1.5 font-normal">{a.idx}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {data.adjMatrix.map((row, rIdx) => (
+                    {mol.adjMatrix.map((row, rIdx) => (
                       <tr key={rIdx}>
                         <td className="p-1.5 text-slate-400">{rIdx}</td>
                         {row.map((val, cIdx) => (

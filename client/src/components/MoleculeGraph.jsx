@@ -6,7 +6,7 @@ export default function MoleculeGraph({ mode = 'depict', svg = '', atoms = [], b
 
   if (mode === 'depict' && svg) {
     return (
-      <div className="w-full h-60 rounded-xl bg-slate-900/[0.015] border border-slate-200/60 flex items-center justify-center p-4 overflow-hidden">
+      <div className="w-full h-60 rounded-xl bg-slate-900/1.5 border border-slate-200/60 flex items-center justify-center p-4 overflow-hidden">
         <div
           className="w-full h-full flex items-center justify-center [&>svg]:max-h-52 [&>svg]:max-w-full [&>svg]:w-auto [&>svg]:h-auto"
           dangerouslySetInnerHTML={{ __html: svg }}
@@ -25,7 +25,7 @@ export default function MoleculeGraph({ mode = 'depict', svg = '', atoms = [], b
     const maxY = Math.max(...ys)
     const spanX = Math.max(maxX - minX, 1e-3)
     const spanY = Math.max(maxY - minY, 1e-3)
-    const pad = 34
+    const pad = 34 
     const availW = 360 - 2 * pad
     const availH = 240 - 2 * pad
     const scale = Math.min(availW / spanX, availH / spanY, 44)
@@ -51,7 +51,7 @@ export default function MoleculeGraph({ mode = 'depict', svg = '', atoms = [], b
   }
 
   return (
-    <svg viewBox="0 0 360 240" className="w-full h-60 rounded-xl bg-slate-900/[0.015] border border-slate-200/60">
+    <svg viewBox="0 0 360 240" className="w-full h-60 rounded-xl bg-slate-900/1.5 border border-slate-200/60">
       {bonds.map((b, i) => {
         const p1 = coords[b.src]
         const p2 = coords[b.dst]
@@ -75,22 +75,25 @@ export default function MoleculeGraph({ mode = 'depict', svg = '', atoms = [], b
       {atoms.map((a, i) => {
         const p = coords[i]
         const isHetero = a.symbol !== 'C'
+        const isArom = Boolean(a.aromatic)
+        const chargeStr = a.charge > 0 ? `+${a.charge > 1 ? a.charge : ''}` : a.charge < 0 ? `-${Math.abs(a.charge) > 1 ? Math.abs(a.charge) : ''}` : ''
         return (
           <g key={i} transform={`translate(${p.x}, ${p.y})`}>
             <circle
               r={12.5}
-              fill="#ffffff"
-              stroke={isHetero ? '#0d9488' : '#94a3b8'}
-              strokeWidth={1.5}
+              fill={isArom ? '#f0fdfa' : '#ffffff'}
+              stroke={isHetero || a.charge !== 0 ? '#0d9488' : isArom ? '#14b8a6' : '#94a3b8'}
+              strokeWidth={isArom || a.charge !== 0 ? 1.8 : 1.5}
+              strokeDasharray={isArom ? '3 1.5' : undefined}
             />
             <text
               textAnchor="middle"
               dy="3.5"
               fontSize="9"
               fontWeight="600"
-              fill={isHetero ? '#0f766e' : '#334155'}
+              fill={isHetero || a.charge !== 0 ? '#0f766e' : '#334155'}
             >
-              {a.symbol}
+              {isArom && a.symbol === 'C' ? 'c' : a.symbol}{chargeStr}
               <tspan fontSize="6.5" dy="2" fill="#94a3b8">{i}</tspan>
             </text>
           </g>

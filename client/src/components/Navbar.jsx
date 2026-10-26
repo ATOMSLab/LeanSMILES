@@ -5,7 +5,7 @@ import { Atom } from 'lucide-react'
 const LINKS = [
   { to: '/', label: 'Overview' },
   { to: '/lab', label: 'SMILES Interpreter' },
-  { to: '/datasets', label: 'Datasets' },
+  { to: '/datasets', label: 'Data Pipes' },
 ]
 
 export default function Navbar() {

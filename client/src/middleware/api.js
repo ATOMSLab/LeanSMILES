@@ -3,7 +3,11 @@ const BASE_URL = import.meta.env.VITE_API_URL || '/api'
 export const PRESET_MOLECULES = [
   {
     name: 'Caffeine',
-    smiles: 'Cn1cnc2c1c(=O)n(C)c(=O)n2C',
+    smiles: 'CN1C=NC2=C1C(=O)N(C)C(=O)N2C',
+  },
+  {
+    name: 'Nitrobenzene (cleanUp)',
+    smiles: 'c1ccccc1N(=O)=O',
   },
   {
     name: 'L-Alanine (Stereo @)',
@@ -68,6 +72,13 @@ export const api = {
 
   getDatasets(datasetId = 'delaney') {
     return request(`/datasets?id=${encodeURIComponent(datasetId)}`)
+  },
+
+  fitPipeline(payload) {
+    return request('/pipeline/fit', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
   },
 }
 

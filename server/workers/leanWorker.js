@@ -19,7 +19,12 @@ const cache = new Map()
 if (fs.existsSync(DISK_CACHE_FILE)) {
   try {
     const raw = JSON.parse(fs.readFileSync(DISK_CACHE_FILE, 'utf8'))
-    Object.entries(raw).forEach(([k, v]) => cache.set(k, v))
+    Object.entries(raw).forEach(([k, v]) => {
+      if (k.startsWith('parse\t') && v?.aromatized?.ok && !Array.isArray(v?.aromatized?.atoms)) {
+        return
+      }
+      cache.set(k, v)
+    })
   } catch {}
 }
 
