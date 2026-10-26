@@ -48,7 +48,7 @@ export default function Home() {
             Open SMILES Interpreter <ArrowRight size={14} />
           </Button>
           <Button variant="secondary" onClick={() => navigate('/datasets')}>
-            Datasets
+            Datasets &amp; ML Pipeline
           </Button>
         </div>
       </div>
