@@ -1,4 +1,5 @@
-const BASE_URL = import.meta.env.VITE_API_URL || '/api'
+const rawBaseUrl = (import.meta.env.VITE_API_URL || '/api').replace(/\/+$/, '')
+const BASE_URL = rawBaseUrl.endsWith('/api') ? rawBaseUrl : `${rawBaseUrl}/api`
 
 export const PRESET_MOLECULES = [
   {
