@@ -25,21 +25,20 @@ COPY lean-toolchain lakefile.toml lake-manifest.json ./
 RUN elan toolchain install "$(cat lean-toolchain)" \
   && lake exe cache get
 
-# 2. Build LeanSMILES, LeanLearn, and Pipelines libraries
-COPY LeanSMILES.lean LeanLearn.lean Pipelines.lean ./
+# 2. Build the LeanSMILES, LeanLearn and Pipelines libraries and the API's Lean worker
+COPY LeanSMILES.lean LeanLearn.lean Pipelines.lean Worker.lean ./
 COPY LeanSMILES ./LeanSMILES
 COPY LeanLearn ./LeanLearn
 COPY Pipelines ./Pipelines
 COPY datasets ./datasets
-RUN lake build LeanSMILES LeanLearn Pipelines
+RUN lake build LeanSMILES LeanLearn Pipelines worker
 
 # 3. Install Express backend dependencies
 COPY server/package.json server/package-lock.json ./server/
 RUN cd server && npm ci --omit=dev
 
-# 4. Copy backend source & pre-generate WorkerMain.lean
+# 4. Copy backend source (it spawns .lake/build/bin/worker)
 COPY server ./server
-RUN node -e 'import("./server/templates/leanTemplates.js").then(m => import("fs").then(fs => { fs.mkdirSync("server/.cache", { recursive: true }); fs.writeFileSync("server/.cache/WorkerMain.lean", m.leanTemplates.workerDaemon()); }))'
 
 ENV NODE_ENV=production
 ENV PORT=8000

@@ -4,13 +4,32 @@ import path from 'path'
 import crypto from 'crypto'
 import { fileURLToPath } from 'url'
 import { leanTemplates, explainParseError } from '../templates/leanTemplates.js'
-import { runLean } from '../workers/leanWorker.js'
+import { runLean, cancelLean } from '../workers/leanWorker.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = path.resolve(__dirname, '../..')
 const CACHE_DIR = path.resolve(__dirname, '../.cache')
 
 const router = Router()
+
+// The client sends an X-Request-Id with each evaluation so it can cancel it
+// (POST /cancel). A client that just goes away (closed tab, aborted fetch)
+// cancels the same way: the response socket closes before anything was sent.
+function evaluation(req, res) {
+  const requestId = req.get('x-request-id') || null
+  if (requestId) {
+    res.on('close', () => {
+      if (!res.writableEnded) cancelLean(requestId)
+    })
+  }
+  return { requestId }
+}
+
+function failed(res, err) {
+  if (res.writableEnded) return
+  if (err.cancelled) return res.status(499).json({ ok: false, error: err.message, cancelled: true })
+  res.status(500).json({ ok: false, error: err.message })
+}
 
 function splitCsvLine(line) {
   const out = []
@@ -98,7 +117,7 @@ router.post('/parse', async (req, res) => {
 
   try {
     const code = leanTemplates.parseMolecule(smiles.trim())
-    const result = await runLean(code)
+    const result = await runLean(code, evaluation(req, res))
     if (!result.ok) {
       return res.status(400).json({
         ok: false,
@@ -113,7 +132,7 @@ router.post('/parse', async (req, res) => {
     }
     res.json(result)
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    failed(res, err)
   }
 })
 
@@ -125,7 +144,7 @@ router.post('/tanimoto', async (req, res) => {
 
   try {
     const code = leanTemplates.compareTanimoto(smilesA.trim(), smilesB.trim())
-    const result = await runLean(code)
+    const result = await runLean(code, evaluation(req, res))
     if (!result.ok) {
       return res.status(400).json({
         ok: false,
@@ -138,7 +157,7 @@ router.post('/tanimoto', async (req, res) => {
     }
     res.json(result)
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    failed(res, err)
   }
 })
 
@@ -146,10 +165,10 @@ router.get('/datasets', async (req, res) => {
   const datasetId = req.query.id || 'delaney'
   try {
     const code = leanTemplates.loadDataset(datasetId)
-    const result = await runLean(code)
+    const result = await runLean(code, evaluation(req, res))
     res.json(result)
   } catch (err) {
-    res.status(500).json({ error: err.message })
+    failed(res, err)
   }
 })
 
@@ -165,14 +184,48 @@ router.post('/pipeline/fit', async (req, res) => {
   try {
     const tsvPath = buildDatasetTsv(datasetId, customRows, modelType)
     const code = leanTemplates.fitPipeline(tsvPath, modelType, String(alpha), targetLabel)
-    const result = await runLean(code)
+    const result = await runLean(code, evaluation(req, res))
     if (!result.ok) {
       return res.status(400).json(result)
     }
     res.json(result)
   } catch (err) {
-    res.status(500).json({ ok: false, error: err.message })
+    failed(res, err)
   }
 })
+
+router.post('/cancel', (req, res) => {
+  const { requestId } = req.body || {}
+  res.json({ cancelled: cancelLean(requestId) })
+})
+
+// What the Regression page asks for on arrival, run once at start so the
+// first visitor gets cached answers and the worker already holds both built-in
+// datasets featurized. Each job is one queue entry; a real request that arrives
+// meanwhile waits behind at most one of them.
+export async function prewarmBuiltinDatasets() {
+  const datasets = [
+    ['delaney', 'log solubility (log mol/L)'],
+    ['thermo', 'Boiling Point (K)'],
+  ]
+  for (const [datasetId, targetLabel] of datasets) {
+    const jobs = [
+      ['dataset', leanTemplates.loadDataset(datasetId)],
+      ...['sparse-ridge', 'gauss-seidel'].map((modelType) => [
+        `fit ${modelType} α=1.0`,
+        leanTemplates.fitPipeline(buildDatasetTsv(datasetId, null), modelType, '1.0', targetLabel),
+      ]),
+    ]
+    for (const [what, cmd] of jobs) {
+      const t0 = Date.now()
+      try {
+        const r = await runLean(cmd)
+        console.log(`[prewarm] ${datasetId} ${what}: ${r.ok === false ? 'failed' : 'ok'} in ${Date.now() - t0} ms${r.leanFeedback?.cached ? ' (cached)' : ''}`)
+      } catch (err) {
+        console.log(`[prewarm] ${datasetId} ${what}: ${err.message}`)
+      }
+    }
+  }
+}
 
 export default router

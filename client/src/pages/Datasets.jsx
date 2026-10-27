@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Upload, Download, CheckCircle2, AlertTriangle, Sparkles } from 'lucide-react'
-import api from '../middleware/api'
-import { Card, Badge, Button, SectionHeader, DataTable, SpinnerPill, LogConsole } from '../components/UI'
+import api, { newRequestHandle } from '../middleware/api'
+import { Card, Badge, Button, SectionHeader, DataTable, BusyBar, SpinnerPill, LogConsole } from '../components/UI'
 
 const DATASET_TABS = [
   {
@@ -21,13 +21,33 @@ const DATASET_TABS = [
   },
 ]
 
+// Two solvers: the real model (tested against scikit-learn, no theorem) and the
+// certified pipeline whose certificate can genuinely fail. Jacobi (exact-ℚ
+// certificate runs for minutes at λ ≤ 1), gradient descent (certificate passes
+// by construction) and Householder-QR are still served by the API, just not
+// offered here.
 const MODEL_OPTIONS = [
   { id: 'sparse-ridge', label: 'Sparse Ridge (2048 Morgan Bits)' },
-  { id: 'dense-qr', label: 'Householder-QR Ridge (Descriptors)' },
   { id: 'gauss-seidel', label: 'Certified Gauss–Seidel (ℚ Pipeline)' },
-  { id: 'jacobi', label: 'Certified Jacobi (ℚ Pipeline)' },
-  { id: 'gradient-descent', label: 'Certified Gradient Descent (ℚ Pipeline)' },
 ]
+
+const MODEL_NOTES = {
+  'sparse-ridge': (
+    <>
+      No theorem behind this one: conjugate gradients on 2048 Morgan bits, checked against scikit-learn's{' '}
+      <code className="font-mono">Ridge</code> to 10⁻⁶ by <code className="font-mono">lake exe ridge-test</code>. Tested, not proven.
+    </>
+  ),
+  'gauss-seidel': (
+    <>
+      <span className="font-medium text-slate-700">Certified</span> means: before training, Lean checks an exact-arithmetic (ℚ)
+      witness on this dataset's normal equations — diagonal dominance, ρ &lt; 1 — and the theorem{' '}
+      <code className="font-mono">Pipeline.checkSolver_sound</code> proves that whenever that check passes, the solver's
+      exact-real iterates land within ε of the optimal training loss. It does not cover the floating-point numbers shown
+      (the same code run in Float) or accuracy on the test set. At small λ the witness fails, and the page says so.
+    </>
+  ),
+}
 
 const PENALTY_OPTIONS = ['0.1', '1.0', '4.0', '16.0']
 
@@ -107,6 +127,9 @@ export default function Datasets() {
 
   const fileInputRef = useRef(null)
   const fitReqId = useRef(0)
+  const fitHandle = useRef(null)
+  const tableHandle = useRef(null)
+  const [busyMeta, setBusyMeta] = useState(null)
   const navigate = useNavigate()
 
   const buildCustomRows = (csvObj, sIdx, tIdx) => {
@@ -133,24 +156,37 @@ export default function Datasets() {
     label = 'target',
   }) => {
     const reqId = ++fitReqId.current
+    // one fit at a time: a new one cancels the previous, on the server too
+    fitHandle.current?.cancel()
+    const handle = newRequestHandle()
+    fitHandle.current = handle
+    setBusyMeta({
+      label: 'Fitting in Lean 4: featurize, solve, draw the parity plot',
+      startedAt: Date.now(),
+      expectedMs: 300 + 4 * (customRows ? customRows.length : 205),
+    })
     setFitting(true)
     setFitError('')
     try {
-      const res = await api.fitPipeline({
-        datasetId: dsId,
-        customRows,
-        modelType: model,
-        alpha: pen,
-        targetLabel: label,
-      })
+      const res = await api.fitPipeline(
+        {
+          datasetId: dsId,
+          customRows,
+          modelType: model,
+          alpha: pen,
+          targetLabel: label,
+        },
+        handle
+      )
       if (reqId !== fitReqId.current) return
       setFitResult(res)
     } catch (err) {
-      if (reqId !== fitReqId.current) return
+      if (reqId !== fitReqId.current || err.cancelled) return
       setFitError(err.details?.error || err.message || 'Model fitting failed in Lean 4')
     } finally {
       if (reqId === fitReqId.current) {
         setFitting(false)
+        fitHandle.current = null
       }
     }
   }
@@ -160,6 +196,9 @@ export default function Datasets() {
     setDatasetId(tabObj.id)
     setModelType(tabObj.defaultModel)
     setLoadingTable(true)
+    tableHandle.current?.cancel()
+    const handle = newRequestHandle()
+    tableHandle.current = handle
     runPipelineFit({
       dsId: tabObj.id,
       customRows: null,
@@ -168,10 +207,17 @@ export default function Datasets() {
       label: tabObj.targetLabel,
     })
     try {
-      const res = await api.getDatasets(tabObj.id)
-      setTableState(res)
+      const res = await api.getDatasets(tabObj.id, handle)
+      if (tableHandle.current === handle) setTableState(res)
+    } catch (err) {
+      if (tableHandle.current === handle && !err.cancelled) {
+        setFitError(err.details?.error || err.message || 'Could not load the dataset in Lean 4')
+      }
     } finally {
-      setLoadingTable(false)
+      if (tableHandle.current === handle) {
+        setLoadingTable(false)
+        tableHandle.current = null
+      }
     }
   }
 
@@ -283,14 +329,33 @@ export default function Datasets() {
 
   const combinedLogs = [...(fitResult?.logs || []), ...(tableState.logs || [])]
 
+  // Stop whatever Lean is doing for this page: the fit and the dataset parse.
+  // Stale answers are ignored by the request ids; the server drops the jobs.
+  const cancelBusy = () => {
+    fitReqId.current += 1
+    fitHandle.current?.cancel()
+    fitHandle.current = null
+    tableHandle.current?.cancel()
+    tableHandle.current = null
+    setFitting(false)
+    setLoadingTable(false)
+    setBusyMeta(null)
+  }
+  const busy = fitting || loadingTable
+
   return (
     <div className="space-y-6">
       <SectionHeader
         title="Datasets & Lean Regression Pipeline"
-        description="Select a built-in benchmark or upload any CSV with SMILES and a numeric target column to fit Sparse Ridge, Householder-QR, or Certified ℚ Iterative Solvers in Lean 4."
+        description="Select a built-in benchmark or upload any CSV with SMILES and a numeric target column, then fit Sparse Ridge on Morgan fingerprints or the certified Gauss–Seidel pipeline in Lean 4."
         right={
-          (fitting || loadingTable) && (
-            <SpinnerPill label={fitting ? 'Fitting regression & rendering parity plot...' : 'Parsing CSV in Lean 4...'} />
+          busy && (
+            <BusyBar
+              label={fitting ? busyMeta?.label || 'Fitting in Lean 4' : 'Parsing the dataset in Lean 4'}
+              startedAt={busyMeta?.startedAt}
+              expectedMs={busyMeta?.expectedMs}
+              onCancel={cancelBusy}
+            />
           )
         }
       />
@@ -309,6 +374,7 @@ export default function Datasets() {
             />
             <Button
               variant="primary"
+              disabled={busy}
               onClick={() => fileInputRef.current?.click()}
               className="inline-flex items-center gap-1.5"
             >
@@ -324,8 +390,9 @@ export default function Datasets() {
               <button
                 key={t.id}
                 type="button"
+                disabled={busy}
                 onClick={() => selectBuiltinDataset(t)}
-                className={`px-3 py-1.5 rounded-xl text-xs transition cursor-pointer ${
+                className={`px-3 py-1.5 rounded-xl text-xs transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                   datasetId === t.id && !uploadedCsv
                     ? 'bg-slate-900 text-white font-medium'
                     : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200/70'
@@ -349,6 +416,7 @@ export default function Datasets() {
                   <span>SMILES Column:</span>
                   <select
                     value={smilesCol}
+                    disabled={busy}
                     onChange={(e) => handleColumnChange(Number(e.target.value), targetCol)}
                     className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-800 font-mono text-xs"
                   >
@@ -363,6 +431,7 @@ export default function Datasets() {
                   <span>Target Label:</span>
                   <select
                     value={targetCol}
+                    disabled={busy}
                     onChange={(e) => handleColumnChange(smilesCol, Number(e.target.value))}
                     className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-800 font-mono text-xs"
                   >
@@ -387,8 +456,9 @@ export default function Datasets() {
                   <button
                     key={m.id}
                     type="button"
+                    disabled={busy}
                     onClick={() => handleModelChange(m.id)}
-                    className={`px-2.5 py-1.5 rounded-lg text-xs transition cursor-pointer ${
+                    className={`px-2.5 py-1.5 rounded-lg text-xs transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                       modelType === m.id
                         ? 'bg-teal-700 text-white font-medium'
                         : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200/70'
@@ -398,6 +468,9 @@ export default function Datasets() {
                   </button>
                 ))}
               </div>
+              {MODEL_NOTES[modelType] && (
+                <p className="text-[11px] leading-relaxed text-slate-500 max-w-xl pt-1">{MODEL_NOTES[modelType]}</p>
+              )}
             </div>
 
             <div className="space-y-1.5 shrink-0">
@@ -409,8 +482,9 @@ export default function Datasets() {
                   <button
                     key={p}
                     type="button"
+                    disabled={busy}
                     onClick={() => handleAlphaChange(p)}
-                    className={`px-2.5 py-1.5 rounded-lg font-mono text-xs transition cursor-pointer ${
+                    className={`px-2.5 py-1.5 rounded-lg font-mono text-xs transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                       alpha === p
                         ? 'bg-slate-900 text-white font-medium'
                         : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200/70'
@@ -476,8 +550,8 @@ export default function Datasets() {
                   <div>
                     <div className="font-semibold">
                       {fitResult.certificate.certified
-                        ? 'Formal ℚ Convergence Certificate Verified'
-                        : 'Pre-Training Certificate Not Met (Try Increasing λ)'}
+                        ? 'Certificate checked: exact-ℚ witness passed (ρ < 1)'
+                        : 'Certificate not met at this λ (ρ ≥ 1) — try a larger λ'}
                     </div>
                     <p className="font-mono text-[11px] mt-0.5 opacity-85">
                       {fitResult.certificate.summary}

@@ -93,3 +93,8 @@ root = "LeanSMILES.Depict.Main"
 [[lean_exe]]
 name = "depict-test"
 root = "LeanSMILES.Tests.Depict"
+
+# The web API's Lean worker (server/workers/leanWorker.js spawns .lake/build/bin/worker)
+[[lean_exe]]
+name = "worker"
+root = "Worker"
