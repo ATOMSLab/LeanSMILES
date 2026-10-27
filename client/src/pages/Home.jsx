@@ -1,7 +1,7 @@
 import React from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowRight } from 'lucide-react'
-import { Card, Badge, Button, DataTable, Logo } from '../components/UI'
+import { Card, Badge, Button, DataTable } from '../components/UI'
 
 // Three short explanations for a visitor who knows neither chemistry
 // software nor proof assistants, before any code or theorem appears.
@@ -81,7 +81,6 @@ export default function Home() {
   return (
     <div className="space-y-10">
       <div className="py-6">
-        <Logo size="lg" className="mb-5" />
         <Badge active>Lean 4 · Mathlib · LeanSMILES · LeanLearn · Pipelines</Badge>
         <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight text-slate-900 mt-4 max-w-2xl">
           Molecules, machine learning and proofs — in one language.

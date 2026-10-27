@@ -363,18 +363,3 @@ export function DataTable({ columns, rows, maxHeight = 'max-h-96' }) {
     </div>
   )
 }
-
-// The project's logo: a grin. (The Lean logo is Lean FRO's trademark, and
-// their policy asks permission before it is combined with another mark, so the
-// site names Lean in words and does not use the mark.) `size` is 'sm' for the
-// navbar or 'lg' for the Home page hero.
-export function Logo({ size = 'sm', className = '' }) {
-  const face = size === 'lg' ? 'text-4xl sm:text-5xl' : 'text-lg'
-  return (
-    <span className={`inline-flex items-center ${className}`} role="img" aria-label="LeanSMILES">
-      <span className={`${face} leading-none`} aria-hidden="true">
-        😁
-      </span>
-    </span>
-  )
-}
