@@ -44,7 +44,10 @@ const MODEL_NOTES = {
       witness on this dataset's normal equations — diagonal dominance, ρ &lt; 1 — and the theorem{' '}
       <code className="font-mono">Pipeline.checkSolver_sound</code> proves that whenever that check passes, the solver's
       exact-real iterates land within ε of the optimal training loss. It does not cover the floating-point numbers shown
-      (the same code run in Float) or accuracy on the test set. At small λ the witness fails, and the page says so.
+      (the same code run in Float) or accuracy on the test set. The pipeline fits five count descriptors (heavy atoms,
+      bonds, hydrogens, aromatic atoms, heteroatoms), standardized, to the centred target — all in exact ℚ — so expect a
+      modest R²: the witness needs λ ≥ 4 on these datasets, and five counts carry less than 2048 Morgan bits. At small λ
+      the witness fails, and the page says so.
     </>
   ),
 }

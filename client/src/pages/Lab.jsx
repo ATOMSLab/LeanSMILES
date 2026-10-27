@@ -237,6 +237,16 @@ export default function Lab() {
   const activeLogs = errorInfo ? errorInfo.logs || [] : data?.logs || []
   const combinedLogs = [...activeLogs, ...(tanimotoData?.logs || [])]
   const diagnostics = buildDiagnostics(data, errorInfo)
+  // The evaluation trace and the checks: first on the page when there is an
+  // error to explain, last otherwise, so the drawing comes before the logs.
+  const logPanel = (
+    <LogConsole
+      logs={combinedLogs}
+      feedback={errorInfo ? errorInfo.leanFeedback : data?.leanFeedback}
+      diagnostics={diagnostics}
+      loading={loading}
+    />
+  )
 
   return (
     <div className="space-y-6">
@@ -287,16 +297,80 @@ export default function Lab() {
         </div>
       </Card>
 
-      <LogConsole
-        logs={combinedLogs}
-        feedback={errorInfo ? errorInfo.leanFeedback : data?.leanFeedback}
-        diagnostics={diagnostics}
-        loading={loading}
-      />
+      {errorInfo && logPanel}
 
       {mol && (
         <div className={`space-y-6 transition-opacity duration-150 ${loading || errorInfo ? 'opacity-50' : 'opacity-100'}`}>
           <div className="grid md:grid-cols-2 gap-6">
+            <Card
+              title={
+                viewMode === 'depict'
+                  ? '2D Molecule (LeanSMILES.Depict)'
+                  : viewMode === 'graph'
+                  ? 'SimpleGraph (Fin n)'
+                  : 'MDL Mol Block (V2000)'
+              }
+              subtitle={`${mol.n} atoms · ${mol.numBonds} bonds · ${mol.totalHydrogens} hydrogens`}
+              action={
+                <div className="flex gap-1">
+                  <Button
+                    variant={viewMode === 'depict' ? 'primary' : 'secondary'}
+                    onClick={() => setViewMode('depict')}
+                    className="!px-2.5 !py-1"
+                  >
+                    Molecule
+                  </Button>
+                  <Button
+                    variant={viewMode === 'graph' ? 'primary' : 'secondary'}
+                    onClick={() => setViewMode('graph')}
+                    className="!px-2.5 !py-1"
+                  >
+                    Graph (Fin n)
+                  </Button>
+                  <Button
+                    variant={viewMode === 'molblock' ? 'primary' : 'secondary'}
+                    onClick={() => setViewMode('molblock')}
+                    className="!px-2.5 !py-1"
+                  >
+                    .mol
+                  </Button>
+                </div>
+              }
+            >
+              {viewMode === 'molblock' ? (
+                <div className="relative">
+                  <div className="absolute top-2.5 right-2.5 flex gap-1">
+                    <Button
+                      variant="secondary"
+                      onClick={handleCopyMolBlock}
+                      className="!px-2 !py-1 inline-flex items-center gap-1"
+                    >
+                      {copiedMol ? <Check size={12} /> : <Copy size={12} />}
+                      {copiedMol ? 'Copied' : 'Copy'}
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={handleDownloadMolBlock}
+                      className="!px-2 !py-1 inline-flex items-center gap-1"
+                    >
+                      <Download size={12} /> .mol
+                    </Button>
+                  </div>
+                  <pre className="w-full h-60 overflow-auto rounded-xl bg-slate-900/2 border border-slate-200/60 p-3 text-[11px] font-mono text-slate-700 leading-snug">
+                    {mol.molBlock}
+                  </pre>
+                </div>
+              ) : (
+                <MoleculeGraph
+                  mode={viewMode}
+                  svg={mol.svg}
+                  atoms={mol.atoms}
+                  bonds={mol.bonds}
+                  coordinates={mol.coordinates}
+                />
+              )}
+            </Card>
+
             <Card
               title="Canonical LeanSMILES"
               subtitle="Color refinement + exhaustive tie-breaking (Mol.canonicalSmiles)"
@@ -366,75 +440,6 @@ export default function Lab() {
                   </div>
                 </div>
               </div>
-            </Card>
-
-            <Card
-              title={
-                viewMode === 'depict'
-                  ? '2D Molecule (LeanSMILES.Depict)'
-                  : viewMode === 'graph'
-                  ? 'SimpleGraph (Fin n)'
-                  : 'MDL Mol Block (V2000)'
-              }
-              subtitle={`${mol.n} atoms · ${mol.numBonds} bonds · ${mol.totalHydrogens} hydrogens`}
-              action={
-                <div className="flex gap-1">
-                  <Button
-                    variant={viewMode === 'depict' ? 'primary' : 'secondary'}
-                    onClick={() => setViewMode('depict')}
-                    className="!px-2.5 !py-1"
-                  >
-                    Molecule
-                  </Button>
-                  <Button
-                    variant={viewMode === 'graph' ? 'primary' : 'secondary'}
-                    onClick={() => setViewMode('graph')}
-                    className="!px-2.5 !py-1"
-                  >
-                    Graph (Fin n)
-                  </Button>
-                  <Button
-                    variant={viewMode === 'molblock' ? 'primary' : 'secondary'}
-                    onClick={() => setViewMode('molblock')}
-                    className="!px-2.5 !py-1"
-                  >
-                    .mol
-                  </Button>
-                </div>
-              }
-            >
-              {viewMode === 'molblock' ? (
-                <div className="relative">
-                  <div className="absolute top-2.5 right-2.5 flex gap-1">
-                    <Button
-                      variant="secondary"
-                      onClick={handleCopyMolBlock}
-                      className="!px-2 !py-1 inline-flex items-center gap-1"
-                    >
-                      {copiedMol ? <Check size={12} /> : <Copy size={12} />}
-                      {copiedMol ? 'Copied' : 'Copy'}
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      onClick={handleDownloadMolBlock}
-                      className="!px-2 !py-1 inline-flex items-center gap-1"
-                    >
-                      <Download size={12} /> .mol
-                    </Button>
-                  </div>
-                  <pre className="w-full h-60 overflow-auto rounded-xl bg-slate-900/2 border border-slate-200/60 p-3 text-[11px] font-mono text-slate-700 leading-snug">
-                    {mol.molBlock}
-                  </pre>
-                </div>
-              ) : (
-                <MoleculeGraph
-                  mode={viewMode}
-                  svg={mol.svg}
-                  atoms={mol.atoms}
-                  bonds={mol.bonds}
-                  coordinates={mol.coordinates}
-                />
-              )}
             </Card>
           </div>
 
@@ -597,6 +602,8 @@ export default function Lab() {
           </Card>
         </div>
       )}
+
+      {!errorInfo && logPanel}
     </div>
   )
 }

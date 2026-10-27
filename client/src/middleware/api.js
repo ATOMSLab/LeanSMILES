@@ -4,38 +4,13 @@ const rawBaseUrl = (
 const BASE_URL = rawBaseUrl.endsWith('/api') ? rawBaseUrl : `${rawBaseUrl}/api`
 
 export const PRESET_MOLECULES = [
-  {
-    name: 'Caffeine',
-    smiles: 'CN1C=NC2=C1C(=O)N(C)C(=O)N2C',
-  },
-  {
-    name: 'Nitrobenzene (cleanUp)',
-    smiles: 'c1ccccc1N(=O)=O',
-  },
-  {
-    name: 'L-Alanine (Stereo @)',
-    smiles: 'C[C@H](N)C(=O)O',
-  },
-  {
-    name: 'Cubane (3D Cage)',
-    smiles: 'C12C3C4C1C5C2C3C45',
-  },
-  {
-    name: 'cis-Alkene (F/C=C\\F)',
-    smiles: 'F/C=C\\F',
-  },
-  {
-    name: 'Kekulé Benzene',
-    smiles: 'C1=CC=CC=C1',
-  },
-  {
-    name: 'Charge Check ([C+123])',
-    smiles: 'C[C+123]',
-  },
-  {
-    name: 'Invalid: C(C)1CC1',
-    smiles: 'C(C)1CC1',
-  },
+  { name: 'Caffeine', smiles: 'CN1C=NC2=C1C(=O)N(C)C(=O)N2C' },
+  { name: 'Nitrobenzene', smiles: 'c1ccccc1N(=O)=O' },
+  { name: 'L-Alanine', smiles: 'C[C@H](N)C(=O)O' },
+  { name: 'Cubane', smiles: 'C12C3C4C1C5C2C3C45' },
+  { name: 'Kekulé Benzene', smiles: 'C1=CC=CC=C1' },
+  { name: 'C[C+7]', smiles: 'C[C+7]' },
+  { name: 'Invalid: C(C)1CC1', smiles: 'C(C)1CC1' },
 ]
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))

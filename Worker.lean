@@ -348,12 +348,15 @@ structure FitSample where
   name : String
   smiles : String
   mol : Mol
+  /-- `mol` aromatized (`mol` itself if that fails): what the fingerprint and the
+  certified pipeline's descriptors are read from. -/
+  aro : Mol
   bits : Array ℕ
   yFloat : Float
   yRat : ℚ
   isTest : Bool
 
-instance : Inhabited FitSample := ⟨⟨"", "", Mol.empty, #[], 0.0, 0, false⟩⟩
+instance : Inhabited FitSample := ⟨⟨"", "", Mol.empty, Mol.empty, #[], 0.0, 0, false⟩⟩
 
 def loadSamplesCached (cacheRef : IO.Ref (List (String × Array FitSample × Array String))) (tsvPath : String) :
     IO (Array FitSample × Array String) := do
@@ -379,6 +382,7 @@ def loadSamplesCached (cacheRef : IO.Ref (List (String × Array FitSample × Arr
             name := name.trimAscii.toString,
             smiles := smi.trimAscii.toString,
             mol := M,
+            aro := MA,
             bits := bits,
             yFloat := yf,
             yRat := parseRat yStr,
@@ -478,10 +482,27 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
       IO.println s!"__JSON_START__{out.compress}__JSON_END__"
   else if modelType == "gauss-seidel" || modelType == "jacobi" || modelType == "gradient-descent" then
     let m := trainSamples.size
-    let molVec : Vector Mol m := Vector.ofFn fun i => trainSamples[i.val]!.mol
-    let yVec : Vector ℚ m := Vector.ofFn fun i => trainSamples[i.val]!.yRat
+    let mQ : ℚ := m
+    -- The pipeline's exact ℚ problem: the five count descriptors of the aromatized
+    -- molecule, each centred on its training mean and divided by its training mean
+    -- absolute deviation, and the target centred on its training mean. The ridge
+    -- penalises the bias with the weights, so without the centring a boiling point
+    -- near 475 K is pulled toward 0 as soon as λ is large enough to certify; and
+    -- without the scaling the raw counts (hydrogens run past 40) are never
+    -- diagonally dominant. Both are part of the pipeline (its representation and its
+    -- data), so the certificate covers exactly the problem that is trained.
+    let trainCounts : Array (Vector ℚ 5) := trainSamples.map fun s => Representation.counts s.aro
+    let μ : Vector ℚ 5 := Vector.ofFn fun j => (trainCounts.foldl (fun acc v => acc + v[j]) (0 : ℚ)) / mQ
+    let σ : Vector ℚ 5 := Vector.ofFn fun j =>
+      let sj := (trainCounts.foldl (fun acc v => acc + |v[j] - μ[j]|) (0 : ℚ)) / mQ
+      if sj == 0 then 1 else sj
+    let rep : Representation 5 := fun M =>
+      let c := Representation.counts M
+      Vector.ofFn fun j => (c[j] - μ[j]) / σ[j]
+    let yBar : ℚ := (trainSamples.foldl (fun acc s => acc + s.yRat) (0 : ℚ)) / mQ
+    let molVec : Vector Mol m := Vector.ofFn fun i => trainSamples[i.val]!.aro
+    let yVec : Vector ℚ m := Vector.ofFn fun i => trainSamples[i.val]!.yRat - yBar
     let labelled : LabelledMolecules m := { molecules := molVec, targets := yVec }
-    let rep : Representation 9 := Representation.bondOrders 3
     let r2Bound : ℚ := 144
     let ridgeVal : ℚ := if alphaRat <= 0 then 1 else alphaRat
     let stepRat : ℚ := 1 / (2 * (r2Bound + 1 + ridgeVal))
@@ -489,7 +510,7 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
       if modelType == "jacobi" then .jacobi 30
       else if modelType == "gradient-descent" then .gradientDescent stepRat 800
       else .gaussSeidel 30
-    let pipe : Pipeline m 9 := { data := labelled, representation := rep, ridge := ridgeVal, algorithm := alg }
+    let pipe : Pipeline m 5 := { data := labelled, representation := rep, ridge := ridgeVal, algorithm := alg }
     let W := pipe.suggestWitness
     let rhoFloat := W.ratio.toFloat
     let certExcessOpt := pipe.certifiedSolverExcess
@@ -505,9 +526,11 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
         match certExcessOpt with
         | some e => s!"checkSolver = true (ρ = {fixed rhoFloat 3} < 1, excess ≤ {fixed e.toFloat 6})"
         | none => s!"uncertified (diagonal dominance ratio ρ = {fixed rhoFloat 2} ≥ 1; increase ridge λ)"
-    let θ : Vec Float 10 := pipe.model Float
-    let trainPairs : Array (Float × Float) := trainSamples.map fun s => (s.yFloat, pipe.predictWith θ s.mol)
-    let testPairs : Array (Float × Float) := testSamples.map fun s => (s.yFloat, pipe.predictWith θ s.mol)
+    let θ : Vec Float 6 := pipe.model Float
+    let yBarF := yBar.toFloat
+    let predictMol (s : FitSample) : Float := pipe.predictWith θ s.aro + yBarF
+    let trainPairs : Array (Float × Float) := trainSamples.map fun s => (s.yFloat, predictMol s)
+    let testPairs : Array (Float × Float) := testSamples.map fun s => (s.yFloat, predictMol s)
     let trR2 := r2 trainPairs
     let trRmse := rmse trainPairs
     let trMae := mae trainPairs
@@ -516,7 +539,7 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
     let teMae := mae testPairs
     let svg := paritySvg
       s!"Certified Pipeline ({modelType}, λ = {fixed ridgeVal.toFloat 1})"
-      s!"Pipelines.Pipeline on canonical bondOrders 3 · {certSummary}"
+      s!"Pipelines.Pipeline on 5 standardized count descriptors · {certSummary}"
       targetLabel
       [
         { label := "Training", points := trainPairs, r2 := trR2, rmse := trRmse, mae := trMae, filled := false },
@@ -528,10 +551,13 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
         ("smiles", toJson s.smiles),
         ("split", toJson (if s.isTest then "test" else "train")),
         ("actual", toJson s.yFloat),
-        ("predicted", toJson (pipe.predictWith θ s.mol))
+        ("predicted", toJson (predictMol s))
       ]
+    let names := #["Heavy Atoms (n)", "Bonds", "Total H", "Aromatic Atoms", "Heteroatoms"]
+    let topJson : Array Json := (List.range names.size).toArray.map fun j =>
+      Json.mkObj [("feature", toJson (names.getD j "")), ("weight", toJson (θ.toArray.getD j 0.0))]
     let logs : Array String := #[
-      s!"Pipeline.exactProblem ({m} molecules, Representation.bondOrders 3) --> 10×10 normal equations over ℚ",
+      s!"Pipeline.exactProblem ({m} molecules, Representation.counts centred and scaled by mean absolute deviation, target centred on {fixed yBarF 2}) --> 6×6 normal equations over ℚ",
       s!"pipe.suggestWitness.ratio --> ρ = {fixed rhoFloat 4} ({certSummary})",
       s!"pipe.model Float ({modelType}) --> train R² {fixed trR2 3}, test R² {fixed teR2 3}",
       s!"paritySvg --> generated SVG parity plot"
@@ -543,7 +569,7 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
       ("trainCount", toJson trainSamples.size),
       ("testCount", toJson testSamples.size),
       ("skippedCount", toJson skipped.size),
-      ("iterations", toJson (if modelType == "gradient-descent" then 1500 else 35)),
+      ("iterations", toJson (if modelType == "gradient-descent" then 800 else 30)),
       ("svg", toJson svg),
       ("certificate", Json.mkObj [
         ("certified", toJson isCertified),
@@ -558,6 +584,7 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
         ("testRmse", toJson teRmse),
         ("testMae", toJson teMae)
       ]),
+      ("topFeatures", toJson topJson),
       ("predictions", toJson predsJson),
       ("logs", toJson logs)
     ]
