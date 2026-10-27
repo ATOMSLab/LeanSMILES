@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f8fafc"/>
+      <stop offset="50%" stop-color="#f0fdfa"/>
+      <stop offset="100%" stop-color="#f1f5f9"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect x="56" y="56" width="1088" height="518" rx="28" fill="#ffffff" stroke="#e2e8f0" stroke-width="2"/>
+
+  <!-- Top Pill -->
+  <rect x="108" y="104" width="236" height="36" rx="18" fill="#f0fdfa" stroke="#99f6e4" stroke-width="1.5"/>
+  <circle cx="130" cy="122" r="5" fill="#0d9488"/>
+  <text x="146" y="128" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#0f766e">Formally Verified in Lean 4</text>
+
+  <!-- Brand Lockup: Lucide Atom Logo + leanSmiles -->
+  <g transform="translate(104, 168) scale(3.4)" fill="none" stroke="#0d9488" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="1" fill="#0d9488"/>
+    <path d="M20.2 20.2c2.04-2.03.02-7.36-4.5-11.9-4.54-4.52-9.87-6.54-11.9-4.5-2.04 2.03-.02 7.36 4.5 11.9 4.54 4.52 9.87 6.54 11.9 4.5Z"/>
+    <path d="M15.7 15.7c4.52-4.54 6.54-9.87 4.5-11.9-2.03-2.04-7.36-.02-11.9 4.5-4.52 4.54-6.54 9.87-4.5 11.9 2.03 2.04 7.36.02 11.9-4.5Z"/>
+  </g>
+  <text x="204" y="232" font-family="Helvetica, Arial, sans-serif" font-size="68" font-weight="700" fill="#0f172a" letter-spacing="-1.5">leanSmiles</text>
+
+  <!-- Headline & Subtitle -->
+  <text x="108" y="298" font-family="Helvetica, Arial, sans-serif" font-size="28" font-weight="600" fill="#1e293b">Formally Verified Cheminformatics &amp; Machine Learning in Lean 4</text>
+  <text x="108" y="346" font-family="Helvetica, Arial, sans-serif" font-size="21" fill="#64748b">OpenSMILES parser, canonicalizer, 2D depictions, Morgan fingerprints,</text>
+  <text x="108" y="378" font-family="Helvetica, Arial, sans-serif" font-size="21" fill="#64748b">and formally verified ridge regression &amp; ML pipelines.</text>
+
+  <!-- Code Block Pill -->
+  <rect x="108" y="416" width="690" height="64" rx="14" fill="#0f172a"/>
+  <text x="136" y="455" font-family="Menlo, Monaco, Courier, monospace" font-size="19" fill="#5eead4">theorem</text>
+  <text x="232" y="455" font-family="Menlo, Monaco, Courier, monospace" font-size="19" fill="#f8fafc">canonicalSmiles_relabeled</text>
+  <text x="540" y="455" font-family="Menlo, Monaco, Courier, monospace" font-size="19" fill="#94a3b8">: M1 ~ M2 -&gt; Prop</text>
+
+  <!-- Footer -->
+  <text x="108" y="530" font-family="Helvetica, Arial, sans-serif" font-size="17" font-weight="600" fill="#64748b">ATOMS Lab · Zero sorry axioms · LeanSMILES + LeanLearn + Pipelines</text>
+</svg>

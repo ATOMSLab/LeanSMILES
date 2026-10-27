@@ -5,7 +5,16 @@ import leanRoutes from './routes/leanRoutes.js'
 const app = express()
 const PORT = process.env.PORT || 8000
 
-app.use(cors())
+const corsOptions = {
+  origin: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With'],
+  credentials: true,
+  optionsSuccessStatus: 200,
+}
+
+app.use(cors(corsOptions))
+app.options('*', cors(corsOptions))
 app.use(express.json({ limit: '10mb' }))
 
 app.get('/', (_req, res) => {

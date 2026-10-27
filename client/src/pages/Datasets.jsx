@@ -13,25 +13,11 @@ const DATASET_TABS = [
     targetLabel: 'log solubility (log mol/L)',
   },
   {
-    id: 'egfr-actives',
-    label: 'ChEMBL EGFR Classification',
-    path: 'datasets/egfr-classification.csv',
-    defaultModel: 'logistic',
-    targetLabel: 'EGFR Active (0/1)',
-  },
-  {
     id: 'thermo',
     label: 'ThermoProperties Boiling Point',
     path: 'datasets/ThermoPropertiesSMILES.csv',
     defaultModel: 'sparse-ridge',
     targetLabel: 'Boiling Point (K)',
-  },
-  {
-    id: 'egfr-fda',
-    label: 'EGFR FDA Drugs',
-    path: 'datasets/EGFR-FDA.csv',
-    defaultModel: 'logistic',
-    targetLabel: 'EGFR Active (0/1)',
   },
 ]
 
@@ -41,7 +27,6 @@ const MODEL_OPTIONS = [
   { id: 'gauss-seidel', label: 'Certified Gauss–Seidel (ℚ Pipeline)' },
   { id: 'jacobi', label: 'Certified Jacobi (ℚ Pipeline)' },
   { id: 'gradient-descent', label: 'Certified Gradient Descent (ℚ Pipeline)' },
-  { id: 'logistic', label: 'Logistic Classification (2048 Bits + ROC)' },
 ]
 
 const PENALTY_OPTIONS = ['0.1', '1.0', '4.0', '16.0']
@@ -86,7 +71,7 @@ function parseUploadedCsv(text) {
   let targetIdx = headers.findIndex(
     (h, idx) =>
       idx !== smilesIdx &&
-      /solubility|logs|target|label|active|bp|boiling|y|value|ic50|pic50|score/i.test(h) &&
+      /solubility|logs|target|label|bp|boiling|y|value|score/i.test(h) &&
       !Number.isNaN(Number(rawRows[0]?.[idx]))
   )
   if (targetIdx === -1) {
@@ -239,10 +224,6 @@ export default function Datasets() {
       setTargetCol(parsed.targetIdx)
 
       const customRows = buildCustomRows(csvMeta, parsed.smilesIdx, parsed.targetIdx)
-      const values = customRows.map((r) => Number(r.target))
-      const isBinary = values.length > 0 && values.every((v) => v === 0 || v === 1)
-      const chosenModel = isBinary ? 'logistic' : modelType === 'logistic' ? 'sparse-ridge' : modelType
-      setModelType(chosenModel)
 
       setTableState({
         rows: customRows.slice(0, 50),
@@ -254,7 +235,7 @@ export default function Datasets() {
       runPipelineFit({
         dsId: 'custom',
         customRows,
-        model: chosenModel,
+        model: modelType,
         pen: alpha,
         label: parsed.headers[parsed.targetIdx] || 'Target',
       })
@@ -287,7 +268,7 @@ export default function Datasets() {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `lean-${datasetId}-${modelType}-plot.svg`
+    a.download = `lean-${datasetId}-${modelType}-parity.svg`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -305,18 +286,18 @@ export default function Datasets() {
   return (
     <div className="space-y-6">
       <SectionHeader
-        title="Datasets & Lean ML Pipeline"
-        description="Select a built-in benchmark or upload any CSV with SMILES and a target column to automatically fit Sparse Ridge, Householder-QR, Certified ℚ Iterative Solvers, or Logistic Classification in Lean 4."
+        title="Datasets & Lean Regression Pipeline"
+        description="Select a built-in benchmark or upload any CSV with SMILES and a numeric target column to fit Sparse Ridge, Householder-QR, or Certified ℚ Iterative Solvers in Lean 4."
         right={
           (fitting || loadingTable) && (
-            <SpinnerPill label={fitting ? 'Fitting model & rendering SVG in Lean 4...' : 'Parsing CSV in Lean 4...'} />
+            <SpinnerPill label={fitting ? 'Fitting regression & rendering parity plot...' : 'Parsing CSV in Lean 4...'} />
           )
         }
       />
 
       <Card
-        title="1. Dataset Source & Automated Model Fitting"
-        subtitle="Upload your own CSV (SMILES + target label) or pick a repository dataset"
+        title="1. Dataset Source & Regression Solver"
+        subtitle="Upload your own CSV (SMILES + numeric target) or pick a repository dataset"
         action={
           <div>
             <input
@@ -332,7 +313,7 @@ export default function Datasets() {
               className="inline-flex items-center gap-1.5"
             >
               <Upload size={13} />
-              {uploadedCsv ? `Uploaded: ${uploadedCsv.fileName}` : 'Upload CSV (SMILES + Label)'}
+              {uploadedCsv ? `Uploaded: ${uploadedCsv.fileName}` : 'Upload CSV (SMILES + Target)'}
             </Button>
           </div>
         }
@@ -399,7 +380,7 @@ export default function Datasets() {
           <div className="pt-3 border-t border-slate-200/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="space-y-1.5">
               <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
-                LeanLearn / Pipelines Model
+                LeanLearn / Pipelines Regression Model
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {MODEL_OPTIONS.map((m) => (
@@ -454,24 +435,20 @@ export default function Datasets() {
         <div className={`grid md:grid-cols-12 gap-6 transition-opacity duration-150 ${fitting ? 'opacity-55' : 'opacity-100'}`}>
           <Card
             className="md:col-span-6"
-            title={
-              fitResult.taskType === 'classification'
-                ? 'Lean ROC Curve SVG (LeanLearn.Classification.ROC)'
-                : 'Lean Parity Plot SVG (LeanLearn.Plot.paritySvg)'
-            }
+            title="Lean Parity Plot SVG (LeanLearn.Plot.paritySvg)"
             subtitle={`${fitResult.trainCount} train · ${fitResult.testCount} test molecules · ${fitResult.iterations} solver steps`}
             action={
               <Button
                 variant="secondary"
                 onClick={handleDownloadSvg}
-                className="px-2.5! py-1! inline-flex items-center gap-1"
+                className="!px-2.5 !py-1 inline-flex items-center gap-1"
               >
                 <Download size={12} /> .svg
               </Button>
             }
           >
             <div
-              className="w-full rounded-xl bg-white border border-slate-200/70 p-2 flex items-center justify-center overflow-hidden [&>svg]:w-full [&>svg]:h-auto [&>svg]:max-h-405"
+              className="w-full rounded-xl bg-white border border-slate-200/70 p-2 flex items-center justify-center overflow-hidden [&>svg]:w-full [&>svg]:h-auto [&>svg]:max-h-[405px]"
               dangerouslySetInnerHTML={{ __html: fitResult.svg }}
             />
           </Card>
@@ -479,16 +456,8 @@ export default function Datasets() {
           <Card
             className="md:col-span-6"
             title="Error Metrics, Certificates & Predictions"
-            subtitle={
-              fitResult.taskType === 'classification'
-                ? 'Evaluated by LeanLearn.Classification (accuracy, confusionMatrix, rocAuc)'
-                : 'Evaluated by LeanLearn.Regression.Metrics (r2, rmse, mae)'
-            }
-            action={
-              <Badge active>
-                {fitResult.taskType === 'classification' ? 'Classification' : 'Regression'}
-              </Badge>
-            }
+            subtitle="Evaluated by LeanLearn.Regression.Metrics (r2, rmse, mae)"
+            action={<Badge active>Regression</Badge>}
           >
             <div className="space-y-4">
               {fitResult.certificate && (
@@ -517,69 +486,35 @@ export default function Datasets() {
                 </div>
               )}
 
-              {fitResult.taskType === 'regression' ? (
-                <div className="grid grid-cols-3 gap-2.5">
-                  <div className="p-3 rounded-xl bg-slate-900/2 border border-slate-200/70">
-                    <p className="text-[11px] text-slate-400">Test R²</p>
-                    <p className="text-lg font-semibold font-mono text-slate-900 mt-0.5">
-                      {Number(fitResult.metrics.testR2).toFixed(3)}
-                    </p>
-                    <p className="text-[10px] font-mono text-slate-400">
-                      Train: {Number(fitResult.metrics.trainR2).toFixed(3)}
-                    </p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-slate-900/2 border border-slate-200/70">
-                    <p className="text-[11px] text-slate-400">Test RMSE</p>
-                    <p className="text-lg font-semibold font-mono text-teal-700 mt-0.5">
-                      {Number(fitResult.metrics.testRmse).toFixed(3)}
-                    </p>
-                    <p className="text-[10px] font-mono text-slate-400">
-                      Train: {Number(fitResult.metrics.trainRmse).toFixed(3)}
-                    </p>
-                  </div>
-                  <div className="p-3 rounded-xl bg-slate-900/2 border border-slate-200/70">
-                    <p className="text-[11px] text-slate-400">Test MAE</p>
-                    <p className="text-lg font-semibold font-mono text-slate-900 mt-0.5">
-                      {Number(fitResult.metrics.testMae).toFixed(3)}
-                    </p>
-                    <p className="text-[10px] font-mono text-slate-400">
-                      Train: {Number(fitResult.metrics.trainMae).toFixed(3)}
-                    </p>
-                  </div>
+              <div className="grid grid-cols-3 gap-2.5">
+                <div className="p-3 rounded-xl bg-slate-900/[0.02] border border-slate-200/70">
+                  <p className="text-[11px] text-slate-400">Test R²</p>
+                  <p className="text-lg font-semibold font-mono text-slate-900 mt-0.5">
+                    {Number(fitResult.metrics?.testR2 ?? 0).toFixed(3)}
+                  </p>
+                  <p className="text-[10px] font-mono text-slate-400">
+                    Train: {Number(fitResult.metrics?.trainR2 ?? 0).toFixed(3)}
+                  </p>
                 </div>
-              ) : (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-3 gap-2.5">
-                    <div className="p-3 rounded-xl bg-slate-900/2 border border-slate-200/70">
-                      <p className="text-[11px] text-slate-400">Test ROC AUC</p>
-                      <p className="text-lg font-semibold font-mono text-teal-700 mt-0.5">
-                        {Number(fitResult.metrics.rocAuc).toFixed(3)}
-                      </p>
-                      <p className="text-[10px] font-mono text-slate-400">
-                        F1: {Number(fitResult.metrics.f1).toFixed(3)}
-                      </p>
-                    </div>
-                    <div className="p-3 rounded-xl bg-slate-900/2 border border-slate-200/70">
-                      <p className="text-[11px] text-slate-400">Test Accuracy</p>
-                      <p className="text-lg font-semibold font-mono text-slate-900 mt-0.5">
-                        {(Number(fitResult.metrics.testAccuracy) * 100).toFixed(1)}%
-                      </p>
-                      <p className="text-[10px] font-mono text-slate-400">
-                        Train: {(Number(fitResult.metrics.trainAccuracy) * 100).toFixed(1)}%
-                      </p>
-                    </div>
-                    <div className="p-3 rounded-xl bg-slate-900/2 border border-slate-200/70">
-                      <p className="text-[11px] text-slate-400">Confusion Matrix</p>
-                      <p className="text-xs font-mono text-slate-800 mt-1">
-                        TN:{fitResult.metrics.confusionMatrix?.[0]?.[0]} FP:{fitResult.metrics.confusionMatrix?.[0]?.[1]}
-                      </p>
-                      <p className="text-xs font-mono text-teal-700">
-                        FN:{fitResult.metrics.confusionMatrix?.[1]?.[0]} TP:{fitResult.metrics.confusionMatrix?.[1]?.[1]}
-                      </p>
-                    </div>
-                  </div>
+                <div className="p-3 rounded-xl bg-slate-900/[0.02] border border-slate-200/70">
+                  <p className="text-[11px] text-slate-400">Test RMSE</p>
+                  <p className="text-lg font-semibold font-mono text-teal-700 mt-0.5">
+                    {Number(fitResult.metrics?.testRmse ?? 0).toFixed(3)}
+                  </p>
+                  <p className="text-[10px] font-mono text-slate-400">
+                    Train: {Number(fitResult.metrics?.trainRmse ?? 0).toFixed(3)}
+                  </p>
                 </div>
-              )}
+                <div className="p-3 rounded-xl bg-slate-900/[0.02] border border-slate-200/70">
+                  <p className="text-[11px] text-slate-400">Test MAE</p>
+                  <p className="text-lg font-semibold font-mono text-slate-900 mt-0.5">
+                    {Number(fitResult.metrics?.testMae ?? 0).toFixed(3)}
+                  </p>
+                  <p className="text-[10px] font-mono text-slate-400">
+                    Train: {Number(fitResult.metrics?.trainMae ?? 0).toFixed(3)}
+                  </p>
+                </div>
+              </div>
 
               {fitResult.topFeatures?.length > 0 && (
                 <div>
@@ -612,7 +547,7 @@ export default function Datasets() {
                     },
                     {
                       key: 'predicted',
-                      label: fitResult.taskType === 'classification' ? 'P(active)' : 'Predicted',
+                      label: 'Predicted',
                       render: (v) => (
                         <code className="font-mono text-teal-700 font-semibold">
                           {typeof v === 'number' ? Number(v.toFixed(3)) : v}
@@ -642,7 +577,7 @@ export default function Datasets() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Filter rows..."
-              className="px-3 py-1.5 rounded-xl bg-slate-900/2 border border-slate-200/80 text-xs focus:outline-none"
+              className="px-3 py-1.5 rounded-xl bg-slate-900/[0.02] border border-slate-200/80 text-xs focus:outline-none"
             />
           </div>
         }

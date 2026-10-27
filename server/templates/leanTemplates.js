@@ -56,15 +56,13 @@ import LeanLearn.Regression.Metrics
 import LeanLearn.Regression.Solvers
 import LeanLearn.Regression.Certificates
 import LeanLearn.Plot.Parity
-import LeanLearn.Classification.Logistic
-import LeanLearn.Classification.ROC
 import Pipelines.Representation
 import Pipelines.Pipeline
 import Pipelines.Certificates
 import Lean.Data.Json
 
 open LeanSMILES LeanSMILES.SMILES LeanSMILES.Molecule Lean
-open LeanLearn LeanLearn.Regression LeanLearn.Plot LeanLearn.Classification Pipelines
+open LeanLearn LeanLearn.Regression LeanLearn.Plot Pipelines
 
 def tokenLabel (t : Token) : String :=
   match t.kind with
@@ -114,34 +112,6 @@ def parseRat (s : String) : ℚ :=
     | [i] => (i.toNat?.getD 0 : ℚ)
     | _ => 0
   if neg then -q else q
-
-def rocSvg (title subtitle : String) (curve : Array (Float × Float)) (aucVal : Float) : String := Id.run do
-  let (W, H, L, R, T) := ((600 : Float), (640 : Float), (78 : Float), (26 : Float), (92 : Float))
-  let size := W - L - R
-  let sx (v : Float) := L + v * size
-  let sy (v : Float) := T + size - v * size
-  let c (v : Float) := fixed v 1
-  let mut out := s!"<svg xmlns=\\"http://www.w3.org/2000/svg\\" viewBox=\\"0 0 {c W} {c H}\\" width=\\"{c W}\\" height=\\"{c H}\\" font-family=\\"Helvetica, Arial, sans-serif\\">\\n"
-  out := out ++ s!"<rect width=\\"{c W}\\" height=\\"{c H}\\" fill=\\"#ffffff\\"/>\\n"
-  out := out ++ s!"<text x=\\"{c L}\\" y=\\"34\\" font-size=\\"19\\" font-weight=\\"700\\" fill=\\"#172026\\">{title}</text>\\n"
-  out := out ++ s!"<text x=\\"{c L}\\" y=\\"56\\" font-size=\\"13\\" fill=\\"#5b6a73\\">{subtitle}</text>\\n"
-  for k in [0:6] do
-    let v := k.toFloat * 0.2
-    out := out ++ s!"<line x1=\\"{c (sx v)}\\" y1=\\"{c T}\\" x2=\\"{c (sx v)}\\" y2=\\"{c (T + size)}\\" stroke=\\"#e3e9ec\\"/>\\n"
-    out := out ++ s!"<line x1=\\"{c L}\\" y1=\\"{c (sy v)}\\" x2=\\"{c (L + size)}\\" y2=\\"{c (sy v)}\\" stroke=\\"#e3e9ec\\"/>\\n"
-    out := out ++ s!"<text x=\\"{c (sx v)}\\" y=\\"{c (T + size + 20)}\\" font-size=\\"12\\" text-anchor=\\"middle\\" fill=\\"#5b6a73\\">{fixed v 1}</text>\\n"
-    out := out ++ s!"<text x=\\"{c (L - 10)}\\" y=\\"{c (sy v + 4)}\\" font-size=\\"12\\" text-anchor=\\"end\\" fill=\\"#5b6a73\\">{fixed v 1}</text>\\n"
-  out := out ++ s!"<line x1=\\"{c (sx 0)}\\" y1=\\"{c (sy 0)}\\" x2=\\"{c (sx 1)}\\" y2=\\"{c (sy 1)}\\" stroke=\\"#9fb0b9\\" stroke-width=\\"1.2\\" stroke-dasharray=\\"5 4\\"/>\\n"
-  if curve.size > 1 then
-    let ptsStr := String.intercalate " " (curve.toList.map fun (x, y) => s!"{c (sx x)},{c (sy y)}")
-    let areaStr := s!"{c (sx 0)},{c (sy 0)} " ++ ptsStr ++ s!" {c (sx 1)},{c (sy 0)}"
-    out := out ++ s!"<polygon points=\\"{areaStr}\\" fill=\\"#0d9488\\" fill-opacity=\\"0.10\\"/>\\n"
-    out := out ++ s!"<polyline points=\\"{ptsStr}\\" fill=\\"none\\" stroke=\\"#0d9488\\" stroke-width=\\"2.5\\"/>\\n"
-  out := out ++ s!"<rect x=\\"{c L}\\" y=\\"{c T}\\" width=\\"{c size}\\" height=\\"{c size}\\" fill=\\"none\\" stroke=\\"#9fb0b9\\"/>\\n"
-  out := out ++ s!"<text x=\\"{c (L + 18)}\\" y=\\"{c (T + 26)}\\" font-size=\\"13\\" font-weight=\\"600\\" fill=\\"#0f766e\\">ROC AUC = {fixed aucVal 3}</text>\\n"
-  out := out ++ s!"<text x=\\"{c (L + size / 2)}\\" y=\\"{c (H - 18)}\\" font-size=\\"14\\" text-anchor=\\"middle\\" fill=\\"#172026\\">False Positive Rate (FPR)</text>\\n"
-  out := out ++ s!"<text transform=\\"translate(22 {c (T + size / 2)}) rotate(-90)\\" font-size=\\"14\\" text-anchor=\\"middle\\" fill=\\"#172026\\">True Positive Rate (TPR)</text>\\n"
-  return out ++ "</svg>\\n"
 
 structure MolSnap where
   canon : String
@@ -365,71 +335,6 @@ def runDataset (datasetId : String) : IO Unit := do
       ("logs", toJson logs)
     ]
     IO.println s!"__JSON_START__{out.compress}__JSON_END__"
-  else if datasetId == "egfr-fda" then
-    let path := "datasets/EGFR-FDA.csv"
-    let raw ← IO.FS.readFile path
-    let lines := (raw.splitOn "\\n").map (fun l => (l.dropEndWhile (· == '\\r')).toString) |>.filter (fun l => !l.trimAscii.isEmpty)
-    let rowsJson : Array Json := lines.toArray.map fun line =>
-      let cells := CSVparser.splitLine line
-      let smi := (cells.getD 0 "").trimAscii.toString
-      let name := (cells.getD 1 "").trimAscii.toString
-      let (atoms, bonds, canon, bitsCount) := match parse smi with
-        | .ok M => (M.n, M.mol.numBonds, M.canonicalSmiles, M.morganBits.length)
-        | .error _ => (0, 0, smi, 0)
-      Json.mkObj [
-        ("name", toJson name),
-        ("smiles", toJson smi),
-        ("canonicalSmiles", toJson canon),
-        ("atoms", toJson atoms),
-        ("bonds", toJson bonds),
-        ("metricLabel", toJson "Morgan Bits"),
-        ("metricValue", toJson bitsCount)
-      ]
-    let logs : Array String := #[
-      s!"CSVparser.splitLine \\"{path}\\" --> {lines.length} FDA-approved EGFR inhibitors",
-      s!"lines.map (Mol.ofSmiles! ·).canonicalSmiles --> {lines.length} molecules evaluated"
-    ]
-    let out := Json.mkObj [
-      ("ok", toJson true),
-      ("datasetId", toJson datasetId),
-      ("totalCount", toJson lines.length),
-      ("rows", toJson rowsJson),
-      ("logs", toJson logs)
-    ]
-    IO.println s!"__JSON_START__{out.compress}__JSON_END__"
-  else if datasetId == "egfr-actives" then
-    let path := "datasets/Chembl_EGFR_actives_ML.csv"
-    let raw ← IO.FS.readFile path
-    let lines := (raw.splitOn "\\n").map (fun l => (l.dropEndWhile (· == '\\r')).toString) |>.drop 1 |>.filter (fun l => !l.trimAscii.isEmpty)
-    let slice := lines.take 25
-    let rowsJson : Array Json := slice.toArray.map fun line =>
-      let cells := CSVparser.splitLine line
-      let smi := (cells.getD 0 "").trimAscii.toString
-      let chemblId := (cells.getD 1 "").trimAscii.toString
-      let (atoms, bonds, canon, bitsCount) := match parse smi with
-        | .ok M => (M.n, M.mol.numBonds, M.canonicalSmiles, M.morganBits.length)
-        | .error _ => (0, 0, smi, 0)
-      Json.mkObj [
-        ("name", toJson chemblId),
-        ("smiles", toJson smi),
-        ("canonicalSmiles", toJson canon),
-        ("atoms", toJson atoms),
-        ("bonds", toJson bonds),
-        ("metricLabel", toJson "Morgan Bits"),
-        ("metricValue", toJson bitsCount)
-      ]
-    let logs : Array String := #[
-      s!"CSVparser.splitLine \\"{path}\\" --> {lines.length} ChEMBL EGFR active compounds",
-      s!"slice.map (Mol.ofSmiles! ·).canonicalSmiles --> {rowsJson.size} molecules evaluated"
-    ]
-    let out := Json.mkObj [
-      ("ok", toJson true),
-      ("datasetId", toJson datasetId),
-      ("totalCount", toJson lines.length),
-      ("rows", toJson rowsJson),
-      ("logs", toJson logs)
-    ]
-    IO.println s!"__JSON_START__{out.compress}__JSON_END__"
   else
     let path := "datasets/ThermoPropertiesSMILES.csv"
     let raw ← IO.FS.readFile path
@@ -527,79 +432,7 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
   let alphaFloat := (parseSigned? alphaStr).getD 1.0
   let alphaRat := parseRat alphaStr
 
-  if modelType == "logistic" then
-    let ys := samples.map (·.yFloat)
-    let isZeroOne := ys.all (fun y => y == 0.0 || y == 1.0)
-    let sortedY := ys.toList.mergeSort (· ≤ ·)
-    let threshold := if isZeroOne then 0.5 else sortedY.getD (sortedY.length / 2) 0.0
-    let trainData : Array (SparseBits × Bool) := trainSamples.map fun s => (s.bits, s.yFloat > threshold)
-    let testData : Array (SparseBits × Bool) := testSamples.map fun s => (s.bits, s.yFloat > threshold)
-    let cVal := if alphaFloat > 0.0 then 1.0 / alphaFloat else 1.0
-    let cfg : LogisticConfig Float := { C := cVal, maxIter := 500, tol := 0.0001 }
-    let (model, iters) := fitLogistic cfg 2048 trainData
-    let trainAcc := accuracy model trainData
-    let testAcc := accuracy model testData
-    let cm := confusionMatrix model testData
-    let tn := (cm.getD 0 []).getD 0 0
-    let fp := (cm.getD 0 []).getD 1 0
-    let fn := (cm.getD 1 []).getD 0 0
-    let tp := (cm.getD 1 []).getD 1 0
-    let prec : Float := if tp + fp == 0 then 0.0 else tp.toFloat / (tp + fp).toFloat
-    let recVal : Float := if tp + fn == 0 then 0.0 else tp.toFloat / (tp + fn).toFloat
-    let f1Val : Float := if prec + recVal == 0.0 then 0.0 else 2.0 * prec * recVal / (prec + recVal)
-    let testScores : Array (Float × Bool) := testSamples.map fun s => (model.proba s.bits, s.yFloat > threshold)
-    let curve := rocCurve testScores
-    let aucVal := auc curve
-    let svg := rocSvg
-      s!"Logistic Classification ROC Curve (C = {fixed cVal 2})"
-      s!"LeanSMILES + LeanLearn: Nesterov AGD ({iters} steps) on 2048 Morgan bits"
-      curve aucVal
-    let topWeights := ((List.range 2048).map fun j => (j, model.weights.getD j 0.0)).mergeSort
-      (fun a b => a.2.abs ≥ b.2.abs) |>.take 6
-    let topJson : Array Json := topWeights.toArray.map fun (bit, w) =>
-      Json.mkObj [("feature", toJson s!"Bit #{bit}"), ("weight", toJson w)]
-    let predsJson : Array Json := (samples.take 20).map fun s =>
-      let prob := model.proba s.bits
-      let actual := if s.yFloat > threshold then 1 else 0
-      let pred := if prob >= 0.5 then 1 else 0
-      Json.mkObj [
-        ("name", toJson s.name),
-        ("smiles", toJson s.smiles),
-        ("split", toJson (if s.isTest then "test" else "train")),
-        ("actual", toJson actual),
-        ("predicted", toJson prob),
-        ("correct", toJson (actual == pred))
-      ]
-    let logs : Array String := #[
-      s!"morganFeatures (×{samples.size}) --> {trainSamples.size} train, {testSamples.size} test (skipped {skipped.size})",
-      s!"fitLogistic (C = {fixed cVal 2}) 2048 train --> converged in {iters} Nesterov steps",
-      s!"accuracy model test --> {fixed testAcc 3} (train: {fixed trainAcc 3})",
-      s!"rocAuc testScores --> {fixed aucVal 3} · F1 {fixed f1Val 3} · confusion [[{tn}, {fp}], [{fn}, {tp}]]"
-    ]
-    let out := Json.mkObj [
-      ("ok", toJson true),
-      ("taskType", toJson "classification"),
-      ("modelType", toJson modelType),
-      ("trainCount", toJson trainSamples.size),
-      ("testCount", toJson testSamples.size),
-      ("skippedCount", toJson skipped.size),
-      ("iterations", toJson iters),
-      ("svg", toJson svg),
-      ("metrics", Json.mkObj [
-        ("trainAccuracy", toJson trainAcc),
-        ("testAccuracy", toJson testAcc),
-        ("precision", toJson prec),
-        ("recall", toJson recVal),
-        ("f1", toJson f1Val),
-        ("rocAuc", toJson aucVal),
-        ("confusionMatrix", toJson #[(#[tn, fp] : Array ℕ), #[fn, tp]])
-      ]),
-      ("topFeatures", toJson topJson),
-      ("predictions", toJson predsJson),
-      ("logs", toJson logs)
-    ]
-    IO.println s!"__JSON_START__{out.compress}__JSON_END__"
-  else if modelType == "dense-qr" then
+  if modelType == "dense-qr" then
     let featOf (M : Mol) : Array Float :=
       let c := (Representation.counts M).toArray.map Rat.toFloat
       #[1.0] ++ c

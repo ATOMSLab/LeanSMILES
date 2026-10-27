@@ -3,6 +3,7 @@ import { Routes, Route } from 'react-router-dom'
 import Home from '../pages/Home'
 import Lab from '../pages/Lab'
 import Datasets from '../pages/Datasets'
+import NotFound from '../pages/NotFound'
 
 export default function AppRoutes() {
   return (
@@ -10,6 +11,7 @@ export default function AppRoutes() {
       <Route path="/" element={<Home />} />
       <Route path="/lab" element={<Lab />} />
       <Route path="/datasets" element={<Datasets />} />
+      <Route path="*" element={<NotFound />} />
     </Routes>
   )
 }

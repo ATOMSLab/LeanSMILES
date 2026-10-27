@@ -11,13 +11,13 @@ const LIBRARIES = [
   },
   {
     title: 'LeanLearn',
-    code: 'Regression · Classification · Proofs',
-    desc: 'Closed-form & iterative OLS/Ridge, SparseRidge on 2048 bits, Nesterov logistic regression, and ℝ convergence certificates.',
+    code: 'Regression · Solvers · Parity · Proofs',
+    desc: 'Closed-form & iterative OLS/Ridge, Householder-QR, SparseRidge on 2048 Morgan bits, SVG parity plots, and ℝ convergence certificates.',
   },
   {
     title: 'Pipelines',
-    code: 'Representation · Certificates · Delaney/EGFR',
-    desc: 'Certified molecular ML pipelines connecting Molecule n representations (Mol → ℚᵈ) to verified solvers.',
+    code: 'Representation · Certificates · Delaney',
+    desc: 'Formally verified molecular regression pipelines connecting Molecule n representations (Mol → ℚᵈ) to certified solvers.',
   },
 ]
 

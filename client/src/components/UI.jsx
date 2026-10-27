@@ -51,10 +51,10 @@ export function highlightLeanTokens(code = '') {
 
 export function Card({ title, subtitle, action, className = '', children }) {
   return (
-    <div className={`glass rounded-2xl p-6 ${className}`}>
+    <div className={`glass rounded-2xl p-4 sm:p-6 min-w-0 max-w-full ${className}`}>
       {(title || action) && (
-        <div className="flex items-center justify-between gap-4 mb-4">
-          <div>
+        <div className="flex flex-wrap items-center justify-between gap-2 sm:gap-4 mb-4">
+          <div className="min-w-0">
             {title && <h3 className="text-sm font-semibold text-slate-900">{title}</h3>}
             {subtitle && <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>}
           </div>
@@ -116,10 +116,10 @@ export function SectionHeader({ title, description, right }) {
 export function CodeBlock({ code }) {
   const lines = String(code || '').split('\n')
   return (
-    <div className="rounded-xl bg-[#0d131a] border border-slate-800/90 py-3 text-xs font-mono overflow-x-auto leading-relaxed shadow-inner">
+    <div className="w-full max-w-full rounded-xl bg-[#0d131a] border border-slate-800/90 py-2.5 sm:py-3 text-[11px] sm:text-xs font-mono overflow-x-auto leading-relaxed shadow-inner">
       {lines.map((line, idx) => {
         if (!line.trim()) {
-          return <div key={idx} className="h-3.5" />
+          return <div key={idx} className="h-3" />
         }
         if (line.includes('-->')) {
           const [expr, res] = line.split('-->').map((s) => s.trim())
@@ -127,17 +127,26 @@ export function CodeBlock({ code }) {
           return (
             <div
               key={idx}
-              className="px-4 py-1 bg-[#0c2331]/85 flex flex-wrap items-baseline justify-between gap-x-5 gap-y-1"
+              className="px-3 sm:px-4 py-1 bg-[#0c2331]/85 flex flex-col sm:flex-row sm:flex-wrap sm:items-baseline justify-between gap-x-4 gap-y-0.5"
             >
-              <span className="whitespace-pre">{highlightLeanTokens(expr)}</span>
-              <span className={`font-medium ${isErr ? 'text-rose-400' : 'text-[#2ac3de]'}`}>
+              <span className="whitespace-pre-wrap break-all sm:break-normal sm:whitespace-pre">
+                {highlightLeanTokens(expr)}
+              </span>
+              <span
+                className={`font-medium break-all sm:break-normal ${
+                  isErr ? 'text-rose-400' : 'text-[#2ac3de]'
+                }`}
+              >
                 {res}
               </span>
             </div>
           )
         }
         return (
-          <div key={idx} className="px-4 py-0.5 whitespace-pre">
+          <div
+            key={idx}
+            className="px-3 sm:px-4 py-0.5 whitespace-pre-wrap break-words sm:whitespace-pre"
+          >
             {highlightLeanTokens(line)}
           </div>
         )
@@ -199,10 +208,10 @@ export function LogConsole({ logs = [], feedback, diagnostics, loading = false }
           )
         }
       >
-        <div className="rounded-xl border border-slate-800/90 bg-[#0d131a] overflow-hidden max-h-72 overflow-y-auto py-2 font-mono text-xs shadow-inner">
-          <div className="px-3.5 py-1 text-[11px] text-slate-500 border-b border-slate-800/70 mb-1 flex items-center justify-between">
-            <span>{highlightLeanTokens('open LeanSMILES LeanSMILES.SMILES')}</span>
-            <span className="text-[10px] text-slate-500">Lean 4.29.0</span>
+        <div className="w-full max-w-full rounded-xl border border-slate-800/90 bg-[#0d131a] overflow-x-auto max-h-72 overflow-y-auto py-2 font-mono text-[11px] sm:text-xs shadow-inner">
+          <div className="px-3 sm:px-3.5 py-1 text-[10px] sm:text-[11px] text-slate-500 border-b border-slate-800/70 mb-1 flex items-center justify-between gap-2">
+            <span className="truncate">{highlightLeanTokens('open LeanSMILES LeanSMILES.SMILES')}</span>
+            <span className="text-[10px] text-slate-500 shrink-0">Lean 4.29.0</span>
           </div>
           <div className="divide-y divide-slate-800/40">
             {logs.map((line, i) => {
@@ -210,19 +219,19 @@ export function LogConsole({ logs = [], feedback, diagnostics, loading = false }
               return (
                 <div
                   key={i}
-                  className={`px-3.5 py-1.5 flex flex-col sm:flex-row sm:items-baseline justify-between gap-x-4 gap-y-1 transition ${
+                  className={`px-3 sm:px-3.5 py-1.5 flex flex-col sm:flex-row sm:items-baseline justify-between gap-x-4 gap-y-1 transition ${
                     res ? 'bg-[#0c2331]/75 hover:bg-[#0c2331]' : 'hover:bg-slate-900/60'
                   }`}
                 >
-                  <div className="flex items-baseline gap-2.5 min-w-0">
+                  <div className="flex items-baseline gap-2 min-w-0">
                     <span className="text-[10px] text-slate-600 select-none w-4 shrink-0">
                       {String(i + 1).padStart(2, '0')}
                     </span>
-                    <span className="truncate">{highlightLeanTokens(cmd)}</span>
+                    <span className="break-all sm:truncate">{highlightLeanTokens(cmd)}</span>
                   </div>
                   {res && (
                     <span
-                      className={`text-[11px] font-medium truncate max-w-full sm:max-w-xs shrink-0 ${
+                      className={`text-[11px] font-medium break-all sm:truncate max-w-full sm:max-w-xs shrink-0 pl-6 sm:pl-0 ${
                         isErr ? 'text-rose-400' : 'text-[#2ac3de]'
                       }`}
                       title={res}

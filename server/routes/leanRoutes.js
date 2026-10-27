@@ -57,21 +57,6 @@ function buildDatasetTsv(datasetId, customRows) {
     return relPath
   }
 
-  if (datasetId === 'egfr' || datasetId === 'egfr-actives' || datasetId === 'egfr-fda') {
-    const raw = fs.readFileSync(path.join(REPO_ROOT, 'datasets/egfr-classification.csv'), 'utf8')
-    const lines = raw.split(/\r?\n/).slice(1).filter((l) => l.trim())
-    const rows = []
-    for (const line of lines) {
-      const [name, smiles, active, split] = line.split(',')
-      if ((split === 'train' || split === 'test') && (active === '0' || active === '1')) {
-        rows.push(`${name}\t${smiles}\t${active}\t${split}`)
-      }
-    }
-    const relPath = `server/.cache/fit-egfr-${maxRows}.tsv`
-    fs.writeFileSync(path.join(REPO_ROOT, relPath), rows.slice(0, maxRows).join('\n'), 'utf8')
-    return relPath
-  }
-
   if (datasetId === 'thermo') {
     const raw = fs.readFileSync(path.join(REPO_ROOT, 'datasets/ThermoPropertiesSMILES.csv'), 'utf8')
     const lines = raw.split(/\r?\n/).slice(1).filter((l) => l.trim())
