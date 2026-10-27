@@ -170,10 +170,30 @@ export default function Home() {
         />
       </Card>
 
-      <p className="text-xs text-slate-400 leading-relaxed max-w-2xl">
-        Built by AI coding agents guided by human experts, as a demonstration that formally verified scientific software
-        can be made quickly. Next: documenting the approach so that scientists and engineers in other fields can use it.
-      </p>
+      <div className="border-t border-slate-100 pt-6 space-y-3 text-xs text-slate-400 leading-relaxed max-w-2xl">
+        <p>
+          Built by AI coding agents guided by human experts at the{' '}
+          <a
+            href="https://llmhackathon.github.io"
+            target="_blank"
+            rel="noreferrer"
+            className="text-teal-700 hover:underline"
+          >
+            Open Scientific Intelligence (OSI) Hackathon
+          </a>
+          , as a demonstration that formally verified scientific software can be made quickly. Next: documenting the
+          approach so that scientists and engineers in other fields can use it.
+        </p>
+        <p>
+          <span className="font-medium text-slate-600">Special thanks to the team!</span> Demarko Fulcher, Ejike David
+          Ugwuanyi, Kevin Ishimwe, Samiha Sharlin, Hao Liu, Alex Haibel, Izzy Shahmoradi, Tyler R. Josephson
+        </p>
+        <p>
+          This is based on work sponsored in part by the NSF CAREER Award #2236769, DARPA for the SciFy program under
+          agreement number HR00112520301, the Army Research Office/Army Research Laboratory via grant
+          #W911-NF-24-1-0399, an Amazon Research Award, and a Simons Foundation Pivot Fellowship.
+        </p>
+      </div>
     </div>
   )
 }
