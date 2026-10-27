@@ -124,15 +124,19 @@ structure MolSnap where
   atomsJson : Array Json
   bondsJson : Array Json
   matJson : Array Json
+  pos : Array Depict.Pt
 
-def buildMolSnap (M : Mol) : MolSnap :=
+/-- Everything the interpreter shows for one molecule. The 2D layout is the
+expensive step (hundreds of stress-majorisation sweeps), so a caller that
+already has one for the same skeleton passes it in as pos?. -/
+def buildMolSnap (M : Mol) (pos? : Option (Array Depict.Pt) := none) : MolSnap :=
   let inRing := M.mol.inRingVector
   let B := M.mol.toBondMatrix
   let canon := M.canonicalSmiles
   let bits := M.morganBits
   let totalH := ((List.finRange M.n).map fun i => (M.mol.atom i).totalH).sum
   let dg := Depict.Graph.ofMol M
-  let pos := Depict.layout dg
+  let pos := match pos? with | some p => p | none => Depict.layout dg
   let svgStr := (Depict.svgWith dg pos 36).render
   let molBlk := Depict.molBlockWith dg pos
   let initRanks := M.mol.toMolData.initialRanks
@@ -165,7 +169,7 @@ def buildMolSnap (M : Mol) : MolSnap :=
     ]
   let matJson : Array Json := (List.finRange M.n).toArray.map fun i =>
     toJson ((List.finRange M.n).toArray.map fun j => ratStr (B i j))
-  { canon, bits, totalH, symClasses, svgStr, molBlk, coordsJson, atomsJson, bondsJson, matJson }
+  { canon, bits, totalH, symClasses, svgStr, molBlk, coordsJson, atomsJson, bondsJson, matJson, pos }
 
 def runParse (s : String) : IO Unit := do
   match tokenize s, parse s with
@@ -178,7 +182,8 @@ def runParse (s : String) : IO Unit := do
       | .error msg => (Json.mkObj [("ok", toJson false), ("message", toJson msg)], s!"Except.error \\"{msg}\\"")
     let (aromStatus, aromLog) := match M.aromatize with
       | .ok MA =>
-        let snapA := buildMolSnap MA
+        -- aromatization changes bond kinds, not the skeleton: reuse the layout
+        let snapA := buildMolSnap MA (some snap.pos)
         let toksJsonA : Array Json := match tokenize snapA.canon with
           | .ok ts => ts.map fun (t : Token) => Json.mkObj [("pos", toJson t.pos), ("show", toJson (tokenLabel t))]
           | .error _ => toksJson
