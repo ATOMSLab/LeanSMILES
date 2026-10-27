@@ -3,12 +3,12 @@ import fs from 'fs'
 import path from 'path'
 import os from 'os'
 import { fileURLToPath } from 'url'
-import { leanTemplates } from '../templates/leanTemplates.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = path.resolve(__dirname, '../..')
 const CACHE_DIR = path.resolve(__dirname, '../.cache')
-const WORKER_LEAN_FILE = path.join(CACHE_DIR, 'WorkerMain.lean')
+// The worker is Worker.lean at the repository root, compiled by `lake build worker`.
+const WORKER_BIN = path.join(REPO_ROOT, '.lake', 'build', 'bin', process.platform === 'win32' ? 'worker.exe' : 'worker')
 const DISK_CACHE_FILE = path.join(CACHE_DIR, 'eval-cache.json')
 const ELAN_BIN = path.join(os.homedir(), '.elan', 'bin')
 // One evaluation may run at most this long. Past it the worker is killed, the
@@ -16,7 +16,6 @@ const ELAN_BIN = path.join(os.homedir(), '.elan', 'bin')
 const REQUEST_TIMEOUT_MS = Number(process.env.LEAN_REQUEST_TIMEOUT_MS) || 120000
 
 fs.mkdirSync(CACHE_DIR, { recursive: true })
-fs.writeFileSync(WORKER_LEAN_FILE, leanTemplates.workerDaemon(), 'utf8')
 
 const cache = new Map()
 if (fs.existsSync(DISK_CACHE_FILE)) {
@@ -37,19 +36,20 @@ function saveDiskCache() {
   } catch {}
 }
 
-// The warm worker is `lake env lean --run WorkerMain.lean`: one request per
-// stdin line, one `__JSON_START__ ... __JSON_END__` answer per request, in
-// order. `queue[0]` is the request in flight once `sent` is set.
+// The warm worker is the `worker` executable: one request per stdin line, one
+// `__JSON_START__ ... __JSON_END__` answer per request, in order. `queue[0]` is
+// the request in flight once `sent` is set.
 let workerProc = null
 let workerReady = false
 let buffer = ''
 let restarts = 0
+let building = null
 const queue = []
 
 const log = (msg) => console.log(`[lean worker] ${msg}`)
 
-// `lake` runs `lean` as a child, so the worker is its own process group and is
-// killed as a group; killing `lake` alone would leave `lean` computing.
+// The worker is spawned as its own process group and killed as a group, so a
+// stop reaches it even if it ever runs through a wrapper such as `lake`.
 function killWorker(proc) {
   if (!proc || proc.exitCode !== null || proc.signalCode !== null) return
   try {
@@ -61,10 +61,49 @@ function killWorker(proc) {
   }
 }
 
+// Without a binary, build it once (`lake build worker`, a few minutes the first
+// time) and start the worker when that finishes; meanwhile requests queue.
+function buildWorkerBinary() {
+  if (building) return building
+  log(`${WORKER_BIN} is missing; running \`lake build worker\``)
+  const env = { ...process.env, PATH: `${ELAN_BIN}:${process.env.PATH || ''}` }
+  building = new Promise((resolve) => {
+    const proc = spawn('lake', ['build', 'worker'], { cwd: REPO_ROOT, env })
+    proc.stdout.on('data', (chunk) => {
+      const text = chunk.toString().trim()
+      if (text) log(`lake build: ${text.split('\n').pop()}`)
+    })
+    proc.stderr.on('data', (chunk) => {
+      const text = chunk.toString().trim()
+      if (text) console.error(`[lake build worker] ${text}`)
+    })
+    proc.on('error', (err) => resolve(new Error(`lake build worker could not run: ${err.message}`)))
+    proc.on('exit', (code) => resolve(code === 0 ? null : new Error(`lake build worker exited with code ${code}`)))
+  }).then((err) => {
+    building = null
+    if (err) {
+      log(err.message)
+      while (queue.length > 0) {
+        const q = queue.shift()
+        clearTimeout(q.timer)
+        q.reject(new Error(`The Lean worker is not built: ${err.message}`))
+      }
+    } else {
+      log('built')
+      startWarmWorker()
+    }
+  })
+  return building
+}
+
 function startWarmWorker() {
   if (workerProc) return
+  if (!fs.existsSync(WORKER_BIN)) {
+    buildWorkerBinary()
+    return
+  }
   const env = { ...process.env, PATH: `${ELAN_BIN}:${process.env.PATH || ''}` }
-  const proc = spawn('lake', ['env', 'lean', '--run', WORKER_LEAN_FILE], {
+  const proc = spawn(WORKER_BIN, [], {
     cwd: REPO_ROOT,
     env,
     detached: true,
@@ -196,6 +235,8 @@ startWarmWorker()
 
 export function leanWorkerStatus() {
   return {
+    binary: fs.existsSync(WORKER_BIN),
+    building: Boolean(building),
     running: Boolean(workerProc),
     ready: workerReady,
     queued: queue.length,

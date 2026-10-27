@@ -21,13 +21,33 @@ const DATASET_TABS = [
   },
 ]
 
+// Two solvers: the real model (tested against scikit-learn, no theorem) and the
+// certified pipeline whose certificate can genuinely fail. Jacobi (exact-ℚ
+// certificate runs for minutes at λ ≤ 1), gradient descent (certificate passes
+// by construction) and Householder-QR are still served by the API, just not
+// offered here.
 const MODEL_OPTIONS = [
   { id: 'sparse-ridge', label: 'Sparse Ridge (2048 Morgan Bits)' },
-  { id: 'dense-qr', label: 'Householder-QR Ridge (Descriptors)' },
   { id: 'gauss-seidel', label: 'Certified Gauss–Seidel (ℚ Pipeline)' },
-  { id: 'jacobi', label: 'Certified Jacobi (ℚ Pipeline)' },
-  { id: 'gradient-descent', label: 'Certified Gradient Descent (ℚ Pipeline)' },
 ]
+
+const MODEL_NOTES = {
+  'sparse-ridge': (
+    <>
+      No theorem behind this one: conjugate gradients on 2048 Morgan bits, checked against scikit-learn's{' '}
+      <code className="font-mono">Ridge</code> to 10⁻⁶ by <code className="font-mono">lake exe ridge-test</code>. Tested, not proven.
+    </>
+  ),
+  'gauss-seidel': (
+    <>
+      <span className="font-medium text-slate-700">Certified</span> means: before training, Lean checks an exact-arithmetic (ℚ)
+      witness on this dataset's normal equations — diagonal dominance, ρ &lt; 1 — and the theorem{' '}
+      <code className="font-mono">Pipeline.checkSolver_sound</code> proves that whenever that check passes, the solver's
+      exact-real iterates land within ε of the optimal training loss. It does not cover the floating-point numbers shown
+      (the same code run in Float) or accuracy on the test set. At small λ the witness fails, and the page says so.
+    </>
+  ),
+}
 
 const PENALTY_OPTIONS = ['0.1', '1.0', '4.0', '16.0']
 
@@ -287,7 +307,7 @@ export default function Datasets() {
     <div className="space-y-6">
       <SectionHeader
         title="Datasets & Lean Regression Pipeline"
-        description="Select a built-in benchmark or upload any CSV with SMILES and a numeric target column to fit Sparse Ridge, Householder-QR, or Certified ℚ Iterative Solvers in Lean 4."
+        description="Select a built-in benchmark or upload any CSV with SMILES and a numeric target column, then fit Sparse Ridge on Morgan fingerprints or the certified Gauss–Seidel pipeline in Lean 4."
         right={
           (fitting || loadingTable) && (
             <SpinnerPill label={fitting ? 'Fitting regression & rendering parity plot...' : 'Parsing CSV in Lean 4...'} />
@@ -398,6 +418,9 @@ export default function Datasets() {
                   </button>
                 ))}
               </div>
+              {MODEL_NOTES[modelType] && (
+                <p className="text-[11px] leading-relaxed text-slate-500 max-w-xl pt-1">{MODEL_NOTES[modelType]}</p>
+              )}
             </div>
 
             <div className="space-y-1.5 shrink-0">
@@ -476,8 +499,8 @@ export default function Datasets() {
                   <div>
                     <div className="font-semibold">
                       {fitResult.certificate.certified
-                        ? 'Formal ℚ Convergence Certificate Verified'
-                        : 'Pre-Training Certificate Not Met (Try Increasing λ)'}
+                        ? 'Certificate checked: exact-ℚ witness passed (ρ < 1)'
+                        : 'Certificate not met at this λ (ρ ≥ 1) — try a larger λ'}
                     </div>
                     <p className="font-mono text-[11px] mt-0.5 opacity-85">
                       {fitResult.certificate.summary}

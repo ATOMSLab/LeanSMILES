@@ -175,4 +175,33 @@ router.post('/pipeline/fit', async (req, res) => {
   }
 })
 
+// What the Regression page asks for on arrival, run once at start so the
+// first visitor gets cached answers and the worker already holds both built-in
+// datasets featurized. Each job is one queue entry; a real request that arrives
+// meanwhile waits behind at most one of them.
+export async function prewarmBuiltinDatasets() {
+  const datasets = [
+    ['delaney', 'log solubility (log mol/L)'],
+    ['thermo', 'Boiling Point (K)'],
+  ]
+  for (const [datasetId, targetLabel] of datasets) {
+    const jobs = [
+      ['dataset', leanTemplates.loadDataset(datasetId)],
+      ...['sparse-ridge', 'gauss-seidel'].map((modelType) => [
+        `fit ${modelType} α=1.0`,
+        leanTemplates.fitPipeline(buildDatasetTsv(datasetId, null), modelType, '1.0', targetLabel),
+      ]),
+    ]
+    for (const [what, cmd] of jobs) {
+      const t0 = Date.now()
+      try {
+        const r = await runLean(cmd)
+        console.log(`[prewarm] ${datasetId} ${what}: ${r.ok === false ? 'failed' : 'ok'} in ${Date.now() - t0} ms${r.leanFeedback?.cached ? ' (cached)' : ''}`)
+      } catch (err) {
+        console.log(`[prewarm] ${datasetId} ${what}: ${err.message}`)
+      }
+    }
+  }
+}
+
 export default router

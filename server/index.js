@@ -1,6 +1,6 @@
 import express from 'express'
 import cors from 'cors'
-import leanRoutes from './routes/leanRoutes.js'
+import leanRoutes, { prewarmBuiltinDatasets } from './routes/leanRoutes.js'
 import { leanWorkerStatus } from './workers/leanWorker.js'
 
 const app = express()
@@ -36,4 +36,5 @@ app.use('/api', leanRoutes)
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`LeanSMILES API server running on http://0.0.0.0:${PORT}`)
+  if (process.env.LEAN_PREWARM !== '0') prewarmBuiltinDatasets()
 })
