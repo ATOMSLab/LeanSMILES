@@ -15,13 +15,13 @@
   <circle cx="130" cy="122" r="5" fill="#0d9488"/>
   <text x="146" y="128" font-family="Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#0f766e">Formally Verified in Lean 4</text>
 
-  <!-- Brand Lockup: Lucide Atom Logo + leanSmiles -->
+  <!-- Brand Lockup: Lucide Atom Logo + LeanSMILES -->
   <g transform="translate(104, 168) scale(3.4)" fill="none" stroke="#0d9488" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
     <circle cx="12" cy="12" r="1" fill="#0d9488"/>
     <path d="M20.2 20.2c2.04-2.03.02-7.36-4.5-11.9-4.54-4.52-9.87-6.54-11.9-4.5-2.04 2.03-.02 7.36 4.5 11.9 4.54 4.52 9.87 6.54 11.9 4.5Z"/>
     <path d="M15.7 15.7c4.52-4.54 6.54-9.87 4.5-11.9-2.03-2.04-7.36-.02-11.9 4.5-4.52 4.54-6.54 9.87-4.5 11.9 2.03 2.04 7.36.02 11.9-4.5Z"/>
   </g>
-  <text x="204" y="232" font-family="Helvetica, Arial, sans-serif" font-size="68" font-weight="700" fill="#0f172a" letter-spacing="-1.5">leanSmiles</text>
+  <text x="204" y="232" font-family="Helvetica, Arial, sans-serif" font-size="68" font-weight="700" fill="#0f172a" letter-spacing="-1.5">LeanSMILES</text>
 
   <!-- Headline & Subtitle -->
   <text x="108" y="298" font-family="Helvetica, Arial, sans-serif" font-size="28" font-weight="600" fill="#1e293b">Formally Verified Cheminformatics &amp; Machine Learning in Lean 4</text>

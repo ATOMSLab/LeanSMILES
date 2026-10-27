@@ -32,5 +32,5 @@ app.get('/api/health', (_req, res) => {
 app.use('/api', leanRoutes)
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`leanSmiles API server running on http://0.0.0.0:${PORT}`)
+  console.log(`LeanSMILES API server running on http://0.0.0.0:${PORT}`)
 })
