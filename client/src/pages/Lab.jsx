@@ -1,14 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Plus, X, Download, Copy, Check } from 'lucide-react'
-import api, { PRESET_MOLECULES } from '../middleware/api'
+import api, { PRESET_MOLECULES, newRequestHandle } from '../middleware/api'
 import {
   Card,
   Badge,
   Button,
   SectionHeader,
   DataTable,
-  SpinnerPill,
+  BusyBar,
   LogConsole,
 } from '../components/UI'
 import MoleculeGraph from '../components/MoleculeGraph'
@@ -110,6 +110,10 @@ export default function Lab() {
 
   const parseReqId = useRef(0)
   const compareReqId = useRef(0)
+  const parseHandle = useRef(null)
+  const compareHandle = useRef(null)
+  const typingTimer = useRef(null)
+  const [parseStartedAt, setParseStartedAt] = useState(null)
 
   const runAnalysis = async (target) => {
     const reqId = ++parseReqId.current
@@ -119,8 +123,13 @@ export default function Lab() {
       return
     }
     setLoading(true)
+    // one evaluation at a time: a new one cancels the previous, on the server too
+    parseHandle.current?.cancel()
+    const handle = newRequestHandle()
+    parseHandle.current = handle
+    setParseStartedAt(Date.now())
     try {
-      const res = await api.analyzeSmiles(target)
+      const res = await api.analyzeSmiles(target, handle)
       if (reqId !== parseReqId.current) return
       setErrorInfo(null)
       setData(res)
@@ -128,7 +137,7 @@ export default function Lab() {
         runComparison(target, smilesB)
       }
     } catch (err) {
-      if (reqId !== parseReqId.current) return
+      if (reqId !== parseReqId.current || err.cancelled) return
       // Lean's own verdict is a 400 with a constructor; anything else (5xx, a
       // worker that died or timed out, no network) is not about the SMILES.
       const isParseError = err.status === 400 && err.details?.constructor !== undefined
@@ -147,6 +156,7 @@ export default function Lab() {
     } finally {
       if (reqId === parseReqId.current) {
         setLoading(false)
+        parseHandle.current = null
       }
     }
   }
@@ -160,12 +170,15 @@ export default function Lab() {
     }
     setCompareError('')
     setComparing(true)
+    compareHandle.current?.cancel()
+    const handle = newRequestHandle()
+    compareHandle.current = handle
     try {
-      const res = await api.compareTanimoto(a, b)
+      const res = await api.compareTanimoto(a, b, handle)
       if (reqId !== compareReqId.current) return
       setTanimotoData(res)
     } catch (err) {
-      if (reqId !== compareReqId.current) return
+      if (reqId !== compareReqId.current || err.cancelled) return
       setCompareError(err.details?.error || err.message || 'Comparison failed')
     } finally {
       if (reqId === compareReqId.current) {
@@ -178,9 +191,20 @@ export default function Lab() {
     runAnalysis(smiles)
   }, [])
 
-  const handleSmilesChange = (val) => {
+  // Typing waits 250 ms for the next keystroke; a preset evaluates at once.
+  const handleSmilesChange = (val, immediate = false) => {
     setSmiles(val)
-    runAnalysis(val)
+    clearTimeout(typingTimer.current)
+    if (immediate) runAnalysis(val)
+    else typingTimer.current = setTimeout(() => runAnalysis(val), 250)
+  }
+
+  const cancelAnalysis = () => {
+    clearTimeout(typingTimer.current)
+    parseReqId.current += 1
+    parseHandle.current?.cancel()
+    parseHandle.current = null
+    setLoading(false)
   }
 
   const handleSmilesBChange = (val) => {
@@ -219,7 +243,16 @@ export default function Lab() {
       <SectionHeader
         title="SMILES Interpreter"
         description="Type any SMILES to evaluate canonical LeanSMILES, toggle between As-Written (M) and Sanitized (M.aromatize), inspect 2D depictions or V2000 Mol blocks, and compare Morgan fingerprints."
-        right={loading && <SpinnerPill label="Evaluating in Lean 4..." />}
+        right={
+          loading && (
+            <BusyBar
+              label="Evaluating in Lean 4"
+              startedAt={parseStartedAt}
+              expectedMs={250 + 8 * smiles.length}
+              onCancel={cancelAnalysis}
+            />
+          )
+        }
       />
 
       <Card>
@@ -240,8 +273,9 @@ export default function Lab() {
             <button
               key={p.name}
               type="button"
-              onClick={() => handleSmilesChange(p.smiles)}
-              className={`px-2.5 py-1 rounded-lg text-xs transition cursor-pointer ${
+              disabled={loading}
+              onClick={() => handleSmilesChange(p.smiles, true)}
+              className={`px-2.5 py-1 rounded-lg text-xs transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                 smiles === p.smiles
                   ? 'bg-slate-900 text-white font-medium'
                   : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'
@@ -462,8 +496,9 @@ export default function Lab() {
                     <button
                       key={p.label}
                       type="button"
+                      disabled={comparing}
                       onClick={() => handleSmilesBChange(p.smiles)}
-                      className={`px-2.5 py-1 rounded-lg text-xs transition cursor-pointer ${
+                      className={`px-2.5 py-1 rounded-lg text-xs transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                         smilesB === p.smiles
                           ? 'bg-slate-900 text-white font-medium'
                           : 'text-slate-500 hover:bg-slate-100 hover:text-slate-800'

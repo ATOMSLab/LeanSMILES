@@ -14,6 +14,10 @@ const ELAN_BIN = path.join(os.homedir(), '.elan', 'bin')
 // One evaluation may run at most this long. Past it the worker is killed, the
 // request fails with a clear message, and the next request gets a fresh worker.
 const REQUEST_TIMEOUT_MS = Number(process.env.LEAN_REQUEST_TIMEOUT_MS) || 120000
+// A cancelled evaluation that has run for less than this is left to finish
+// (its answer still lands in the cache); past it the worker is killed, since a
+// Lean evaluation cannot be interrupted and the queue is waiting behind it.
+const CANCEL_GRACE_MS = Number(process.env.LEAN_CANCEL_GRACE_MS) || 1500
 
 fs.mkdirSync(CACHE_DIR, { recursive: true })
 
@@ -147,7 +151,8 @@ function startWarmWorker() {
             cache.set(current.cmd, payload)
             saveDiskCache()
           }
-          current.resolve(payload)
+          if (current.cancelled) current.reject(cancelledError())
+          else current.resolve(payload)
         } catch (err) {
           current.reject(err)
         }
@@ -191,11 +196,15 @@ function onWorkerGone(proc, why) {
   if (head && head.sent) {
     queue.shift()
     clearTimeout(head.timer)
-    const reason = head.timedOut
-      ? `Lean evaluation exceeded ${Math.round(REQUEST_TIMEOUT_MS / 1000)} s and was stopped`
-      : `Lean worker ${why} while evaluating this request`
+    const err = head.cancelled
+      ? cancelledError()
+      : new Error(
+          head.timedOut
+            ? `Lean evaluation exceeded ${Math.round(REQUEST_TIMEOUT_MS / 1000)} s and was stopped`
+            : `Lean worker ${why} while evaluating this request`
+        )
     log(`${why}; failing the in-flight request`)
-    head.reject(new Error(reason))
+    head.reject(err)
   } else {
     log(why)
   }
@@ -246,7 +255,39 @@ export function leanWorkerStatus() {
   }
 }
 
-export function runLean(cmd) {
+function cancelledError() {
+  const err = new Error('Lean evaluation cancelled by the client')
+  err.cancelled = true
+  return err
+}
+
+// Drop the request with this id: unsent, it just leaves the queue; running, the
+// worker is killed (a Lean evaluation cannot be interrupted) and the rest of
+// the queue gets a fresh one. Returns whether anything was found.
+export function cancelLean(requestId) {
+  if (!requestId) return false
+  const idx = queue.findIndex((q) => q.id === requestId)
+  if (idx === -1) return false
+  const q = queue[idx]
+  if (q.sent) {
+    q.cancelled = true
+    const ran = Date.now() - q.startedAt
+    const grace = Math.max(0, CANCEL_GRACE_MS - ran)
+    log(`request ${requestId} cancelled ${ran} ms into its evaluation; worker killed in ${grace} ms unless it finishes`)
+    const proc = workerProc
+    setTimeout(() => {
+      if (queue[0] === q && q.sent && workerProc === proc) killWorker(proc)
+    }, grace)
+  } else {
+    queue.splice(idx, 1)
+    clearTimeout(q.timer)
+    log(`request ${requestId} cancelled while queued`)
+    q.reject(cancelledError())
+  }
+  return true
+}
+
+export function runLean(cmd, { requestId = null } = {}) {
   if (cache.has(cmd)) {
     const hit = cache.get(cmd)
     return Promise.resolve({
@@ -262,7 +303,17 @@ export function runLean(cmd) {
   startWarmWorker()
 
   return new Promise((resolve, reject) => {
-    queue.push({ cmd, resolve, reject, sent: false, startedAt: Date.now(), timer: null, timedOut: false })
+    queue.push({
+      id: requestId,
+      cmd,
+      resolve,
+      reject,
+      sent: false,
+      startedAt: Date.now(),
+      timer: null,
+      timedOut: false,
+      cancelled: false,
+    })
     flushQueue()
   })
 }

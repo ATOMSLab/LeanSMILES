@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { Terminal, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react'
 
 const LEAN_TOKEN_REGEX =
@@ -151,6 +151,41 @@ export function CodeBlock({ code }) {
           </div>
         )
       })}
+    </div>
+  )
+}
+
+// Progress for one Lean evaluation. There is no progress signal from the
+// worker, so the bar fills toward 95% on an estimate (expectedMs) and the
+// answer completes it; onCancel stops the evaluation.
+export function BusyBar({ label = 'Evaluating in Lean 4', startedAt, expectedMs = 1500, onCancel }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 100)
+    return () => clearInterval(t)
+  }, [])
+  const elapsed = Math.max(0, now - (startedAt || now))
+  const pct = Math.round(95 * (1 - Math.exp(-elapsed / Math.max(200, expectedMs))))
+  return (
+    <div className="flex items-center gap-3 min-w-[220px] max-w-sm w-full" role="status" aria-live="polite">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-baseline justify-between gap-3 text-[11px] text-teal-800 font-medium">
+          <span className="truncate">{label}</span>
+          <span className="font-mono tabular-nums text-teal-700/80 shrink-0">{(elapsed / 1000).toFixed(1)} s</span>
+        </div>
+        <div className="mt-1 h-1.5 rounded-full bg-teal-100 overflow-hidden">
+          <div className="h-full rounded-full bg-teal-600 transition-[width] duration-150 ease-linear" style={{ width: `${pct}%` }} />
+        </div>
+      </div>
+      {onCancel && (
+        <button
+          type="button"
+          onClick={onCancel}
+          className="shrink-0 px-2.5 py-1 rounded-lg text-xs font-medium text-slate-600 bg-white/80 border border-slate-200/80 hover:bg-white hover:text-rose-700 hover:border-rose-200 transition cursor-pointer"
+        >
+          Cancel
+        </button>
+      )}
     </div>
   )
 }
