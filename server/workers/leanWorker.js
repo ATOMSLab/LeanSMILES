@@ -269,6 +269,7 @@ export function cancelLean(requestId) {
   const idx = queue.findIndex((q) => q.id === requestId)
   if (idx === -1) return false
   const q = queue[idx]
+  if (q.cancelled) return true // the abort and the explicit /cancel both arrive
   if (q.sent) {
     q.cancelled = true
     const ran = Date.now() - q.startedAt
