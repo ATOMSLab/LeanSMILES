@@ -363,3 +363,18 @@ export function DataTable({ columns, rows, maxHeight = 'max-h-96' }) {
     </div>
   )
 }
+
+// The project's logo: the Lean wordmark and a grin. `size` is 'sm' for the
+// navbar or 'lg' for the Home page hero.
+export function Logo({ size = 'sm', className = '' }) {
+  const mark = size === 'lg' ? 'h-9 sm:h-11' : 'h-4'
+  const face = size === 'lg' ? 'text-3xl sm:text-4xl' : 'text-base'
+  return (
+    <span className={`inline-flex items-center gap-1.5 ${className}`} role="img" aria-label="LeanSMILES">
+      <img src="/lean-logo.png" alt="" draggable="false" className={`${mark} w-auto`} />
+      <span className={`${face} leading-none`} aria-hidden="true">
+        😁
+      </span>
+    </span>
+  )
+}

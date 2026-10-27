@@ -1,7 +1,7 @@
 import React from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ArrowRight } from 'lucide-react'
-import { Card, Badge, Button, CodeBlock, DataTable } from '../components/UI'
+import { Card, Badge, Button, DataTable, Logo } from '../components/UI'
 
 // Three short explanations for a visitor who knows neither chemistry
 // software nor proof assistants, before any code or theorem appears.
@@ -81,6 +81,7 @@ export default function Home() {
   return (
     <div className="space-y-10">
       <div className="py-6">
+        <Logo size="lg" className="mb-5" />
         <Badge active>Lean 4 · Mathlib · LeanSMILES · LeanLearn · Pipelines</Badge>
         <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight text-slate-900 mt-4 max-w-2xl">
           Molecules, machine learning and proofs — in one language.
@@ -109,6 +110,17 @@ export default function Home() {
         ))}
       </div>
 
+      <Card
+        title="Programming, proving and testing"
+        subtitle="A typical cheminformatics pipeline, and what LeanSMILES proves and tests along it"
+      >
+        <img
+          src="/leansmiles-scheme.png"
+          alt="Scheme: the pipeline from a training set of SMILES and labels through parsing, fingerprints and model training to predictions (programming); the theorems proved along it, such as canonical SMILES being unique and soundness checks before training (proving); and accuracy checks against RDKit and scikit-learn (testing)"
+          className="w-full h-auto rounded-xl border border-slate-200/70"
+        />
+      </Card>
+
       <div>
         <p className="text-[11px] uppercase tracking-wide text-slate-400 mb-3">The three libraries</p>
         <div className="grid sm:grid-cols-3 gap-4">
@@ -120,55 +132,33 @@ export default function Home() {
         </div>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-6">
-        <Card title="Quickstart" subtitle="Three strings, one molecule, one canonical SMILES">
-          <CodeBlock
-            code={`public section
-open LeanSMILES LeanSMILES.SMILES
-
--- A parse is an Except: the molecule, or a positioned error.
-parse "CCO" --> Except.ok Molecule 3 ["C", "C", "O"] [0-1, 1-2]
-parse "c1cc[nH]c1" --> Except.ok Molecule 5 ["c", "c", "c", "[nH]", "c"]
-
--- Three strings, one molecule, one canonical SMILES.
-(Mol.ofSmiles! "OCC").canonicalSmiles --> "CCO"
-(Mol.ofSmiles! "C(O)C").canonicalSmiles --> "CCO"
-(Mol.ofSmiles! "CCO").canonicalSmiles --> "CCO"
-
--- Camphene written two ways (ThermoPropertiesSMILES.csv).
-(Mol.ofSmiles! "CC1(C)C2CCC(C2)C1=C").canonicalSmiles --> "C=C1C2CCC(C2)C1(C)C"
-(Mol.ofSmiles! "CC1(C2CCC(C2)C1=C)C").canonicalSmiles --> "C=C1C2CCC(C2)C1(C)C"`}
-          />
-        </Card>
-
-        <Card title="What the proofs turned up" subtitle="Three issues in widely used tools and standards">
-          <div className="space-y-3.5 text-xs text-slate-500 leading-relaxed">
-            <div>
-              <p className="font-medium text-slate-800">1. RDKit's canonical SMILES is not always canonical</p>
-              <p className="mt-0.5">
-                A canonical SMILES is meant to be the one string for a molecule, however its atoms were listed. For some
-                molecules RDKit gives several — a 12-carbon cubic graph gets 8, depending on the input order. Ours gives
-                one, and the theorem <code className="text-teal-700 font-mono">canonicalSmiles_relabel</code> says so.
-              </p>
-            </div>
-            <div className="border-t border-slate-100 pt-2.5">
-              <p className="font-medium text-slate-800">2. RDKit Morgan fingerprints depend on atom order from radius 3</p>
-              <p className="mt-0.5">
-                <code className="font-mono">C1=C(CO)C=C1CC</code> and <code className="font-mono">C1(CC)=CC(CO)=C1</code> are the
-                same molecule but get different radius-3 bits. LeanSMILES proves order-invariance up to radius 2 (
-                <code className="text-teal-700 font-mono">morganBits_relabel</code>), which is where it stops holding.
-              </p>
-            </div>
-            <div className="border-t border-slate-100 pt-2.5">
-              <p className="font-medium text-slate-800">3. OpenSMILES leaves aromatic hydrogen counts open</p>
-              <p className="mt-0.5">
-                The standard (§3.1.5) does not fully determine the bond orders, and so the hydrogens, of aromatic atoms.{' '}
-                <code className="text-teal-700 font-mono">Molecule.implicitHydrogens</code> pins down the rule.
-              </p>
-            </div>
+      <Card title="What the proofs turned up" subtitle="Three issues in widely used tools and standards">
+        <div className="grid md:grid-cols-3 gap-x-6 gap-y-3.5 text-xs text-slate-500 leading-relaxed">
+          <div>
+            <p className="font-medium text-slate-800">1. RDKit's canonical SMILES is not always canonical</p>
+            <p className="mt-0.5">
+              A canonical SMILES is meant to be the one string for a molecule, however its atoms were listed. For some
+              molecules RDKit gives several — a 12-carbon cubic graph gets 8, depending on the input order. Ours gives
+              one, and the theorem <code className="text-teal-700 font-mono">canonicalSmiles_relabel</code> says so.
+            </p>
           </div>
-        </Card>
-      </div>
+          <div className="border-t md:border-t-0 md:border-l border-slate-100 pt-2.5 md:pt-0 md:pl-6">
+            <p className="font-medium text-slate-800">2. RDKit Morgan fingerprints depend on atom order from radius 3</p>
+            <p className="mt-0.5">
+              <code className="font-mono">C1=C(CO)C=C1CC</code> and <code className="font-mono">C1(CC)=CC(CO)=C1</code> are the
+              same molecule but get different radius-3 bits. LeanSMILES proves order-invariance up to radius 2 (
+              <code className="text-teal-700 font-mono">morganBits_relabel</code>), which is where it stops holding.
+            </p>
+          </div>
+          <div className="border-t md:border-t-0 md:border-l border-slate-100 pt-2.5 md:pt-0 md:pl-6">
+            <p className="font-medium text-slate-800">3. OpenSMILES leaves aromatic hydrogen counts open</p>
+            <p className="mt-0.5">
+              The standard (§3.1.5) does not fully determine the bond orders, and so the hydrogens, of aromatic atoms.{' '}
+              <code className="text-teal-700 font-mono">Molecule.implicitHydrogens</code> pins down the rule.
+            </p>
+          </div>
+        </div>
+      </Card>
 
       <Card title="Some of the theorems" subtitle="LeanSMILES, LeanLearn & Pipelines">
         <DataTable
