@@ -26,7 +26,11 @@ function buildDiagnostics(data, errorInfo) {
       items: [
         {
           type: 'error',
-          label: errorInfo.isGrammarDeviation ? 'OpenSMILES §2.2 Rule' : 'SMILES Syntax Error',
+          label: errorInfo.isServiceError
+            ? 'Lean Server Unavailable'
+            : errorInfo.isGrammarDeviation
+              ? 'OpenSMILES §2.2 Rule'
+              : 'SMILES Syntax Error',
           tag: errorInfo.constructor || 'ParseError',
           detail: errorInfo.error,
         },
@@ -34,7 +38,7 @@ function buildDiagnostics(data, errorInfo) {
           ? [
               {
                 type: 'warn',
-                label: 'How to Fix',
+                label: errorInfo.isServiceError ? 'What Happened' : 'How to Fix',
                 tag: 'LeanSMILES.SMILES.Parse',
                 detail: errorInfo.explanation,
               },
@@ -125,13 +129,20 @@ export default function Lab() {
       }
     } catch (err) {
       if (reqId !== parseReqId.current) return
+      // Lean's own verdict is a 400 with a constructor; anything else (5xx, a
+      // worker that died or timed out, no network) is not about the SMILES.
+      const isParseError = err.status === 400 && err.details?.constructor !== undefined
       setErrorInfo(
-        err.details || {
-          error: err.message || 'Invalid SMILES syntax',
-          constructor: 'ParseError',
-          explanation: 'Check parentheses, ring closures, and atom symbols.',
-          logs: [`parse "${target}" --> Except.error`],
-        }
+        isParseError
+          ? err.details
+          : {
+              error: err.message || 'No answer from the Lean server',
+              constructor: 'ServiceError',
+              isServiceError: true,
+              explanation:
+                'This is not a verdict on the SMILES: the request to the Lean server failed or timed out. Try again in a moment; if it keeps happening, the Lean worker on the server is down.',
+              logs: [`POST /api/parse "${target}" --> ${err.message || 'no response'}`],
+            }
       )
     } finally {
       if (reqId === parseReqId.current) {

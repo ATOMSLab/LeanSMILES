@@ -11,6 +11,9 @@ const CACHE_DIR = path.resolve(__dirname, '../.cache')
 const WORKER_LEAN_FILE = path.join(CACHE_DIR, 'WorkerMain.lean')
 const DISK_CACHE_FILE = path.join(CACHE_DIR, 'eval-cache.json')
 const ELAN_BIN = path.join(os.homedir(), '.elan', 'bin')
+// One evaluation may run at most this long. Past it the worker is killed, the
+// request fails with a clear message, and the next request gets a fresh worker.
+const REQUEST_TIMEOUT_MS = Number(process.env.LEAN_REQUEST_TIMEOUT_MS) || 120000
 
 fs.mkdirSync(CACHE_DIR, { recursive: true })
 fs.writeFileSync(WORKER_LEAN_FILE, leanTemplates.workerDaemon(), 'utf8')
@@ -34,26 +37,51 @@ function saveDiskCache() {
   } catch {}
 }
 
+// The warm worker is `lake env lean --run WorkerMain.lean`: one request per
+// stdin line, one `__JSON_START__ ... __JSON_END__` answer per request, in
+// order. `queue[0]` is the request in flight once `sent` is set.
 let workerProc = null
 let workerReady = false
 let buffer = ''
+let restarts = 0
 const queue = []
+
+const log = (msg) => console.log(`[lean worker] ${msg}`)
+
+// `lake` runs `lean` as a child, so the worker is its own process group and is
+// killed as a group; killing `lake` alone would leave `lean` computing.
+function killWorker(proc) {
+  if (!proc || proc.exitCode !== null || proc.signalCode !== null) return
+  try {
+    process.kill(-proc.pid, 'SIGKILL')
+  } catch {
+    try {
+      proc.kill('SIGKILL')
+    } catch {}
+  }
+}
 
 function startWarmWorker() {
   if (workerProc) return
   const env = { ...process.env, PATH: `${ELAN_BIN}:${process.env.PATH || ''}` }
-
-  workerProc = spawn('lake', ['env', 'lean', '--run', WORKER_LEAN_FILE], {
+  const proc = spawn('lake', ['env', 'lean', '--run', WORKER_LEAN_FILE], {
     cwd: REPO_ROOT,
     env,
+    detached: true,
   })
+  workerProc = proc
+  workerReady = false
+  buffer = ''
+  log(`starting (pid ${proc.pid})`)
 
-  workerProc.stdout.on('data', (chunk) => {
+  proc.stdout.on('data', (chunk) => {
+    if (workerProc !== proc) return
     buffer += chunk.toString()
 
     if (!workerReady && buffer.includes('__WORKER_READY__')) {
       workerReady = true
       buffer = buffer.split('__WORKER_READY__').slice(1).join('')
+      log('ready')
       flushQueue()
     }
 
@@ -63,6 +91,7 @@ function startWarmWorker() {
       buffer = buffer.slice(match.index + match[0].length)
       const current = queue.shift()
       if (current) {
+        clearTimeout(current.timer)
         const durationMs = Date.now() - current.startedAt
         try {
           const parsed = JSON.parse(jsonStr)
@@ -88,10 +117,54 @@ function startWarmWorker() {
     }
   })
 
-  workerProc.on('close', () => {
-    workerProc = null
-    workerReady = false
+  proc.stderr.on('data', (chunk) => {
+    const text = chunk.toString().trim()
+    if (text) console.error(`[lean worker stderr] ${text}`)
   })
+
+  proc.on('error', (err) => onWorkerGone(proc, `could not be started (${err.message})`))
+  proc.on('exit', (code, signal) => onWorkerGone(proc, `exited (code ${code}, signal ${signal})`))
+}
+
+// The worker died or was killed. The request it was evaluating fails now
+// instead of waiting forever; the rest of the queue gets a fresh worker. If it
+// died before it was even ready, every queued request fails: the next request
+// will try to start it again, and the reason is in the server log.
+function onWorkerGone(proc, why) {
+  if (workerProc !== proc) return
+  const wasReady = workerReady
+  workerProc = null
+  workerReady = false
+  buffer = ''
+  killWorker(proc)
+
+  if (!wasReady) {
+    log(`${why} before it was ready; failing ${queue.length} queued request(s)`)
+    while (queue.length > 0) {
+      const q = queue.shift()
+      clearTimeout(q.timer)
+      q.reject(new Error(`Lean worker ${why} before it was ready; see the server log`))
+    }
+    return
+  }
+
+  const head = queue[0]
+  if (head && head.sent) {
+    queue.shift()
+    clearTimeout(head.timer)
+    const reason = head.timedOut
+      ? `Lean evaluation exceeded ${Math.round(REQUEST_TIMEOUT_MS / 1000)} s and was stopped`
+      : `Lean worker ${why} while evaluating this request`
+    log(`${why}; failing the in-flight request`)
+    head.reject(new Error(reason))
+  } else {
+    log(why)
+  }
+
+  if (queue.length > 0) {
+    restarts += 1
+    startWarmWorker()
+  }
 }
 
 function flushQueue() {
@@ -100,11 +173,37 @@ function flushQueue() {
   if (!head.sent) {
     head.sent = true
     head.startedAt = Date.now()
-    workerProc.stdin.write(head.cmd + '\n')
+    const proc = workerProc
+    head.timer = setTimeout(() => {
+      if (queue[0] !== head || workerProc !== proc) return
+      head.timedOut = true
+      log(`request exceeded ${REQUEST_TIMEOUT_MS} ms; killing the worker`)
+      killWorker(proc)
+    }, REQUEST_TIMEOUT_MS)
+    proc.stdin.write(head.cmd + '\n')
   }
 }
 
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => {
+    killWorker(workerProc)
+    process.exit(0)
+  })
+}
+process.on('exit', () => killWorker(workerProc))
+
 startWarmWorker()
+
+export function leanWorkerStatus() {
+  return {
+    running: Boolean(workerProc),
+    ready: workerReady,
+    queued: queue.length,
+    restarts,
+    cachedResults: cache.size,
+    requestTimeoutMs: REQUEST_TIMEOUT_MS,
+  }
+}
 
 export function runLean(cmd) {
   if (cache.has(cmd)) {
@@ -122,7 +221,7 @@ export function runLean(cmd) {
   startWarmWorker()
 
   return new Promise((resolve, reject) => {
-    queue.push({ cmd, resolve, reject, sent: false, startedAt: Date.now() })
+    queue.push({ cmd, resolve, reject, sent: false, startedAt: Date.now(), timer: null, timedOut: false })
     flushQueue()
   })
 }

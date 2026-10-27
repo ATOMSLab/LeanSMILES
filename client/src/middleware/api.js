@@ -52,6 +52,7 @@ async function request(endpoint, options = {}, minDelayMs = 200) {
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
     const err = new Error(data.error || `API error (${res.status})`)
+    err.status = res.status
     err.details = data
     throw err
   }
