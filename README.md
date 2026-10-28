@@ -20,7 +20,8 @@ LeanLearn/            learning algorithms on tabular data (imports Mathlib only)
   Scalar.lean         ScalarLike: the scalar interface, Float to run and ℝ to prove (from LeanCatalyst)
   Regression/         executable, over any scalar: Problem, Solvers, Certificates (iterative);
                       LinearModel (the objectives on a matrix); OLSFloat, RidgeFloat (QR, Float);
-                      SparseRidge (conjugate gradients, sparse 0/1); Metrics (R², RMSE, MAE)
+                      SparseRidge (conjugate gradients, sparse 0/1); SparseProblem (the residual
+                      certificate from bit lists); Metrics (R², RMSE, MAE)
   Classification/     Logistic, ROC (ROC curve, AUC)
   Plot/               parity plots as SVG
   Proofs/             over ℝ. LeastSquares/: OLS, Ridge, RidgeOLS — the closed form on Mathlib

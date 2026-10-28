@@ -676,7 +676,7 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
     let teMae := mae testPairs
     let svg := paritySvg
       s!"Sparse Ridge on Morgan Fingerprints (α = {fixed pen 2})"
-      s!"LeanSMILES + LeanLearn: parse, aromatize, Morgan (2048 bits), {iters} CG steps · {certShort}"
+      s!"parse, aromatize, Morgan (2048 bits), {iters} CG steps · {certShort}"
       targetLabel
       [
         { label := "Training", points := trainPairs, r2 := trR2, rmse := trRmse, mae := trMae, filled := false },
