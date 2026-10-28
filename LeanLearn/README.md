@@ -9,7 +9,7 @@ polynomial fragment also runs exactly over `ℚ`. The layout follows that split:
 
 | Folder | What it is |
 |---|---|
-| [`Regression/`](Regression) | executable linear regression, over any scalar: the ridge `Problem`, its iterative `Solvers` (gradient descent, Jacobi, Gauss–Seidel) and their exact `ℚ` `Certificates` (witnesses checked before a solver runs, and the residual check on whatever it produced); the `LinearModel` objectives on a Mathlib matrix; the Householder-QR solvers `OLSFloat` and `RidgeFloat`; `SparseRidge` (conjugate gradients on sparse 0/1 features), `SparseProblem` (the residual certificate on sparse 0/1 features, computed from the bit lists) and `Metrics` (R², RMSE, MAE) |
+| [`Regression/`](Regression) | executable linear regression, over any scalar: the ridge `Problem`, its iterative `Solvers` (gradient descent, Jacobi, Gauss–Seidel) and their exact `ℚ` `Certificates` (witnesses checked before a solver runs, the exact smoothness for gradient descent's step size, and the residual check on whatever it produced); the `LinearModel` objectives on a Mathlib matrix; the Householder-QR solvers `OLSFloat` and `RidgeFloat`; `SparseRidge` (conjugate gradients on sparse 0/1 features), `SparseProblem` (the residual certificate on sparse 0/1 features, computed from the bit lists) and `Metrics` (R², RMSE, MAE) |
 | [`Classification/`](Classification) | L2-regularized logistic regression on sparse 0/1 features (`Logistic`); ROC curves and AUC (`ROC`) |
 | [`Plot/`](Plot) | parity plots as SVG |
 | [`Proofs/LeastSquares/`](Proofs/LeastSquares) | over `ℝ`, on Mathlib matrices: ordinary least squares (`OLS`), diagonal ridge (`Ridge`), and the two against each other (`RidgeOLS`: the trade-off, shrinkage, the ridge path) |

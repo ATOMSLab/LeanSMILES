@@ -9,64 +9,38 @@ const DATASET_TABS = [
     id: 'delaney',
     label: 'Delaney ESOL Solubility',
     path: 'datasets/delaney-processed.csv',
-    defaultModel: 'sparse-ridge',
     targetLabel: 'log solubility (log mol/L)',
   },
   {
     id: 'thermo',
     label: 'ThermoProperties Boiling Point',
     path: 'datasets/ThermoPropertiesSMILES.csv',
-    defaultModel: 'sparse-ridge',
     targetLabel: 'Boiling Point (K)',
   },
 ]
 
-// Two certified models. Both train in Float and are certified after the fact:
-// Lean reads the trained weights exactly, checks the residual of the exact normal
-// equations at them, and a theorem turns a pass into a bound on their distance
-// from the optimum. Jacobi (exact-ℚ certificate runs for minutes at λ ≤ 1),
-// gradient descent and Householder-QR are still served by the API, just not
-// offered here.
-const MODEL_OPTIONS = [
-  { id: 'sparse-ridge', label: 'Certified Sparse Ridge (2048 Morgan Bits)' },
-  { id: 'gauss-seidel', label: 'Certified Gauss–Seidel (ℚ Pipeline)' },
-]
+// One model, one meaning of "verified": the solver that runs is the Lean program its
+// convergence theorem is about, and the theorem's hypotheses are decided exactly on the
+// training set before each fit. Sparse ridge (conjugate gradients, tested against
+// scikit-learn), Gauss–Seidel and Jacobi are still served by the API, just not offered
+// here: conjugate gradients has no theorem, and the diagonal-dominance theorems of
+// Gauss–Seidel and Jacobi do not hold on fingerprints at any useful λ.
+const MODEL_TYPE = 'gradient-descent'
 
-// The soundness theorem behind each model's certificate panel.
-const CERTIFICATE_THEOREM = {
-  'sparse-ridge': 'SparseProblem.checkResidual_sound',
-  'gauss-seidel': 'Pipeline.checkResidual_sound',
-}
-
-const MODEL_NOTES = {
-  'sparse-ridge': (
-    <>
-      <span className="font-medium text-slate-700">Certified</span> means: after training, Lean reads the 2048 trained
-      weights exactly (as ℚ), forms the residual of this dataset's exact normal equations at them — scikit-learn's
-      objective as a ridge problem: bit columns centred on their training means, the target on its mean, λ = α/m,
-      computed from the bit lists rather than the dense 2049 × 2049 normal matrix — and checks ‖Aθ − b‖²/λ against one
-      millionth of their training loss. <code className="font-mono">SparseProblem.residual_eq</code> proves the sparse
-      residual is the dense one, and <code className="font-mono">SparseProblem.checkResidual_sound</code> that whenever
-      the check passes, these very weights are within ε of the optimal training loss — at any λ, whatever the solver did
-      to find them. The solver is Float conjugate gradients, tested against scikit-learn's{' '}
-      <code className="font-mono">Ridge</code> to 10⁻⁶ (<code className="font-mono">lake exe ridge-test</code>) rather
-      than proved; the certificate covers what it produced. Nothing is said about the test set.
-    </>
-  ),
-  'gauss-seidel': (
-    <>
-      <span className="font-medium text-slate-700">Certified</span> means: after training, Lean reads the Float weights
-      exactly (as ℚ), forms the residual of this dataset's exact normal equations at them, and checks ‖Aθ − b‖²/λ against
-      a tolerance of one millionth of their training loss. The theorem{' '}
-      <code className="font-mono">Pipeline.checkResidual_sound</code> proves that whenever that check passes, these very
-      weights are within ε of the optimal training loss — at any λ, whatever the solver did to find them. The older
-      a priori witness (diagonal dominance, ρ &lt; 1, <code className="font-mono">Pipeline.checkSolver_sound</code>) is
-      shown too; it only holds at large λ. Neither says anything about the test set. The pipeline fits five count
-      descriptors (heavy atoms, bonds, hydrogens, aromatic atoms, heteroatoms), standardized, to the centred target, so
-      expect a modest R²: five counts carry less than 2048 Morgan bits.
-    </>
-  ),
-}
+const MODEL_NOTE = (
+  <>
+    <span className="font-medium text-slate-700">Verified</span> means: the solver is LeanLearn's{' '}
+    <code className="font-mono">gradientDescent</code>, written once over the scalar type, so the Float program that
+    runs here is the same text the theorem <code className="font-mono">Problem.loss_gradientDescent_le</code> is about
+    at ℝ: from θ = 0, k steps of size η with 2ηΛ ≤ 1 end within ‖u‖²/(2ηk) of every competitor u. Before each fit
+    Lean computes Λ = (1/m) Σᵣ ‖xᵣ‖² + λ exactly on this training set, takes η = 1/(2Λ), and decides the theorem's
+    hypotheses (<code className="font-mono">Pipeline.checkGDData</code>);{' '}
+    <code className="font-mono">checkGDData_sound</code> turns that pass into the bound for the fit shown. Features
+    are the 2048 Morgan bits (radius 2) as 0/1, the target centred on its training mean, λ = α/m so that α is
+    scikit-learn's alpha. The bound is on the training loss, read in exact arithmetic; Float is what runs. Nothing is
+    said about the test set.
+  </>
+)
 
 const PENALTY_OPTIONS = ['0.1', '1.0', '4.0', '16.0']
 
@@ -134,7 +108,7 @@ export default function Datasets() {
   const [loadingTable, setLoadingTable] = useState(false)
   const [tableState, setTableState] = useState({ rows: [], totalCount: 0, logs: [], leanFeedback: null })
 
-  const [modelType, setModelType] = useState('sparse-ridge')
+  const modelType = MODEL_TYPE
   const [alpha, setAlpha] = useState('1.0')
   const [fitting, setFitting] = useState(false)
   const [fitResult, setFitResult] = useState(null)
@@ -182,7 +156,8 @@ export default function Datasets() {
     setBusyMeta({
       label: 'Fitting in Lean 4: featurize, solve, draw the parity plot',
       startedAt: Date.now(),
-      expectedMs: 300 + 4 * (customRows ? customRows.length : 205),
+      // 2049 × 2049 normal equations and 800 gradient steps: a few seconds
+      expectedMs: 1500 + 40 * (customRows ? customRows.length : 205),
     })
     setFitting(true)
     setFitError('')
@@ -213,7 +188,6 @@ export default function Datasets() {
   const selectBuiltinDataset = async (tabObj) => {
     setUploadedCsv(null)
     setDatasetId(tabObj.id)
-    setModelType(tabObj.defaultModel)
     setLoadingTable(true)
     tableHandle.current?.cancel()
     const handle = newRequestHandle()
@@ -221,7 +195,7 @@ export default function Datasets() {
     runPipelineFit({
       dsId: tabObj.id,
       customRows: null,
-      model: tabObj.defaultModel,
+      model: MODEL_TYPE,
       pen: alpha,
       label: tabObj.targetLabel,
     })
@@ -243,20 +217,6 @@ export default function Datasets() {
   useEffect(() => {
     selectBuiltinDataset(DATASET_TABS[0])
   }, [])
-
-  const handleModelChange = (newModel) => {
-    setModelType(newModel)
-    const activeTab = DATASET_TABS.find((t) => t.id === datasetId) || DATASET_TABS[0]
-    const customRows = uploadedCsv ? buildCustomRows(uploadedCsv, smilesCol, targetCol) : null
-    const label = uploadedCsv ? uploadedCsv.headers[targetCol] || 'Target' : activeTab.targetLabel
-    runPipelineFit({
-      dsId: datasetId,
-      customRows,
-      model: newModel,
-      pen: alpha,
-      label,
-    })
-  }
 
   const handleAlphaChange = (newAlpha) => {
     setAlpha(newAlpha)
@@ -366,7 +326,7 @@ export default function Datasets() {
     <div className="space-y-6">
       <SectionHeader
         title="Datasets & Lean Regression Pipeline"
-        description="Select a built-in benchmark or upload any CSV with SMILES and a numeric target column, then fit a certified model in Lean 4 — sparse ridge on 2048 Morgan bits, or the Gauss–Seidel pipeline on five count descriptors. Either way, the trained weights are proved within ε of the optimum."
+        description="Select a built-in benchmark or upload any CSV with SMILES and a numeric target column, then fit ridge regression on 2048 Morgan bits by gradient descent in Lean 4 — the solver its convergence theorem is about, with the theorem's step-size condition decided exactly on the data before every fit."
         right={
           busy && (
             <BusyBar
@@ -471,25 +431,11 @@ export default function Datasets() {
                 LeanLearn / Pipelines Regression Model
               </p>
               <div className="flex flex-wrap gap-1.5">
-                {MODEL_OPTIONS.map((m) => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    disabled={busy}
-                    onClick={() => handleModelChange(m.id)}
-                    className={`px-2.5 py-1.5 rounded-lg text-xs transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
-                      modelType === m.id
-                        ? 'bg-teal-700 text-white font-medium'
-                        : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200/70'
-                    }`}
-                  >
-                    {m.label}
-                  </button>
-                ))}
+                <span className="px-2.5 py-1.5 rounded-lg text-xs bg-teal-700 text-white font-medium">
+                  Verified Gradient Descent (2048 Morgan Bits)
+                </span>
               </div>
-              {MODEL_NOTES[modelType] && (
-                <p className="text-[11px] leading-relaxed text-slate-500 max-w-xl pt-1">{MODEL_NOTES[modelType]}</p>
-              )}
+              <p className="text-[11px] leading-relaxed text-slate-500 max-w-xl pt-1">{MODEL_NOTE}</p>
             </div>
 
             <div className="space-y-1.5 shrink-0">
@@ -569,23 +515,17 @@ export default function Datasets() {
                   <div>
                     <div className="font-semibold">
                       {fitResult.certificate.certified
-                        ? 'Residual certificate passed: these weights are within ε of the optimum'
-                        : 'Residual certificate not met: the solver stopped short of the optimum'}
+                        ? 'Convergence theorem applies: the step-size condition 2ηΛ ≤ 1 holds on this training set'
+                        : 'Step-size condition failed: the convergence theorem does not cover this fit'}
                     </div>
                     <p className="font-mono text-[11px] mt-0.5 opacity-85">
                       {fitResult.certificate.summary}
                     </p>
-                    {CERTIFICATE_THEOREM[fitResult.modelType ?? modelType] && (
+                    {fitResult.certificate.theorem && (
                       <p className="text-[11px] mt-1.5 opacity-70">
-                        Theorem:{' '}
-                        <span className="font-mono">{CERTIFICATE_THEOREM[fitResult.modelType ?? modelType]}</span> — a
-                        pass puts exactly these weights within ε of every competitor's training loss.
-                      </p>
-                    )}
-                    {fitResult.certificate.witnessSummary && (
-                      <p className="text-[11px] mt-1.5 opacity-70">
-                        A priori witness, before training (diagonal dominance):{' '}
-                        <span className="font-mono">{fitResult.certificate.witnessSummary}</span>
+                        Theorem: <span className="font-mono">{fitResult.certificate.theorem}</span> — for every
+                        competitor u, L(θ) ≤ L(u) + {Number(fitResult.certificate.rate ?? 0).toFixed(4)} · ‖u‖², the
+                        O(1/k) rate 1/(2ηk) of {fitResult.certificate.steps} steps.
                       </p>
                     )}
                   </div>

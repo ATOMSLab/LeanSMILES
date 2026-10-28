@@ -41,9 +41,10 @@ const PRIMER = [
         Three libraries take a molecule from its SMILES string to a machine-learning prediction with nothing else in
         between: parsing, aromaticity perception and fingerprints as RDKit does them, then ridge and logistic regression
         with their metrics. On the Delaney solubility benchmark the Lean pipeline matches scikit-learn (test R² 0.67, RMSE
-        1.26); on an EGFR activity set it reaches a test F1 of 0.92. The fingerprint model's trained weights are
-        themselves certified after training by an exact residual check. Along the way the proofs turned up three issues
-        in widely used tools and standards.
+        1.26); on an EGFR activity set it reaches a test F1 of 0.92. The regression model on this site is trained by
+        gradient descent — the same Lean program its convergence theorem is about, with the theorem's step-size
+        condition decided exactly on the data before every fit. Along the way the proofs turned up three issues in
+        widely used tools and standards.
       </>
     ),
   },
@@ -63,7 +64,7 @@ const LIBRARIES = [
   {
     title: 'Pipelines',
     code: 'The join',
-    desc: 'A pipeline is data, representation and solver, all in exact rational arithmetic. After training, the residual of the normal equations at the trained weights is checked exactly, and a theorem turns that check into a bound on how far they are from the optimum — for the five-count pipeline and for ridge on 2048 Morgan bits alike.',
+    desc: 'A pipeline is data, representation and solver, all in exact rational arithmetic. Before a fit, the hypotheses of the solver\'s convergence theorem — for gradient descent, the step-size condition on this training set — are decided exactly, so the theorem\'s bound on the trained model holds for the fit that actually runs.',
   },
 ]
 
@@ -73,8 +74,8 @@ const THEOREMS = [
   { name: 'Finset.tanimotoMetricSpace', statement: 'dist A B = |A ∆ B| / |A ∪ B|', note: 'Tanimoto distance is a formal metric on bit sets (fails on ℝ vectors)' },
   { name: 'chargesConsistent_relabel', statement: '(m.relabel σ).chargesConsistent ↔ m.chargesConsistent', note: 'Formal charge bounds (-shellVacancy ≤ charge ≤ Z) preserved under relabeling' },
   { name: 'normalEquiv', statement: '{m // m.IsNormal} ≃ Vector Atom n × BondMatrix n', note: 'Lossless equivalence between normal-form molecule and bond matrix' },
-  { name: 'Pipeline.checkResidual_sound', statement: 'checkResidual θ ε = true → loss θ ≤ loss u + ε', note: 'Trained weights whose exact residual passes the check are within ε of every competitor — checked after training, at any λ' },
-  { name: 'SparseProblem.checkResidual_sound', statement: 'checkResidual θ ε = true → loss θ ≤ loss u + ε', note: 'The same bound for ridge on 2048 Morgan bits, with the residual computed from the bit lists (residual_eq) instead of the dense normal matrix' },
+  { name: 'Problem.loss_gradientDescent_le', statement: 'L(θₖ) ≤ L(u) + ‖u‖² / (2ηk)', note: 'Gradient descent from 0 — k steps of size η with 2ηΛ ≤ 1 — ends within ‖u‖²/(2ηk) of every competitor u: the O(1/k) rate, about the solver that runs' },
+  { name: 'Pipeline.checkGDData_sound', statement: 'checkGDData = true → trainLoss ≤ loss u + ‖u‖²/(2ηk)', note: 'The step-size condition is decided exactly on the training set, so the bound holds for the very fit shown on the Regression page' },
 ]
 
 export default function Home() {
