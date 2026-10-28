@@ -98,3 +98,8 @@ root = "LeanSMILES.Tests.Depict"
 [[lean_exe]]
 name = "worker"
 root = "Worker"
+
+# Experiment: the verified dense solvers (Gauss–Seidel, gradient descent) on folded Morgan bits
+[[lean_exe]]
+name = "morgan-dense-test"
+root = "Pipelines.Tests.MorganDense"
