@@ -473,7 +473,7 @@ export default function Datasets() {
 
             <div className="space-y-1.5 shrink-0">
               <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">
-                Penalty (α / λ)
+                Ridge penalty
               </p>
               <div className="flex items-center gap-1">
                 {PENALTY_OPTIONS.map((p) => (
@@ -488,7 +488,7 @@ export default function Datasets() {
                         : 'bg-slate-100/80 text-slate-600 hover:bg-slate-200/70'
                     }`}
                   >
-                    {p}
+                    α = {p}
                   </button>
                 ))}
               </div>

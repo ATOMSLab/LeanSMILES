@@ -11,7 +11,19 @@ export default function App() {
         <AppRoutes />
       </main>
       <footer className="py-6 text-center text-xs text-slate-400">
-        LeanSMILES · ATOMS Lab
+        LeanSMILES ·{' '}
+        <a href="https://atomslab.github.io" target="_blank" rel="noreferrer" className="hover:text-teal-700 hover:underline">
+          ATOMS Lab
+        </a>{' '}
+        ·{' '}
+        <a
+          href="https://github.com/ATOMSLab/LeanSMILES"
+          target="_blank"
+          rel="noreferrer"
+          className="hover:text-teal-700 hover:underline"
+        >
+          Source on GitHub
+        </a>
       </footer>
     </div>
   )
