@@ -595,7 +595,11 @@ export default function Datasets() {
 
               {fitResult.topFeatures?.length > 0 && (
                 <div>
-                  <p className="text-[11px] text-slate-400 mb-1.5">Largest Learned Feature / Morgan Bit Weights</p>
+                  <p className="text-[11px] text-slate-400 mb-1.5">
+                    {fitResult.modelType === 'gauss-seidel'
+                      ? 'Learned Descriptor Weights (standardized counts)'
+                      : 'Largest Learned Morgan Bit Weights'}
+                  </p>
                   <div className="flex flex-wrap gap-1.5">
                     {fitResult.topFeatures.map((f, i) => (
                       <Badge key={i} active={f.weight > 0}>
