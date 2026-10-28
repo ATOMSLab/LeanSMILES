@@ -30,6 +30,9 @@ training it**. Write `L` for the training loss of the pipeline's problem read in
   `p.checkSolver W ε` (weighted diagonal dominance of the normal equations, computed over
   `ℚ` from the data) gives `L(θ) ≤ L(u) + ε` for **every** `u`: the trained model is within
   `ε` of the optimum.
+* **After training** (`Pipeline.checkResidual_sound`). The exact residual check on any
+  parameters `θ` — whatever produced them — gives `L(θ) ≤ L(u) + ε` for **every** `u`, at any
+  `λ > 0`, with no condition on the normal equations.
 * **Gauss–Seidel never increases the loss** (`Pipeline.gaussSeidel_antitone`), for every
   pipeline, with no condition.
 
@@ -180,6 +183,14 @@ theorem checkSolver_sound {W : SolverWitness (d + 1)} {ε : ℚ} (h : p.checkSol
   · have := P.loss_gaussSeidel_le hridge hdd hβ hb k u
     simp only [Algorithm.solve]
     linarith
+
+/-- **Soundness of the residual certificate.** If the exact check passes on parameters `θ` —
+whatever solver produced them, in whatever arithmetic — then, read in `ℝ`, `θ`'s training loss
+is within `ε` of that of **every** parameter vector `u`: `θ` is `ε`-optimal, at any `λ > 0`. -/
+theorem checkResidual_sound {θ : Vec ℚ (d + 1)} {ε : ℚ} (h : p.checkResidual θ ε = true)
+    (u : Vec ℝ (d + 1)) : (p.problem ℝ).loss (castVec θ) ≤ (p.problem ℝ).loss u + ε := by
+  rw [problem_real]
+  exact p.exactProblem.checkResidual_sound h u
 
 /-- **Gauss–Seidel never increases the training loss**, for every pipeline with
 `λ ≥ 0`: more sweeps are never worse. -/

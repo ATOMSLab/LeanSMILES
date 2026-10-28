@@ -29,6 +29,11 @@ the certified excess `Γ β² ρ²ᵏ` below `ε`), run on the pipeline's exact 
 `suggestWitness` proposes the unit-weight witness and `certifiedSolverExcess` is the bound
 it certifies, if it passes.
 
+**After training** (`Pipeline.checkResidual`). The trained parameters, read exactly, are
+checked against the exact normal equations: `‖A θ - b‖² ≤ ε λ`. No condition on `A`, any
+`λ > 0`, any solver in any arithmetic; `residualExcess` is the bound `‖A θ - b‖² / λ` the
+residual certifies.
+
 The check is plain `ℚ` arithmetic on the data, so `decide +kernel` can run it whenever the
 kernel can evaluate the representation (`bondOrders`, but not `morgan`, whose hashing the
 kernel cannot reduce).
@@ -73,6 +78,16 @@ def certifiedSolverExcess : Option ℚ :=
   let W := p.suggestWitness
   let e := p.certifiedExcess W
   if p.checkSolver W e then some e else none
+
+/-! ### After training: the residual certificate -/
+
+/-- The exact residual check on parameters `θ` — the trained `Float` model read exactly, say:
+`λ > 0` and `‖A θ - b‖² ≤ ε λ` on the pipeline's exact normal equations. Soundness:
+`checkResidual_sound`. -/
+def checkResidual (θ : Vec ℚ (d + 1)) (ε : ℚ) : Bool := p.exactProblem.checkResidual θ ε
+
+/-- `‖A θ - b‖² / λ`: the excess training loss the residual at `θ` certifies. -/
+def residualExcess (θ : Vec ℚ (d + 1)) : ℚ := p.exactProblem.residualExcess θ
 
 /-! ### Gradient descent -/
 

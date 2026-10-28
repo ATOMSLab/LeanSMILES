@@ -62,7 +62,7 @@ const LIBRARIES = [
   {
     title: 'Pipelines',
     code: 'The join',
-    desc: 'A pipeline is data, representation and solver, all in exact rational arithmetic. A certificate checked before training guarantees how close the trained model gets to the optimum.',
+    desc: 'A pipeline is data, representation and solver, all in exact rational arithmetic. After training, the residual of the normal equations at the trained weights is checked exactly, and a theorem turns that check into a bound on how far they are from the optimum.',
   },
 ]
 
@@ -72,7 +72,7 @@ const THEOREMS = [
   { name: 'Finset.tanimotoMetricSpace', statement: 'dist A B = |A ∆ B| / |A ∪ B|', note: 'Tanimoto distance is a formal metric on bit sets (fails on ℝ vectors)' },
   { name: 'chargesConsistent_relabel', statement: '(m.relabel σ).chargesConsistent ↔ m.chargesConsistent', note: 'Formal charge bounds (-shellVacancy ≤ charge ≤ Z) preserved under relabeling' },
   { name: 'normalEquiv', statement: '{m // m.IsNormal} ≃ Vector Atom n × BondMatrix n', note: 'Lossless equivalence between normal-form molecule and bond matrix' },
-  { name: 'Pipeline.checkSolver_sound', statement: 'checkSolver W ε = true → trainLoss ℝ ≤ loss u + ε', note: 'A certificate that passes bounds the trained model’s loss against every competitor' },
+  { name: 'Pipeline.checkResidual_sound', statement: 'checkResidual θ ε = true → loss θ ≤ loss u + ε', note: 'Trained weights whose exact residual passes the check are within ε of every competitor — checked after training, at any λ' },
 ]
 
 export default function Home() {
