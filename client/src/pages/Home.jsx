@@ -74,6 +74,7 @@ const THEOREMS = [
   { name: 'chargesConsistent_relabel', statement: '(m.relabel σ).chargesConsistent ↔ m.chargesConsistent', note: 'Formal charge bounds (-shellVacancy ≤ charge ≤ Z) preserved under relabeling' },
   { name: 'normalEquiv', statement: '{m // m.IsNormal} ≃ Vector Atom n × BondMatrix n', note: 'Lossless equivalence between normal-form molecule and bond matrix' },
   { name: 'Pipeline.checkResidual_sound', statement: 'checkResidual θ ε = true → loss θ ≤ loss u + ε', note: 'Trained weights whose exact residual passes the check are within ε of every competitor — checked after training, at any λ' },
+  { name: 'SparseProblem.checkResidual_sound', statement: 'checkResidual θ ε = true → loss θ ≤ loss u + ε', note: 'The same bound for ridge on 2048 Morgan bits, with the residual computed from the bit lists (residual_eq) instead of the dense normal matrix' },
 ]
 
 export default function Home() {

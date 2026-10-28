@@ -21,29 +21,36 @@ const DATASET_TABS = [
   },
 ]
 
-// Two solvers: the real model (Float conjugate gradients tested against
-// scikit-learn, its trained weights certified after the fact by the exact residual
-// check) and the certified ℚ pipeline whose certificate can genuinely fail. Jacobi (exact-ℚ
-// certificate runs for minutes at λ ≤ 1), gradient descent (certificate passes
-// by construction) and Householder-QR are still served by the API, just not
+// Two certified models. Both train in Float and are certified after the fact:
+// Lean reads the trained weights exactly, checks the residual of the exact normal
+// equations at them, and a theorem turns a pass into a bound on their distance
+// from the optimum. Jacobi (exact-ℚ certificate runs for minutes at λ ≤ 1),
+// gradient descent and Householder-QR are still served by the API, just not
 // offered here.
 const MODEL_OPTIONS = [
-  { id: 'sparse-ridge', label: 'Sparse Ridge (2048 Morgan Bits)' },
+  { id: 'sparse-ridge', label: 'Certified Sparse Ridge (2048 Morgan Bits)' },
   { id: 'gauss-seidel', label: 'Certified Gauss–Seidel (ℚ Pipeline)' },
 ]
+
+// The soundness theorem behind each model's certificate panel.
+const CERTIFICATE_THEOREM = {
+  'sparse-ridge': 'SparseProblem.checkResidual_sound',
+  'gauss-seidel': 'Pipeline.checkResidual_sound',
+}
 
 const MODEL_NOTES = {
   'sparse-ridge': (
     <>
-      The solver is unverified Float: conjugate gradients on 2048 Morgan bits, checked against scikit-learn's{' '}
-      <code className="font-mono">Ridge</code> to 10⁻⁶ by <code className="font-mono">lake exe ridge-test</code>. Its
-      output is certified. After training, Lean reads the 2048 weights exactly (as ℚ), forms the residual of this
-      dataset's exact normal equations at them — scikit-learn's objective as a ridge problem: bit columns centred on
-      their training means, the target on its mean, λ = α/m, computed from the bit lists rather than the dense
-      2049 × 2049 normal matrix — and checks ‖Aθ − b‖²/λ against one millionth of their training loss.{' '}
-      <code className="font-mono">SparseProblem.residual_eq</code> proves the sparse residual is the dense one, and{' '}
-      <code className="font-mono">SparseProblem.checkResidual_sound</code> that whenever the check passes, these very
-      weights are within ε of the optimal training loss — any solver, any λ. Nothing is said about the test set.
+      <span className="font-medium text-slate-700">Certified</span> means: after training, Lean reads the 2048 trained
+      weights exactly (as ℚ), forms the residual of this dataset's exact normal equations at them — scikit-learn's
+      objective as a ridge problem: bit columns centred on their training means, the target on its mean, λ = α/m,
+      computed from the bit lists rather than the dense 2049 × 2049 normal matrix — and checks ‖Aθ − b‖²/λ against one
+      millionth of their training loss. <code className="font-mono">SparseProblem.residual_eq</code> proves the sparse
+      residual is the dense one, and <code className="font-mono">SparseProblem.checkResidual_sound</code> that whenever
+      the check passes, these very weights are within ε of the optimal training loss — at any λ, whatever the solver did
+      to find them. The solver is Float conjugate gradients, tested against scikit-learn's{' '}
+      <code className="font-mono">Ridge</code> to 10⁻⁶ (<code className="font-mono">lake exe ridge-test</code>) rather
+      than proved; the certificate covers what it produced. Nothing is said about the test set.
     </>
   ),
   'gauss-seidel': (
@@ -359,7 +366,7 @@ export default function Datasets() {
     <div className="space-y-6">
       <SectionHeader
         title="Datasets & Lean Regression Pipeline"
-        description="Select a built-in benchmark or upload any CSV with SMILES and a numeric target column, then fit Sparse Ridge on Morgan fingerprints or the certified Gauss–Seidel pipeline in Lean 4."
+        description="Select a built-in benchmark or upload any CSV with SMILES and a numeric target column, then fit a certified model in Lean 4 — sparse ridge on 2048 Morgan bits, or the Gauss–Seidel pipeline on five count descriptors. Either way, the trained weights are proved within ε of the optimum."
         right={
           busy && (
             <BusyBar
@@ -568,6 +575,13 @@ export default function Datasets() {
                     <p className="font-mono text-[11px] mt-0.5 opacity-85">
                       {fitResult.certificate.summary}
                     </p>
+                    {CERTIFICATE_THEOREM[fitResult.modelType ?? modelType] && (
+                      <p className="text-[11px] mt-1.5 opacity-70">
+                        Theorem:{' '}
+                        <span className="font-mono">{CERTIFICATE_THEOREM[fitResult.modelType ?? modelType]}</span> — a
+                        pass puts exactly these weights within ε of every competitor's training loss.
+                      </p>
+                    )}
                     {fitResult.certificate.witnessSummary && (
                       <p className="text-[11px] mt-1.5 opacity-70">
                         A priori witness, before training (diagonal dominance):{' '}
