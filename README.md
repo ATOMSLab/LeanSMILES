@@ -18,7 +18,8 @@ LeanSMILES/           the typed SMILES toolkit (imports Mathlib)
 
 LeanLearn/            learning algorithms on tabular data (imports Mathlib only); see its README.md
   Scalar.lean         ScalarLike: the scalar interface, Float to run and ℝ to prove (from LeanCatalyst)
-  Regression/         executable, over any scalar: Problem, Solvers, Certificates (iterative);
+  Regression/         executable, over any scalar: Problem, Solvers, Certificates (a priori witnesses,
+                      and the residual check after training);
                       LinearModel (the objectives on a matrix); OLSFloat, RidgeFloat (QR, Float);
                       SparseRidge (conjugate gradients, sparse 0/1); SparseProblem (the residual
                       certificate from bit lists); Metrics (R², RMSE, MAE)
@@ -36,6 +37,7 @@ Pipelines/            molecules as tabular data (imports both)
   Pipeline.lean       LabelledMolecules (from SMILES), Pipeline, model, losses, predictions
   Data.lean           LabelledMolecules from the CSV tables in datasets/ (via CSVparser)
   Certificates.lean   the exact checks on a pipeline: checkGD, checkSolver, certifiedSolverExcess
+                      (before training); checkResidual, residualExcess (after it)
   Proofs/             representations (bounds, canonicity), certificate soundness
   Examples/           delaney.lean (certified solubility regression), egfr.lean (classification)
   Tests/              Logistic, Ridge (lake exe logistic-test, ridge-test)
@@ -395,7 +397,8 @@ Two formulations of the same problem, by two authors, side by side:
   gradient descent, Jacobi and Gauss–Seidel on them, started from `0`; `Algorithm` is the
   solver with its hyperparameters, as data. [`Certificates.lean`](LeanLearn/Regression/Certificates.lean)
   is the exact `ℚ` check (`SolverWitness`: weighted diagonal dominance) that certifies
-  Jacobi and Gauss–Seidel before running them.
+  Jacobi and Gauss–Seidel before running them, and `Problem.checkResidual`, the check after
+  running any solver: the residual of the normal equations at the parameters it produced.
   [`Proofs/Regression/MatrixBridge.lean`](LeanLearn/Proofs/Regression/MatrixBridge.lean) proves
   the two formulations are one problem up to the factor `m` — `‖Xθ − y‖² + mλ‖θ‖² = m·L(θ)`,
   `XᵀX + mλI = m·A`, `Xᵀy = m·b` — so for `m > 0` they share normal equations and minimizers,
@@ -446,6 +449,10 @@ above); `Regression/` reads the executable code in `ℝ`:
   point of Jacobi is optimal.
 - **The certificate is sound** (`SolverWitness.check_sound`): a passing exact `ℚ` check
   gives the hypotheses above in `ℝ`.
+- **Any parameters, after the fact** (`Problem.loss_le_add_residual`,
+  `Problem.checkResidual_sound`): for `λ > 0`, `L(θ) ≤ L(u) + ‖Aθ − b‖²/λ` for every `u` —
+  from the quadratic expansion and `C(v) ≥ λ‖v‖²`. So an exact residual check on whatever a
+  solver produced, in whatever arithmetic, bounds its excess loss, with no condition on `A`.
 
 ## Molecules as tabular data: `Pipelines`
 
@@ -511,6 +518,30 @@ When a condition fails there is no certificate: `checkGD` returns `false` for a 
 too large for the representation, and `certifiedSolverExcess` is `none` for Jacobi without
 enough ridge penalty — a pipeline that, run on `Float`, diverges.
 
+**4. After training: the residual certificate.** The checks above are a priori: they say
+what a solver *will* do, and only where the normal equations are diagonally dominant, which
+on molecular data means a large `λ`. `checkResidual` is a posteriori: it takes whatever
+parameters a solver produced — the `Float` model, read exactly by `ratOfFloatExact` — and
+tests `‖Aθ − b‖² ≤ ελ` on the exact normal equations. `checkResidual_sound` turns a pass into
+`L(θ) ≤ L(u) + ε` for every `u`, at any `λ > 0`, with no condition on the data and nothing
+assumed about the solver. The pipeline that the witness could not certify at `λ = 1` is
+certified all the same once Gauss–Seidel has converged there, and the Jacobi run that
+diverged is caught by the same check:
+
+```lean
+def weakGS : Pipeline 40 16 := { weak with algorithm := .gaussSeidel 100 }
+def θweak : Vec ℚ 17 := (weakGS.model Float).map ratOfFloatExact
+
+#eval decide (weakGS.residualExcess θweak < 1 / 10 ^ 12)   -- true: ‖Aθ − b‖²/λ, the certified excess
+#eval weakGS.checkResidual θweak (1 / 10 ^ 6)                -- true
+#eval weak.checkResidual ((weak.model Float).map ratOfFloatExact) (1 / 10 ^ 6)   -- false
+```
+
+The theorem behind it is stated once (`Pipeline.checkResidual_sound`); the check itself
+runs compiled, since the kernel cannot evaluate `Float` to read the parameters (give it
+rational literals and `decide +kernel` proves the instance too). The website's Regression
+page runs this check on every Gauss–Seidel fit it shows, at `ε = 10⁻⁶ · L(θ)`.
+
 What is proved ([`Pipelines/Proofs/Certificates.lean`](Pipelines/Proofs/Certificates.lean),
 [`Representation.lean`](Pipelines/Proofs/Representation.lean)); `L` is the training loss:
 
@@ -519,6 +550,7 @@ What is proved ([`Pipelines/Proofs/Certificates.lean`](Pipelines/Proofs/Certific
 | Gradient descent     | `‖φ(M)‖² ≤ R²` for the representation, `λ ≥ 0`, `η > 0`, `2η(R² + 1 + λ) ≤ 1`, `B ≤ 2ηkε` | `L(θ) ≤ L(u) + ε` for every `u` with `‖u‖² ≤ B`, for **every dataset** (`GDCertificate.sound`) |
 | Jacobi, Gauss–Seidel | the exact `ℚ` check of weighted diagonal dominance (`checkSolver`)                        | `L(θ) ≤ L(u) + ε` for **every** `u`: `θ` is `ε`-optimal (`checkSolver_sound`)                  |
 | Gauss–Seidel         | none (`λ ≥ 0`)                                                                            | the loss never increases with more sweeps (`gaussSeidel_antitone`)                             |
+| Any solver, after training | the exact `ℚ` residual check at the parameters it produced (`checkResidual`), `λ > 0` | `L(θ) ≤ L(u) + ε` for **every** `u`, with no condition on the data (`checkResidual_sound`) |
 
 and about representations: `bondOrder_eq_adjMatrix` (the kernel-evaluable bond-order
 features are the toolkit's `adjMatrix`), `canonical_relabel` (a representation read through
@@ -528,15 +560,17 @@ toolkit's `canonicalSmiles_relabel`), and feature bounds for every molecule: Mor
 `++`. Every theorem depends only on Lean's standard axioms; kernel checks use
 `decide +kernel`, never `native_decide`.
 
-**What the guarantees do not cover.** Floating-point rounding (the theorems are about the
-solvers at `ℝ`; the `Float` run is the same code, up to rounding). Kernel-checked data
+**What the guarantees do not cover.** Floating-point rounding, for the a priori
+certificates (their theorems are about the solvers at `ℝ`; the `Float` run is the same code,
+up to rounding) — the residual certificate is the exception, since it reads the `Float`
+parameters exactly and certifies those very numbers. Kernel-checked data
 conditions need a kernel-evaluable representation: `bondOrders` is one, Morgan fingerprints
 are not (their hashing uses `UInt32` and `mergeSort`), so a Jacobi/Gauss–Seidel certificate on
 Morgan features can be computed with `#eval` but not yet proved by `decide +kernel`; the
 gradient-descent certificate needs no evaluation and works for Morgan. Diagonal dominance
 needs ridge: with an intercept, the normal equations of typical molecular data are not
-diagonally dominant unless `λ` is large enough. And generalization: the guarantees bound the
-training loss.
+diagonally dominant unless `λ` is large enough — the residual certificate has no such
+condition. And generalization: the guarantees bound the training loss.
 
 ### Classification with Morgan fingerprints
 
