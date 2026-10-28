@@ -12,6 +12,8 @@ public import LeanLearn.Scalar
 public import LeanLearn.Regression.Problem
 public import LeanLearn.Regression.Solvers
 public import LeanLearn.Regression.Certificates
+-- The residual certificate on sparse 0/1 features (Morgan bits), from the bit lists
+public import LeanLearn.Regression.SparseProblem
 -- The prediction, squared error and ridge objective on a Mathlib matrix, over any scalar
 public import LeanLearn.Regression.LinearModel
 -- Householder-QR solvers on `Float` arrays
@@ -36,6 +38,7 @@ public import LeanLearn.Proofs.Regression.Basic
 public import LeanLearn.Proofs.Regression.GradientDescent
 public import LeanLearn.Proofs.Regression.Iterative
 public import LeanLearn.Proofs.Regression.Certificates
+public import LeanLearn.Proofs.Regression.SparseProblem
 public import LeanLearn.Proofs.Regression.MatrixBridge
 public import LeanLearn.Proofs.Regression.LinearModel
 -- Examples: worked proofs (`ols`, `ridge`) and runs of the `Float` solvers

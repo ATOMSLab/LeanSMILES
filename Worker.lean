@@ -11,6 +11,7 @@ import LeanLearn.Regression.OLSFloat
 import LeanLearn.Regression.Metrics
 import LeanLearn.Regression.Solvers
 import LeanLearn.Regression.Certificates
+import LeanLearn.Regression.SparseProblem
 import LeanLearn.Plot.Parity
 import Pipelines.Representation
 import Pipelines.Pipeline
@@ -631,6 +632,40 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
     let pen := if alphaFloat <= 0.0 then 0.01 else alphaFloat
     let srCfg : SparseRidge.Config Float := { alpha := pen, maxIter := 500, tol := 0.00001 }
     let (model, iters) := SparseRidge.fit srCfg 2048 trainData
+    -- The a posteriori certificate, as for the certified pipeline: read the trained Float
+    -- weights exactly, pad them with a zero bias, and check the residual of the exact normal
+    -- equations at them. The exact problem is scikit-learn's objective in `Problem` form: bit
+    -- columns centred on their training means, the target on its mean, λ = α/m (so
+    -- `m · Problem.loss` is the objective at its optimal intercept, and on centred data the
+    -- optimal bias is 0). The residual is computed from the bit lists
+    -- (`SparseProblem.residual`, proved equal to the dense `Problem.residualAt` by
+    -- `SparseProblem.residual_eq`); `SparseProblem.checkResidual_sound` then bounds the excess
+    -- training loss of exactly these weights, whatever conjugate gradients did in Float.
+    let m := trainSamples.size
+    let mQ : ℚ := m
+    let alphaQ : ℚ := if alphaRat <= 0 then 1 / 100 else alphaRat
+    let ridgeQ : ℚ := alphaQ / mQ
+    let bitsQ : Vector (List (Fin 2048)) m := Vector.ofFn fun i =>
+      trainSamples[i.val]!.bits.toList.filterMap fun b => if h : b < 2048 then some ⟨b, h⟩ else none
+    let yQ : Vector ℚ m := Vector.ofFn fun i => trainSamples[i.val]!.yRat
+    let sparse : SparseProblem m 2048 := { bits := bitsQ, y := yQ, ridge := ridgeQ }
+    let θQ : Vec ℚ 2049 :=
+      (Vector.ofFn fun j : Fin 2048 => ratOfFloatExact (model.weights.getD j.val 0.0)).push 0
+    let lossQ : ℚ := sparse.loss θQ
+    let resExcess : ℚ := sparse.residualExcess θQ
+    let resTol : ℚ := lossQ / 1000000
+    let isCertified := sparse.checkResidual θQ resTol
+    let resExcessF := resExcess.toFloat
+    let lossF := lossQ.toFloat
+    let resShare := if lossF > 0 then resExcessF / lossF else 0
+    let certSummary :=
+      if isCertified then
+        s!"checkResidual = true: ‖Aθ − b‖²/λ = {sci resExcessF} ≤ 10⁻⁶ · L(θ) (L(θ) = {fixed lossF 4}, λ = α/m = {ratStr ridgeQ})"
+      else
+        s!"checkResidual = false: ‖Aθ − b‖²/λ = {sci resExcessF} = {sci resShare} · L(θ) (L(θ) = {fixed lossF 4}, λ = α/m = {ratStr ridgeQ}), above the 10⁻⁶ · L(θ) tolerance — {iters} conjugate-gradient steps stopped short of the optimum"
+    let certShort :=
+      if isCertified then s!"residual certificate: excess loss ≤ {sci resExcessF}"
+      else s!"residual bound {sci resExcessF}, above the 10⁻⁶ L(θ) tolerance"
     let trainPairs : Array (Float × Float) := trainSamples.map fun s => (s.yFloat, model.predict s.bits)
     let testPairs : Array (Float × Float) := testSamples.map fun s => (s.yFloat, model.predict s.bits)
     let trR2 := r2 trainPairs
@@ -641,7 +676,7 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
     let teMae := mae testPairs
     let svg := paritySvg
       s!"Sparse Ridge on Morgan Fingerprints (α = {fixed pen 2})"
-      s!"LeanSMILES + LeanLearn: parse, aromatize, Morgan (2048 bits), {iters} CG steps"
+      s!"parse, aromatize, Morgan (2048 bits), {iters} CG steps · {certShort}"
       targetLabel
       [
         { label := "Training", points := trainPairs, r2 := trR2, rmse := trRmse, mae := trMae, filled := false },
@@ -662,6 +697,7 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
     let logs : Array String := #[
       s!"morganFeatures (×{samples.size}) --> {trainSamples.size} train, {testSamples.size} test (skipped {skipped.size})",
       s!"SparseRidge.fit (alpha = {fixed pen 2}) 2048 train --> {iters} conjugate-gradient steps",
+      s!"sparse.checkResidual θ (a posteriori, 2048 weights read exactly as ℚ, bias 0, bits and target centred, λ = α/m, ε = 10⁻⁶ L(θ)) --> {certSummary}",
       s!"train metrics --> R² {fixed trR2 3}, RMSE {fixed trRmse 3}, MAE {fixed trMae 3}",
       s!"test metrics  --> R² {fixed teR2 3}, RMSE {fixed teRmse 3}, MAE {fixed teMae 3}",
       s!"LeanLearn.Plot.paritySvg --> rendered SVG parity plot"
@@ -675,6 +711,14 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
       ("skippedCount", toJson skipped.size),
       ("iterations", toJson iters),
       ("svg", toJson svg),
+      ("certificate", Json.mkObj [
+        ("certified", toJson isCertified),
+        ("summary", toJson certSummary),
+        ("residualExcess", toJson resExcessF),
+        ("trainLoss", toJson lossF),
+        ("tolerance", toJson resTol.toFloat),
+        ("witnessOk", toJson false)
+      ]),
       ("metrics", Json.mkObj [
         ("trainR2", toJson trR2),
         ("trainRmse", toJson trRmse),

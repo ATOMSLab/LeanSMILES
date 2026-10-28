@@ -21,8 +21,9 @@ const DATASET_TABS = [
   },
 ]
 
-// Two solvers: the real model (tested against scikit-learn, no theorem) and the
-// certified pipeline whose certificate can genuinely fail. Jacobi (exact-ℚ
+// Two solvers: the real model (Float conjugate gradients tested against
+// scikit-learn, its trained weights certified after the fact by the exact residual
+// check) and the certified ℚ pipeline whose certificate can genuinely fail. Jacobi (exact-ℚ
 // certificate runs for minutes at λ ≤ 1), gradient descent (certificate passes
 // by construction) and Householder-QR are still served by the API, just not
 // offered here.
@@ -34,8 +35,15 @@ const MODEL_OPTIONS = [
 const MODEL_NOTES = {
   'sparse-ridge': (
     <>
-      No theorem behind this one: conjugate gradients on 2048 Morgan bits, checked against scikit-learn's{' '}
-      <code className="font-mono">Ridge</code> to 10⁻⁶ by <code className="font-mono">lake exe ridge-test</code>. Tested, not proven.
+      The solver is unverified Float: conjugate gradients on 2048 Morgan bits, checked against scikit-learn's{' '}
+      <code className="font-mono">Ridge</code> to 10⁻⁶ by <code className="font-mono">lake exe ridge-test</code>. Its
+      output is certified. After training, Lean reads the 2048 weights exactly (as ℚ), forms the residual of this
+      dataset's exact normal equations at them — scikit-learn's objective as a ridge problem: bit columns centred on
+      their training means, the target on its mean, λ = α/m, computed from the bit lists rather than the dense
+      2049 × 2049 normal matrix — and checks ‖Aθ − b‖²/λ against one millionth of their training loss.{' '}
+      <code className="font-mono">SparseProblem.residual_eq</code> proves the sparse residual is the dense one, and{' '}
+      <code className="font-mono">SparseProblem.checkResidual_sound</code> that whenever the check passes, these very
+      weights are within ε of the optimal training loss — any solver, any λ. Nothing is said about the test set.
     </>
   ),
   'gauss-seidel': (
