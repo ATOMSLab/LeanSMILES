@@ -10,7 +10,7 @@ public import Pipelines.Proofs.Certificates
 -- The same modules again as `meta` imports: the `#eval`s run their code at elaboration time.
 meta import Pipelines.Data
 meta import Pipelines.Proofs.Certificates
--- The two `decide +kernel` certificates in section 8 make the kernel run `Array.ofFn`, `Array.map`
+-- The two `decide +kernel` certificates in section 9 make the kernel run `Array.ofFn`, `Array.map`
 -- and `Fin.foldl`, whose bodies core does not expose; `import all` lets this file see them.
 import all Init.Data.Array.Basic
 import all Init.Data.Vector.Basic
@@ -24,9 +24,10 @@ exact targets, representations, the regression problem, three solvers with their
 certificates, and predictions. Open this file in the editor; the Infoview shows each
 `#eval`.
 
-A *certificate* is a check run before training. Its soundness theorem
-(`Pipelines/Proofs/Certificates.lean`) turns `true` into a guarantee about the trained
-model; section 8 states two of them as theorems.
+A *certificate* is a check whose soundness theorem (`Pipelines/Proofs/Certificates.lean`)
+turns `true` into a guarantee about the trained model. Sections 4–6 run checks before
+training; section 7 runs one after it, on the parameters the solver actually produced;
+section 9 states two of them as theorems.
 -/
 
 public section
@@ -168,7 +169,31 @@ def weak : Pipeline 40 16 := { gs with ridge := 1, algorithm := .jacobi 30 }
 -- The penalty buys the certificate: `ρ` falls below `1` between `λ = 4` and `λ = 8`.
 #eval [1, 4, 8, 16].map fun r ↦ (r, ({ gs with ridge := r }).suggestWitness.ratio.toFloat)
 
-/-! ### 7. Predictions -/
+/-! ### 7. After training: the residual certificate
+
+The checks so far run before the solver and need diagonal dominance, which only ridge
+buys. `checkResidual` runs after the solver, on whatever parameters it produced, read
+exactly: it tests `‖A θ - b‖² ≤ ε λ` on the exact normal equations, and `checkResidual_sound`
+turns a pass into `L(θ) ≤ L(u) + ε` for every `u` — at any `λ > 0`, with no condition on the
+data and no assumption about the solver. So the `weak` problem, whose witness fails at
+`λ = 1`, is certified all the same once Gauss–Seidel has converged there; and Jacobi, which
+diverged, is caught by the same check. -/
+
+def weakGS : Pipeline 40 16 := { weak with algorithm := .gaussSeidel 100 }
+
+-- The Float model, read exactly (`ratOfFloatExact`): the certificate is about these numbers.
+def θweak : Vec ℚ 17 := (weakGS.model Float).map ratOfFloatExact
+
+-- `‖A θ - b‖² / λ`, the excess training loss the residual certifies, is below `10⁻¹²`; the
+-- check at `ε = 10⁻⁶` passes.
+#eval decide (weakGS.residualExcess θweak < 1 / 10 ^ 12)
+#eval weakGS.checkResidual θweak (1 / 10 ^ 6)
+
+-- Jacobi diverged at this `λ` (section 6): its residual is astronomically large.
+#eval (weak.residualExcess ((weak.model Float).map ratOfFloatExact)).toFloat
+#eval weak.checkResidual ((weak.model Float).map ratOfFloatExact) (1 / 10 ^ 6)
+
+/-! ### 8. Predictions -/
 
 def θ : Vec Float 33 := gd.model Float
 
@@ -186,7 +211,7 @@ def θ : Vec Float 33 := gd.model Float
       (p₁.mse (p₁.model Float) test, p₂.mse (p₂.model Float) test,
         p₃.mse (p₃.model Float) test)
 
-/-! ### 8. The checks are theorems
+/-! ### 9. The checks are theorems
 
 `checkGD_sound` and `checkSolver_sound` turn a passing check into a guarantee about the
 trained model, over `ℝ`. For gradient descent the check is arithmetic (`decide`); for
