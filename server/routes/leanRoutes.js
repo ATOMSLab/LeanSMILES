@@ -176,7 +176,7 @@ router.post('/pipeline/fit', async (req, res) => {
   const {
     datasetId = 'delaney',
     customRows = null,
-    modelType = 'sparse-ridge',
+    modelType = 'gradient-descent',
     alpha = '1.0',
     targetLabel = 'log solubility (log mol/L)',
   } = req.body || {}
@@ -211,7 +211,7 @@ export async function prewarmBuiltinDatasets() {
   for (const [datasetId, targetLabel] of datasets) {
     const jobs = [
       ['dataset', leanTemplates.loadDataset(datasetId)],
-      ...['sparse-ridge', 'gauss-seidel'].map((modelType) => [
+      ...['gradient-descent'].map((modelType) => [
         `fit ${modelType} α=1.0`,
         leanTemplates.fitPipeline(buildDatasetTsv(datasetId, null), modelType, '1.0', targetLabel),
       ]),

@@ -397,8 +397,10 @@ Two formulations of the same problem, by two authors, side by side:
   gradient descent, Jacobi and Gauss–Seidel on them, started from `0`; `Algorithm` is the
   solver with its hyperparameters, as data. [`Certificates.lean`](LeanLearn/Regression/Certificates.lean)
   is the exact `ℚ` check (`SolverWitness`: weighted diagonal dominance) that certifies
-  Jacobi and Gauss–Seidel before running them, and `Problem.checkResidual`, the check after
-  running any solver: the residual of the normal equations at the parameters it produced.
+  Jacobi and Gauss–Seidel before running them, `Problem.smoothnessExact`, the exact
+  smoothness `Λ` of a training set that gradient descent's step-size condition `2ηΛ ≤ 1` is
+  about, and `Problem.checkResidual`, the check after running any solver: the residual of the
+  normal equations at the parameters it produced.
   [`Proofs/Regression/MatrixBridge.lean`](LeanLearn/Proofs/Regression/MatrixBridge.lean) proves
   the two formulations are one problem up to the factor `m` — `‖Xθ − y‖² + mλ‖θ‖² = m·L(θ)`,
   `XᵀX + mλI = m·A`, `Xᵀy = m·b` — so for `m > 0` they share normal equations and minimizers,
@@ -540,10 +542,10 @@ def θweak : Vec ℚ 17 := (weakGS.model Float).map ratOfFloatExact
 The theorem behind it is stated once (`Pipeline.checkResidual_sound`); the check itself
 runs compiled, since the kernel cannot evaluate `Float` to read the parameters (give it
 rational literals and `decide +kernel` proves the instance too). The website's Regression
-page runs this check on every Gauss–Seidel fit and every sparse-ridge fit it shows, at
-`ε = 10⁻⁶ · L(θ)`.
+page shows a different guarantee — gradient descent with its own convergence theorem,
+step 6 below.
 
-**5. The same certificate for ridge on 2048 Morgan bits.** The website's headline model —
+**5. The same certificate for ridge on 2048 Morgan bits.** The sparse-ridge model —
 scikit-learn's `Ridge(alpha)` objective on Morgan fingerprints, solved by conjugate gradients
 in `Float` (`SparseRidge`) — is a `Problem` in disguise. Centre every bit column and the
 target on their training means and set `λ = α/m`: at `θ = (w, 0)`, `m · Problem.loss θ` is
@@ -556,9 +558,30 @@ sample's on-bit list instead, `(1/m) Xcᵀ (Xc θ − y) + λθ` with the centri
 fly, and [`SparseProblem.residual_eq`](LeanLearn/Proofs/Regression/SparseProblem.lean)
 proves it equal, entry by entry, to `Problem.residualAt` of the dense centred problem, so
 `SparseProblem.checkResidual_sound` is `Problem.checkResidual_sound` verbatim. On the
-website's Delaney slice (167 molecules, `α = 1`) the check passes with
+Delaney slice the website uses (167 molecules, `α = 1`) the check passes with
 `‖Aθ − b‖²/λ = 1.90 · 10⁻⁸ ≤ 2.28 · 10⁻⁷ = 10⁻⁶ · L(θ)`, on the boiling-point set with
 `1.51 · 10⁻⁴ ≤ 1.43 · 10⁻³`, in about 0.2 s per fit, training included.
+
+**6. The website: gradient descent on 2048 Morgan bits, with the algorithm's own theorem.**
+The Regression page shows one model and one meaning of *verified*: the solver that runs is
+`gradientDescent` — a single definition over the scalar, run at `Float` — and
+`Problem.loss_gradientDescent_le` is about that definition at `ℝ`: from `θ = 0`, `k` steps of
+size `η` with `2ηΛ ≤ 1` end within `‖u‖² / (2ηk)` of every `u`, where
+`Λ = (1/m) Σᵣ ‖xᵣ‖² + λ`. The hypothesis is about the data, so it is decided on the data:
+`Pipeline.smoothnessExact` computes `Λ` exactly for the training set, the worker takes
+`η = 1/(2Λ)` (`maxStepSizeData`), and `Pipeline.checkGDData` decides `λ ≥ 0`, `η > 0`,
+`2ηΛ ≤ 1`, `k > 0`; `checkGDData_sound` then gives the rate for the very fit shown
+(`smoothness_real` bridges the exact `Λ` to the `ℝ` reading). The representation is
+`Representation.morgan 2 2048` as `0/1` features, the target is centred on its training
+mean, and `λ = α/m`, so `α` is scikit-learn's alpha. On the Delaney slice (167 molecules,
+`α = 1`): `Λ = 23.3`, `η = 167/7782`, `k = 800`, so `L(θ) ≤ L(u) + 0.029 ‖u‖²` for every
+`u`, test R² 0.549, about 7 s per fit on the dense `2049 × 2049` normal equations; on the
+boiling-point set `Λ = 14.3`, test R² 0.855. Those seconds are the work of compiling
+`sumFin` as a loop (`sumFin_eq_sumFinLoop`, a `csimp` lemma: the same additions in the
+same order) and `@[specialize]`-ing the solvers at the scalar — before, the same fit took
+minutes. Gauss–Seidel and Jacobi are not shown: their theorems need diagonal dominance,
+which Morgan normal equations lack at any useful `λ`; conjugate gradients (`SparseRidge`)
+has no theorem.
 
 What is proved ([`Pipelines/Proofs/Certificates.lean`](Pipelines/Proofs/Certificates.lean),
 [`Representation.lean`](Pipelines/Proofs/Representation.lean)); `L` is the training loss:
@@ -566,6 +589,7 @@ What is proved ([`Pipelines/Proofs/Certificates.lean`](Pipelines/Proofs/Certific
 | Solver               | Conditions (checked without training)                                                     | Guarantee                                                                                      |
 | -------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | Gradient descent     | `‖φ(M)‖² ≤ R²` for the representation, `λ ≥ 0`, `η > 0`, `2η(R² + 1 + λ) ≤ 1`, `B ≤ 2ηkε` | `L(θ) ≤ L(u) + ε` for every `u` with `‖u‖² ≤ B`, for **every dataset** (`GDCertificate.sound`) |
+| Gradient descent, on the data | `λ ≥ 0`, `η > 0`, `2ηΛ ≤ 1` with `Λ = (1/m) Σᵣ ‖xᵣ‖² + λ` computed exactly from the training set (`checkGDData`), `k > 0` | `L(θ) ≤ L(u) + ‖u‖² / (2ηk)` for **every** `u`: the `O(1/k)` rate, for this run (`checkGDData_sound`) |
 | Jacobi, Gauss–Seidel | the exact `ℚ` check of weighted diagonal dominance (`checkSolver`)                        | `L(θ) ≤ L(u) + ε` for **every** `u`: `θ` is `ε`-optimal (`checkSolver_sound`)                  |
 | Gauss–Seidel         | none (`λ ≥ 0`)                                                                            | the loss never increases with more sweeps (`gaussSeidel_antitone`)                             |
 | Any solver, after training | the exact `ℚ` residual check at the parameters it produced (`checkResidual`), `λ > 0` | `L(θ) ≤ L(u) + ε` for **every** `u`, with no condition on the data (`checkResidual_sound`) |
@@ -586,7 +610,9 @@ parameters exactly and certifies those very numbers. Kernel-checked data
 conditions need a kernel-evaluable representation: `bondOrders` is one, Morgan fingerprints
 are not (their hashing uses `UInt32` and `mergeSort`), so a Jacobi/Gauss–Seidel certificate on
 Morgan features can be computed with `#eval` but not yet proved by `decide +kernel`; the
-gradient-descent certificate needs no evaluation and works for Morgan. Diagonal dominance
+representation-level gradient-descent certificate needs no evaluation and works for Morgan,
+and `checkGDData`, which reads the data, is computed with `#eval` like the solver witnesses.
+Diagonal dominance
 needs ridge: with an intercept, the normal equations of typical molecular data are not
 diagonally dominant unless `λ` is large enough — the residual certificate has no such
 condition. And generalization: the guarantees bound the training loss.

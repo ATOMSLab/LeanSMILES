@@ -56,7 +56,7 @@ export const leanTemplates = {
     return `dataset\t${cleanCmdField(datasetId)}`
   },
 
-  fitPipeline(tsvPath, modelType = 'sparse-ridge', alpha = '1.0', targetLabel = 'target') {
+  fitPipeline(tsvPath, modelType = 'gradient-descent', alpha = '1.0', targetLabel = 'target') {
     return `fit\t${cleanCmdField(tsvPath)}\t${cleanCmdField(modelType)}\t${cleanCmdField(String(alpha))}\t${cleanCmdField(targetLabel)}`
   },
 }

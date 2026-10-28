@@ -125,6 +125,13 @@ produced `θ`, passing means `θ` is within `ε` of the optimum (`Problem.checkR
 def checkResidual (θ : Vec ℚ (d + 1)) (ε : ℚ) : Bool :=
   decide (0 < P.ridge) && decide (dot (P.residualAt θ) (P.residualAt θ) ≤ ε * P.ridge)
 
+/-- `Λ = (1/m) ∑ᵣ ‖xᵣ‖² + λ`, the smoothness in gradient descent's step-size condition
+`2ηΛ ≤ 1` (`Proofs/Regression/GradientDescent.lean`), exactly: every sample with its
+constant `1`. Equal to `Problem.smoothness` of the problem read in `ℝ`
+(`Pipeline.smoothness_real`). -/
+def smoothnessExact : ℚ :=
+  sumFin (fun r : Fin m ↦ dot (P.row r) (P.row r)) / count m + P.ridge
+
 end Problem
 
 end LeanLearn.Regression

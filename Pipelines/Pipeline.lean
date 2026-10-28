@@ -87,9 +87,11 @@ def exactProblem : Problem ℚ m d :=
   { X := p.data.molecules.map p.representation, y := p.data.targets, ridge := p.ridge }
 
 /-- The regression problem read in a scalar type. -/
+@[specialize]
 def problem (K : Type) [RatEmbed K] : Problem K m d := p.exactProblem.map RatEmbed.ofRat
 
 /-- The trained parameters `θ = (w, b)`. -/
+@[specialize]
 def model (K : Type) [PolynomialLike K] [Div K] [BEq K] [RatEmbed K] : Vec K (d + 1) :=
   p.algorithm.fit (p.problem K)
 
@@ -98,6 +100,7 @@ def trainLoss (K : Type) [PolynomialLike K] [Div K] [BEq K] [RatEmbed K] : K :=
   (p.problem K).loss (p.model K)
 
 /-- The prediction of parameters `θ` on a molecule. -/
+@[specialize]
 def predictWith {K : Type} [PolynomialLike K] [Div K] [BEq K] [RatEmbed K] (θ : Vec K (d + 1))
     (M : Mol) : K :=
   predict θ ((p.representation M).map RatEmbed.ofRat)

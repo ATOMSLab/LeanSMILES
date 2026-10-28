@@ -490,7 +490,109 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
     | .error e =>
       let out := Json.mkObj [("ok", toJson false), ("error", toJson (toString e))]
       IO.println s!"__JSON_START__{out.compress}__JSON_END__"
-  else if modelType == "gauss-seidel" || modelType == "jacobi" || modelType == "gradient-descent" then
+  else if modelType == "gradient-descent" then
+    -- The verified algorithm on the full fingerprint. `pipe.model Float` runs
+    -- `gradientDescent` — the text `loss_gradientDescent_le` is about — on the normal
+    -- equations of the pipeline's exact problem, read in Float: Morgan bits (radius 2,
+    -- 2048 bits) as 0/1 features, the target centred on its training mean (the ridge
+    -- penalises the bias with the weights), λ = α/m so that α is scikit-learn's alpha. The
+    -- step size is η = 1/(2Λ) with Λ the exact smoothness of this training set
+    -- (`Pipeline.smoothnessExact`), so `checkGDData` holds by construction and
+    -- `checkGDData_sound` says, for every u: L(θ) ≤ L(u) + ‖u‖²/(2ηk).
+    let m := trainSamples.size
+    let mQ : ℚ := m
+    let rep : Representation 2048 := Representation.morgan 2 2048
+    let yBar : ℚ := (trainSamples.foldl (fun acc s => acc + s.yRat) (0 : ℚ)) / mQ
+    let molVec : Vector Mol m := Vector.ofFn fun i => trainSamples[i.val]!.aro
+    let yVec : Vector ℚ m := Vector.ofFn fun i => trainSamples[i.val]!.yRat - yBar
+    let labelled : LabelledMolecules m := { molecules := molVec, targets := yVec }
+    let alphaQ : ℚ := if alphaRat <= 0 then 1 else alphaRat
+    let ridgeVal : ℚ := alphaQ / mQ
+    let steps : ℕ := 800
+    let base : Pipeline m 2048 :=
+      { data := labelled, representation := rep, ridge := ridgeVal, algorithm := .gradientDescent 0 steps }
+    let smooth : ℚ := base.smoothnessExact
+    let η : ℚ := base.maxStepSizeData
+    let pipe : Pipeline m 2048 := { base with algorithm := .gradientDescent η steps }
+    let gdOk := pipe.checkGDData
+    let rate : ℚ := pipe.gdRate
+    let θ : Vec Float 2049 := pipe.model Float
+    let normSq : Float := dot θ θ
+    let smoothF := smooth.toFloat
+    let rateF := rate.toFloat
+    let certSummary :=
+      if gdOk then
+        s!"checkGDData = true: λ = α/m = {ratStr ridgeVal}, Λ = {fixed smoothF 3}, η = 1/(2Λ) = {ratStr η}, k = {steps} — for every u: L(θ) ≤ L(u) + ‖u‖²/(2ηk) = L(u) + {fixed rateF 4} · ‖u‖²"
+      else
+        s!"checkGDData = false (λ = {ratStr ridgeVal}, Λ = {fixed smoothF 3}, η = {ratStr η}, k = {steps})"
+    let yBarF := yBar.toFloat
+    let predictMol (s : FitSample) : Float := pipe.predictWith θ s.aro + yBarF
+    let trainPairs : Array (Float × Float) := trainSamples.map fun s => (s.yFloat, predictMol s)
+    let testPairs : Array (Float × Float) := testSamples.map fun s => (s.yFloat, predictMol s)
+    let trR2 := r2 trainPairs
+    let trRmse := rmse trainPairs
+    let trMae := mae trainPairs
+    let teR2 := r2 testPairs
+    let teRmse := rmse testPairs
+    let teMae := mae testPairs
+    let svg := paritySvg
+      s!"Verified Gradient Descent on Morgan Fingerprints (α = {fixed alphaQ.toFloat 2})"
+      s!"parse, aromatize, Morgan (2048 bits) · gradientDescent, {steps} steps, η = 1/(2Λ) · L(θ) ≤ L(u) + {fixed rateF 3} ‖u‖²"
+      targetLabel
+      [
+        { label := "Training", points := trainPairs, r2 := trR2, rmse := trRmse, mae := trMae, filled := false },
+        { label := "Test", points := testPairs, r2 := teR2, rmse := teRmse, mae := teMae, filled := true }
+      ]
+    let predsJson : Array Json := (samples.take 20).map fun s =>
+      Json.mkObj [
+        ("name", toJson s.name),
+        ("smiles", toJson s.smiles),
+        ("split", toJson (if s.isTest then "test" else "train")),
+        ("actual", toJson s.yFloat),
+        ("predicted", toJson (predictMol s))
+      ]
+    let logs : Array String := #[
+      s!"morganFeatures (×{samples.size}) --> {trainSamples.size} train, {testSamples.size} test (skipped {skipped.size})",
+      s!"Pipeline.exactProblem ({m} molecules, Representation.morgan 2 2048, target centred on {fixed yBarF 2}, λ = α/m = {ratStr ridgeVal}) --> 2049×2049 normal equations over ℚ, read in Float",
+      s!"pipe.smoothnessExact --> Λ = (1/m) Σ ‖xᵣ‖² + λ = {fixed smoothF 4}; η = 1/(2Λ) = {ratStr η}; pipe.checkGDData (λ ≥ 0, η > 0, 2ηΛ ≤ 1, k > 0) --> {gdOk}",
+      s!"pipe.model Float (gradientDescent, {steps} steps from θ = 0) --> train R² {fixed trR2 3}, test R² {fixed teR2 3}, ‖θ‖² = {fixed normSq 3}",
+      s!"Pipeline.checkGDData_sound --> {certSummary}",
+      s!"LeanLearn.Plot.paritySvg --> rendered SVG parity plot"
+    ]
+    let out := Json.mkObj [
+      ("ok", toJson true),
+      ("taskType", toJson "regression"),
+      ("modelType", toJson "gradient-descent"),
+      ("trainCount", toJson trainSamples.size),
+      ("testCount", toJson testSamples.size),
+      ("skippedCount", toJson skipped.size),
+      ("iterations", toJson steps),
+      ("svg", toJson svg),
+      ("certificate", Json.mkObj [
+        ("certified", toJson gdOk),
+        ("summary", toJson certSummary),
+        ("theorem", toJson "Pipeline.checkGDData_sound"),
+        ("rate", toJson rateF),
+        ("smoothness", toJson smoothF),
+        ("stepSize", toJson η.toFloat),
+        ("steps", toJson steps),
+        ("ridge", toJson ridgeVal.toFloat),
+        ("weightNormSq", toJson normSq)
+      ]),
+      ("metrics", Json.mkObj [
+        ("trainR2", toJson trR2),
+        ("trainRmse", toJson trRmse),
+        ("trainMae", toJson trMae),
+        ("testR2", toJson teR2),
+        ("testRmse", toJson teRmse),
+        ("testMae", toJson teMae)
+      ]),
+      ("topFeatures", toJson (#[] : Array Json)),
+      ("predictions", toJson predsJson),
+      ("logs", toJson logs)
+    ]
+    IO.println s!"__JSON_START__{out.compress}__JSON_END__"
+  else if modelType == "gauss-seidel" || modelType == "jacobi" then
     let m := trainSamples.size
     let mQ : ℚ := m
     -- The pipeline's exact ℚ problem: the five count descriptors of the aromatized
@@ -513,31 +615,20 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
     let molVec : Vector Mol m := Vector.ofFn fun i => trainSamples[i.val]!.aro
     let yVec : Vector ℚ m := Vector.ofFn fun i => trainSamples[i.val]!.yRat - yBar
     let labelled : LabelledMolecules m := { molecules := molVec, targets := yVec }
-    let r2Bound : ℚ := 144
     let ridgeVal : ℚ := if alphaRat <= 0 then 1 else alphaRat
-    let stepRat : ℚ := 1 / (2 * (r2Bound + 1 + ridgeVal))
     let alg : Algorithm :=
-      if modelType == "jacobi" then .jacobi 30
-      else if modelType == "gradient-descent" then .gradientDescent stepRat 800
-      else .gaussSeidel 30
+      if modelType == "jacobi" then .jacobi 30 else .gaussSeidel 30
     let pipe : Pipeline m 5 := { data := labelled, representation := rep, ridge := ridgeVal, algorithm := alg }
     let W := pipe.suggestWitness
     let rhoFloat := W.ratio.toFloat
     let certExcessOpt := pipe.certifiedSolverExcess
-    let gdTol := pipe.gdTolerance 4
-    let gdCheck := pipe.checkGD r2Bound 4 (gdTol + 1 / 1000)
     -- The a priori witness: checked before training, it says what the solver will do, but
     -- only where the normal equations are diagonally dominant (large λ).
-    let witnessOk :=
-      if modelType == "gradient-descent" then gdCheck
-      else certExcessOpt.isSome
+    let witnessOk := certExcessOpt.isSome
     let witnessSummary :=
-      if modelType == "gradient-descent" then
-        s!"checkGD (R²={r2Bound}, η={ratStr stepRat}) = {gdCheck} · tolerance ε = {fixed gdTol.toFloat 4}"
-      else
-        match certExcessOpt with
-        | some e => s!"checkSolver = true (ρ = {fixed rhoFloat 3} < 1, excess ≤ {fixed e.toFloat 6})"
-        | none => s!"uncertified (diagonal dominance ratio ρ = {fixed rhoFloat 2} ≥ 1; increase ridge λ)"
+      match certExcessOpt with
+      | some e => s!"checkSolver = true (ρ = {fixed rhoFloat 3} < 1, excess ≤ {fixed e.toFloat 6})"
+      | none => s!"uncertified (diagonal dominance ratio ρ = {fixed rhoFloat 2} ≥ 1; increase ridge λ)"
     let θ : Vec Float 6 := pipe.model Float
     -- The a posteriori certificate: read the trained Float weights exactly and check the
     -- residual of the exact normal equations at them. `Pipeline.checkResidual_sound` then
@@ -602,7 +693,7 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
       ("trainCount", toJson trainSamples.size),
       ("testCount", toJson testSamples.size),
       ("skippedCount", toJson skipped.size),
-      ("iterations", toJson (if modelType == "gradient-descent" then 800 else 30)),
+      ("iterations", toJson 30),
       ("svg", toJson svg),
       ("certificate", Json.mkObj [
         ("certified", toJson isCertified),
