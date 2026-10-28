@@ -593,23 +593,6 @@ export default function Datasets() {
                 </div>
               </div>
 
-              {fitResult.topFeatures?.length > 0 && (
-                <div>
-                  <p className="text-[11px] text-slate-400 mb-1.5">
-                    {fitResult.modelType === 'gauss-seidel'
-                      ? 'Learned Descriptor Weights (standardized counts)'
-                      : 'Largest Learned Morgan Bit Weights'}
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {fitResult.topFeatures.map((f, i) => (
-                      <Badge key={i} active={f.weight > 0}>
-                        {f.feature}: {f.weight >= 0 ? `+${Number(f.weight).toFixed(2)}` : Number(f.weight).toFixed(2)}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               <div>
                 <p className="text-[11px] text-slate-400 mb-1.5">Sample Model Predictions</p>
                 <DataTable
