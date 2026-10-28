@@ -26,6 +26,10 @@ training it**. Write `L` for the training loss of the pipeline's problem read in
   (`Representation.Bounded`, proved once per representation), `λ ≥ 0`, `η > 0`,
   `2η (R² + 1 + λ) ≤ 1`, and `B ≤ 2ηkε`. The guarantee holds for **every dataset**:
   `L(θ) ≤ L(u) + ε` for every `u` with `‖u‖² ≤ B`.
+* **Gradient descent, on the data** (`Pipeline.checkGDData_sound`). The step-size
+  condition `2ηΛ ≤ 1` decided with the exact smoothness `Λ` of the training set
+  (`smoothness_real` bridges it to `Problem.smoothness` of the `ℝ` reading) gives
+  `L(θ) ≤ L(u) + ‖u‖² / (2ηk)` for **every** `u`: the `O(1/k)` rate, for this very run.
 * **Jacobi and Gauss–Seidel** (`Pipeline.checkSolver_sound`). The exact check
   `p.checkSolver W ε` (weighted diagonal dominance of the normal equations, computed over
   `ℚ` from the data) gives `L(θ) ≤ L(u) + ε` for **every** `u`: the trained model is within
@@ -68,6 +72,19 @@ theorem normalVector_real : (p.problem ℝ).normalVector = castVec p.exactProble
 theorem trainLoss_real :
     p.trainLoss ℝ = (p.problem ℝ).loss
       (p.algorithm.solve (p.problem ℝ).normalMatrix (p.problem ℝ).normalVector) := rfl
+
+/-- Entry `i` of training sample `r`, read in `ℝ`, is the cast of the exact entry. -/
+theorem row_real (r : Fin m) (i : Fin (d + 1)) :
+    ((p.problem ℝ).row r)[i] = (((p.exactProblem.row r)[i] : ℚ) : ℝ) := by
+  have := Problem.map_design_getElem p.exactProblem r i
+  simpa [Problem.design, problem_real] using this
+
+/-- Reading the data in `ℝ` and forming the smoothness `Λ` gives the cast of the exact `Λ`. -/
+theorem smoothness_real : (p.problem ℝ).smoothness = (p.smoothnessExact : ℝ) := by
+  simp only [Problem.smoothness, Pipeline.smoothnessExact, Problem.smoothnessExact, dot]
+  push_cast [cast_sumFin, cast_count]
+  simp only [sumFin_eq_sum, count_real, ridge_real, Problem.x, row_real, sq]
+  rfl
 
 /-- Every training sample, with the constant `1`, has `‖xᵣ‖² ≤ R² + 1` when the
 representation is bounded by `R²`. -/
@@ -158,6 +175,27 @@ theorem checkGD_sound {R2 B ε : ℚ} (hR : p.representation.Bounded R2)
         stepSize_small := hstep, iters_pos := hk, iters_enough := hB }
     exact c.sound p rfl rfl halg u hu
   all_goals simp [checkGD, halg] at h
+
+/-- **Soundness of `checkGDData`**: if the exact step-size check on this training set
+passes, the trained model's training loss is within `‖u‖² / (2ηk)` of that of **every**
+parameter vector `u` — the `O(1/k)` rate of `loss_gradientDescent_le`, for this very run. -/
+theorem checkGDData_sound (h : p.checkGDData = true) (u : Vec ℝ (d + 1)) :
+    p.trainLoss ℝ ≤ (p.problem ℝ).loss u + p.gdRate * ∑ i : Fin (d + 1), u[i] ^ 2 := by
+  rcases halg : p.algorithm with ⟨η, k⟩ | k | k
+  · simp only [checkGDData, halg, Bool.and_eq_true, decide_eq_true_eq] at h
+    obtain ⟨⟨⟨hr, hη⟩, hstep⟩, hk⟩ := h
+    set P := p.problem ℝ
+    have hr' : 0 ≤ P.ridge := by simp only [P, ridge_real]; exact_mod_cast hr
+    have hη' : (0 : ℝ) < η := by exact_mod_cast hη
+    have hstep' : 2 * (η : ℝ) * P.smoothness ≤ 1 := by
+      simp only [P]; rw [smoothness_real]; exact_mod_cast hstep
+    have hrate := P.loss_gradientDescent_le hr' hη' hstep' hk u
+    rw [trainLoss_real, halg]
+    simp only [Algorithm.solve, gdRate, halg]
+    push_cast
+    rw [one_div, inv_mul_eq_div]
+    exact hrate
+  all_goals simp [checkGDData, halg] at h
 
 /-! ## Jacobi and Gauss–Seidel -/
 

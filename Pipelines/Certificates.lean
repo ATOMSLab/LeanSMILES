@@ -23,6 +23,13 @@ representation (a theorem, e.g. `morgan_bounded`), a parameter budget `B` and a 
 `2η (R² + 1 + λ) ≤ 1`, `k > 0` and `B ≤ 2ηkε`. `maxStepSize` is the largest step size that
 passes, and `gdTolerance` the smallest `ε` that does.
 
+**Gradient descent, on the data** (`Pipeline.checkGDData`). The same step-size condition
+with the smoothness computed exactly from the training set, `Λ = (1/m) ∑ᵣ ‖xᵣ‖² + λ`
+(`smoothnessExact`), instead of bounded for every molecule: `λ ≥ 0`, `η > 0`, `2ηΛ ≤ 1`,
+`k > 0`. No feature bound for the representation is needed, so the step can be as large as
+the data allows (`maxStepSizeData = 1/(2Λ)`), and the guarantee is the rate itself:
+`L(θ) ≤ L(u) + ‖u‖² / (2ηk)` for every `u` (`gdRate = 1/(2ηk)`).
+
 **Jacobi and Gauss–Seidel** (`Pipeline.checkSolver`). The generic witness check of
 `LeanLearn.Regression.SolverWitness` (weighted diagonal dominance, a bound on the optimum,
 the certified excess `Γ β² ρ²ᵏ` below `ε`), run on the pipeline's exact normal equations.
@@ -109,6 +116,34 @@ def maxStepSize (R2 : ℚ) : ℚ := 1 / (2 * (R2 + 1 + p.ridge))
 def gdTolerance (B : ℚ) : ℚ :=
   match p.algorithm with
   | .gradientDescent η k => B / (2 * η * k)
+  | _ => 0
+
+/-! ### Gradient descent, on the data -/
+
+/-- `Λ = (1/m) ∑ᵣ ‖xᵣ‖² + λ` of the pipeline's exact problem (`Problem.smoothnessExact`):
+the smoothness the step-size condition is about, computed from this training set rather
+than bounded for every molecule. -/
+def smoothnessExact : ℚ := p.exactProblem.smoothnessExact
+
+/-- The gradient-descent check on the data: `λ ≥ 0`, `η > 0`, `2ηΛ ≤ 1` with `Λ` the exact
+smoothness of this training set, and `k > 0`. Nothing about the representation is assumed,
+so the step size can be as large as the data allows (`maxStepSizeData`). Soundness
+(`checkGDData_sound`): `L(θ) ≤ L(u) + ‖u‖² / (2ηk)` for **every** `u`. -/
+def checkGDData : Bool :=
+  match p.algorithm with
+  | .gradientDescent η k =>
+    decide (0 ≤ p.ridge) && decide (0 < η) && decide (2 * η * p.smoothnessExact ≤ 1) &&
+      decide (0 < k)
+  | _ => false
+
+/-- The largest step size `checkGDData` accepts: `1 / (2Λ)`. -/
+def maxStepSizeData : ℚ := 1 / (2 * p.smoothnessExact)
+
+/-- The rate constant of the guarantee `checkGDData` gives, `1 / (2ηk)`: after `k` steps of
+size `η`, `L(θ) ≤ L(u) + ‖u‖² / (2ηk)` for every `u` (`0` for the other algorithms). -/
+def gdRate : ℚ :=
+  match p.algorithm with
+  | .gradientDescent η k => 1 / (2 * η * k)
   | _ => 0
 
 end Pipeline
