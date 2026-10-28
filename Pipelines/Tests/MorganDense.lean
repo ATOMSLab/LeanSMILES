@@ -41,8 +41,8 @@ structure Row where
 
 instance : Inhabited Row := ⟨{ mol := Mol.empty, y := 0, isTest := false }⟩
 
-def runOne (train test : Array Row) (fp : ℕ) (ridge : ℚ) (name : String) (alg : Algorithm) :
-    IO Unit := do
+def runOne (train test : Array Row) (fp : ℕ) (ridge : ℚ) (name : String)
+    (alg : Algorithm) : IO Unit := do
   let m := train.size
   let mQ : ℚ := m
   let yBar : ℚ := (train.foldl (fun acc r => acc + r.y) 0) / mQ
@@ -50,7 +50,8 @@ def runOne (train test : Array Row) (fp : ℕ) (ridge : ℚ) (name : String) (al
   let labelled : LabelledMolecules m :=
     { molecules := Vector.ofFn fun i => train[i.val]!.mol
       targets := Vector.ofFn fun i => train[i.val]!.y - yBar }
-  let pipe : Pipeline m fp := { data := labelled, representation := rep, ridge := ridge, algorithm := alg }
+  let pipe : Pipeline m fp :=
+    { data := labelled, representation := rep, ridge := ridge, algorithm := alg }
   let t0 ← IO.monoMsNow
   let θ : Vec Float (fp + 1) := pipe.model Float
   -- force the fit before reading the clock
@@ -61,13 +62,15 @@ def runOne (train test : Array Row) (fp : ℕ) (ridge : ℚ) (name : String) (al
   let pairs (rs : Array Row) : Array (Float × Float) :=
     rs.map fun r => (r.y.toFloat, pipe.predictWith θ r.mol + yBarF)
   let (tr, te) := (pairs train, pairs test)
-  IO.println s!"  fp={fp} λ={ridge.toFloat} {name}: {t1 - t0} ms · train R² {fixed (r2 tr) 3} · test R² {fixed (r2 te) 3} RMSE {fixed (rmse te) 3}"
+  IO.println s!"  fp={fp} λ={ridge.toFloat} {name}: {t1 - t0} ms · train R² {fixed (r2 tr) 3} · \
+    test R² {fixed (r2 te) 3} RMSE {fixed (rmse te) 3}"
 
 public def main (args : List String) : IO UInt32 := do
   let limit := (args.head? >>= String.toNat?).getD 204
   let fps := (args.drop 1).filterMap String.toNat?
   let fps := if fps.isEmpty then [128, 256, 512] else fps
-  let lines := ((← IO.FS.lines "datasets/delaney-processed.csv").toList.drop 1).take limit |>.toArray
+  let raw ← IO.FS.lines "datasets/delaney-processed.csv"
+  let lines := (raw.toList.drop 1).take limit |>.toArray
   let mut rows : Array Row := #[]
   let mut skipped := 0
   for i in [0:lines.size] do
@@ -87,7 +90,8 @@ public def main (args : List String) : IO UInt32 := do
     let rep : Representation fp := Representation.morgan 2 fp
     -- the smoothness Λ = (1/m) Σᵣ ‖xᵣ‖² + λ of `loss_gradientDescent_le_add`, exactly;
     -- the bias column adds 1 to every ‖xᵣ‖²
-    let meanSq : ℚ := (train.foldl (fun acc r => acc + (rep r.mol).toList.foldl (· + ·) 0) 0) / m + 1
+    let meanSq : ℚ :=
+      (train.foldl (fun acc r => acc + (rep r.mol).toList.foldl (· + ·) 0) 0) / m + 1
     IO.println s!"fp={fp}: mean ‖x‖² {meanSq.toFloat}"
     for ridge in [mkRat 1 m, mkRat 1 20] do
       let η : ℚ := 1 / (2 * (meanSq + ridge))
