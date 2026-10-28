@@ -54,15 +54,15 @@ variable {K : Type} [PolynomialLike K] {m n : ℕ}
 /-- The count `n` as a scalar, by repeated addition (no `NatCast` needed). -/
 def count (n : ℕ) : K := nsmulGen n 1
 
-def dot (u v : Vec K n) : K := sumFin fun i : Fin n ↦ u[i] * v[i]
+@[specialize] def dot (u v : Vec K n) : K := sumFin fun i : Fin n ↦ u[i] * v[i]
 
-def matVec (A : Mat K m n) (v : Vec K n) : Vec K m := Vector.ofFn fun i ↦ dot A[i] v
+@[specialize] def matVec (A : Mat K m n) (v : Vec K n) : Vec K m := Vector.ofFn fun i ↦ dot A[i] v
 
-def vsub (u v : Vec K n) : Vec K n := Vector.ofFn fun i ↦ u[i] - v[i]
+@[specialize] def vsub (u v : Vec K n) : Vec K n := Vector.ofFn fun i ↦ u[i] - v[i]
 
-def vadd (u v : Vec K n) : Vec K n := Vector.ofFn fun i ↦ u[i] + v[i]
+@[specialize] def vadd (u v : Vec K n) : Vec K n := Vector.ofFn fun i ↦ u[i] + v[i]
 
-def smul (c : K) (v : Vec K n) : Vec K n := Vector.ofFn fun i ↦ c * v[i]
+@[specialize] def smul (c : K) (v : Vec K n) : Vec K n := Vector.ofFn fun i ↦ c * v[i]
 
 def vzero : Vec K n := Vector.ofFn fun _ ↦ 0
 
@@ -71,7 +71,7 @@ def vzero : Vec K n := Vector.ofFn fun _ ↦ 0
 def augment (x : Vec K n) : Vec K (n + 1) := x.push 1
 
 /-- The prediction `⟪(w, b), (x, 1)⟫` of parameters `θ` on features `x`. -/
-def predict (θ : Vec K (n + 1)) (x : Vec K n) : K := dot θ (augment x)
+@[specialize] def predict (θ : Vec K (n + 1)) (x : Vec K n) : K := dot θ (augment x)
 
 end Polynomial
 
@@ -88,30 +88,31 @@ variable {K L : Type} {m d : ℕ}
 
 /-- Apply `f` to every number of the problem: how exact `ℚ` data is read as `Float` or
 `ℝ` (`f = RatEmbed.ofRat`). -/
-def map (f : K → L) (P : Problem K m d) : Problem L m d :=
+@[specialize] def map (f : K → L) (P : Problem K m d) : Problem L m d :=
   { X := P.X.map (·.map f), y := P.y.map f, ridge := f P.ridge }
 
 variable [PolynomialLike K] [Div K] (P : Problem K m d)
 
 /-- Sample `r` with the constant `1` appended. -/
-def row (r : Fin m) : Vec K (d + 1) := augment P.X[r]
+@[specialize] def row (r : Fin m) : Vec K (d + 1) := augment P.X[r]
 
 /-- The design matrix: every sample with the constant `1` appended. -/
-def design : Mat K m (d + 1) := Vector.ofFn P.row
+@[specialize] def design : Mat K m (d + 1) := Vector.ofFn P.row
 
 /-- `A = (1/m) ∑ᵣ xᵣ xᵣᵀ + λ I`. -/
-def normalMatrix : Mat K (d + 1) (d + 1) :=
+@[specialize] def normalMatrix : Mat K (d + 1) (d + 1) :=
   let X := P.design
+  let c : K := count m
   Vector.ofFn fun i ↦ Vector.ofFn fun j ↦
-    sumFin (fun r : Fin m ↦ X[r][i] * X[r][j]) / count m + if i = j then P.ridge else 0
+    sumFin (fun r : Fin m ↦ X[r][i] * X[r][j]) / c + if i = j then P.ridge else 0
 
 /-- `b = (1/m) ∑ᵣ yᵣ xᵣ`. -/
-def normalVector : Vec K (d + 1) :=
+@[specialize] def normalVector : Vec K (d + 1) :=
   let X := P.design
   Vector.ofFn fun i ↦ sumFin (fun r : Fin m ↦ X[r][i] * P.y[r]) / count m
 
 /-- The ridge loss `L(θ) = (1/m) ∑ᵣ (⟪xᵣ, θ⟫ - yᵣ)² + λ ‖θ‖²`. -/
-def loss (θ : Vec K (d + 1)) : K :=
+@[specialize] def loss (θ : Vec K (d + 1)) : K :=
   sumFin (fun r : Fin m ↦ (dot (P.row r) θ - P.y[r]) * (dot (P.row r) θ - P.y[r])) / count m +
     P.ridge * dot θ θ
 

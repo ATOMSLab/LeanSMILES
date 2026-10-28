@@ -10,6 +10,7 @@ public import Mathlib.Analysis.SpecialFunctions.Pow.Real
 public import Mathlib.Analysis.SpecialFunctions.Exp
 public import Mathlib.Tactic.Ring
 public import Batteries.Data.Rat.Float
+public import Batteries.Data.Fin.Fold
 
 /-!
 # LeanLearn.Scalar
@@ -187,6 +188,16 @@ def sumGen [PolynomialLike K] {X : Type u} (l : List X) (f : X → K) : K :=
 /-- `∑ i : Fin n, f i`, as the executable fold `sumGen` over `List.finRange n` (usable at
 `Float`): an inner product, a squared error, a normal-equation entry. -/
 def sumFin [PolynomialLike K] {n : Nat} (f : Fin n → K) : K := sumGen (List.finRange n) f
+
+/-- `sumFin` as a counting loop, with no list: the same additions in the same order,
+`f 0 + (f 1 + (⋯ + (f (n - 1) + 0)))`. Compiled code runs this in place of `sumFin`
+(`sumFin_eq_sumFinLoop` is a `csimp` lemma); the theorems stay about `sumFin`. -/
+@[specialize] def sumFinLoop [PolynomialLike K] {n : Nat} (f : Fin n → K) : K :=
+  Fin.foldr n (fun i acc ↦ f i + acc) 0
+
+@[csimp] theorem sumFin_eq_sumFinLoop : @sumFin = @sumFinLoop := by
+  funext K _ n f
+  rw [sumFin, sumGen, sumFinLoop, Fin.foldr_eq_foldr_finRange]
 
 /-- Sum once over every distinct index in a list, in `List.dedup`'s stable
 last-occurrence order.
