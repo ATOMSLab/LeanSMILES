@@ -209,6 +209,40 @@ theorem loss_ge_tangent (hridge : 0 ≤ P.ridge) (θ u : Vec ℝ (d + 1)) :
   simp only [vsub_getElem] at h
   linarith [P.curvature_nonneg hridge (vsub u θ)]
 
+/-- **A posteriori bound**: for `λ > 0`, any `θ` is within `‖A θ - b‖² / λ` of the loss of
+every `u`. After training, the residual is the only thing that needs checking, whatever
+produced `θ`: `L(u) - L(θ) = 2 ⟪r, v⟫ + C(v) ≥ 2 ⟪r, v⟫ + λ ‖v‖² ≥ -‖r‖² / λ` for `v = u - θ`. -/
+theorem loss_le_add_residual (hridge : 0 < P.ridge) (θ u : Vec ℝ (d + 1)) :
+    P.loss θ ≤ P.loss u +
+      (∑ i : Fin (d + 1), (residual P.normalMatrix P.normalVector θ)[i] ^ 2) / P.ridge := by
+  have h := P.loss_add θ (vsub u θ)
+  have hu : vadd θ (vsub u θ) = u := vext fun i ↦ by simp [vadd, vsub]
+  rw [hu] at h
+  have hC : P.ridge * ∑ i : Fin (d + 1), (vsub u θ)[i] ^ 2 ≤ P.curvature (vsub u θ) := by
+    have : 0 ≤ (∑ s, P.fitted s (vsub u θ) ^ 2) / m :=
+      div_nonneg (sum_nonneg fun _ _ ↦ sq_nonneg _) (Nat.cast_nonneg m)
+    unfold curvature
+    linarith
+  have hsq : 0 ≤ ∑ i : Fin (d + 1),
+      ((residual P.normalMatrix P.normalVector θ)[i] + P.ridge * (vsub u θ)[i]) ^ 2 :=
+    sum_nonneg fun _ _ ↦ sq_nonneg _
+  have hexp : ∑ i : Fin (d + 1),
+      ((residual P.normalMatrix P.normalVector θ)[i] + P.ridge * (vsub u θ)[i]) ^ 2 =
+      ∑ i : Fin (d + 1), (residual P.normalMatrix P.normalVector θ)[i] ^ 2 +
+        2 * P.ridge * ∑ i : Fin (d + 1),
+          (residual P.normalMatrix P.normalVector θ)[i] * (vsub u θ)[i] +
+        P.ridge ^ 2 * ∑ i : Fin (d + 1), (vsub u θ)[i] ^ 2 := by
+    simp only [mul_sum, ← sum_add_distrib]
+    exact sum_congr rfl fun i _ ↦ by ring
+  rw [hexp] at hsq
+  have key : -(2 * ∑ i : Fin (d + 1),
+      (residual P.normalMatrix P.normalVector θ)[i] * (vsub u θ)[i]) -
+      P.ridge * ∑ i : Fin (d + 1), (vsub u θ)[i] ^ 2 ≤
+      (∑ i : Fin (d + 1), (residual P.normalMatrix P.normalVector θ)[i] ^ 2) / P.ridge := by
+    rw [le_div_iff₀ hridge]
+    nlinarith [hsq]
+  linarith [hC, key]
+
 /-- **Optimality**: a solution of the normal equations minimises the loss, and the
 excess loss of any `u` is exactly `C(u - θ*)`. -/
 theorem loss_eq_of_residual_eq_zero {θ : Vec ℝ (d + 1)}

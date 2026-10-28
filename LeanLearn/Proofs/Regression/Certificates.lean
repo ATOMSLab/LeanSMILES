@@ -92,6 +92,40 @@ theorem map_normalVector (i : Fin (d + 1)) :
   simp only [← Fin.getElem_fin, map_design_getElem]
   simp [Problem.map]
 
+/-- Reading the data in `ℝ` and forming the residual at the cast of `θ` gives the cast of
+the exact residual. -/
+theorem map_residualAt (θ : Vec ℚ (d + 1)) (i : Fin (d + 1)) :
+    (residual (P.map fun q : ℚ ↦ (q : ℝ)).normalMatrix (P.map fun q : ℚ ↦ (q : ℝ)).normalVector
+      (castVec θ))[i] = ((P.residualAt θ)[i] : ℚ) := by
+  simp only [residualAt, residual, vsub, matVec, dot, Fin.getElem_fin, Vector.getElem_ofFn]
+  push_cast [cast_sumFin]
+  simp only [← Fin.getElem_fin, map_normalMatrix, map_normalVector]
+  simp [castVec]
+
+/-- **Soundness of the residual check**: if it passes, the cast of `θ` is within `ε` of the
+loss of every `u`, read in `ℝ`. -/
+theorem checkResidual_sound {θ : Vec ℚ (d + 1)} {ε : ℚ} (h : P.checkResidual θ ε = true)
+    (u : Vec ℝ (d + 1)) :
+    (P.map fun q : ℚ ↦ (q : ℝ)).loss (castVec θ) ≤ (P.map fun q : ℚ ↦ (q : ℝ)).loss u + ε := by
+  simp only [checkResidual, Bool.and_eq_true, decide_eq_true_eq] at h
+  obtain ⟨hridgePos, hres⟩ := h
+  have hridgeReal : (0 : ℝ) < (P.map fun q : ℚ ↦ (q : ℝ)).ridge := by
+    change (0 : ℝ) < (P.ridge : ℝ)
+    exact_mod_cast hridgePos
+  have hb := (P.map fun q : ℚ ↦ (q : ℝ)).loss_le_add_residual hridgeReal (castVec θ) u
+  have hcast : ∑ i : Fin (d + 1), (residual (P.map fun q : ℚ ↦ (q : ℝ)).normalMatrix
+      (P.map fun q : ℚ ↦ (q : ℝ)).normalVector (castVec θ))[i] ^ 2 =
+      ((dot (P.residualAt θ) (P.residualAt θ) : ℚ) : ℝ) := by
+    rw [dot, cast_sumFin, sumFin_eq_sum]
+    exact sum_congr rfl fun i _ ↦ by rw [map_residualAt]; push_cast; ring
+  have hε : ((dot (P.residualAt θ) (P.residualAt θ) : ℚ) : ℝ) /
+      (P.map fun q : ℚ ↦ (q : ℝ)).ridge ≤ ε := by
+    rw [div_le_iff₀ hridgeReal]
+    change ((dot (P.residualAt θ) (P.residualAt θ) : ℚ) : ℝ) ≤ (ε : ℝ) * (P.ridge : ℝ)
+    exact_mod_cast hres
+  rw [hcast] at hb
+  linarith
+
 end Problem
 
 /-! ## Jacobi and Gauss–Seidel -/

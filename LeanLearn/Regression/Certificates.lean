@@ -30,6 +30,10 @@ smallest `ρ` and `β` that work), and `SolverWitness.excess` is the bound it ce
 The check is plain `ℚ` arithmetic on the data, so `decide +kernel` can run it whenever the
 kernel can evaluate `A` and `b`.
 
+**After training** (`Problem.checkResidual`). The residual `A θ - b` at whatever parameters a
+solver produced, read exactly: `‖A θ - b‖² ≤ ε λ` puts `θ` within `ε` of the optimum, at any
+`λ > 0`, with no condition on `A`.
+
 The gradient-descent certificate needs no data, only a bound on the features, so it is
 stated where the features come from (for molecules, `Pipelines/Certificates.lean`).
 -/
@@ -94,5 +98,33 @@ def unitWeights (A : Mat ℚ n n) (b : Vec ℚ n) : SolverWitness n :=
   { weights := w, ratio := ρ, bound := Check.maxFin fun i : Fin n ↦ |b[i]| / ((1 - ρ) * A[i][i]) }
 
 end SolverWitness
+
+/-! ### After training: the residual certificate
+
+The checks above run before a solver and say what it *will* do. `Problem.checkResidual` runs
+after one, on whatever parameters it produced, in whatever arithmetic: it reads them exactly
+and tests `‖A θ - b‖² ≤ ε λ` on the exact normal equations. Its soundness theorem
+(`Problem.checkResidual_sound`) says a pass puts `θ` within `ε` of the optimum — at any
+`λ > 0`, with no condition on `A`. -/
+
+namespace Problem
+
+variable {m d : ℕ} (P : Problem ℚ m d)
+
+/-- The residual `A θ - b` of the normal equations at `θ`, exactly. -/
+def residualAt (θ : Vec ℚ (d + 1)) : Vec ℚ (d + 1) :=
+  residual P.normalMatrix P.normalVector θ
+
+/-- `‖A θ - b‖² / λ`: the excess loss the residual at `θ` certifies
+(`Problem.checkResidual_sound`). -/
+def residualExcess (θ : Vec ℚ (d + 1)) : ℚ :=
+  dot (P.residualAt θ) (P.residualAt θ) / P.ridge
+
+/-- The a posteriori check on parameters `θ`: `λ > 0` and `‖A θ - b‖² ≤ ε λ`. Whatever solver
+produced `θ`, passing means `θ` is within `ε` of the optimum (`Problem.checkResidual_sound`). -/
+def checkResidual (θ : Vec ℚ (d + 1)) (ε : ℚ) : Bool :=
+  decide (0 < P.ridge) && decide (dot (P.residualAt θ) (P.residualAt θ) ≤ ε * P.ridge)
+
+end Problem
 
 end LeanLearn.Regression

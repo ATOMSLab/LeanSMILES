@@ -15,6 +15,7 @@ import LeanLearn.Plot.Parity
 import Pipelines.Representation
 import Pipelines.Pipeline
 import Pipelines.Certificates
+import Pipelines.Data
 import Lean.Data.Json
 
 /-!
@@ -51,6 +52,14 @@ def bondKindName : BondKind → String
 
 def ratStr (q : ℚ) : String :=
   if q.den == 1 then s!"{q.num}" else s!"{q.num}/{q.den}"
+
+/-- `x` in scientific notation with `digits` decimals in the mantissa: `2.61e-9`. -/
+def sci (x : Float) (digits : Nat := 2) : String :=
+  if x == 0 || !x.isFinite then s!"{x}" else
+    let e := (Float.log10 x.abs).floor
+    let mant := x / (10 : Float) ^ e
+    let (mant, e) := if mant.abs >= 10 then (mant / 10, e + 1) else (mant, e)
+    s!"{fixed mant digits}e{e.toInt64.toInt}"
 
 def parseSigned? (s : String) : Option Float :=
   let s := s.trimAscii.toString
@@ -516,10 +525,12 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
     let certExcessOpt := pipe.certifiedSolverExcess
     let gdTol := pipe.gdTolerance 4
     let gdCheck := pipe.checkGD r2Bound 4 (gdTol + 1 / 1000)
-    let isCertified :=
+    -- The a priori witness: checked before training, it says what the solver will do, but
+    -- only where the normal equations are diagonally dominant (large λ).
+    let witnessOk :=
       if modelType == "gradient-descent" then gdCheck
       else certExcessOpt.isSome
-    let certSummary :=
+    let witnessSummary :=
       if modelType == "gradient-descent" then
         s!"checkGD (R²={r2Bound}, η={ratStr stepRat}) = {gdCheck} · tolerance ε = {fixed gdTol.toFloat 4}"
       else
@@ -527,6 +538,26 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
         | some e => s!"checkSolver = true (ρ = {fixed rhoFloat 3} < 1, excess ≤ {fixed e.toFloat 6})"
         | none => s!"uncertified (diagonal dominance ratio ρ = {fixed rhoFloat 2} ≥ 1; increase ridge λ)"
     let θ : Vec Float 6 := pipe.model Float
+    -- The a posteriori certificate: read the trained Float weights exactly and check the
+    -- residual of the exact normal equations at them. `Pipeline.checkResidual_sound` then
+    -- bounds the excess training loss of exactly these weights, at any λ > 0, whatever the
+    -- solver did: the tolerance is one millionth of their own training loss.
+    let θQ : Vec ℚ 6 := θ.map ratOfFloatExact
+    let lossQ : ℚ := pipe.exactProblem.loss θQ
+    let resExcess : ℚ := pipe.residualExcess θQ
+    let resTol : ℚ := lossQ / 1000000
+    let isCertified := pipe.checkResidual θQ resTol
+    let resExcessF := resExcess.toFloat
+    let lossF := lossQ.toFloat
+    let resShare := if lossF > 0 then resExcessF / lossF else 0
+    let certSummary :=
+      if isCertified then
+        s!"checkResidual = true: ‖Aθ − b‖²/λ = {sci resExcessF} ≤ 10⁻⁶ · L(θ) (L(θ) = {fixed lossF 4})"
+      else
+        s!"checkResidual = false: ‖Aθ − b‖²/λ = {sci resExcessF} = {sci resShare} · L(θ) (L(θ) = {fixed lossF 4}), above the 10⁻⁶ · L(θ) tolerance — 30 sweeps stopped short of the optimum"
+    let certShort :=
+      if isCertified then s!"residual certificate: excess loss ≤ {sci resExcessF}"
+      else s!"residual bound {sci resExcessF}, above the 10⁻⁶ L(θ) tolerance"
     let yBarF := yBar.toFloat
     let predictMol (s : FitSample) : Float := pipe.predictWith θ s.aro + yBarF
     let trainPairs : Array (Float × Float) := trainSamples.map fun s => (s.yFloat, predictMol s)
@@ -539,7 +570,7 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
     let teMae := mae testPairs
     let svg := paritySvg
       s!"Certified Pipeline ({modelType}, λ = {fixed ridgeVal.toFloat 1})"
-      s!"Pipelines.Pipeline on 5 standardized count descriptors · {certSummary}"
+      s!"Pipelines.Pipeline on 5 standardized count descriptors · {certShort}"
       targetLabel
       [
         { label := "Training", points := trainPairs, r2 := trR2, rmse := trRmse, mae := trMae, filled := false },
@@ -558,8 +589,9 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
       Json.mkObj [("feature", toJson (names.getD j "")), ("weight", toJson (θ.toArray.getD j 0.0))]
     let logs : Array String := #[
       s!"Pipeline.exactProblem ({m} molecules, Representation.counts centred and scaled by mean absolute deviation, target centred on {fixed yBarF 2}) --> 6×6 normal equations over ℚ",
-      s!"pipe.suggestWitness.ratio --> ρ = {fixed rhoFloat 4} ({certSummary})",
+      s!"pipe.suggestWitness (a priori, before training) --> ρ = {fixed rhoFloat 4}: {witnessSummary}",
       s!"pipe.model Float ({modelType}) --> train R² {fixed trR2 3}, test R² {fixed teR2 3}",
+      s!"pipe.checkResidual θ (a posteriori, θ read exactly as ℚ, ε = 10⁻⁶ L(θ)) --> {certSummary}",
       s!"paritySvg --> generated SVG parity plot"
     ]
     let out := Json.mkObj [
@@ -573,8 +605,13 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
       ("svg", toJson svg),
       ("certificate", Json.mkObj [
         ("certified", toJson isCertified),
+        ("summary", toJson certSummary),
+        ("residualExcess", toJson resExcessF),
+        ("trainLoss", toJson lossF),
+        ("tolerance", toJson resTol.toFloat),
+        ("witnessOk", toJson witnessOk),
         ("ratio", toJson rhoFloat),
-        ("summary", toJson certSummary)
+        ("witnessSummary", toJson witnessSummary)
       ]),
       ("metrics", Json.mkObj [
         ("trainR2", toJson trR2),

@@ -40,14 +40,15 @@ const MODEL_NOTES = {
   ),
   'gauss-seidel': (
     <>
-      <span className="font-medium text-slate-700">Certified</span> means: before training, Lean checks an exact-arithmetic (ℚ)
-      witness on this dataset's normal equations — diagonal dominance, ρ &lt; 1 — and the theorem{' '}
-      <code className="font-mono">Pipeline.checkSolver_sound</code> proves that whenever that check passes, the solver's
-      exact-real iterates land within ε of the optimal training loss. It does not cover the floating-point numbers shown
-      (the same code run in Float) or accuracy on the test set. The pipeline fits five count descriptors (heavy atoms,
-      bonds, hydrogens, aromatic atoms, heteroatoms), standardized, to the centred target — all in exact ℚ — so expect a
-      modest R²: the witness needs λ ≥ 4 on these datasets, and five counts carry less than 2048 Morgan bits. At small λ
-      the witness fails, and the page says so.
+      <span className="font-medium text-slate-700">Certified</span> means: after training, Lean reads the Float weights
+      exactly (as ℚ), forms the residual of this dataset's exact normal equations at them, and checks ‖Aθ − b‖²/λ against
+      a tolerance of one millionth of their training loss. The theorem{' '}
+      <code className="font-mono">Pipeline.checkResidual_sound</code> proves that whenever that check passes, these very
+      weights are within ε of the optimal training loss — at any λ, whatever the solver did to find them. The older
+      a priori witness (diagonal dominance, ρ &lt; 1, <code className="font-mono">Pipeline.checkSolver_sound</code>) is
+      shown too; it only holds at large λ. Neither says anything about the test set. The pipeline fits five count
+      descriptors (heavy atoms, bonds, hydrogens, aromatic atoms, heteroatoms), standardized, to the centred target, so
+      expect a modest R²: five counts carry less than 2048 Morgan bits.
     </>
   ),
 }
@@ -553,12 +554,18 @@ export default function Datasets() {
                   <div>
                     <div className="font-semibold">
                       {fitResult.certificate.certified
-                        ? 'Certificate checked: exact-ℚ witness passed (ρ < 1)'
-                        : 'Certificate not met at this λ (ρ ≥ 1) — try a larger λ'}
+                        ? 'Residual certificate passed: these weights are within ε of the optimum'
+                        : 'Residual certificate not met: the solver stopped short of the optimum'}
                     </div>
                     <p className="font-mono text-[11px] mt-0.5 opacity-85">
                       {fitResult.certificate.summary}
                     </p>
+                    {fitResult.certificate.witnessSummary && (
+                      <p className="text-[11px] mt-1.5 opacity-70">
+                        A priori witness, before training (diagonal dominance):{' '}
+                        <span className="font-mono">{fitResult.certificate.witnessSummary}</span>
+                      </p>
+                    )}
                   </div>
                 </div>
               )}
@@ -592,19 +599,6 @@ export default function Datasets() {
                   </p>
                 </div>
               </div>
-
-              {fitResult.topFeatures?.length > 0 && (
-                <div>
-                  <p className="text-[11px] text-slate-400 mb-1.5">Largest Learned Feature / Morgan Bit Weights</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {fitResult.topFeatures.map((f, i) => (
-                      <Badge key={i} active={f.weight > 0}>
-                        {f.feature}: {f.weight >= 0 ? `+${Number(f.weight).toFixed(2)}` : Number(f.weight).toFixed(2)}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
 
               <div>
                 <p className="text-[11px] text-slate-400 mb-1.5">Sample Model Predictions</p>

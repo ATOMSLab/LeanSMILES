@@ -28,6 +28,18 @@ rounded to `digits` decimal places. `ratOfFloat (-0.77) = -77/100`. -/
 def ratOfFloat (x : Float) (digits : ℕ := 6) : ℚ :=
   mkRat (x * (10 : Float) ^ digits.toFloat).round.toInt64.toInt (10 ^ digits)
 
+/-- The exact rational value of a finite `Float`: `|x| = f · 2ᵉ` with `f ∈ [1/2, 1)`
+(`Float.frExp`), and `f · 2⁵³` is an integer for every normal double, so
+`|x| = (f · 2⁵³) / 2^(53 - e)`. Non-finite values read as `0`. Reading a trained `Float` model
+this way is what lets the exact residual certificate (`Pipeline.checkResidual`) cover the
+numbers that are actually shown. -/
+def ratOfFloatExact (x : Float) : ℚ :=
+  if !x.isFinite || x == 0 then 0 else
+    let (f, e) := x.abs.frExp
+    let mant : ℤ := (f.scaleB 53).toUInt64.toNat
+    let q : ℚ := if e ≥ 53 then mant * 2 ^ (e - 53).toNat else mkRat mant (2 ^ (53 - e).toNat)
+    if x < 0 then -q else q
+
 namespace LabelledMolecules
 
 /-- `count` rows of a CSV table, starting at row `start`, labelled by one of its columns
