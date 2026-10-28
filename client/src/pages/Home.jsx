@@ -38,13 +38,12 @@ const PRIMER = [
     subtitle: 'SMILES to prediction, entirely in Lean',
     body: (
       <>
-        Three libraries take a molecule from its SMILES string to a machine-learning prediction with nothing else in
-        between: parsing, aromaticity perception and fingerprints as RDKit does them, then ridge and logistic regression
-        with their metrics. On the Delaney solubility benchmark the Lean pipeline matches scikit-learn (test R² 0.67, RMSE
-        1.26); on an EGFR activity set it reaches a test F1 of 0.92. The regression model on this site is trained by
-        gradient descent — the same Lean program its convergence theorem is about, with the theorem's step-size
-        condition decided exactly on the data before every fit. Along the way the proofs turned up three issues in
-        widely used tools and standards.
+        Three libraries take a molecule from its SMILES string to a regression prediction with nothing else in between:
+        parsing, aromaticity perception and fingerprints as RDKit does them, then ridge regression with its metrics. On
+        the Delaney solubility benchmark the Lean pipeline matches scikit-learn (test R² 0.67, RMSE 1.26). The model on
+        this site is trained by gradient descent — the same Lean program its convergence theorem is about, with the
+        theorem's step-size condition decided exactly on the data before every fit. Along the way the proofs turned up
+        three issues in widely used tools and standards.
       </>
     ),
   },
@@ -59,7 +58,7 @@ const LIBRARIES = [
   {
     title: 'LeanLearn',
     code: 'The machine learning',
-    desc: 'Ridge and logistic regression, closed-form and iterative, with R², RMSE, F1 and ROC AUC, parity plots, and proofs that the iterative solvers converge.',
+    desc: 'Ridge regression, closed-form and iterative, with R², RMSE and MAE, parity plots, and proofs that the iterative solvers converge.',
   },
   {
     title: 'Pipelines',
@@ -86,7 +85,7 @@ export default function Home() {
       <div className="py-6">
         <Badge active>Lean 4 · Mathlib · LeanSMILES · LeanLearn · Pipelines</Badge>
         <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight text-slate-900 mt-4 max-w-2xl">
-          Molecules, machine learning and proofs — in one language.
+          Formally verified cheminformatics
         </h1>
         <p className="text-slate-500 mt-3 max-w-xl text-sm leading-relaxed">
           LeanSMILES reads a molecule from its SMILES string, builds the representations that cheminformatics runs on,

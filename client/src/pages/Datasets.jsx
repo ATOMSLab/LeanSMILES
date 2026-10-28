@@ -30,15 +30,13 @@ const MODEL_TYPE = 'gradient-descent'
 const MODEL_NOTE = (
   <>
     <span className="font-medium text-slate-700">Verified</span> means: the solver is LeanLearn's{' '}
-    <code className="font-mono">gradientDescent</code>, written once over the scalar type, so the Float program that
-    runs here is the same text the theorem <code className="font-mono">Problem.loss_gradientDescent_le</code> is about
-    at ℝ: from θ = 0, k steps of size η with 2ηΛ ≤ 1 end within ‖u‖²/(2ηk) of every competitor u. Before each fit
-    Lean computes Λ = (1/m) Σᵣ ‖xᵣ‖² + λ exactly on this training set, takes η = 1/(2Λ), and decides the theorem's
-    hypotheses (<code className="font-mono">Pipeline.checkGDData</code>);{' '}
-    <code className="font-mono">checkGDData_sound</code> turns that pass into the bound for the fit shown. Features
-    are the 2048 Morgan bits (radius 2) as 0/1, the target centred on its training mean, λ = α/m so that α is
-    scikit-learn's alpha. The bound is on the training loss, read in exact arithmetic; Float is what runs. Nothing is
-    said about the test set.
+    <code className="font-mono">gradientDescent</code>, one definition over the scalar type, so what runs here in
+    Float is the text the theorem <code className="font-mono">Problem.loss_gradientDescent_le</code> is about at ℝ —
+    k steps of size η with 2ηΛ ≤ 1 end within ‖u‖²/(2ηk) of every competitor u. Before each fit, Lean computes Λ
+    exactly on this training set, sets η = 1/(2Λ), and decides the theorem's hypotheses (
+    <code className="font-mono">Pipeline.checkGDData</code>, sound by{' '}
+    <code className="font-mono">checkGDData_sound</code>). Features are the 2048 Morgan bits; λ = α/m, so α is
+    scikit-learn's alpha. The bound is on the training loss; nothing is said about the test set.
   </>
 )
 
@@ -96,8 +94,11 @@ function parseUploadedCsv(text) {
   }
   if (targetIdx === -1) targetIdx = Math.min(1, headers.length - 1)
 
-  let nameIdx = headers.findIndex((h, idx) => idx !== smilesIdx && idx !== targetIdx && /name|id|compound|mol/i.test(h))
-  if (nameIdx === -1) nameIdx = 0
+  // A compound name or identifier column, if the headers say so; otherwise none (-1), and the
+  // SMILES string stands for the compound. The user can pick another column.
+  const nameIdx = headers.findIndex(
+    (h, idx) => idx !== smilesIdx && idx !== targetIdx && /name|compound|identifier|title|\bid\b|_id$/i.test(h)
+  )
 
   return { headers, rawRows, smilesIdx, targetIdx, nameIdx }
 }
@@ -117,6 +118,7 @@ export default function Datasets() {
   const [uploadedCsv, setUploadedCsv] = useState(null)
   const [smilesCol, setSmilesCol] = useState(0)
   const [targetCol, setTargetCol] = useState(1)
+  const [nameCol, setNameCol] = useState(-1)
 
   const fileInputRef = useRef(null)
   const fitReqId = useRef(0)
@@ -125,11 +127,11 @@ export default function Datasets() {
   const [busyMeta, setBusyMeta] = useState(null)
   const navigate = useNavigate()
 
-  const buildCustomRows = (csvObj, sIdx, tIdx) => {
+  const buildCustomRows = (csvObj, sIdx, tIdx, nIdx = -1) => {
     if (!csvObj) return null
     return csvObj.rawRows
-      .map((r, i) => ({
-        name: r[csvObj.nameIdx] || `Row_${i + 1}`,
+      .map((r) => ({
+        name: (nIdx >= 0 && r[nIdx]) || r[sIdx] || '',
         smiles: r[sIdx] || '',
         target: r[tIdx] ?? '',
         canonicalSmiles: r[sIdx] || '',
@@ -221,7 +223,7 @@ export default function Datasets() {
   const handleAlphaChange = (newAlpha) => {
     setAlpha(newAlpha)
     const activeTab = DATASET_TABS.find((t) => t.id === datasetId) || DATASET_TABS[0]
-    const customRows = uploadedCsv ? buildCustomRows(uploadedCsv, smilesCol, targetCol) : null
+    const customRows = uploadedCsv ? buildCustomRows(uploadedCsv, smilesCol, targetCol, nameCol) : null
     const label = uploadedCsv ? uploadedCsv.headers[targetCol] || 'Target' : activeTab.targetLabel
     runPipelineFit({
       dsId: datasetId,
@@ -247,8 +249,9 @@ export default function Datasets() {
       setDatasetId('custom')
       setSmilesCol(parsed.smilesIdx)
       setTargetCol(parsed.targetIdx)
+      setNameCol(parsed.nameIdx)
 
-      const customRows = buildCustomRows(csvMeta, parsed.smilesIdx, parsed.targetIdx)
+      const customRows = buildCustomRows(csvMeta, parsed.smilesIdx, parsed.targetIdx, parsed.nameIdx)
 
       setTableState({
         rows: customRows.slice(0, 50),
@@ -268,11 +271,25 @@ export default function Datasets() {
     reader.readAsText(file)
   }
 
+  // The name column only labels rows: relabel the table and the predictions in place, no refit.
+  const handleNameChange = (newNameIdx) => {
+    setNameCol(newNameIdx)
+    if (!uploadedCsv) return
+    const customRows = buildCustomRows(uploadedCsv, smilesCol, targetCol, newNameIdx)
+    setTableState((prev) => ({ ...prev, rows: customRows.slice(0, 50), totalCount: customRows.length }))
+    const nameOf = new Map(customRows.map((r) => [r.smiles, r.name]))
+    setFitResult((prev) =>
+      prev?.predictions
+        ? { ...prev, predictions: prev.predictions.map((p) => ({ ...p, name: nameOf.get(p.smiles) ?? p.name })) }
+        : prev
+    )
+  }
+
   const handleColumnChange = (newSmilesIdx, newTargetIdx) => {
     setSmilesCol(newSmilesIdx)
     setTargetCol(newTargetIdx)
     if (!uploadedCsv) return
-    const customRows = buildCustomRows(uploadedCsv, newSmilesIdx, newTargetIdx)
+    const customRows = buildCustomRows(uploadedCsv, newSmilesIdx, newTargetIdx, nameCol)
     setTableState((prev) => ({
       ...prev,
       rows: customRows.slice(0, 50),
@@ -414,6 +431,22 @@ export default function Datasets() {
                     onChange={(e) => handleColumnChange(smilesCol, Number(e.target.value))}
                     className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-800 font-mono text-xs"
                   >
+                    {uploadedCsv.headers.map((h, i) => (
+                      <option key={i} value={i}>
+                        {h}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex items-center gap-1.5 text-slate-600">
+                  <span>Name Column:</span>
+                  <select
+                    value={nameCol}
+                    disabled={busy}
+                    onChange={(e) => handleNameChange(Number(e.target.value))}
+                    className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-800 font-mono text-xs"
+                  >
+                    <option value={-1}>(none: show the SMILES)</option>
                     {uploadedCsv.headers.map((h, i) => (
                       <option key={i} value={i}>
                         {h}
@@ -567,7 +600,20 @@ export default function Datasets() {
                 <DataTable
                   maxHeight="max-h-52"
                   columns={[
-                    { key: 'name', label: 'Compound', render: (v) => <span className="font-medium text-slate-800">{v}</span> },
+                    {
+                      key: 'name',
+                      label: 'Compound',
+                      render: (v, row) => (
+                        <div className="max-w-[18rem]">
+                          <span className={`font-medium text-slate-800 ${v === row.smiles ? 'font-mono' : ''}`}>{v}</span>
+                          {row.smiles && row.smiles !== v && (
+                            <div className="font-mono text-[10px] text-slate-400 truncate" title={row.smiles}>
+                              {row.smiles}
+                            </div>
+                          )}
+                        </div>
+                      ),
+                    },
                     {
                       key: 'split',
                       label: 'Split',
