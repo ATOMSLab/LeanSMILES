@@ -41,8 +41,9 @@ const PRIMER = [
         Three libraries take a molecule from its SMILES string to a machine-learning prediction with nothing else in
         between: parsing, aromaticity perception and fingerprints as RDKit does them, then ridge and logistic regression
         with their metrics. On the Delaney solubility benchmark the Lean pipeline matches scikit-learn (test R² 0.67, RMSE
-        1.26); on an EGFR activity set it reaches a test F1 of 0.92. Along the way the proofs turned up three issues in
-        widely used tools and standards.
+        1.26); on an EGFR activity set it reaches a test F1 of 0.92. The fingerprint model's trained weights are
+        themselves certified after training by an exact residual check. Along the way the proofs turned up three issues
+        in widely used tools and standards.
       </>
     ),
   },
@@ -62,7 +63,7 @@ const LIBRARIES = [
   {
     title: 'Pipelines',
     code: 'The join',
-    desc: 'A pipeline is data, representation and solver, all in exact rational arithmetic. After training, the residual of the normal equations at the trained weights is checked exactly, and a theorem turns that check into a bound on how far they are from the optimum.',
+    desc: 'A pipeline is data, representation and solver, all in exact rational arithmetic. After training, the residual of the normal equations at the trained weights is checked exactly, and a theorem turns that check into a bound on how far they are from the optimum — for the five-count pipeline and for ridge on 2048 Morgan bits alike.',
   },
 ]
 

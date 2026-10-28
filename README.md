@@ -540,7 +540,25 @@ def θweak : Vec ℚ 17 := (weakGS.model Float).map ratOfFloatExact
 The theorem behind it is stated once (`Pipeline.checkResidual_sound`); the check itself
 runs compiled, since the kernel cannot evaluate `Float` to read the parameters (give it
 rational literals and `decide +kernel` proves the instance too). The website's Regression
-page runs this check on every Gauss–Seidel fit it shows, at `ε = 10⁻⁶ · L(θ)`.
+page runs this check on every Gauss–Seidel fit and every sparse-ridge fit it shows, at
+`ε = 10⁻⁶ · L(θ)`.
+
+**5. The same certificate for ridge on 2048 Morgan bits.** The website's headline model —
+scikit-learn's `Ridge(alpha)` objective on Morgan fingerprints, solved by conjugate gradients
+in `Float` (`SparseRidge`) — is a `Problem` in disguise. Centre every bit column and the
+target on their training means and set `λ = α/m`: at `θ = (w, 0)`, `m · Problem.loss θ` is
+scikit-learn's objective at its optimal intercept, and `0` is the optimal intercept of the
+centred problem itself. So the trained weights, read exactly and padded with a zero bias, are
+checked by the same `checkResidual` — except that `Problem.residualAt` forms the dense
+`2049 × 2049` normal matrix, hundreds of millions of rationals per fit.
+[`SparseProblem`](LeanLearn/Regression/SparseProblem.lean) computes the residual from each
+sample's on-bit list instead, `(1/m) Xcᵀ (Xc θ − y) + λθ` with the centring applied on the
+fly, and [`SparseProblem.residual_eq`](LeanLearn/Proofs/Regression/SparseProblem.lean)
+proves it equal, entry by entry, to `Problem.residualAt` of the dense centred problem, so
+`SparseProblem.checkResidual_sound` is `Problem.checkResidual_sound` verbatim. On the
+website's Delaney slice (167 molecules, `α = 1`) the check passes with
+`‖Aθ − b‖²/λ = 1.90 · 10⁻⁸ ≤ 2.28 · 10⁻⁷ = 10⁻⁶ · L(θ)`, on the boiling-point set with
+`1.51 · 10⁻⁴ ≤ 1.43 · 10⁻³`, in about 0.2 s per fit, training included.
 
 What is proved ([`Pipelines/Proofs/Certificates.lean`](Pipelines/Proofs/Certificates.lean),
 [`Representation.lean`](Pipelines/Proofs/Representation.lean)); `L` is the training loss:
@@ -551,6 +569,7 @@ What is proved ([`Pipelines/Proofs/Certificates.lean`](Pipelines/Proofs/Certific
 | Jacobi, Gauss–Seidel | the exact `ℚ` check of weighted diagonal dominance (`checkSolver`)                        | `L(θ) ≤ L(u) + ε` for **every** `u`: `θ` is `ε`-optimal (`checkSolver_sound`)                  |
 | Gauss–Seidel         | none (`λ ≥ 0`)                                                                            | the loss never increases with more sweeps (`gaussSeidel_antitone`)                             |
 | Any solver, after training | the exact `ℚ` residual check at the parameters it produced (`checkResidual`), `λ > 0` | `L(θ) ≤ L(u) + ε` for **every** `u`, with no condition on the data (`checkResidual_sound`) |
+| Sparse ridge on 0/1 features | the exact residual check from the bit lists (`SparseProblem.checkResidual`), `λ > 0` | the same `L(θ) ≤ L(u) + ε` for every `u` on the centred problem (`SparseProblem.checkResidual_sound`); `residual_eq` makes it the dense check |
 
 and about representations: `bondOrder_eq_adjMatrix` (the kernel-evaluable bond-order
 features are the toolkit's `adjMatrix`), `canonical_relabel` (a representation read through
