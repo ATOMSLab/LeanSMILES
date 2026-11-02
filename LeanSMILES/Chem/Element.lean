@@ -51,16 +51,16 @@ namespace Element
 /-- Atomic number `Z`: the constructor index shifted by one, so `H.atomicNumber = 1`. -/
 def atomicNumber (e : Element) : ℕ := e.ctorIdx + 1
 
-theorem atomicNumber_injective : Function.Injective atomicNumber := by
-  intro a b h
-  have h' : a.ctorIdx = b.ctorIdx := Nat.succ_injective h
-  have := congrArg Element.ofNat h'
-  simpa [Element.ofNat_ctorIdx] using this
+/-- An element is determined by its atomic number, so `atomicNumber` may serve as a key for
+`Element` (as `Morgan` and `Charge` use it). -/
+theorem atomicNumber_injective : Function.Injective atomicNumber :=
+  Nat.succ_injective.comp (Function.LeftInverse.injective ofNat_ctorIdx)
 
 /-- The element with atomic number `z`, for `1 ≤ z ≤ 118`. -/
 def ofAtomicNumber? (z : ℕ) : Option Element :=
   if 1 ≤ z ∧ z ≤ 118 then some (Element.ofNat (z - 1)) else none
 
+/-- There are exactly 118 elements: a fact about the type `Element`, not a table lookup. -/
 lemma card : Fintype.card Element = 118 := by decide
 
 /-- The element's symbol as written in SMILES (and everywhere else). -/
@@ -318,18 +318,21 @@ every string, so neither can drift from the other. -/
 theorem ofSymbol?_symbol (e : Element) : ofSymbol? e.symbol = some e := by
   cases e <;> rfl
 
-theorem symbol_injective : Function.Injective symbol := fun a b h ↦
-  Option.some_injective _ <| by rw [← ofSymbol?_symbol a, h, ofSymbol?_symbol]
+/-- Distinct elements have distinct symbols, so a symbol string identifies its element;
+a consequence of `ofSymbol?_symbol`. -/
+theorem symbol_injective : Function.Injective symbol := fun a b h ↦ by
+  simpa [ofSymbol?_symbol] using congrArg ofSymbol? h
 
 /-- `ofSymbol?` never invents an element: whatever it parses writes back as the
 string it parsed. -/
 theorem symbol_of_ofSymbol? {s : String} {e : Element} (h : ofSymbol? s = some e) :
     e.symbol = s := by
   unfold ofSymbol? at h
-  split at h <;> first | cases h; rfl | simp at h
+  split at h <;> cases h <;> rfl
 
-theorem ofSymbol?_eq_some_iff {s : String} {e : Element} :
-    ofSymbol? s = some e ↔ e.symbol = s :=
+/-- `ofSymbol?` parses `s` to `e` exactly when `e` writes as `s`: the `Iff` form of
+`ofSymbol?_symbol` and `symbol_of_ofSymbol?`, convenient for rewriting. -/
+theorem ofSymbol?_eq_some_iff {s : String} {e : Element} : ofSymbol? s = some e ↔ e.symbol = s :=
   ⟨symbol_of_ofSymbol?, fun h ↦ h ▸ ofSymbol?_symbol e⟩
 
 /-- The OpenSMILES *organic subset*: the elements that may be written without

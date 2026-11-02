@@ -30,6 +30,8 @@ private def getResult {α : Type} (result : Except Error α) : IO α :=
   | .ok value => pure value
   | .error e => throw (IO.userError e.toString)
 
+/-- Fit `y = 1 + 2x` at `x = 0, 1, 2` with the intercept exempt from the penalty and print the
+coefficients, predictions and losses; then fit a singular design the penalty makes solvable. -/
 def run : IO Unit := do
   let X : Design := #[#[1.0, 0.0], #[1.0, 1.0], #[1.0, 2.0]]
   let y : Array Float := #[1.0, 3.0, 5.0]
@@ -40,7 +42,7 @@ def run : IO Unit := do
   IO.println s!"Prediction at x = 3 = {← getResult (model.predict #[1.0, 3.0])}"
   IO.println s!"Sum of squared errors = {← getResult (model.sumSquaredError X y)}"
   IO.println s!"Penalized loss = {← getResult (model.penalizedLoss X y)}"
-
+  -- Singular design: duplicate columns with every coefficient penalized (the default `Config`).
   let singularX : Design := #[#[1.0, 1.0], #[1.0, 1.0]]
   let singular ← getResult (fit singularX #[1.0, 3.0])
   IO.println s!"Regularized duplicate columns = {singular.coefficients}"

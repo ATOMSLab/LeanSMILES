@@ -30,26 +30,37 @@ namespace LeanSMILES.Tests
 
 open LeanSMILES
 
+/-- One oracle CSV row: RDKit's answers for one molecule, as `parseRow` reads them. The
+per-atom lists are in SMILES order; the columns not needed by any test are not kept. -/
 structure Row where
+  /-- The `smiles` column: the input SMILES as the dataset writes it. -/
   smiles : String
-  /-- `canonical_smiles_nostereo`. -/
+  /-- The `canonical_smiles_nostereo` column: RDKit's canonical SMILES with stereo dropped. -/
   rdkitCanon : String
-  /-- Raw `morgan_bits` column. -/
+  /-- The raw `morgan_bits` column: the set bits of the Morgan fingerprint, space-separated. -/
   morganBits : String
-  /-- Raw `morgan_ids` column. -/
+  /-- The raw `morgan_ids` column: `id:count` entries of the Morgan invariants, space-separated. -/
   morganIds : String
+  /-- The `num_atoms` column: RDKit's heavy-atom count. -/
   numAtoms : ℕ
+  /-- The `num_bonds` column: RDKit's bond count. -/
   numBonds : ℕ
+  /-- The `atom_symbols` column: one element symbol per atom. -/
   symbols : List String
+  /-- The `atom_total_hs` column: the total hydrogen count of each atom. -/
   totalHs : List ℕ
+  /-- The `atom_in_ring` column: `1` for an atom in a ring, `0` otherwise. -/
   inRing : List ℕ
-  /-- `(i, j, t)` with `i < j`. -/
+  /-- The `bonds` column parsed to `(i, j, t)` with `i < j` and `t` RDKit's bond type number. -/
   bonds : List (ℕ × ℕ × ℕ)
 
+/-- A numeric column as a `ℕ`, ignoring surrounding whitespace; `0` if it is not a number. -/
 def parseNat (s : String) : ℕ := s.trimAscii.toString.toNat?.getD 0
 
+/-- The entries of a space-separated multi-value column, empty entries dropped. -/
 def spaceList (s : String) : List String := (s.splitOn " ").filter (· ≠ "")
 
+/-- One `bonds` entry `i-j:t` as `(i, j, t)`; `(0, 0, 0)` if it does not have that shape. -/
 def parseBond (s : String) : ℕ × ℕ × ℕ :=
   match s.splitOn "-" with
   | [i, rest] =>
@@ -58,6 +69,8 @@ def parseBond (s : String) : ℕ × ℕ × ℕ :=
     | _ => (0, 0, 0)
   | _ => (0, 0, 0)
 
+/-- A data line of an oracle file as a `Row`, by column position (`none` unless it has all 14
+columns); `canonical_smiles`, `atom_charges` and `needs_aromaticity` are skipped. -/
 def parseRow (line : String) : Option Row :=
   match line.splitOn "," with
   | [_, smiles, _, mbits, mids, na, nb, syms, hs, _, ring, bonds, _, canon] =>
@@ -83,6 +96,7 @@ def rdkitType : BondKind → ℕ
   | .quadruple => 4
   | .aromatic => 12
 
+/-- `(i, j, t)` triples sorted by `i`, then `j`, so that two bond lists compare entrywise. -/
 def sortTriples (l : List (ℕ × ℕ × ℕ)) : List (ℕ × ℕ × ℕ) :=
   l.mergeSort fun a b ↦ decide (a.1 < b.1 ∨ (a.1 = b.1 ∧ a.2.1 ≤ b.2.1))
 
@@ -91,9 +105,13 @@ def bondTriples (M : Mol) : List (ℕ × ℕ × ℕ) :=
   sortTriples <| M.mol.bonds.map fun b ↦
     (min b.src.val b.dst.val, max b.src.val b.dst.val, rdkitType b.kind)
 
+/-- The element symbol of each atom of `M` in SMILES order, `*` for a wildcard atom; the
+library's answer to the `atom_symbols` column. -/
 def symbolsOf (M : Mol) : List String :=
   (List.finRange M.n).map fun i ↦ ((M.mol.atom i).element.map Element.symbol).getD "*"
 
+/-- The total hydrogen count of each atom of `M` in SMILES order; the library's answer to the
+`atom_total_hs` column. -/
 def totalHsOf (M : Mol) : List ℕ := (List.finRange M.n).map fun i ↦ (M.mol.atom i).totalH
 
 /-- Same atoms, same bonds between the same atoms (syntax). -/

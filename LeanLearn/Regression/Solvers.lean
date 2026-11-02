@@ -42,7 +42,8 @@ variable {K : Type} [PolynomialLike K] [Div K] {n : ℕ}
 /-- The residual `A θ - b` of the normal equations (half the loss gradient). -/
 @[specialize] def residual (A : Mat K n n) (b θ : Vec K n) : Vec K n := vsub (matVec A θ) b
 
-/-- `∑_{j≠i} Aᵢⱼ θⱼ`. -/
+/-- `∑_{j≠i} Aᵢⱼ θⱼ`, row `i` of `A θ` without its diagonal term: what `coordSolve` subtracts
+from `bᵢ`. -/
 @[specialize]
 def offDiag (A : Mat K n n) (θ : Vec K n) (i : Fin n) : K := dot A[i] θ - A[i][i] * θ[i]
 
@@ -54,12 +55,14 @@ keep `θᵢ`: on the normal equations that coordinate then does not enter the lo
 
 /-! ## Gradient descent -/
 
-/-- One gradient step `θ - 2η (A θ - b)`. -/
+/-- One gradient step `θ - 2η (A θ - b)`, with `2η` written `η + η`: `PolynomialLike K` has no
+literal `2`. -/
 @[specialize] def gdStep (A : Mat K n n) (b : Vec K n) (η : K) (θ : Vec K n) : Vec K n :=
   let r := residual A b θ
   Vector.ofFn fun i ↦ θ[i] - (η + η) * r[i]
 
-/-- `k` gradient steps from `θ = 0`. -/
+/-- `k` gradient steps from `θ = 0`. The only one with a step size to tune: under `2ηΛ ≤ 1`
+(`Λ = Problem.smoothness`) it has the `O(1/k)` rate of `Proofs/Regression/GradientDescent`. -/
 @[specialize] def gradientDescent (A : Mat K n n) (b : Vec K n) (η : K) (k : ℕ) : Vec K n :=
   (gdStep A b η)^[k] vzero
 
@@ -69,7 +72,8 @@ keep `θᵢ`: on the normal equations that coordinate then does not enter the lo
 @[specialize] def jacobiStep [BEq K] (A : Mat K n n) (b θ : Vec K n) : Vec K n :=
   Vector.ofFn fun i ↦ coordSolve A b θ i
 
-/-- `k` Jacobi steps from `θ = 0`. -/
+/-- `k` Jacobi steps from `θ = 0`. No step size to tune; proved to converge linearly when `A` is
+diagonally dominant (`DiagDominant` in `Proofs/Regression/Iterative`). -/
 @[specialize] def jacobi [BEq K] (A : Mat K n n) (b : Vec K n) (k : ℕ) : Vec K n :=
   (jacobiStep A b)^[k] vzero
 
@@ -83,13 +87,15 @@ def gsUpdate [BEq K] (A : Mat K n n) (b θ : Vec K n) (i : Fin n) : Vec K n :=
 @[specialize] def gsSweep [BEq K] (A : Mat K n n) (b θ : Vec K n) : Vec K n :=
   (List.finRange n).foldl (gsUpdate A b) θ
 
-/-- `k` Gauss–Seidel sweeps from `θ = 0`. -/
+/-- `k` Gauss–Seidel sweeps from `θ = 0`. Converges linearly under the same dominance condition
+as `jacobi`; on the normal equations it is coordinate descent, so the loss never increases. -/
 @[specialize] def gaussSeidel [BEq K] (A : Mat K n n) (b : Vec K n) (k : ℕ) : Vec K n :=
   (gsSweep A b)^[k] vzero
 
 /-! ## The algorithm as data -/
 
-/-- An iterative solver for linear regression, with its hyperparameters. -/
+/-- An iterative solver for linear regression with its hyperparameters, as data, so that a
+pipeline can be certified by casing on it (`Pipelines/Proofs/Certificates`). -/
 inductive Algorithm where
   /-- Gradient descent with step size `η` for `iters` steps. -/
   | gradientDescent (stepSize : ℚ) (iters : ℕ)
@@ -99,7 +105,8 @@ inductive Algorithm where
   | gaussSeidel (sweeps : ℕ)
   deriving Repr, DecidableEq
 
-/-- Run the algorithm on the normal equations `A θ = b`. -/
+/-- Run the algorithm on the normal equations `A θ = b`; the rational step size is read into `K`
+through `RatEmbed.ofRat`. -/
 @[specialize] def Algorithm.solve [BEq K] [RatEmbed K] : Algorithm → Mat K n n → Vec K n → Vec K n
   | .gradientDescent η k, A, b => Regression.gradientDescent A b (RatEmbed.ofRat η) k
   | .jacobi k, A, b => Regression.jacobi A b k

@@ -34,7 +34,7 @@ def fixed (x : Float) (d : Nat := 1) (minus : String := "-") : String :=
 /-- The smallest of `1, 2, 5, 10` times a power of ten that is at least `x > 0`: a
 round tick step. -/
 def niceStep (x : Float) : Float :=
-  let mag := (10 : Float) ^ (Float.log10 x).floor
+  let mag := (10 : Float) ^ x.log10.floor
   let r := x / mag
   if r <= 1 then mag else if r <= 2 then 2 * mag else if r <= 5 then 5 * mag else 10 * mag
 
@@ -46,11 +46,15 @@ def decimalsFor (x : Float) : Nat :=
 
 /-- One set of points with its legend entry. -/
 structure Series where
+  /-- Legend name of the set, e.g. "Training" or "Test". -/
   label : String
   /-- (measured, predicted) pairs. -/
   points : Array (Float × Float)
+  /-- R² of `points`, printed in the legend to three decimals. -/
   r2 : Float
+  /-- Root-mean-square error of `points`, printed in the legend to two decimals. -/
   rmse : Float
+  /-- Mean absolute error of `points`, printed in the legend to two decimals. -/
   mae : Float
   /-- Filled points (test) or hollow (training). -/
   filled : Bool
@@ -64,7 +68,7 @@ def paritySvg (title subtitle axis : String) (series : List Series) : String := 
   -- ticks every 100 and log solubility every 2.
   let vMin := all.foldl min (all.headD 0)
   let vMax := all.foldl max (all.headD 0)
-  let stepT := niceStep (if vMax - vMin > 0 then (vMax - vMin) / 8 else 1)
+  let stepT := niceStep (if 0 < vMax - vMin then (vMax - vMin) / 8 else 1)
   let lo := (vMin / stepT).floor * stepT
   let hi := max ((vMax / stepT).ceil * stepT) (lo + stepT)
   let span := hi - lo

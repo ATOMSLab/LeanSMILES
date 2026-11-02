@@ -21,11 +21,12 @@ values and the classical ML algorithms that consume them — is written over:
 because `Float` carries no lawful algebraic instances — with `npowGen` /
 `nsmulGen` / `sumGen` / `sumFin`, the `Float`-usable power, scalar multiple and
 sums, and `npowGen_eq` / `nsmulGen_eq` / `sumGen_eq` / `sumFin_eq_sum` bridging
-them to `^`, `*`, `List.sum` and `∑ i, f i` over `ℝ`.
+them to `^`, `*`, `List.sum` and `∑ i, f i` over `ℝ` (the two sums over any additive
+monoid, so over `ℚ` as well).
 
 Extracted from LeanCatalyst (`LeanCatalyst/Scalar.lean`, `main` at `65d1e87`).
-The code is unchanged apart from the namespace; docstrings that pointed into
-LeanCatalyst's own modules are reworded for this library.
+The definitions are unchanged apart from the namespace; the proofs are golfed, and
+docstrings that pointed into LeanCatalyst's own modules are reworded for this library.
 -/
 
 @[expose] public section
@@ -45,10 +46,15 @@ conjunction and carries no law. Its second path, the projection from
 `ScalarLike`, is the same term (`ScalarLike.toPolynomialLike_real`,
 `ScalarLike.toPolynomialLike_float`). -/
 class PolynomialLike (K : Type w) where
+  /-- `x + y`. -/
   [addK : Add K]
+  /-- `x * y`. -/
   [mulK : Mul K]
+  /-- `x - y`. -/
   [subK : Sub K]
+  /-- The literal `0`. -/
   [ofNat0K : OfNat K 0]
+  /-- The literal `1`. -/
   [ofNat1K : OfNat K 1]
 
 attribute [reducible, instance] PolynomialLike.addK PolynomialLike.mulK
@@ -77,18 +83,31 @@ text the theorem describes. `ℚ` and `ℚ≥0` have no square root and no real
 power, so they read only the `PolynomialLike` fragment — which is why that
 fragment keeps a name of its own. -/
 class ScalarLike (K : Type w) extends PolynomialLike K where
+  /-- `-x`. -/
   [negK : Neg K]
+  /-- `x / y`. -/
   [divK : Div K]
+  /-- The literal `2`. -/
   [ofNat2K : OfNat K 2]
+  /-- The literal `4`. -/
   [ofNat4K : OfNat K 4]
+  /-- The literal `6`. -/
   [ofNat6K : OfNat K 6]
+  /-- Decimal literals such as `0.5`. -/
   [ofSciK : OfScientific K]
+  /-- `x < y`. -/
   [ltK : LT K]
+  /-- `x ≤ y`. -/
   [leK : LE K]
+  /-- `<` is decidable, so code can branch on it. -/
   [decLtK : DecidableRel (α := K) (· < ·)]
+  /-- `≤` is decidable, so code can branch on it. -/
   [decLeK : DecidableRel (α := K) (· ≤ ·)]
+  /-- `x == y`. -/
   [beqK : BEq K]
+  /-- `max x y`. -/
   [maxK : Max K]
+  /-- `min x y`. -/
   [minK : Min K]
   /-- `|x|`. -/
   abs : K → K
@@ -127,10 +146,19 @@ noncomputable instance : ScalarLike ℝ where
   isFinite := fun _ ↦ true
   ofNat := Nat.cast
 
+/-- `ScalarLike.abs` on `ℝ` is `|·|`. -/
 @[simp] theorem ScalarLike.abs_real (x : ℝ) : ScalarLike.abs x = |x| := rfl
+
+/-- `ScalarLike.sqrt` on `ℝ` is `Real.sqrt`. -/
 @[simp] theorem ScalarLike.sqrt_real (x : ℝ) : ScalarLike.sqrt x = Real.sqrt x := rfl
+
+/-- `ScalarLike.rpow` on `ℝ` is the real power `x ^ y`. -/
 @[simp] theorem ScalarLike.rpow_real (x y : ℝ) : ScalarLike.rpow x y = x ^ y := rfl
+
+/-- Every real is finite: `ScalarLike.isFinite` on `ℝ` is constantly `true`. -/
 @[simp] theorem ScalarLike.isFinite_real (x : ℝ) : ScalarLike.isFinite x = true := rfl
+
+/-- `ScalarLike.ofNat` on `ℝ` is the cast `(n : ℝ)`. -/
 @[simp] theorem ScalarLike.ofNat_real (n : Nat) : ScalarLike.ofNat n = (n : ℝ) := rfl
 
 /-- **The two paths to `PolynomialLike ℝ` are one term.** The blanket instance
@@ -156,7 +184,10 @@ class RatEmbed (K : Type) where
   /-- A rational constant, as a scalar. -/
   ofRat : ℚ → K
 
-noncomputable instance : RatEmbed Real := ⟨Rat.cast⟩
+/-- The theorem reading of a rational constant: `Rat.cast`. -/
+noncomputable instance : RatEmbed ℝ := ⟨Rat.cast⟩
+
+/-- The executable reading of a rational constant: `Rat.toFloat`. -/
 instance : RatEmbed Float := ⟨Rat.toFloat⟩
 
 section GenArith
@@ -195,6 +226,8 @@ def sumFin [PolynomialLike K] {n : Nat} (f : Fin n → K) : K := sumGen (List.fi
 @[specialize] def sumFinLoop [PolynomialLike K] {n : Nat} (f : Fin n → K) : K :=
   Fin.foldr n (fun i acc ↦ f i + acc) 0
 
+/-- `sumFin` is `sumFinLoop`, so compiled code runs the counting loop in place of the list
+fold (`@[csimp]`); proofs keep working with the list-based `sumFin`. -/
 @[csimp] theorem sumFin_eq_sumFinLoop : @sumFin = @sumFinLoop := by
   funext K _ n f
   rw [sumFin, sumGen, sumFinLoop, Fin.foldr_eq_foldr_finRange]
@@ -205,81 +238,55 @@ last-occurrence order.
 This is the executable counterpart of a `Finset.sum` when the scalar may be
 `Float`: `List.dedup` chooses an order without quotient elimination, while the
 `Real` bridge below proves that the order is immaterial in the lawful reading. -/
-def sumDistinctGen [PolynomialLike K] [DecidableEq X]
-    (l : List X) (f : X → K) : K :=
+def sumDistinctGen {X : Type u} [PolynomialLike K] [DecidableEq X] (l : List X) (f : X → K) : K :=
   sumGen l.dedup f
 
-theorem sumGen_eq {X : Type u} (l : List X) (f : X → Real) :
+/-- The executable fold `sumGen` is `List.sum` of the mapped list — the bridge from the
+`Float`-usable sums to Mathlib's. Over any additive monoid `K` (`ℝ` for the proofs, `ℚ` for the
+certificates); `*`, `-` and `1` are there only for `sumGen` to be defined. -/
+theorem sumGen_eq [AddMonoid K] [Mul K] [Sub K] [One K] {X : Type u} (l : List X) (f : X → K) :
     sumGen l f = (l.map f).sum := by
-  induction l with
-  | nil => rfl
-  | cons a l ih => rw [sumGen, List.foldr_cons]; rw [sumGen] at ih; simp [ih]
+  rw [sumGen, List.sum_eq_foldr, List.foldr_map]
 
-/-- At `Real`, the executable sum over `Fin n` is the `Finset` sum. -/
-theorem sumFin_eq_sum {n : Nat} (f : Fin n → Real) : sumFin f = ∑ i, f i := by
+/-- The executable sum over `Fin n` is the `Finset` sum, over any additive commutative monoid `K`
+(`ℝ` for the proofs, `ℚ` for the certificates). -/
+theorem sumFin_eq_sum [AddCommMonoid K] [Mul K] [Sub K] [One K] {n : Nat} (f : Fin n → K) :
+    sumFin f = ∑ i, f i := by
   rw [sumFin, sumGen_eq, Fin.sum_univ_def]
 
 /-- At `Real`, the distinct executable fold is exactly the corresponding
 finite-set sum. -/
-theorem sumDistinctGen_eq {X : Type u} [DecidableEq X]
-    (l : List X) (f : X → Real) :
+theorem sumDistinctGen_eq {X : Type u} [DecidableEq X] (l : List X) (f : X → ℝ) :
     sumDistinctGen l f = ∑ x ∈ l.toFinset, f x := by
-  rw [sumDistinctGen, sumGen_eq]
-  rw [← List.sum_toFinset f (List.nodup_dedup l)]
-  congr 1
-  ext x
-  simp only [List.mem_toFinset, List.mem_dedup]
+  rw [sumDistinctGen, sumGen_eq, ← List.sum_toFinset f (List.nodup_dedup l),
+    List.toFinset.ext_iff.mpr fun _ ↦ List.mem_dedup]
 
 /-- Differencing two sums over one index list is summing their difference —
 what lets an observable's error be read as an observable of the error. -/
-theorem sumGen_sub {X : Type u} (l : List X) (f g : X → Real) :
+theorem sumGen_sub {X : Type u} (l : List X) (f g : X → ℝ) :
     sumGen l f - sumGen l g = sumGen l fun s ↦ f s - g s := by
-  induction l with
-  | nil => simp [sumGen]
-  | cons a l ih =>
-    simp only [sumGen, List.foldr_cons] at ih ⊢
-    linarith
+  induction l <;> grind [sumGen]
 
 /-- A sum of nonnegative terms is nonnegative. -/
-theorem sumGen_nonneg {X : Type u} {l : List X} {f : X → Real}
-    (hf : ∀ x ∈ l, 0 ≤ f x) : 0 ≤ sumGen l f := by
-  induction l with
-  | nil => exact le_of_eq rfl
-  | cons a t ih =>
-    have h1 : 0 ≤ f a := hf a (List.mem_cons_self ..)
-    have h2 := ih fun x hx ↦ hf x (List.mem_cons_of_mem _ hx)
-    rw [sumGen, List.foldr_cons]
-    rw [sumGen] at h2
-    linarith
+theorem sumGen_nonneg {X : Type u} {l : List X} {f : X → ℝ} (hf : ∀ x ∈ l, 0 ≤ f x) :
+    0 ≤ sumGen l f := by
+  rw [sumGen_eq]
+  exact List.sum_nonneg (List.forall_mem_map.mpr hf)
 
 /-- One member's term is a lower bound on a sum of nonnegative terms — how a
 sum is bounded *below*, and what a quotient's denominator needs. -/
-theorem le_sumGen {X : Type u} {l : List X} {f : X → Real} {a : X} (ha : a ∈ l)
+theorem le_sumGen {X : Type u} {l : List X} {f : X → ℝ} {a : X} (ha : a ∈ l)
     (hf : ∀ x ∈ l, 0 ≤ f x) : f a ≤ sumGen l f := by
-  induction l with
-  | nil => exact absurd ha List.not_mem_nil
-  | cons b t ih =>
-    have hrest := sumGen_nonneg (l := t) (f := f)
-      fun x hx ↦ hf x (List.mem_cons_of_mem _ hx)
-    rw [sumGen] at hrest
-    rw [sumGen, List.foldr_cons]
-    rcases List.mem_cons.mp ha with h | h
-    · subst h
-      linarith
-    · have hb : 0 ≤ f b := hf b (List.mem_cons_self ..)
-      have hle := ih h fun x hx ↦ hf x (List.mem_cons_of_mem _ hx)
-      rw [sumGen] at hle
-      linarith
+  rw [sumGen_eq]
+  exact List.single_le_sum (List.forall_mem_map.mpr hf) _ (List.mem_map_of_mem ha)
 
-theorem npowGen_eq (x : Real) (n : Nat) : npowGen x n = x ^ n := by
-  induction n with
-  | zero => simp [npowGen]
-  | succ n ih => rw [npowGen, ih, pow_succ]; ring
+/-- On `ℝ`, the repeated-multiplication power `npowGen` is the monoid power `x ^ n`. -/
+theorem npowGen_eq (x : ℝ) (n : Nat) : npowGen x n = x ^ n := by
+  induction n <;> simp [npowGen, pow_succ', *]
 
-theorem nsmulGen_eq (n : Nat) (x : Real) : nsmulGen n x = (n : Real) * x := by
-  induction n with
-  | zero => simp [nsmulGen]
-  | succ n ih => rw [nsmulGen, ih]; push_cast; ring
+/-- On `ℝ`, the repeated-addition multiple `nsmulGen n x` is `n * x` with `n` cast. -/
+theorem nsmulGen_eq (n : Nat) (x : ℝ) : nsmulGen n x = (n : ℝ) * x := by
+  induction n <;> simp [nsmulGen, add_mul, add_comm, *]
 
 end GenArith
 

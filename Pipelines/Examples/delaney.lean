@@ -43,10 +43,14 @@ namespace PipelineExample
 `CSVparser.load` reads the table (see `parsercsv.lean`). `ofRecords` parses each SMILES
 into a `Mol` and keeps the measured log solubility as an exact rational. -/
 
+/-- The Delaney (ESOL) table: each molecule's name, measured log solubility and SMILES. -/
 def delaney := CSVparser.load "datasets/delaney-processed.csv"
 
-def train : LabelledMolecules 40 := .ofRecords delaney 0 40   -- rows 0–39
-def test : LabelledMolecules 10 := .ofRecords delaney 40 10   -- rows 40–49, held out
+/-- Rows 0–39 of the table: the training data of every pipeline below except `smallJacobi`. -/
+def train : LabeledMolecules 40 := .ofRecords delaney 0 40
+
+/-- Rows 40–49 of the table, held out: the test molecules of sections 4 and 8. -/
+def test : LabeledMolecules 10 := .ofRecords delaney 40 10
 
 -- The table's decimals, exactly: -0.77 is -77/100.
 #eval train.targets.toList.take 5
@@ -55,8 +59,9 @@ def test : LabelledMolecules 10 := .ofRecords delaney 40 10   -- rows 40–49, h
 -- No molecule occurs twice, however its SMILES was written.
 #eval train.noDuplicates
 
--- Molecules can also be typed in, with their targets.
-def small : LabelledMolecules 4 :=
+/-- Molecules can also be typed in, with their targets: four small ones, the data of
+`smallJacobi` (section 9). -/
+def small : LabeledMolecules 4 :=
   .ofSmiles! #v[("CCO", -77 / 100), ("CC=O", 64 / 100), ("CCC", -94 / 100), ("OCO", 1)]
 
 #eval small.canonicalSmiles.toList
@@ -67,6 +72,7 @@ A representation turns a molecule into exact rational features, read from the to
 `Mol`: Morgan bits (`morganVector`), the bond-order matrix (`adjMatrix`), or counts of
 atoms, bonds and hydrogens. -/
 
+/-- Ethanol, `CCO`: the molecule the representations below are shown on. -/
 def ethanol : Mol := Mol.ofSmiles! "CCO"
 
 -- Morgan fingerprint bits, radius 1, folded to 16 bits.
@@ -97,6 +103,8 @@ loss is `(1/m) ∑ᵣ (⟪xᵣ, θ⟫ - yᵣ)² + λ ‖θ‖²`, where `xᵣ` i
 constant `1` appended for the intercept. Every solver works on the normal equations
 `A θ = b`, computed here exactly. -/
 
+/-- Gradient descent on `train`'s Morgan bits (radius 2, 32 bits), no ridge penalty: step size
+`1/66`, 3000 steps. Certified in section 4, as a theorem by `gd_certified`. -/
 def gd : Pipeline 40 32 :=
   { data := train, representation := .morgan 2 32, algorithm := .gradientDescent (1 / 66) 3000 }
 
@@ -116,7 +124,7 @@ does not look at the data, so it holds for every dataset. -/
 -- The largest step size the certificate accepts, for this representation.
 #eval gd.maxStepSize 32
 
--- The tolerance it gives against every model with `‖θ‖² ≤ 4`: 11/250, about 0.044.
+-- The tolerance it gives against every model with `‖θ‖² ≤ 4`: 11/250, that is 0.044.
 #eval gd.gdTolerance 4
 #eval gd.checkGD 32 4 (1 / 20)
 
@@ -137,9 +145,12 @@ data: `A` must be diagonally dominant (`∑_{j≠i} |Aᵢⱼ| wᵢ ≤ ρ Aᵢ�
 check is exact; `suggestWitness` proposes `w`, `ρ` and a bound `β` on the optimum, and
 `certifiedSolverExcess` is how far from the optimum the solver is guaranteed to end. -/
 
+/-- Gauss–Seidel, 30 sweeps, on the bond orders of `train`'s first 4 atoms with ridge penalty
+`λ = 16`: enough for diagonal dominance, so the solver certificate passes. -/
 def gs : Pipeline 40 16 :=
   { data := train, representation := .bondOrders 4, ridge := 16, algorithm := .gaussSeidel 30 }
 
+/-- The `gs` problem solved by Jacobi, 30 steps, in place of Gauss–Seidel. -/
 def jac : Pipeline 40 16 := { gs with algorithm := .jacobi 30 }
 
 #eval gs.suggestWitness
@@ -160,6 +171,8 @@ With a small penalty the normal equations are far from diagonally dominant: the 
 has `ρ > 1`, and nothing is certified. Jacobi indeed diverges; Gauss–Seidel, monotone for
 any data, does not. -/
 
+/-- The `gs` problem with the penalty cut to `λ = 1`, solved by Jacobi, 30 steps: the witness
+fails and Jacobi diverges. -/
 def weak : Pipeline 40 16 := { gs with ridge := 1, algorithm := .jacobi 30 }
 
 #eval weak.suggestWitness.ratio
@@ -179,15 +192,17 @@ data and no assumption about the solver. So the `weak` problem, whose witness fa
 `λ = 1`, is certified all the same once Gauss–Seidel has converged there; and Jacobi, which
 diverged, is caught by the same check. -/
 
+/-- The `weak` problem (`λ = 1`) solved by Gauss–Seidel, 100 sweeps: the witness fails, but the
+solver converges and the residual check certifies it. -/
 def weakGS : Pipeline 40 16 := { weak with algorithm := .gaussSeidel 100 }
 
--- The Float model, read exactly (`ratOfFloatExact`): the certificate is about these numbers.
-def θweak : Vec ℚ 17 := (weakGS.model Float).map ratOfFloatExact
+/-- `weakGS`'s Float model read exactly (`ratOfFloatExact`), the numbers the certificate covers. -/
+def weakGSModel : Vec ℚ 17 := (weakGS.model Float).map ratOfFloatExact
 
 -- `‖A θ - b‖² / λ`, the excess training loss the residual certifies, is below `10⁻¹²`; the
 -- check at `ε = 10⁻⁶` passes.
-#eval decide (weakGS.residualExcess θweak < 1 / 10 ^ 12)
-#eval weakGS.checkResidual θweak (1 / 10 ^ 6)
+#eval decide (weakGS.residualExcess weakGSModel < 1 / 10 ^ 12)
+#eval weakGS.checkResidual weakGSModel (1 / 10 ^ 6)
 
 -- Jacobi diverged at this `λ` (section 6): its residual is astronomically large.
 #eval (weak.residualExcess ((weak.model Float).map ratOfFloatExact)).toFloat
@@ -195,21 +210,23 @@ def θweak : Vec ℚ 17 := (weakGS.model Float).map ratOfFloatExact
 
 /-! ### 8. Predictions -/
 
-def θ : Vec Float 33 := gd.model Float
+/-- The parameters `gd` trains on `Float` (32 bit weights, then the intercept), used for the
+predictions below. -/
+def gdModel : Vec Float 33 := gd.model Float
 
 -- Propan-1-ol (measured: 0.62).
-#eval gd.predictSmiles θ "CCCO"
+#eval gd.predictSmiles gdModel "CCCO"
 
 -- The held-out molecules: canonical SMILES, prediction, measured value.
 #eval (test.canonicalSmiles.toList.zip
-  ((gd.predictAll θ test).toList.zip test.targetsFloat.toList)).take 5
+  ((gd.predictAll gdModel test).toList.zip test.targetsFloat.toList)).take 5
 
 -- Test error of three representations, all with Gauss–Seidel and `λ = 1`.
-#eval let p₁ : Pipeline 40 32 := { gd with ridge := 1, algorithm := .gaussSeidel 30 }
-      let p₂ : Pipeline 40 16 := { gs with ridge := 1 }
-      let p₃ : Pipeline 40 5 := { gs with representation := .counts, ridge := 1 }
-      (p₁.mse (p₁.model Float) test, p₂.mse (p₂.model Float) test,
-        p₃.mse (p₃.model Float) test)
+#eval
+  let p₁ : Pipeline 40 32 := { gd with ridge := 1, algorithm := .gaussSeidel 30 }
+  let p₂ : Pipeline 40 16 := { gs with ridge := 1 }
+  let p₃ : Pipeline 40 5 := { gs with representation := .counts, ridge := 1 }
+  (p₁.mse (p₁.model Float) test, p₂.mse (p₂.model Float) test, p₃.mse (p₃.model Float) test)
 
 /-! ### 9. The checks are theorems
 
@@ -222,18 +239,18 @@ compiled code. -/
 /-- After 3000 steps, gradient descent is within `1/20` of every model with `‖θ‖² ≤ 4`. -/
 theorem gd_certified (u : Vec ℝ 33) (hu : ∑ i : Fin 33, u[i] ^ 2 ≤ 4) :
     gd.trainLoss ℝ ≤ (gd.problem ℝ).loss u + 1 / 20 := by
-  have := gd.checkGD_sound (R2 := (32 : ℕ)) (B := 4) (ε := 1 / 20)
+  simpa using gd.checkGD_sound (R2 := (32 : ℕ)) (B := 4) (ε := 1 / 20)
     (Representation.morgan_bounded 2 32) (by decide +kernel) u (by exact_mod_cast hu)
-  simpa using this
 
+/-- Jacobi, 40 steps, on the bond orders of `small`'s first 3 atoms with `λ = 8`: small enough
+for the kernel to run its whole solver certificate (`smallJacobi_certified`). -/
 def smallJacobi : Pipeline 4 9 :=
   { data := small, representation := .bondOrders 3, ridge := 8, algorithm := .jacobi 40 }
 
 /-- After 40 steps, Jacobi is within `1/1000` of the optimum: no parameters do better. -/
 theorem smallJacobi_certified (u : Vec ℝ 10) :
     smallJacobi.trainLoss ℝ ≤ (smallJacobi.problem ℝ).loss u + 1 / 1000 := by
-  have := smallJacobi.checkSolver_sound (W := smallJacobi.suggestWitness) (ε := 1 / 1000)
+  simpa using smallJacobi.checkSolver_sound (W := smallJacobi.suggestWitness) (ε := 1 / 1000)
     (by decide +kernel) u
-  simpa using this
 
 end PipelineExample

@@ -39,8 +39,12 @@ def inconsistent : List String :=
   ["[C+123]", "[C-123]", "[H+++]", "[C+++++++]", "[C+7]", "[C-5]", "[O-3]", "[H-2]", "[H+2]",
    "[Ne-]", "[*+16]", "[*-16]", "C[C+123]", "[Na+].[Cl-99]"]
 
-def hasSubstring (s sub : String) : Bool := (s.splitOn sub).length > 1
+/-- `hasSubstring s sub` is `true` when the non-empty string `sub` occurs in `s`, i.e. when
+`String.splitOn` cuts `s` into more than one piece.  Used to check a message names a charge. -/
+def hasSubstring (s sub : String) : Bool := 1 < (s.splitOn sub).length
 
+/-- The charge test: `checkCharges` must accept exactly `consistent`, name the offending atom, and
+keep its verdict under relabeling and canonicalization.  Exit code `0` iff every check passes. -/
 public def main : IO UInt32 := do
   let mut failures : Array String := #[]
   for s in consistent do

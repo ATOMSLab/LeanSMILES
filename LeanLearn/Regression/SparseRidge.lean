@@ -39,17 +39,24 @@ namespace LeanLearn.Regression.SparseRidge
 
 variable {K : Type} [ScalarLike K]
 
+/-- A fitted ridge model on sparse `0/1` features: a weight per feature bit and the intercept.
+`Model.predict` evaluates it on a sample given as its list of on-bits. -/
 structure Model (K : Type) where
+  /-- Weight per feature bit, indexed by bit position. -/
   weights : Array K
+  /-- The intercept `b`, which the ridge penalty does not touch. -/
   bias : K
 
-/-- Predicted value w · x + b. -/
+/-- Predicted value `w · x + b` for a sample `x` given as its list of on-bits. -/
 def Model.predict (m : Model K) (x : Array ℕ) : K :=
   x.foldl (fun s j ↦ s + m.weights.getD j 0) m.bias
 
+/-- Hyperparameters for `fit`: the ridge penalty and when conjugate gradients stop. The defaults
+are scikit-learn's `alpha = 1` and a tolerance tight enough to agree with its direct solver. -/
 structure Config (K : Type) [ScalarLike K] where
   /-- Penalty strength, as scikit-learn's `alpha`. -/
   alpha : K := 1
+  /-- Upper bound on conjugate-gradient steps; `fit` reports how many it used. -/
   maxIter : ℕ := 10000
   /-- Stop when the residual norm falls below this fraction of the right-hand side's. -/
   tol : K := 0.000000000001
@@ -57,10 +64,9 @@ structure Config (K : Type) [ScalarLike K] where
 /-- Dot product of dense vectors. -/
 def dot (u v : Array K) : K := (u.zip v).foldl (fun s (a, b) ↦ s + a * b) 0
 
-/-- Train a ridge model on samples with `nFeatures` 0/1 features and targets.
+/-- Train a ridge model on samples, each the list of its on-bits among `nFeatures`, with targets.
 Returns the model and the number of conjugate-gradient steps used. -/
-def fit (cfg : Config K) (nFeatures : ℕ) (data : Array (Array ℕ × K)) :
-    Model K × ℕ := Id.run do
+def fit (cfg : Config K) (nFeatures : ℕ) (data : Array (Array ℕ × K)) : Model K × ℕ := Id.run do
   let count : K := data.foldl (fun s _ ↦ s + 1) 0
   let ybar := data.foldl (fun s (_, y) ↦ s + y) 0 / count
   -- feature means x̄

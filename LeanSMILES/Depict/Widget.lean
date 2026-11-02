@@ -54,19 +54,22 @@ class Drawable (α : Type) where
   toMol : α → Mol
 
 instance : Drawable Mol := ⟨id⟩
+
 instance {n : ℕ} : Drawable (Molecule n) := ⟨fun m ↦ ⟨n, m⟩⟩
+
 instance : Drawable String := ⟨Mol.ofSmiles!⟩
 
-/-- The Infoview picture of a drawable value. -/
+/-- The Infoview picture of a drawable value: the `Mol.svg` drawing of its molecule, as
+ProofWidgets `Html`. This is what `#draw` displays. -/
 meta def html {α : Type} [Drawable α] (x : α) : Html :=
-  ((Drawable.toMol x).svg).toHtml
+  (Drawable.toMol x).svg.toHtml
 
 end LeanSMILES.Depict
 
 namespace LeanSMILES
 
-/-- `#draw t`: show the molecule `t` (a SMILES string, a `Mol` or a
-`Molecule n`) in the Infoview. -/
+/-- `#draw t`: show the molecule `t` (a SMILES string, a `Mol` or a `Molecule n`) as an SVG
+structure drawing in the Infoview, while the cursor is on the command. -/
 macro "#draw " t:term : command => `(#html LeanSMILES.Depict.html $t)
 
 end LeanSMILES

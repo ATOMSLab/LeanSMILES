@@ -34,6 +34,8 @@ lake exe validity-test [datasets/fuzz-validity.tsv]
 
 open LeanSMILES LeanSMILES.SMILES
 
+/-- Entry point of `validity-test`: parse every string in the fuzz table (first argument, default
+`datasets/fuzz-validity.tsv`), report the tallies, and exit `1` iff a parser bug turned up. -/
 public def main (args : List String) : IO UInt32 := do
   let path := args.headD "datasets/fuzz-validity.tsv"
   let lines ← IO.FS.lines path

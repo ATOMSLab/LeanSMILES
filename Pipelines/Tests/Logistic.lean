@@ -1,3 +1,8 @@
+/-
+Copyright (c) 2026 Samiha Sharlin. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Samiha Sharlin, Tyler Josephson
+-/
 module
 
 public import LeanLearn.Classification.Logistic
@@ -27,27 +32,37 @@ ROC AUC (`rocAuc`), next to the AUC of scikit-learn's probabilities.
 
 open LeanLearn.Classification Pipelines
 
+/-- One line of `datasets/egfr-classification.csv`: a molecule, its scikit-learn split, and the
+answers (scikit-learn's prediction, RDKit's Morgan bits) that Lean must reproduce. -/
 structure Row where
+  /-- ChEMBL ID, or the drug name for the FDA drugs. -/
   name : String
+  /-- The SMILES string, as given to RDKit and to `morganFeatures`. -/
   smiles : String
+  /-- `some true` for active, `some false` for inactive, `none` for the unlabelled FDA drugs. -/
   label : Option Bool
+  /-- `"train"`, `"test"` or `"fda"`. -/
   split : String
+  /-- scikit-learn's probability of being active. -/
   skProba : Float
+  /-- scikit-learn's predicted class (`true` = active, i.e. `skProba ≥ 0.5`). -/
   skPred : Bool
+  /-- RDKit's Morgan on-bits (radius 2, 2048 bits), in increasing order. -/
   rdkitBits : SparseBits
   deriving Inhabited
 
-/-- A non-negative decimal like `0.659784941795`. -/
+/-- Parses a non-negative decimal like `0.659784941795` (no sign, no exponent), the form of the
+`sklearn_proba` column. -/
 def parseFloat (s : String) : Float :=
   match s.splitOn "." with
   | [i, f] => Float.ofScientific (i ++ f).toNat! true f.length
   | _ => s.toNat!.toFloat
 
-/-- Train on the labelled rows of `train`, then compare every row with scikit-learn.
+/-- Train on the labelled rows of the `"train"` split, then compare every row with scikit-learn.
 Returns the largest probability difference, the rows whose class differs, and the model. -/
 def compare (rows : Array Row) (feats : Array SparseBits) :
     IO (Float × List String × LogisticModel Float) := do
-  let labelled (sp : String) := ((List.range rows.size).filterMap fun i =>
+  let labelled (sp : String) := ((List.range rows.size).filterMap fun i ↦
     match rows[i]!.split == sp, rows[i]!.label with
     | true, some y => some (feats[i]!, y) | _, _ => none).toArray
   let train := labelled "train"
@@ -83,9 +98,11 @@ def compare (rows : Array Row) (feats : Array SparseBits) :
       IO.println s!"    {r.name}: lean {model.proba feats[i]!}  sklearn {r.skProba}"
   return (maxDiff, predMismatch, model)
 
+/-- `lake exe logistic-test`: runs the solver and pipeline stages, exiting with 0 only if Lean's
+bits equal RDKit's and both stages match scikit-learn's classes and probabilities to 10⁻⁶. -/
 public def main : IO UInt32 := do
   let lines := (← IO.FS.lines "datasets/egfr-classification.csv").toList.drop 1
-  let rows := (lines.filterMap fun l => match l.splitOn "," with
+  let rows := (lines.filterMap fun l ↦ match l.splitOn "," with
     | [n, s, y, sp, p, pr, bits] =>
       let label := if y == "1" then some true else if y == "0" then some false else none
       let rdkit := ((bits.splitOn " ").filter (· ≠ "")).map String.toNat! |>.toArray
@@ -98,8 +115,10 @@ public def main : IO UInt32 := do
   for r in rows do
     match morganFeatures r.smiles with
     | .ok x => feats := feats.push x
-    | .error e => do IO.println s!"cannot featurize {r.name}: {e}"; return 1
-  let same := (List.range rows.size).countP fun i => feats[i]!.qsort (· < ·) == rows[i]!.rdkitBits
+    | .error e =>
+      IO.println s!"cannot featurize {r.name}: {e}"
+      return 1
+  let same := (List.range rows.size).countP fun i ↦ feats[i]!.qsort (· < ·) == rows[i]!.rdkitBits
   IO.println s!"2. pipeline, on Lean's features [must match scikit-learn to 1e-6]"
   IO.println s!"  Lean's Morgan bits = RDKit's: {same}/{rows.size}"
   let (pipelineDiff, pipelineMismatch, _) ← compare rows feats

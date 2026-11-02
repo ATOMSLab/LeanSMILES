@@ -39,33 +39,35 @@ Coordinates are in bond lengths, `y` up.
 
 namespace LeanSMILES.Depict
 
-/-- A point in the plane. -/
+/-- A point in the plane, `(x, y)` in bond lengths with `y` up. -/
 abbrev Pt := Float × Float
 
-/-- `x²`. -/
+/-- `x²`, computed as `x * x`; the layouts and the SVG writer use it for squared distances. -/
 def sq (x : Float) : Float := x * x
 
-/-- Maximum of two floats. -/
+/-- Maximum of two floats, `if a < b then b else a`; it clamps a length or an eigenvalue away from
+zero before a division or a square root, and gives the far edges of a bounding box. -/
 def fmax (a b : Float) : Float := if a < b then b else a
 
-/-- Minimum of two floats. -/
+/-- Minimum of two floats, `if a < b then a else b`; with `fmax` it gives the bounding box of a
+component or of a whole drawing. -/
 def fmin (a b : Float) : Float := if a < b then a else b
 
-/-- Target distance for atoms `k` bonds apart: the span of an ideal 120°
-zigzag (`k·√3/2` for even `k`, `√((k·√3/2)² + 1/4)` for odd `k`), so that
-chains zigzag and rings stay regular. -/
+/-- Target distance for atoms `k` bonds apart, the span of an ideal 120° zigzag of unit bonds:
+`k·√3/2` for even `k`, `√((k·√3/2)² + 1/4)` for odd `k`; chains zigzag and rings stay regular. -/
 def zigzag (k : ℕ) : Float :=
   let x := k.toFloat * 0.8660254
   if k % 2 == 0 then x else Float.sqrt (x * x + 0.25)
 
-/-- Power iteration for the leading eigenvectors of a symmetric matrix `B`
-(given as a function), deflating the ones already found. Returns
-`(eigenvector, eigenvalue)` pairs. -/
+/-- Power iteration for the `count` leading eigenvectors of a symmetric `k × k` matrix given by its
+action `mulB`: `iters` steps each from a fixed start vector, projecting out the vectors already
+found. Returns `(unit eigenvector, eigenvalue v·Bv)` pairs. -/
 def leadingEigen (k : ℕ) (mulB : Array Float → Array Float) (count : ℕ) (iters : ℕ := 150) :
     Array (Array Float × Float) := Id.run do
   let dot (u v : Array Float) : Float := (Array.range k).foldl (fun s j ↦ s + u[j]! * v[j]!) 0
   let normalize (v : Array Float) : Array Float :=
-    let n := Float.sqrt (dot v v); if n == 0 then v else v.map (· / n)
+    let n := Float.sqrt (dot v v)
+    if n == 0 then v else v.map (· / n)
   let mut found : Array (Array Float × Float) := #[]
   for t in [0:count] do
     let mut v :=
@@ -79,8 +81,8 @@ def leadingEigen (k : ℕ) (mulB : Array Float → Array Float) (count : ℕ) (i
     found := found.push (v, dot v (mulB v))
   return found
 
-/-- The classical-MDS matrix `B = −½ J D² J` for target distances `d`, as a
-function on vectors. -/
+/-- The classical-MDS matrix `B = −½ J D² J` (`D²` the squared target distances `d`, `J` the
+centring matrix), built once and returned as `v ↦ B v`; its top eigenvectors seed the layouts. -/
 def mdsOperator (k : ℕ) (d : ℕ → ℕ → Float) : Array Float → Array Float :=
   let D2 : Array (Array Float) :=
     (Array.range k).map fun a ↦ (Array.range k).map fun b ↦ sq (d a b)
@@ -90,9 +92,9 @@ def mdsOperator (k : ℕ) (d : ℕ → ℕ → Float) : Array Float → Array Fl
     -0.5 * (D2[a]![b]! - rowMean[a]! - rowMean[b]! + tot)
   fun v ↦ B.map fun r ↦ (Array.range k).foldl (fun s j ↦ s + r[j]! * v[j]!) 0
 
-/-- Lay out one component (the atoms `idx`) in the plane, unit bond length.
-Pairs in `cis` are placed two bond lengths apart instead of 2.65; pairs in
-`specified` get extra weight. -/
+/-- Lay out one component (the atoms `idx`) in the plane, unit bond length: classical MDS, then
+stress majorisation towards the `zigzag` targets (weights `1/d²`), centred with the long principal
+axis horizontal. `cis` pairs get target 2 instead of 2.65, `specified` pairs weight 1.5. -/
 def layoutComponent (D : Array (Array ℕ)) (idx : Array ℕ) (cis : List (ℕ × ℕ) := [])
     (specified : List (ℕ × ℕ) := []) : Array Pt := Id.run do
   let k := idx.size
@@ -130,7 +132,7 @@ def layoutComponent (D : Array (Array ℕ)) (idx : Array ℕ) (cis : List (ℕ �
         if a != b then
           let dab := Ta[b]!
           let w := Wa[b]!
-          if w > 0 then
+          if 0 < w then
             let (xb, yb) := X[b]!
             let dx := xa - xb
             let dy := ya - yb
@@ -138,7 +140,7 @@ def layoutComponent (D : Array (Array ℕ)) (idx : Array ℕ) (cis : List (ℕ �
             nx := nx + w * (xb + dab * dx / dist)
             ny := ny + w * (yb + dab * dy / dist)
             ws := ws + w
-      if ws > 0 then
+      if 0 < ws then
         let p : Pt := (nx / ws, ny / ws)
         moved := fmax moved (Float.abs (p.1 - xa) + Float.abs (p.2 - ya))
         X := X.set! a p
@@ -153,8 +155,8 @@ def layoutComponent (D : Array (Array ℕ)) (idx : Array ℕ) (cis : List (ℕ �
   let (c, s) := (Float.cos θ, Float.sin θ)
   return X.map fun (x, y) ↦ ((x - cx) * c + (y - cy) * s, -(x - cx) * s + (y - cy) * c)
 
-/-- 3D layout of a cage-like component (classical MDS in three dimensions,
-then 3D stress majorisation) projected obliquely: the usual perspective
+/-- 3D layout of a cage-like component (classical MDS in three dimensions, then 3D stress
+majorisation) projected obliquely by `(x, y, z) ↦ (x + 0.45 z, y + 0.3 z)`: the usual perspective
 drawings of cubane, adamantane and other polycyclic cages. -/
 def layoutCage (D : Array (Array ℕ)) (idx : Array ℕ) : Array Pt := Id.run do
   let k := idx.size
@@ -174,7 +176,7 @@ def layoutCage (D : Array (Array ℕ)) (idx : Array ℕ) : Array Pt := Id.run do
       for b in [0:k] do
         if a != b then
           let dab := d a b
-          if dab > 0 then
+          if 0 < dab then
             let w := 1 / (dab * dab)
             let (xb, yb, zb) := X[b]!
             let (dx, dy, dz) := (xa - xb, ya - yb, za - zb)
@@ -183,7 +185,7 @@ def layoutCage (D : Array (Array ℕ)) (idx : Array ℕ) : Array Pt := Id.run do
             ny := ny + w * (yb + dab * dy / dist)
             nz := nz + w * (zb + dab * dz / dist)
             ws := ws + w
-      if ws > 0 then
+      if 0 < ws then
         moved := fmax moved (Float.abs (nx / ws - xa) + Float.abs (ny / ws - ya) +
           Float.abs (nz / ws - za))
         X := X.set! a (nx / ws, ny / ws, nz / ws)
@@ -191,10 +193,9 @@ def layoutCage (D : Array (Array ℕ)) (idx : Array ℕ) : Array Pt := Id.run do
   -- oblique (cabinet) projection
   return X.map fun (x, y, z) ↦ (x + 0.45 * z, y + 0.3 * z)
 
-/-- Is a flat layout a poor fit? At least three rings, and the mean relative
-error of the distances between atoms at most two bonds apart above 15 %. -/
-def cageLike (D : Array (Array ℕ)) (idx : Array ℕ) (X : Array Pt) (nRings : ℕ) : Bool :=
-  Id.run do
+/-- Whether a flat layout `X` fits so badly that `layoutCage` replaces it: at least three rings and
+a mean relative error above 15 % over the bonded (target 1) and two-bond (target √3) distances. -/
+def cageLike (D : Array (Array ℕ)) (idx : Array ℕ) (X : Array Pt) (nRings : ℕ) : Bool := Id.run do
   if nRings < 3 then return false
   let k := idx.size
   let mut err := 0.0
@@ -209,11 +210,11 @@ def cageLike (D : Array (Array ℕ)) (idx : Array ℕ) (X : Array Pt) (nRings : 
         let dist := Float.sqrt (sq (xa - xb) + sq (ya - yb))
         err := err + Float.abs (dist - target) / target
         cnt := cnt + 1
-  return cnt > 0 && err / cnt > 0.15
+  return 0 < cnt && 0.15 < err / cnt
 
-/-- Enforce the written cis/trans arrangement: a non-ring double bond drawn
-the wrong way round has its `dst` side reflected across the bond axis (the
-stress layout alone can be trapped in the other configuration). -/
+/-- Enforce the written cis/trans arrangement: when the first marked substituents (`dirSides`) at
+the ends of a non-ring double bond are drawn against their flags (equal flags mean cis), the `dst`
+side (`sideOf`) is reflected across the bond axis; stress alone can trap the wrong isomer. -/
 def fixDoubleBonds (g : Graph) (pos : Array Pt) : Array Pt := Id.run do
   let mut pos := pos
   for e in g.edges do
@@ -226,7 +227,7 @@ def fixDoubleBonds (g : Graph) (pos : Array Pt) : Array Pt := Id.run do
       let (vx, vy) := pos[e.dst]!
       let (dx, dy) := (vx - ux, vy - uy)
       let side (p : Pt) : Float := dx * (p.2 - uy) - dy * (p.1 - ux)
-      let sameSide := side pos[a]! * side pos[c]! > 0
+      let sameSide := 0 < side pos[a]! * side pos[c]!
       if sameSide != (sa == sc) then
         let len2 := fmax (dx * dx + dy * dy) 1e-9
         let mask := g.sideOf e.src e.dst e.dst
@@ -239,8 +240,8 @@ def fixDoubleBonds (g : Graph) (pos : Array Pt) : Array Pt := Id.run do
     | _, _ => pure ()
   return pos
 
-/-- Coordinates for every atom, in bond lengths with `y` up; components are
-placed left to right. -/
+/-- Coordinates for every atom, in bond lengths with `y` up: each component by `layoutComponent`
+(`layoutCage` when `cageLike`), placed left to right 1.5 apart, then `fixDoubleBonds`. -/
 def layout (g : Graph) : Array Pt := Id.run do
   let D := g.distances
   let (cis, specified) := g.cisPairs
@@ -263,15 +264,15 @@ def layout (g : Graph) : Array Pt := Id.run do
 points to, and whether it is a wedge (`true`) or a hash (`false`). -/
 structure StereoBond where
   /-- The stereocentre. -/
-  centre : ℕ
+  center : ℕ
   /-- The neighbor drawn out of the plane. -/
   neighbor : ℕ
   /-- Wedge (towards the viewer) or hash (away). -/
   wedge : Bool
   deriving Repr, DecidableEq, Inhabited
 
-/-- Signed volume of the tetrahedron spanned by four points,
-`(p₂ − p₁) · ((p₃ − p₁) × (p₄ − p₁))`. -/
+/-- The triple product `(p₂ − p₁) · ((p₃ − p₁) × (p₄ − p₁))`, six times the signed volume of the
+tetrahedron `p₁p₂p₃p₄`; `wedges` reads the drawn chirality off its sign. -/
 def signedVolume (p1 p2 p3 p4 : Float × Float × Float) : Float :=
   let sub (u v : Float × Float × Float) : Float × Float × Float :=
     (u.1 - v.1, u.2.1 - v.2.1, u.2.2 - v.2.2)
@@ -280,9 +281,8 @@ def signedVolume (p1 p2 p3 p4 : Float × Float × Float) : Float :=
   let (cx, cy, cz) := sub p4 p1
   ax * (by' * cz - bz * cy) - ay * (bx * cz - bz * cx) + az * (bx * cy - by' * cx)
 
-/-- Whether a chirality mark is the tetrahedral anticlockwise (`@`, `@TH1`) or
-clockwise (`@@`, `@TH2`) one; `none` for the other classes, which are not
-drawn. -/
+/-- The tetrahedral reading of a chirality mark: `some true` for anticlockwise (`@`, `@TH1`),
+`some false` for clockwise (`@@`, `@TH2`), `none` for the other classes, which are not drawn. -/
 def tetrahedral : Chirality → Option Bool
   | .anticlockwise => some true
   | .clockwise => some false
@@ -290,14 +290,12 @@ def tetrahedral : Chirality → Option Bool
   | .th ⟨1, _⟩ => some false
   | _ => none
 
-/-- Wedge or hash bonds for the tetrahedral stereocentres. For each `@`/`@@`
-atom one neighbor — preferably terminal, not in a ring, not itself a centre
-and not already carrying a stereo bond — is drawn out of the plane, and wedge
-or hash is chosen so that the drawn configuration has the written chirality:
-`@` means that, looking from the first neighbor in SMILES order, the other
-three run anticlockwise, i.e. the signed volume of the four neighbors is
-negative when the raised one is given `z = 1` and the implicit hydrogen
-`z = −1`. -/
+/-- Wedge or hash bonds for the tetrahedral stereocentres: each `@`/`@@` atom with four
+`stereoNeighbors` gets one neighbor drawn out of the plane (preferably by a single non-ring bond
+that is not yet a stereo bond, to a terminal atom that is not a centre), as a wedge or a hash so
+that the drawing has the written chirality. `@` means that, looking from the first neighbor in
+SMILES order, the other three run anticlockwise: the `signedVolume` of the four neighbors is
+negative when the raised one gets `z = 1` and the implicit hydrogen (or lone pair) `z = −1`. -/
 def wedges (g : Graph) (pos : Array Pt) : List StereoBond := Id.run do
   let mut out : List StereoBond := []
   for i in [0:g.numAtoms] do
@@ -310,15 +308,17 @@ def wedges (g : Graph) (pos : Array Pt) : List StereoBond := Id.run do
     let real := nbrs.filterMap id
     if real.isEmpty then continue
     let used (j : ℕ) : Bool := out.any fun s ↦
-      (s.centre == i && s.neighbor == j) || (s.centre == j && s.neighbor == i)
+      (s.center == i && s.neighbor == j) || (s.center == j && s.neighbor == i)
     let score (j : ℕ) : ℕ :=
       (if g.kindBetween i j != .single then 100 else 0) + (if used j then 100 else 0) +
       (if (g.atom j).chirality.isSome then 50 else 0) +
-      (if g.inRing i j then 10 else 0) + (if g.degree j > 1 then 1 else 0)
+      (if g.inRing i j then 10 else 0) + (if 1 < g.degree j then 1 else 0)
     let j := real.foldl (fun best j ↦ if score j < score best then j else best) real.head!
     let (cx, cy) := pos[i]!
     let p3 (x : Option ℕ) : Float × Float × Float := match x with
-      | some k => let (x, y) := pos[k]!; (x, y, if k == j then 1 else 0)
+      | some k =>
+        let (x, y) := pos[k]!
+        (x, y, if k == j then 1 else 0)
       | none => (cx, cy, -1)
     let det : Float := match nbrs with
       | [a, b, c, d] => signedVolume (p3 a) (p3 b) (p3 c) (p3 d)

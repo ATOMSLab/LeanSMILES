@@ -74,7 +74,8 @@ open LeanSMILES LeanSMILES.SMILES
 #eval (BondMatrix.ofMatrix? !![0, 2; 2, 0]).isSome
 
 -- Hydrogens by the default-valence rule.
-#eval let M := Mol.ofSmiles! "CC(C)(C)O"; (List.finRange M.n).map fun i ↦ (M.mol.atom i).totalH
+#eval let M := Mol.ofSmiles! "CC(C)(C)O"
+      (List.finRange M.n).map fun i ↦ (M.mol.atom i).totalH
 
 -- What is *not* done: no aromaticity perception, so a Kekulé benzene stays Kekulé.
 #eval (Mol.ofSmiles! "C1=CC=CC=C1").canonicalSmiles
@@ -88,5 +89,7 @@ open LeanSMILES LeanSMILES.SMILES
 #eval (Mol.ofSmiles! "c1ccccc1CC").mol.inRingVector
 
 -- From the solubility dataset.
+/-- The Delaney (ESOL) solubility table: the 1,128 rows of `datasets/delaney-processed.csv`, a
+path relative to the project root; an unreadable file gives an empty table. -/
 def delaney := CSVparser.load "datasets/delaney-processed.csv"
 #eval (delaney.toList.take 5).map fun r ↦ (r.smiles, (Mol.ofSmiles! r.smiles).canonicalSmiles)

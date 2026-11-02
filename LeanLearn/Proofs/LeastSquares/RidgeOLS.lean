@@ -61,17 +61,16 @@ variable {n p : ℕ}
 
 /-- Ridge with nonnegative weights has exactly the minimizers of OLS on the augmented design
 `[X; diag √ρ]` with targets `[y; 0]`: the penalty is `p` extra observations. -/
-theorem isMinimizer_iff_augmented (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ)
-    {ρ : Fin p → ℝ} (hρ : ∀ j, 0 ≤ ρ j) (w : Fin p → ℝ) :
+theorem isMinimizer_iff_augmented (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ) {ρ : Fin p → ℝ}
+    (hρ : ∀ j, 0 ≤ ρ j) (w : Fin p → ℝ) :
     IsMinimizer X y ρ w ↔ OLS.IsMinimizer (augmentedDesign X ρ) (augmentedTargets y) w := by
   simp only [IsMinimizer, OLS.IsMinimizer, augmented_loss X y hρ]
 
 /-! ## The trade-off -/
 
 /-- The penalty only adds to the squared error. -/
-theorem ols_loss_le_loss (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ)
-    {ρ : Fin p → ℝ} (hρ : ∀ j, 0 ≤ ρ j) (w : Fin p → ℝ) :
-    OLS.loss X y w ≤ loss X y ρ w :=
+theorem ols_loss_le_loss (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ) {ρ : Fin p → ℝ}
+    (hρ : ∀ j, 0 ≤ ρ j) (w : Fin p → ℝ) : OLS.loss X y w ≤ loss X y ρ w :=
   le_add_of_nonneg_right (penalty_nonneg hρ w)
 
 /-- **Ridge shrinks.** A ridge minimizer has no larger penalized norm than any OLS minimizer.
@@ -79,56 +78,50 @@ Together with `h₀ w : OLS.loss X y w₀ ≤ OLS.loss X y w`, this is the trade
 squared error for a smaller `Σⱼ ρⱼ wⱼ²`. No assumption on `X` or on the sign of `ρ`. -/
 theorem penalty_le_of_isMinimizer (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ)
     {ρ w₀ w : Fin p → ℝ} (h₀ : OLS.IsMinimizer X y w₀) (h : IsMinimizer X y ρ w) :
-    penalty ρ w ≤ penalty ρ w₀ := by
-  have h1 := h w₀
-  have h2 := h₀ w
-  simp only [loss] at h1
-  linarith
+    penalty ρ w ≤ penalty ρ w₀ :=
+  le_of_add_le_add_left ((h w₀).trans (add_le_add_left (h₀ w) _))
 
 /-- The closed forms: positive ridge's coefficients have a smaller penalized norm than OLS's. -/
-theorem penalty_fitPositive_le (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ)
-    {ρ : Fin p → ℝ} (hρ : ∀ j, 0 < ρ j) (h : (OLS.gram X).det ≠ 0) :
+theorem penalty_fitPositive_le (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ) {ρ : Fin p → ℝ}
+    (hρ : ∀ j, 0 < ρ j) (h : (OLS.gram X).det ≠ 0) :
     penalty ρ (fitPositive X y ρ hρ) ≤ penalty ρ (OLS.fit X y h) :=
   penalty_le_of_isMinimizer X y (OLS.fit_minimizes X y h) (fitPositive_minimizes X y ρ hρ)
 
+/-- The penalty is linear in its weights: scaling `ρ` by `a` scales `penalty ρ w` by `a`. This is
+what turns a comparison of penalty strengths into a scalar inequality. -/
 theorem penalty_smul (a : ℝ) (ρ w : Fin p → ℝ) : penalty (a • ρ) w = a * penalty ρ w := by
   simp [penalty, Finset.mul_sum, mul_assoc]
 
 /-- Strengthening the penalty (same shape `ρ`, larger multiple) shrinks the minimizer's
 penalized norm. -/
-theorem penalty_antitone (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ)
-    {a b : ℝ} (hab : a < b) {ρ w₁ w₂ : Fin p → ℝ}
-    (h₁ : IsMinimizer X y (a • ρ) w₁) (h₂ : IsMinimizer X y (b • ρ) w₂) :
+theorem penalty_antitone (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ) {a b : ℝ} (hab : a < b)
+    {ρ w₁ w₂ : Fin p → ℝ} (h₁ : IsMinimizer X y (a • ρ) w₁) (h₂ : IsMinimizer X y (b • ρ) w₂) :
     penalty ρ w₂ ≤ penalty ρ w₁ := by
   have e₁ := h₁ w₂
   have e₂ := h₂ w₁
   simp only [loss, penalty_smul] at e₁ e₂
-  have hsum : (b - a) * penalty ρ w₂ ≤ (b - a) * penalty ρ w₁ := by linarith
-  exact le_of_mul_le_mul_left hsum (sub_pos.mpr hab)
+  exact le_of_mul_le_mul_left (by linarith) (sub_pos.mpr hab)
 
 /-- ... and raises the squared error. -/
-theorem ols_loss_monotone (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ)
-    {a b : ℝ} (ha : 0 ≤ a) (hab : a < b) {ρ w₁ w₂ : Fin p → ℝ}
-    (h₁ : IsMinimizer X y (a • ρ) w₁) (h₂ : IsMinimizer X y (b • ρ) w₂) :
-    OLS.loss X y w₁ ≤ OLS.loss X y w₂ := by
-  have hP := mul_le_mul_of_nonneg_left (penalty_antitone X y hab h₁ h₂) ha
+theorem ols_loss_monotone (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ) {a b : ℝ} (ha : 0 ≤ a)
+    (hab : a < b) {ρ w₁ w₂ : Fin p → ℝ} (h₁ : IsMinimizer X y (a • ρ) w₁)
+    (h₂ : IsMinimizer X y (b • ρ) w₂) : OLS.loss X y w₁ ≤ OLS.loss X y w₂ := by
   have e₁ := h₁ w₂
   simp only [loss, penalty_smul] at e₁
-  linarith
+  linarith [mul_le_mul_of_nonneg_left (penalty_antitone X y hab h₁ h₂) ha]
 
 /-! ## Ridge is a linear shrinkage of OLS -/
 
 /-- At a nonsingular regularized Gram matrix, the ridge fit is a linear image of any solution
 `w₀` of the OLS normal equations: `wρ = (XᵀX + diag ρ)⁻¹ (XᵀX) w₀`. -/
-theorem fit_eq_of_ols_normalEquations (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ)
-    (ρ : Fin p → ℝ) (h : (gram X ρ).det ≠ 0) {w₀ : Fin p → ℝ}
-    (h₀ : OLS.NormalEquations X y w₀) :
+theorem fit_eq_of_ols_normalEquations (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ) (ρ : Fin p → ℝ)
+    (h : (gram X ρ).det ≠ 0) {w₀ : Fin p → ℝ} (h₀ : OLS.NormalEquations X y w₀) :
     fit X y ρ h = (gram X ρ)⁻¹ *ᵥ (OLS.gram X *ᵥ w₀) := by
   rw [fit, (OLS.normalEquations_iff X y w₀).mp h₀]
 
 /-- Ridge applies the shrinkage matrix `(XᵀX + diag ρ)⁻¹ XᵀX` to the OLS coefficients. -/
-theorem fit_eq_shrink_ols_fit (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ)
-    (ρ : Fin p → ℝ) (h : (gram X ρ).det ≠ 0) (h₀ : (OLS.gram X).det ≠ 0) :
+theorem fit_eq_shrink_ols_fit (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ) (ρ : Fin p → ℝ)
+    (h : (gram X ρ).det ≠ 0) (h₀ : (OLS.gram X).det ≠ 0) :
     fit X y ρ h = ((gram X ρ)⁻¹ * OLS.gram X) *ᵥ OLS.fit X y h₀ := by
   rw [fit_eq_of_ols_normalEquations X y ρ h (OLS.fit_normalEquations X y h₀), mulVec_mulVec]
 
@@ -140,23 +133,20 @@ theorem gram_const (X : Matrix (Fin n) (Fin p) ℝ) (l : ℝ) :
 /-- **Orthonormal columns.** When `XᵀX = 1`, ridge scales every OLS coefficient by
 `1 / (1 + l)`. -/
 theorem fit_eq_smul_ols_fit_of_gram_eq_one (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ)
-    (hX : OLS.gram X = 1) {l : ℝ} (hl : 1 + l ≠ 0)
-    (h : (gram X (fun _ ↦ l)).det ≠ 0) (h₀ : (OLS.gram X).det ≠ 0) :
-    fit X y (fun _ ↦ l) h = (1 + l)⁻¹ • OLS.fit X y h₀ := by
+    (hX : OLS.gram X = 1) {l : ℝ} (hl : 1 + l ≠ 0) (h : (gram X (fun _ ↦ l)).det ≠ 0)
+    (h₀ : (OLS.gram X).det ≠ 0) : fit X y (fun _ ↦ l) h = (1 + l)⁻¹ • OLS.fit X y h₀ := by
   have hG : gram X (fun _ ↦ l) = (1 + l) • (1 : Matrix (Fin p) (Fin p) ℝ) := by
     rw [gram_const, hX, add_smul, one_smul]
-  have hinv : (gram X (fun _ ↦ l))⁻¹ = (1 + l)⁻¹ • (1 : Matrix (Fin p) (Fin p) ℝ) := by
-    apply inv_eq_right_inv
-    rw [hG, Matrix.smul_mul, Matrix.mul_smul, one_mul, smul_smul, mul_inv_cancel₀ hl, one_smul]
+  have hinv : (gram X (fun _ ↦ l))⁻¹ = (1 + l)⁻¹ • (1 : Matrix (Fin p) (Fin p) ℝ) :=
+    inv_eq_right_inv <| by rw [hG, smul_mul_smul_comm, one_mul, mul_inv_cancel₀ hl, one_smul]
   rw [fit_eq_shrink_ols_fit X y _ h h₀, hinv, hX, mul_one, smul_mulVec, one_mulVec]
 
 /-- With orthonormal columns, OLS is `Xᵀy` and every positive scalar ridge is `Xᵀy / (1 + l)`. -/
 theorem fitPositive_eq_smul_of_gram_eq_one (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ)
     (hX : OLS.gram X = 1) {l : ℝ} (hl : 0 < l) :
     fitPositive X y (fun _ ↦ l) (fun _ ↦ hl) = (1 + l)⁻¹ • (Xᵀ *ᵥ y) := by
-  have h₀ : (OLS.gram X).det ≠ 0 := by rw [hX, det_one]; exact one_ne_zero
-  rw [fitPositive, fit_eq_smul_ols_fit_of_gram_eq_one X y hX (by linarith) _ h₀, OLS.fit, hX,
-    inv_one, one_mulVec]
+  rw [fitPositive, fit_eq_smul_ols_fit_of_gram_eq_one X y hX (by positivity) _ (by simp [hX]),
+    OLS.fit, hX, inv_one, one_mulVec]
 
 /-! ## The ridge path -/
 
@@ -166,37 +156,37 @@ Where the regularized Gram matrix is nonsingular this is `fit`; at `l = 0` it is
 def path (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ) (l : ℝ) : Fin p → ℝ :=
   (gram X (fun _ ↦ l))⁻¹ *ᵥ (Xᵀ *ᵥ y)
 
+/-- Where the regularized Gram matrix is nonsingular, the path is the closed form `fit`. -/
 theorem path_eq_fit (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ) (l : ℝ)
     (h : (gram X (fun _ ↦ l)).det ≠ 0) : path X y l = fit X y (fun _ ↦ l) h := rfl
 
-theorem path_eq_fitPositive (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ) {l : ℝ}
-    (hl : 0 < l) : path X y l = fitPositive X y (fun _ ↦ l) (fun _ ↦ hl) := rfl
+/-- For a positive penalty the path is `fitPositive`: no side condition is left to discharge. -/
+theorem path_eq_fitPositive (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ) {l : ℝ} (hl : 0 < l) :
+    path X y l = fitPositive X y (fun _ ↦ l) (fun _ ↦ hl) := rfl
 
 /-- Every positive point of the path minimizes its ridge loss. -/
 theorem path_isMinimizer (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ) {l : ℝ} (hl : 0 < l) :
     IsMinimizer X y (fun _ ↦ l) (path X y l) :=
   fitPositive_minimizes X y _ (fun _ ↦ hl)
 
+/-- The path starts at OLS: at `l = 0` it is the OLS fit, when `XᵀX` is nonsingular. -/
 theorem path_zero (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ) (h : (OLS.gram X).det ≠ 0) :
     path X y 0 = OLS.fit X y h := by
   simp [path, OLS.fit, gram]
 
+/-- The regularized Gram matrix `XᵀX + l I` depends continuously on the scalar penalty `l`. -/
 theorem continuous_gram_const (X : Matrix (Fin n) (Fin p) ℝ) :
     Continuous fun l : ℝ ↦ gram X (fun _ ↦ l) := by
-  simp only [gram_const]
-  exact continuous_const.add (continuous_id.smul continuous_const)
+  unfold gram
+  fun_prop
 
 /-- The path is continuous wherever the regularized Gram matrix is nonsingular. -/
 theorem continuousAt_path (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ) {l : ℝ}
     (h : (gram X (fun _ ↦ l)).det ≠ 0) : ContinuousAt (path X y) l := by
-  have hinv : ContinuousAt Inv.inv (gram X (fun _ ↦ l)) := by
-    apply continuousAt_matrix_inv
-    rw [Ring.inverse_eq_inv']
-    exact continuousAt_inv₀ h
-  have hg : ContinuousAt (fun l : ℝ ↦ (gram X (fun _ ↦ l))⁻¹) l :=
-    ContinuousAt.comp (f := fun l : ℝ ↦ gram X (fun _ ↦ l)) hinv
-      (continuous_gram_const X).continuousAt
-  exact ((continuous_id.matrix_mulVec continuous_const).continuousAt).comp hg
+  have hinv : ContinuousAt Inv.inv (gram X (fun _ ↦ l)) :=
+    continuousAt_matrix_inv _ (by simpa only [Ring.inverse_eq_inv'] using continuousAt_inv₀ h)
+  exact (continuous_id.matrix_mulVec continuous_const).continuousAt.comp
+    (hinv.comp (f := fun l ↦ gram X (fun _ ↦ l)) (continuous_gram_const X).continuousAt)
 
 /-- For every design, the ridge path is continuous on `l > 0`. -/
 theorem continuousOn_path (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ) :
@@ -206,23 +196,18 @@ theorem continuousOn_path (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ) :
 /-- **Ridge → OLS as the penalty vanishes**, when the Gram matrix is nonsingular. -/
 theorem tendsto_path_nhds_zero (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ)
     (h : (OLS.gram X).det ≠ 0) : Tendsto (path X y) (𝓝 0) (𝓝 (OLS.fit X y h)) := by
-  have h' : (gram X (fun _ ↦ (0 : ℝ))).det ≠ 0 := by simpa [gram] using h
-  have := (continuousAt_path X y h').tendsto
-  rwa [path_zero X y h] at this
+  simpa [path_zero X y h] using (continuousAt_path X y (l := 0) (by simpa [gram] using h)).tendsto
 
-theorem ols_loss_zero (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ) :
-    OLS.loss X y 0 = y ⬝ᵥ y := by
+/-- The squared error of the zero coefficients is `‖y‖²`: the baseline every minimizer beats. -/
+theorem ols_loss_zero (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ) : OLS.loss X y 0 = y ⬝ᵥ y := by
   simp [OLS.loss, OLS.residual, OLS.predict]
 
 /-- A ridge minimizer with scalar penalty `l > 0` has `‖w‖² ≤ ‖y‖² / l`: it can never do worse
 than `w = 0`, whose loss is `‖y‖²`. -/
-theorem sum_sq_le_of_isMinimizer (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ)
-    {l : ℝ} (hl : 0 < l) {w : Fin p → ℝ} (h : IsMinimizer X y (fun _ ↦ l) w) :
-    ∑ j, w j ^ 2 ≤ y ⬝ᵥ y / l := by
-  have h0 := h 0
-  have hp : penalty (fun _ ↦ l) w = l * ∑ j, w j ^ 2 := by simp [penalty, Finset.mul_sum]
-  have hp0 : penalty (fun _ ↦ l) (0 : Fin p → ℝ) = 0 := by simp [penalty]
-  rw [loss, loss, ols_loss_zero, hp, hp0, add_zero] at h0
+theorem sum_sq_le_of_isMinimizer (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ) {l : ℝ} (hl : 0 < l)
+    {w : Fin p → ℝ} (h : IsMinimizer X y (fun _ ↦ l) w) : ∑ j, w j ^ 2 ≤ y ⬝ᵥ y / l := by
+  have h0 : OLS.loss X y w + l * ∑ j, w j ^ 2 ≤ y ⬝ᵥ y := by
+    simpa [loss, penalty, Finset.mul_sum, ols_loss_zero] using h 0
   rw [le_div_iff₀ hl]
   linarith [OLS.loss_nonneg X y w]
 
@@ -233,10 +218,9 @@ theorem tendsto_sum_sq_path_atTop (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n �
   have hbound : ∀ᶠ l in atTop, ∑ j, path X y l j ^ 2 ≤ y ⬝ᵥ y / l := by
     filter_upwards [eventually_gt_atTop 0] with l hl
     exact sum_sq_le_of_isMinimizer X y hl (path_isMinimizer X y hl)
-  have hlow : ∀ᶠ l in atTop, (0 : ℝ) ≤ ∑ j, path X y l j ^ 2 :=
-    Eventually.of_forall fun _ ↦ Finset.sum_nonneg fun _ _ ↦ sq_nonneg _
   exact tendsto_of_tendsto_of_tendsto_of_le_of_le' tendsto_const_nhds
-    (tendsto_const_nhds.div_atTop tendsto_id) hlow hbound
+    (tendsto_const_nhds.div_atTop tendsto_id)
+    (Eventually.of_forall fun _ ↦ Finset.sum_nonneg fun _ _ ↦ sq_nonneg _) hbound
 
 end
 end LeanLearn.Regression.Ridge

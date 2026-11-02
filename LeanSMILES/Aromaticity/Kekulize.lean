@@ -51,26 +51,26 @@ def needsDoubleBond (m : Work) (wasAromatic : Nat → Bool) (ev0 : Nat) (i : Nat
     sbo := sbo + (if wasAromatic k then 1 else ((halfOrder o + 1) / 2 : Nat))
   let mut chrg : Int := a.charge
   if isEarly z then chrg := -chrg
-  if z == 6 && chrg > 0 then chrg := -chrg
+  if z == 6 && 0 < chrg then chrg := -chrg
   let mut dv : Int := defaultValence z + chrg
   let tbo : Int := ev0 + impl
   let nrad : Int := a.radicals
   let tdeg : Int := m.degree i + impl
   -- move up the allowed-valence list while the atom is over-valent
   for v in (valences z).drop 1 do
-    if tbo > dv && v > 0 then dv := v + chrg
+    if dv < tbo && 0 < v then dv := v + chrg
   -- aromatic N-oxide (Kekulize.cpp:176)
   if tbo == 5 && sbo == 4 && dv == 3 && tdeg == 3 && nrad == 0 && chrg == 0 &&
       totH == 0 && [7, 15, 33].contains z then
     dv := 5
-  if tdeg + nrad ≥ dv then return false
+  if dv ≤ tdeg + nrad then return false
   return dv == sbo + 1 + nrad || (nrad == 0 && a.noImplicit && dv == sbo + 2)
 
 /-- RDKit's `kekulizeWorker` for one fused system: `atoms` are its atoms, `cands`
 marks the atoms that need a double bond, `done` starts with its non-aromatic
 atoms. Returns the molecule with double bonds placed, or `none` if impossible. -/
-def kekulizeWorker (m : Work) (wasAromatic : Nat → Bool) (atoms : List Nat)
-    (cands : Array Bool) (done : List Nat) : Option Work := Id.run do
+def kekulizeWorker (m : Work) (wasAromatic : Nat → Bool) (atoms : List Nat) (cands : Array Bool)
+    (done : List Nat) : Option Work := Id.run do
   let mut m := m
   let mut cands := cands
   let mut done := done
@@ -85,7 +85,9 @@ def kekulizeWorker (m : Work) (wasAromatic : Nat → Bool) (atoms : List Nat)
   while done.length < sorted.length || !queue.isEmpty do
     -- next atom: from the queue, else the lowest atom not done yet
     let curr ← match queue with
-      | c :: rest => do queue := rest; pure c
+      | c :: rest => do
+        queue := rest
+        pure c
       | [] => match sorted.find? (!done.contains ·) with
         | some c => pure c
         | none => return some m
@@ -95,7 +97,7 @@ def kekulizeWorker (m : Work) (wasAromatic : Nat → Bool) (atoms : List Nat)
     match options.lookup curr with
     | some o => opts := o
     | none =>
-      let nbrs := ((m.neighbors curr).map (·.2)).filter fun j =>
+      let nbrs := ((m.neighbors curr).map (·.2)).filter fun j ↦
         atoms.contains j && !done.contains j
       let mut newQueue : List Nat := []
       for j in nbrs.mergeSort (· ≤ ·) do
@@ -118,7 +120,7 @@ def kekulizeWorker (m : Work) (wasAromatic : Nat → Bool) (atoms : List Nat)
           btMoves := btMoves.dropLast
           lastOpt := btMoves.getLast?
         else
-          options := options.map fun (a, o) => if a == curr then (a, rest) else (a, o)
+          options := options.map fun (a, o) ↦ if a == curr then (a, rest) else (a, o)
       else if !rest.isEmpty then
         lastOpt := some curr
         btMoves := btMoves ++ [curr]
@@ -127,7 +129,7 @@ def kekulizeWorker (m : Work) (wasAromatic : Nat → Bool) (atoms : List Nat)
       -- stuck: back to the last atom that still has options (backTrack, Kekulize.cpp:24)
       match lastOpt with
       | some lo =>
-        if numBt ≥ 100 then return none
+        if 100 ≤ numBt then return none
         numBt := numBt + 1
         let pos := done.idxOf lo
         let keep := done.take pos
@@ -143,7 +145,8 @@ def kekulizeWorker (m : Work) (wasAromatic : Nat → Bool) (atoms : List Nat)
       | none => return none
   return some m
 
-/-- Kekulize; fails (like RDKit's "Can't kekulize mol") if no valid structure exists. -/
+/-- RDKit's `Kekulize` (`KekulizeFragment` with `canonical = false`) over the fused ring systems
+of `rings`; fails (like RDKit's "Can't kekulize mol") if no valid structure exists. -/
 def kekulize (m : Work) (rings : Array (List Nat)) : Except String Work := do
   let aromaticBonds := (List.range m.numBonds).filter (m.bonds[·]!.kind == .aromatic)
   if aromaticBonds.isEmpty && !m.atoms.any (·.aromatic) then return m
@@ -151,8 +154,8 @@ def kekulize (m : Work) (rings : Array (List Nat)) : Except String Work := do
   let ev0 := (List.range m.numAtoms).map m.explicitValence
   -- fused systems: rings sharing at least one bond (Kekulize.cpp:727-746)
   let rbonds := rings.map m.ringBonds
-  let nbrs := (List.range rings.size).toArray.map fun i =>
-    (List.range rings.size).filter fun j =>
+  let nbrs := (List.range rings.size).toArray.map fun i ↦
+    (List.range rings.size).filter fun j ↦
       j != i && rbonds[i]!.any rbonds[j]!.contains
   let mut out := m
   for system in components rings.size nbrs do
@@ -160,7 +163,7 @@ def kekulize (m : Work) (rings : Array (List Nat)) : Except String Work := do
     if !atoms.any (out.atoms[·]!.aromatic) then continue
     -- markDbondCands: candidates, non-aromatic atoms are already done,
     -- aromatic bonds of the aromatic atoms become single
-    let cands := atoms.foldl (init := Array.replicate out.numAtoms false) fun c i =>
+    let cands := atoms.foldl (init := Array.replicate out.numAtoms false) fun c i ↦
       if out.atoms[i]!.aromatic && out.needsDoubleBond wasAromatic ev0[i]! i then c.set! i true
       else c
     let done := atoms.filter (!out.atoms[·]!.aromatic)
@@ -180,8 +183,8 @@ def kekulize (m : Work) (rings : Array (List Nat)) : Except String Work := do
       -- GitHub #141: a neutral aromatic N/P with one bracket H keeps the H implicitly,
       -- and RDKit refreshes its cached valence on the Kekulé graph (Kekulize.cpp:789)
       if [7, 15].contains a.z && a.charge == 0 && a.explicitHs == 1 then
-        let ev := ((out.bondsOf i).foldl (fun s k => s + halfOrder out.bonds[k]!.kind) 0) / 2
-        out := out.modifyAtom i fun a =>
+        let ev := ((out.bondsOf i).foldl (fun s k ↦ s + halfOrder out.bonds[k]!.kind) 0) / 2
+        out := out.modifyAtom i fun a ↦
           { a with aromatic := false, noImplicit := false, explicitHs := 0,
                    cachedValence := some ev }
         out := out.modifyAtom i ({ · with cachedImplicit := out.implicitHs i })
