@@ -21,7 +21,10 @@ Stereochemistry against RDKit and InChI, on the two files
 hold.**  Rows come in families: one constitution, several stereoisomers, each
 written several ways.  For every pair of rows in a family, RDKit's canonical
 isomeric SMILES and the standard InChI say whether the two are the same
-molecule; when they agree, our canonical SMILES must agree with them:
+molecule — the file stores them compactly, as RDKit's string numbered within
+the family and the stereo layers of the InChI, the rest of which is the
+family's constitution — and when they agree, our canonical SMILES must agree
+with them:
 
 * *same molecule, same string* — the canonical SMILES does not depend on how
   the molecule was written (this is where a mark read against the wrong
@@ -70,10 +73,12 @@ structure CanonRow where
   variant : String
   /-- The `smiles` column: one writing of the variant. -/
   smiles : String
-  /-- The `rdkit_key` column: RDKit's canonical isomeric SMILES of the string. -/
-  rdkitKey : String
-  /-- The `inchi` column: the string's standard InChI, from RDKit. -/
-  inchi : String
+  /-- The `rdkit_id` column: RDKit's canonical isomeric SMILES of the string, numbered within
+  the family; equal ids, equal strings. -/
+  rdkitId : String
+  /-- The `inchi_stereo` column: the stereo layers of the string's standard InChI (`-` for none,
+  empty when there is no InChI). -/
+  inchiStereo : String
   /-- Our canonical SMILES of the string; `none` when it does not parse. -/
   ours : Option String
 
@@ -178,8 +183,10 @@ def canonTest (path : String) : IO Bool := do
         let a := fam[i]
         let b := fam[j]
         let (some ca, some cb) := (a.ours, b.ours) | continue
-        let rdSame := a.rdkitKey == b.rdkitKey
-        let inSame := if a.inchi.isEmpty || b.inchi.isEmpty then rdSame else a.inchi == b.inchi
+        let rdSame := a.rdkitId == b.rdkitId
+        let inSame :=
+          if a.inchiStereo.isEmpty || b.inchiStereo.isEmpty then rdSame
+          else a.inchiStereo == b.inchiStereo
         if rdSame != inSame then
           disputed := disputed.add false
             fun _ ↦ s!"{a.family}: {a.smiles} vs {b.smiles} \
@@ -188,7 +195,9 @@ def canonTest (path : String) : IO Bool := do
         let ex := fun (_ : Unit) ↦
           s!"{a.family} {a.variant}/{b.variant}: {a.smiles} → {ca}  vs  {b.smiles} → {cb}"
         if rdSame then same := same.add (ca == cb) ex a.family
-        else different := bump different (stereoDifference a.inchi b.inchi) (ca != cb) ex a.family
+        else
+          let kind := stereoDifference a.inchiStereo b.inchiStereo
+          different := bump different kind (ca != cb) ex a.family
   IO.println s!"stereo-canon: {rows.size} rows in {families.length} families"
   IO.println (parsed.line "parses" "must be all")
   IO.println (roundTrip.line "canonical SMILES survives reparse" "must be all")

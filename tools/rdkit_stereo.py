@@ -6,14 +6,19 @@ Two files, both tab-separated with a header row:
    stereoisomer?  Molecules come in *families*: one constitution, several
    stereoisomers (*variants*), each written several ways.  Columns:
 
-       family  variant  smiles  rdkit_key  inchi
+       family  variant  smiles  rdkit_id  inchi_stereo
 
-   `rdkit_key` is RDKit's canonical isomeric SMILES of `smiles` and `inchi` its
-   standard InChI.  Within a family, two rows are the same molecule iff their
-   keys are equal; the Lean test asks that its own canonical SMILES draw the
-   same line.  A pair on which RDKit and InChI disagree is reported, not
-   judged.  RDKit's string itself is never compared with ours: the walk and the
-   tie-breaking differ.
+   `rdkit_id` numbers RDKit's canonical isomeric SMILES of `smiles` within the
+   family (`0` for the family's first, `1` for the next different one, and so
+   on), and `inchi_stereo` is the stereo part of the string's standard InChI:
+   its layers after the formula, connections, hydrogens and charge, e.g.
+   `/b3-2+/t6-/m0/s1`, or `-` when it has none.  The rest of the InChI is the
+   same across a family (the script checks), so comparing these within a
+   family is comparing the full strings.  Within a family, two rows are the
+   same molecule iff their ids — or their InChI stereo parts — are equal; the
+   Lean test asks that its own canonical SMILES draw the same line.  A pair on
+   which RDKit and InChI disagree is reported, not judged.  RDKit's string is
+   never compared with ours: the walk and the tie-breaking differ.
 
    Variants: the molecule as given, its mirror image (every tetrahedral centre
    inverted), and up to two other stereoisomers from RDKit's enumerator
@@ -249,14 +254,32 @@ def canon_rows(family, mol, extra, rewrites, rng, unread):
         rows.append((family, f"hand{k + 1}", s, inchi(s)))
         rows += [(family, f"hand{k + 1}", random_writing(v, rng)[0], inchi(s))
                  for _ in range(rewrites)]
-    out = []
+    out, ids, constitution = [], {}, set()
     for f, v, s, ref in rows:
         i = inchi(s)
         if i != ref:
             unread.append(f"{f} {v}: {s} reads back as {i}, written from {ref}")
             continue
-        out.append((f, v, s, rdkit_key(s), i))
+        main, stereo = inchi_split(i)
+        constitution.add(main)
+        key = ids.setdefault(rdkit_key(s), len(ids))
+        out.append((f, v, s, key, stereo))
+    assert len(constitution) <= 1, f"{family}: InChI main layers differ: {constitution}"
     return out
+
+
+def inchi_split(inchi):
+    """A standard InChI as (its main layers — formula, connections, hydrogens,
+    charge — and the rest: the stereo and isotopic layers, `-` when there are
+    none).  An empty InChI gives `("", "")`."""
+    if not inchi:
+        return "", ""
+    parts = inchi.split("/")
+    k = 2
+    while k < len(parts) and parts[k][:1] in ("c", "h", "q", "p"):
+        k += 1
+    rest = parts[k:]
+    return "/".join(parts[:k]), ("/" + "/".join(rest)) if rest else "-"
 
 
 def without_lone_pair_ring_digits(rows, excluded):
@@ -438,7 +461,7 @@ def main():
 
     canon = without_lone_pair_ring_digits(canon, excluded)
     parity = without_lone_pair_ring_digits(parity, excluded)
-    write_tsv(CANON_OUT, ["family", "variant", "smiles", "rdkit_key", "inchi"], canon)
+    write_tsv(CANON_OUT, ["family", "variant", "smiles", "rdkit_id", "inchi_stereo"], canon)
     write_tsv(PARITY_OUT, ["smiles", "centres", "alkenes"], parity)
     print(f"RDKit {rdkit.__version__}: {len(canon)} rows in "
           f"{len({r[0] for r in canon})} families -> {CANON_OUT}; "
