@@ -278,9 +278,9 @@ def signedVolume (p1 p2 p3 p4 : Float × Float × Float) : Float :=
   let (cx, cy, cz) := sub p4 p1
   ax * (by' * cz - bz * cy) - ay * (bx * cz - bz * cx) + az * (bx * cy - by' * cx)
 
-/-- Wedge or hash bonds for the tetrahedral stereocenters: each center gets one neighbor drawn out
+/-- Wedge or hash bonds for the tetrahedral stereocentres: each centre gets one neighbor drawn out
 of the plane (preferably by a single non-ring bond that is not yet a stereo bond, to a terminal
-atom that is not a center), as a wedge or a hash so that the drawing has the stored
+atom that is not a centre), as a wedge or a hash so that the drawing has the stored
 configuration. `@` for the listing `sortedLigands` means that, looking from its first entry, the
 other three run anticlockwise: the `signedVolume` of the four is negative when the raised neighbor
 gets `z = 1` and the implicit hydrogen (or lone pair) `z = −1`. -/

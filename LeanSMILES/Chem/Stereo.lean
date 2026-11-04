@@ -13,8 +13,16 @@ import Mathlib.Tactic.FinCases
 /-!
 # LeanSMILES.Chem.Stereo
 
-A tetrahedral configuration as a quotient: the four ligands of a centre,
-listed in some order, up to **even** permutations of the list.
+Stereochemistry as quotients of ligand listings, so that it does not depend on
+the order in which a SMILES string happened to list neighbors or orient bonds:
+
+* `Tetra n` — a tetrahedral centre: its four ligands up to **even**
+  permutations of the list;
+* `Planar n` — a double bond's cis/trans arrangement: its four substituent
+  places up to the Klein four-group (section *Double bonds* below);
+* `Stereo n` — either, the stereochemistry one atom carries.
+
+## Tetrahedral centres
 
 SMILES writes `@` when, looking from the first listed ligand, the other three
 run anticlockwise.  Swapping any two ligands in the list turns `@` into `@@`;
@@ -51,14 +59,17 @@ namespace Ligands
 /-- Same hand: some even permutation of the listing `o` gives the listing `o'`. -/
 def SameHand (o o' : Ligands n) : Prop := ∃ π : Perm (Fin 4), Perm.sign π = 1 ∧ o' = o ∘ π
 
+/-- Every listing has its own hand. -/
 lemma SameHand.refl (o : Ligands n) : SameHand o o := ⟨1, by simp, rfl⟩
 
+/-- Having the same hand is symmetric: the inverse of an even permutation is even. -/
 lemma SameHand.symm {o o' : Ligands n} : SameHand o o' → SameHand o' o := by
   rintro ⟨π, hπ, rfl⟩
   refine ⟨π⁻¹, by simpa using hπ, ?_⟩
   funext k
   simp
 
+/-- Having the same hand is transitive: even permutations compose. -/
 lemma SameHand.trans {o o' o'' : Ligands n} : SameHand o o' → SameHand o' o'' → SameHand o o'' := by
   rintro ⟨π, hπ, rfl⟩ ⟨ρ, hρ, rfl⟩
   exact ⟨π * ρ, by simp [hπ, hρ], rfl⟩
@@ -72,6 +83,7 @@ instance : DecidableRel (SameHand (n := n)) := fun o o' ↦
 instance : DecidableRel (α := Ligands n) (· ≈ ·) :=
   inferInstanceAs (DecidableRel (SameHand (n := n)))
 
+/-- The setoid's relation is `SameHand`. -/
 lemma sameHand_iff {o o' : Ligands n} : o ≈ o' ↔ SameHand o o' := Iff.rfl
 
 /-- Reordering by `π` keeps the hand when `π` is even. -/
@@ -107,6 +119,7 @@ def ofList? : List (Option (Fin n)) → Option (Ligands n)
 /-- The transposition of the last two places, which turns `@` into `@@`. -/
 abbrev swapLast : Perm (Fin 4) := swap 2 3
 
+/-- `swapLast` is a transposition, so odd. -/
 lemma sign_swapLast : Perm.sign swapLast = -1 := Perm.sign_swap (by decide)
 
 /-- Precomposing with a fixed permutation keeps the hand. -/
@@ -134,8 +147,10 @@ instance : DecidableEq (Tetra n) :=
 /-- The configuration that is `@` with the ligands listed as `o`. -/
 def mk (o : Ligands n) : Tetra n := Quotient.mk _ o
 
+/-- Two listings give the same configuration exactly when they have the same hand. -/
 lemma mk_eq_mk {o o' : Ligands n} : mk o = mk o' ↔ SameHand o o' := Quotient.eq
 
+/-- To prove a property of every configuration, prove it for `mk o` of every listing. -/
 @[elab_as_elim] lemma ind {motive : Tetra n → Prop} (h : ∀ o, motive (mk o)) (t : Tetra n) :
     motive t :=
   Quotient.inductionOn t h
@@ -166,17 +181,22 @@ def mirror : Tetra n → Tetra n :=
 def map (σ : Perm (Fin n)) : Tetra n → Tetra n :=
   Quotient.map (fun o ↦ Option.map σ ∘ o) fun _ _ h ↦ SameHand.map σ h
 
+/-- Relabeling a configuration relabels its listing. -/
 @[simp] lemma map_mk (σ : Perm (Fin n)) (o : Ligands n) :
     map σ (mk o) = mk (Option.map σ ∘ o) := rfl
 
+/-- The mirror image of a listing's configuration: the listing with its last two places
+swapped. -/
 @[simp] lemma mirror_mk (o : Ligands n) : mirror (mk o) = mk (o ∘ swapLast) := rfl
 
 /-! ### The mark of a listing -/
 
+/-- In `ℤˣ = {1, -1}`, `a = -b` exactly when `a ≠ b`. -/
 lemma units_eq_neg_iff (a b : ℤˣ) : a = -b ↔ ¬ a = b := by
   rcases Int.units_eq_one_or a with rfl | rfl <;>
     rcases Int.units_eq_one_or b with rfl | rfl <;> decide
 
+/-- In `ℤˣ = {1, -1}`, `-a = b` exactly when `a ≠ b`. -/
 lemma neg_units_eq_iff (a b : ℤˣ) : -a = b ↔ ¬ a = b := by
   rcases Int.units_eq_one_or a with rfl | rfl <;>
     rcases Int.units_eq_one_or b with rfl | rfl <;> decide
@@ -187,7 +207,7 @@ when `π` and `ρ` have the same sign. -/
 theorem isAnticlockwise_mk_comp {o : Ligands n} (ho : Function.Injective o)
     (ρ π : Perm (Fin 4)) :
     (mk (o ∘ ρ)).isAnticlockwise (o ∘ π) = decide (Perm.sign π = Perm.sign ρ) := by
-  have e : o ∘ π = (o ∘ ρ) ∘ (ρ⁻¹ * π : Perm (Fin 4)) := by funext k; simp
+  have e : o ∘ π = (o ∘ ρ) ∘ (ρ⁻¹ * π : Perm (Fin 4)) := funext fun k ↦ by simp
   unfold isAnticlockwise
   rw [e, decide_eq_decide, mk_comp_eq_mk_iff (ho.comp ρ.injective), map_mul, map_inv,
     inv_mul_eq_one, eq_comm]
@@ -231,6 +251,7 @@ theorem eq_or_eq_mirror {o : Ligands n} (ho : Function.Injective o) (π : Perm (
 
 /-! ### Mirror images -/
 
+/-- Mirroring twice gives the configuration back. -/
 theorem mirror_mirror (t : Tetra n) : mirror (mirror t) = t := by
   induction t using ind with
   | h o =>
@@ -273,27 +294,30 @@ theorem ofMark_isAnticlockwise {o : Ligands n} (ho : Function.Injective o) (ρ �
     (t : Tetra n) (ht : t = mk (o ∘ ρ) ∨ t = mirror (mk (o ∘ ρ))) :
     ofMark (o ∘ π) (t.isAnticlockwise (o ∘ π)) = t := by
   refine ofMark_isAnticlockwise_of_hand (ho.comp π.injective) t ?_
-  rcases eq_or_eq_mirror (ho.comp π.injective) (π⁻¹ * ρ) with h | h <;>
-  · have e : (o ∘ π) ∘ (π⁻¹ * ρ : Perm (Fin 4)) = o ∘ ρ := by funext k; simp
-    rw [e] at h
-    rcases ht with rfl | rfl
-    · first | exact Or.inl h | exact Or.inr h
-    · first | (right; rw [h]; done) | (left; rw [h, mirror_mirror])
+  have e : (o ∘ π) ∘ (π⁻¹ * ρ : Perm (Fin 4)) = o ∘ ρ := funext fun k ↦ by simp
+  have hρ := eq_or_eq_mirror (ho.comp π.injective) (π⁻¹ * ρ)
+  rw [e] at hρ
+  rcases ht with rfl | rfl <;> rcases hρ with h | h <;>
+    simp only [h, mirror_mirror, true_or, or_true]
 
 /-! ### Relabeling -/
 
+/-- Relabeling by the identity changes nothing. -/
 @[simp] theorem map_refl (t : Tetra n) : map (Equiv.refl _) t = t := by
   induction t using ind with
-  | h o => simp only [map_mk]; congr 1; funext k; simp
+  | h o => exact congrArg mk (funext fun k ↦ by simp)
 
+/-- Relabeling twice is relabeling by the composite: first `σ`, then `τ`. -/
 theorem map_map (σ τ : Perm (Fin n)) (t : Tetra n) : map τ (map σ t) = map (σ.trans τ) t := by
   induction t using ind with
-  | h o => simp only [map_mk]; congr 1; funext k; simp [Option.map_map]
+  | h o => exact congrArg mk (funext fun k ↦ by simp [Option.map_map])
 
+/-- Relabeling is injective: the inverse undoes it. -/
 lemma map_injective (σ : Perm (Fin n)) : Function.Injective (map σ) := fun s t h ↦ by
   have := congrArg (map σ.symm) h
   rwa [map_map, map_map, Equiv.self_trans_symm, map_refl, map_refl] at this
 
+/-- Relabeling commutes with taking the mirror image. -/
 theorem map_mirror (σ : Perm (Fin n)) (t : Tetra n) : map σ (mirror t) = mirror (map σ t) := by
   induction t using ind with
   | h o => rfl
@@ -336,30 +360,39 @@ def swapEnd : Fin 4 → Fin 4
   | 2 => 3
   | 3 => 2
 
+/-- The identity is in the Klein four-group. -/
 lemma id_mem_kleinFour : id ∈ kleinFour := List.mem_cons_self
 
+/-- The Klein four-group is closed under composition. -/
 lemma comp_mem_kleinFour : ∀ f ∈ kleinFour, ∀ g ∈ kleinFour, f ∘ g ∈ kleinFour := by
   decide +kernel
 
+/-- Every element of the Klein four-group is its own inverse. -/
 lemma comp_self_of_mem_kleinFour : ∀ f ∈ kleinFour, f ∘ f = id := by decide +kernel
 
+/-- `swapEnd` normalizes the Klein four-group (which is normal in `S₄`). -/
 lemma swapEnd_conj_mem_kleinFour : ∀ f ∈ kleinFour, swapEnd ∘ f ∘ swapEnd ∈ kleinFour := by
   decide +kernel
 
+/-- Swapping one pair alone is not in the Klein four-group: it changes the arrangement. -/
 lemma swapEnd_not_mem_kleinFour : swapEnd ∉ kleinFour := by decide +kernel
 
+/-- `swapEnd` is an involution. -/
 lemma swapEnd_comp_swapEnd : swapEnd ∘ swapEnd = id := by decide +kernel
 
 /-- Same arrangement: an element of the Klein four-group turns the listing `o`
 into `o'`. -/
 def SameArrangement (o o' : Ligands n) : Prop := ∃ f ∈ kleinFour, o' = o ∘ f
 
+/-- Every listing has its own arrangement. -/
 lemma SameArrangement.refl (o : Ligands n) : SameArrangement o o := ⟨id, id_mem_kleinFour, rfl⟩
 
+/-- Having the same arrangement is symmetric. -/
 lemma SameArrangement.symm {o o' : Ligands n} : SameArrangement o o' → SameArrangement o' o := by
   rintro ⟨f, hf, rfl⟩
   exact ⟨f, hf, by rw [Function.comp_assoc, comp_self_of_mem_kleinFour f hf, Function.comp_id]⟩
 
+/-- Having the same arrangement is transitive. -/
 lemma SameArrangement.trans {o o' o'' : Ligands n} :
     SameArrangement o o' → SameArrangement o' o'' → SameArrangement o o'' := by
   rintro ⟨f, hf, rfl⟩ ⟨g, hg, rfl⟩
@@ -378,8 +411,10 @@ def CisIn (o : Ligands n) (a c : Option (Fin n)) : Prop :=
   (o 0 = a ∧ o 2 = c) ∨ (o 2 = a ∧ o 0 = c) ∨ (o 1 = a ∧ o 3 = c) ∨ (o 3 = a ∧ o 1 = c)
 
 instance (o : Ligands n) (a c : Option (Fin n)) : Decidable (CisIn o a c) := by
-  unfold CisIn; infer_instance
+  unfold CisIn
+  infer_instance
 
+/-- Listings of the same arrangement put the same pairs cis. -/
 lemma cisIn_iff_of_sameArrangement {o o' : Ligands n} (h : SameArrangement o o')
     (a c : Option (Fin n)) : CisIn o' a c ↔ CisIn o a c := by
   obtain ⟨f, hf, rfl⟩ := h
@@ -400,9 +435,11 @@ open Ligands
 /-- The arrangement with `o 0` cis to `o 2` and `o 1` cis to `o 3`. -/
 def mk (o : Ligands n) : Planar n := Quotient.mk _ o
 
+/-- Two listings give the same arrangement exactly when the Klein four-group relates them. -/
 lemma mk_eq_mk {o o' : Ligands n} : mk o = mk o' ↔ SameArrangement o o' :=
   ⟨@Quotient.exact _ planarSetoid _ _, @Quotient.sound _ planarSetoid _ _⟩
 
+/-- To prove a property of every arrangement, prove it for `mk o` of every listing. -/
 @[elab_as_elim] lemma ind {motive : Planar n → Prop} (h : ∀ o, motive (mk o)) (p : Planar n) :
     motive p :=
   Quotient.inductionOn p h
@@ -426,18 +463,21 @@ def flip : Planar n → Planar n :=
 def map (σ : Perm (Fin n)) : Planar n → Planar n :=
   Quotient.map' (fun o ↦ Option.map σ ∘ o) fun o o' h ↦ by
     obtain ⟨f, hf, e⟩ := h
-    exact ⟨f, hf, by rw [e]; rfl⟩
+    exact ⟨f, hf, congrArg (Option.map σ ∘ ·) e⟩
 
 /-- Whether the arrangement puts `a` and `c` cis. -/
 def cis (p : Planar n) (a c : Option (Fin n)) : Bool :=
   Quotient.lift (s := planarSetoid) (fun o ↦ decide (CisIn o a c))
     (fun _ _ h ↦ decide_eq_decide.mpr (cisIn_iff_of_sameArrangement h a c).symm) p
 
+/-- Flipping a listing's arrangement swaps the second end's substituents. -/
 @[simp] lemma flip_mk (o : Ligands n) : flip (mk o) = mk (o ∘ swapEnd) := rfl
 
+/-- Relabeling an arrangement relabels its listing. -/
 @[simp] lemma map_mk (σ : Perm (Fin n)) (o : Ligands n) : map σ (mk o) = mk (Option.map σ ∘ o) :=
   rfl
 
+/-- Whether `a` and `c` are cis, read off a listing. -/
 @[simp] lemma cis_mk (o : Ligands n) (a c : Option (Fin n)) :
     (mk o).cis a c = decide (CisIn o a c) := rfl
 
@@ -446,6 +486,7 @@ are the substituents of one end and `c, c'` of the other. -/
 def ofCis (a a' c c' : Option (Fin n)) (cis : Bool) : Planar n :=
   if cis then mk (of4 a a' c c') else mk (of4 a a' c' c)
 
+/-- Flipping twice gives the arrangement back. -/
 theorem flip_flip (p : Planar n) : flip (flip p) = p := by
   induction p using ind with
   | h o =>
@@ -481,18 +522,22 @@ theorem cis_flip {o : Ligands n} (ho : Function.Injective o) (i j : Fin 4) (hi :
   have h : ∀ x y, o x = o y ↔ x = y := fun _ _ ↦ ho.eq_iff
   fin_cases i <;> fin_cases j <;> simp_all [CisIn, swapEnd]
 
+/-- Relabeling by the identity changes nothing. -/
 theorem map_refl (p : Planar n) : map (Equiv.refl _) p = p := by
   induction p using ind with
-  | h o => simp only [map_mk]; congr 1; funext k; simp
+  | h o => exact congrArg mk (funext fun k ↦ by simp)
 
+/-- Relabeling twice is relabeling by the composite: first `σ`, then `τ`. -/
 theorem map_map (σ τ : Perm (Fin n)) (p : Planar n) : map τ (map σ p) = map (σ.trans τ) p := by
   induction p using ind with
-  | h o => simp only [map_mk]; congr 1; funext k; simp [Option.map_map]
+  | h o => exact congrArg mk (funext fun k ↦ by simp [Option.map_map])
 
+/-- Relabeling is injective: the inverse undoes it. -/
 lemma map_injective (σ : Perm (Fin n)) : Function.Injective (map σ) := fun p q h ↦ by
   have := congrArg (map σ.symm) h
   rwa [map_map, map_map, Equiv.self_trans_symm, map_refl, map_refl] at this
 
+/-- Relabeling commutes with flipping. -/
 theorem map_flip (σ : Perm (Fin n)) (p : Planar n) : map σ (flip p) = flip (map σ p) := by
   induction p using ind with
   | h o => rfl
@@ -541,32 +586,41 @@ def code : Stereo n → ℕ
   | tetra _ => 1
   | planar _ => 2
 
+/-- Relabeling a tetrahedral centre relabels its configuration. -/
 @[simp] lemma map_tetra (σ : Perm (Fin n)) (t : Tetra n) : map σ (tetra t) = tetra (t.map σ) := rfl
 
+/-- Relabeling a double-bond end relabels its arrangement. -/
 @[simp] lemma map_planar (σ : Perm (Fin n)) (p : Planar n) :
     map σ (planar p) = planar (p.map σ) := rfl
 
+/-- Relabeling twice is relabeling by the composite: first `σ`, then `τ`. -/
 theorem map_map (σ τ : Perm (Fin n)) (s : Stereo n) : map τ (map σ s) = map (σ.trans τ) s := by
   cases s <;> simp [map, Tetra.map_map, Planar.map_map]
 
+/-- Relabeling by the identity changes nothing. -/
 theorem map_refl (s : Stereo n) : map (Equiv.refl _) s = s := by
   cases s <;> simp [map, Tetra.map_refl, Planar.map_refl]
 
+/-- Relabeling is injective. -/
 lemma map_injective (σ : Perm (Fin n)) : Function.Injective (map σ) := by
   intro s s' h
   cases s <;> cases s' <;> simp only [map, tetra.injEq, planar.injEq, reduceCtorEq] at h ⊢
   · exact Tetra.map_injective σ h
   · exact Planar.map_injective σ h
 
+/-- Relabeling commutes with taking the other configuration. -/
 theorem map_mirror (σ : Perm (Fin n)) (s : Stereo n) : map σ (mirror s) = mirror (map σ s) := by
   cases s <;> simp [map, mirror, Tetra.map_mirror, Planar.map_flip]
 
+/-- Taking the other configuration twice gives the configuration back. -/
 theorem mirror_mirror (s : Stereo n) : mirror (mirror s) = s := by
   cases s <;> simp [mirror, Tetra.mirror_mirror, Planar.flip_flip]
 
+/-- Relabeling keeps the kind of stereochemistry. -/
 @[simp] lemma isPlanar_map (σ : Perm (Fin n)) (s : Stereo n) : (map σ s).isPlanar = s.isPlanar := by
   cases s <;> rfl
 
+/-- Relabeling keeps the kind code. -/
 @[simp] lemma code_map (σ : Perm (Fin n)) (s : Stereo n) : (map σ s).code = s.code := by
   cases s <;> rfl
 

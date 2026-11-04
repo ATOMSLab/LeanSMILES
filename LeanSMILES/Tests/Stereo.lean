@@ -64,11 +64,17 @@ def readTsv (path : String) : IO (List (List String)) := do
 /-- One row of `stereo-canon.tsv`, with our canonical SMILES (`none` when the
 string does not parse). -/
 structure CanonRow where
+  /-- The `family` column: one constitution, `stereo:k` or `hard:name`. -/
   family : String
+  /-- The `variant` column: one stereoisomer (`orig`, `mirror`, `iso1`, `hand3`, …). -/
   variant : String
+  /-- The `smiles` column: one writing of the variant. -/
   smiles : String
+  /-- The `rdkit_key` column: RDKit's canonical isomeric SMILES of the string. -/
   rdkitKey : String
+  /-- The `inchi` column: the string's standard InChI, from RDKit. -/
   inchi : String
+  /-- Our canonical SMILES of the string; `none` when it does not parse. -/
   ours : Option String
 
 /-- The InChI layers that carry stereo: tetrahedral (`/t`, `/m`, `/s`) and
@@ -85,20 +91,28 @@ def stereoDifference (a b : String) : String :=
 /-- Counts of one category of pair: checked, passed, a few failures, and
 every family with a failure. -/
 structure Tally where
+  /-- Pairs checked. -/
   total : ℕ := 0
+  /-- Pairs that passed. -/
   ok : ℕ := 0
+  /-- Descriptions of the first eight failures. -/
   examples : Array String := #[]
+  /-- Every family with a failing pair, each once. -/
   families : Array String := #[]
 
+/-- Count one pair, keeping its description among the first eight failures and its family
+among the failing ones. -/
 def Tally.add (t : Tally) (pass : Bool) (describe : Unit → String) (family : String := "") :
     Tally :=
   { total := t.total + 1, ok := t.ok + (if pass then 1 else 0)
-    examples := if pass || t.examples.size ≥ 8 then t.examples else t.examples.push (describe ())
+    examples := if pass || 8 ≤ t.examples.size then t.examples else t.examples.push (describe ())
     families := if pass || family.isEmpty || t.families.contains family then t.families
       else t.families.push family }
 
+/-- The summary line: label, passed over checked, and whether all must pass. -/
 def Tally.line (t : Tally) (label tag : String) : String := s!"{label}: {t.ok}/{t.total}  [{tag}]"
 
+/-- Whether every checked pair passed. -/
 def Tally.passed (t : Tally) : Bool := t.ok == t.total
 
 /-- Insert into an association list of tallies. -/
@@ -108,6 +122,7 @@ def bump (ts : List (String × Tally)) (k : String) (pass : Bool) (ex : Unit →
   | some _ => ts.map fun (k', t) ↦ if k' == k then (k', t.add pass ex family) else (k', t)
   | none => ts ++ [(k, ({} : Tally).add pass ex family)]
 
+/-- Our canonical SMILES of a string, if it parses. -/
 def canonOf (s : String) : Option String :=
   match parse s with
   | .ok M => some M.canonicalSmiles
@@ -146,7 +161,7 @@ def canonTest (path : String) : IO Bool := do
         relabel := relabel.add (c₁ == c && c₂ == c)
           fun _ ↦ s!"{f}: {s}: {c} / {c₁} / {c₂}"
     let dt := (← IO.monoMsNow) - t
-    if dt ≥ 2000 then
+    if 2000 ≤ dt then
       slow := slow.push (dt, s!"{f} {v}: {s}")
       IO.eprintln s!"  slow: {dt} ms for {f} {v} ({s.length} chars)"
     if rows.size % 500 == 0 then
@@ -203,7 +218,7 @@ def sortedMark (g : Graph) (i : ℕ) : Option Bool := g.tetraMark i
 def parityTest (path : String) : IO Bool := do
   let raw ← readTsv path
   let mut parsed : Tally := {}
-  let mut centres : Tally := {}
+  let mut centers : Tally := {}
   let mut alkenes : Tally := {}
   let mut unread : Tally := {}
   let mut extra : Tally := {}
@@ -226,7 +241,7 @@ def parityTest (path : String) : IO Bool := do
       let g := Graph.ofMol M
       for (k, want) in wantCentres do
         let got := sortedMark g k
-        centres := centres.add (got == some want)
+        centers := centers.add (got == some want)
           fun _ ↦ s!"{s}: atom {k} is {if want then "@" else "@@"} (sorted), \
             parser reads {got.map fun b ↦ if b then "@" else "@@"}"
       for k in [0:g.numAtoms] do
@@ -244,15 +259,15 @@ def parityTest (path : String) : IO Bool := do
               {if gotCis then "cis" else "trans"}"
   IO.println s!"stereo-parity: {raw.length} strings"
   IO.println (parsed.line "parses" "must be all")
-  IO.println (centres.line "tetrahedral centres read as RDKit reads them" "must be all")
+  IO.println (centers.line "tetrahedral centres read as RDKit reads them" "must be all")
   IO.println (alkenes.line
     "double-bond substituent pairs the parser reads, read as RDKit reads them"
     "must be all")
   IO.println (unread.line "double-bond substituent pairs the parser reads at all" "must be all")
   IO.println s!"marks on atoms RDKit does not keep as stereocentres: {extra.total}"
-  for t in [parsed, centres, alkenes, unread, extra] do
+  for t in [parsed, centers, alkenes, unread, extra] do
     for e in t.examples do IO.println s!"  {e}"
-  return parsed.passed && centres.passed && alkenes.passed && unread.passed
+  return parsed.passed && centers.passed && alkenes.passed && unread.passed
 
 end LeanSMILES.Tests.Stereo
 

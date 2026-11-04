@@ -91,10 +91,12 @@ def relabelStereo (σ : Equiv.Perm (Fin n)) (v : Vector (Option (Stereo n)) n) :
     Vector (Option (Stereo n)) n :=
   Vector.ofFn fun i ↦ v[σ.symm i].map (Stereo.map σ)
 
+/-- Position `j` of `relabelStereo σ v` holds what `v` had at `σ.symm j`, relabeled. -/
 @[simp] lemma getElem_relabelStereo (σ : Equiv.Perm (Fin n)) (v : Vector (Option (Stereo n)) n)
     (j : ℕ) (h : j < n) : (relabelStereo σ v)[j] = v[σ.symm ⟨j, h⟩].map (Stereo.map σ) := by
   simp [relabelStereo, Vector.getElem_ofFn]
 
+/-- Position `σ i` of `relabelStereo σ v` holds `i`'s configuration, relabeled. -/
 lemma relabelStereo_apply (σ : Equiv.Perm (Fin n)) (v : Vector (Option (Stereo n)) n) (i : Fin n) :
     (relabelStereo σ v)[σ i] = v[i].map (Stereo.map σ) := by
   simp [relabelStereo, Vector.getElem_ofFn]
@@ -107,11 +109,13 @@ lemma eq_relabelStereo_of_apply (σ : Equiv.Perm (Fin n)) {v' v : Vector (Option
   intro j hj
   simpa using h (σ.symm ⟨j, hj⟩)
 
+/-- Relabeling configurations twice is relabeling by the composite: first `σ`, then `τ`. -/
 lemma relabelStereo_relabelStereo (σ τ : Equiv.Perm (Fin n)) (v : Vector (Option (Stereo n)) n) :
     relabelStereo τ (relabelStereo σ v) = relabelStereo (σ.trans τ) v := by
   ext i hi
   simp [relabelStereo, Vector.getElem_ofFn, Option.map_map, Function.comp_def, Stereo.map_map]
 
+/-- With no stereocentres there is nothing to relabel. -/
 @[simp] lemma relabelStereo_noStereo (σ : Equiv.Perm (Fin n)) :
     relabelStereo σ (noStereo n) = noStereo n := by
   ext i hi
@@ -246,6 +250,7 @@ definitionally. -/
 lemma bonds_relabel (σ : Equiv.Perm (Fin n)) :
     (m.relabel σ).bonds = m.bonds.map (Bond.map σ σ.injective) := rfl
 
+/-- Relabeling a molecule moves its stereochemistry with the atoms (`relabelStereo`). -/
 lemma stereo_relabel (σ : Equiv.Perm (Fin n)) :
     (m.relabel σ).stereo = relabelStereo σ m.stereo := rfl
 

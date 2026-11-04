@@ -494,6 +494,7 @@ def reduce : Molecule n :=
   { m with atoms := m.toMolData.normalizeBrackets.atoms
            stereo := m.toMolData.normalizeBrackets.keptStereo }
 
+/-- The data of the reduced molecule is the reduced data, definitionally. -/
 lemma toMolData_reduce : m.reduce.toMolData = m.toMolData.reduce := rfl
 
 /-- The canonical ranks. -/
@@ -565,6 +566,7 @@ lemma _root_.LeanSMILES.Atom.chargeConsistent_unbracket (a : Atom) (q : Unit →
     · exact Iff.rfl
   · exact Iff.rfl
 
+/-- Reducing keeps charge consistency: it only drops brackets from neutral atoms and marks. -/
 lemma chargesConsistent_reduce : m.reduce.chargesConsistent ↔ m.chargesConsistent := by
   refine forall_congr' fun i ↦ ?_
   simp only [reduce, atom, MolData.normalizeBrackets, Fin.getElem_fin, Vector.getElem_ofFn]
