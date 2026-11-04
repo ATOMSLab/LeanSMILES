@@ -56,18 +56,18 @@ what `i` had. `relabel` does this to the atoms. -/
 def relabelVec (σ : Equiv.Perm (Fin n)) (v : Vector α n) : Vector α n :=
   Vector.ofFn fun i ↦ v[σ.symm i]
 
-@[simp] lemma getElem_relabelVec (σ : Equiv.Perm (Fin n)) (v : Vector α n)
-    (j : ℕ) (h : j < n) : (relabelVec σ v)[j] = v[σ.symm ⟨j, h⟩] := by
-  simp [relabelVec, Vector.getElem_ofFn]
+/-- Position `j` of `relabelVec σ v` holds what `v` had at position `σ.symm j`. -/
+@[simp] lemma getElem_relabelVec (σ : Equiv.Perm (Fin n)) (v : Vector α n) (j : ℕ) (h : j < n) :
+    (relabelVec σ v)[j] = v[σ.symm ⟨j, h⟩] := Vector.getElem_ofFn h
 
+/-- Position `σ i` of `relabelVec σ v` holds what `v` had at `i`: the defining property, with no
+`σ.symm` in sight. -/
 lemma relabelVec_apply (σ : Equiv.Perm (Fin n)) (v : Vector α n) (i : Fin n) :
-    (relabelVec σ v)[σ i] = v[i] := by
-  simp [relabelVec, Vector.getElem_ofFn]
+    (relabelVec σ v)[σ i] = v[i] := by simp
 
+/-- Relabeling a vector twice is relabeling by the composite: first `σ`, then `τ`. -/
 lemma relabelVec_relabelVec (σ τ : Equiv.Perm (Fin n)) (v : Vector α n) :
-    relabelVec τ (relabelVec σ v) = relabelVec (σ.trans τ) v := by
-  ext i
-  simp [relabelVec, Vector.getElem_ofFn]
+    relabelVec τ (relabelVec σ v) = relabelVec (σ.trans τ) v := Vector.ext fun _ _ ↦ by simp
 
 end RelabelVec
 
@@ -75,13 +75,13 @@ namespace Molecule
 
 variable {n : ℕ} (m : Molecule n)
 
+/-- Two molecules with the same atoms and the same bonds are equal: the `nodup` proof carries no
+data. -/
 @[ext] lemma ext {m m' : Molecule n} (ha : m.atoms = m'.atoms) (hb : m.bonds = m'.bonds) :
     m = m' := by
   cases m
   cases m'
-  cases ha
-  cases hb
-  rfl
+  congr
 
 instance : DecidableEq (Molecule n) := fun m m' ↦
   decidable_of_iff (m.atoms = m'.atoms ∧ m.bonds = m'.bonds)
@@ -119,11 +119,7 @@ def adjacent (i j : Fin n) : Bool := (m.bondBetween i j).isSome
 /-- Among the bonds at `i`, the one whose other end is `j` is the bond between them. -/
 lemma find?_bondsAt_other (i j : Fin n) :
     (m.bondsAt i).find? (fun b ↦ b.other i == j) = m.bondBetween i j := by
-  unfold bondsAt bondBetween
-  rw [List.find?_filter]
-  congr 1
-  funext b
-  exact decide_eq_decide.mpr (Bond.touches_and_other_iff b i j)
+  grind [bondsAt, bondBetween, Bond.touches_and_other_iff]
 
 /-- Replace every atom, keeping the bonds. -/
 def mapAtoms (f : Fin n → Atom → Atom) : Molecule n :=
@@ -181,19 +177,23 @@ def relabel (σ : Equiv.Perm (Fin n)) : Molecule n where
     rw [h]
     exact m.nodup.map (Sym2.map.injective σ.injective)
 
-lemma edges_relabel (σ : Equiv.Perm (Fin n)) :
-    (m.relabel σ).edges = m.edges.map (Sym2.map σ) := by
-  simp [edges, relabel, List.map_map, Function.comp_def]
+/-- The edges of a relabeled molecule are the edges relabeled by `Sym2.map σ`, in order. -/
+lemma edges_relabel (σ : Equiv.Perm (Fin n)) : (m.relabel σ).edges = m.edges.map (Sym2.map σ) := by
+  simp [edges, relabel]
 
+/-- Atom `σ i` of the relabeled molecule is atom `i` of the original. -/
 @[simp] lemma atom_relabel (σ : Equiv.Perm (Fin n)) (i : Fin n) :
-    (m.relabel σ).atom (σ i) = m.atom i := by
-  simp [relabel, atom]
+    (m.relabel σ).atom (σ i) = m.atom i := relabelVec_apply σ m.atoms i
 
-lemma numBonds_relabel (σ : Equiv.Perm (Fin n)) : (m.relabel σ).numBonds = m.numBonds := by
-  simp [relabel, numBonds]
+/-- Relabeling preserves the number of bonds. -/
+lemma numBonds_relabel (σ : Equiv.Perm (Fin n)) : (m.relabel σ).numBonds = m.numBonds :=
+  List.length_map _
 
+/-- The atoms of a relabeled molecule are `relabelVec` of its atoms, definitionally. -/
 lemma atoms_relabel (σ : Equiv.Perm (Fin n)) : (m.relabel σ).atoms = relabelVec σ m.atoms := rfl
 
+/-- The bonds of a relabeled molecule are its bonds transported along `σ`, in order,
+definitionally. -/
 lemma bonds_relabel (σ : Equiv.Perm (Fin n)) :
     (m.relabel σ).bonds = m.bonds.map (Bond.map σ σ.injective) := rfl
 
@@ -202,17 +202,15 @@ lemma bondsAt_relabel (σ : Equiv.Perm (Fin n)) (i : Fin n) :
     (m.relabel σ).bondsAt (σ i) = (m.bondsAt i).map (Bond.map σ σ.injective) := by
   simp [bondsAt, bonds_relabel, List.filter_map, Function.comp_def]
 
+/-- Relabeling preserves degree: atom `σ i` has the degree atom `i` had. -/
 @[simp] lemma degree_relabel (σ : Equiv.Perm (Fin n)) (i : Fin n) :
     (m.relabel σ).degree (σ i) = m.degree i := by
   simp [degree, bondsAt_relabel]
 
 /-- Relabeling twice is relabeling by the composite: first `σ`, then `τ`. -/
 theorem relabel_relabel (σ τ : Equiv.Perm (Fin n)) :
-    (m.relabel σ).relabel τ = m.relabel (σ.trans τ) := by
-  refine Molecule.ext ?_ ?_
-  · ext i
-    simp [relabel, Vector.getElem_ofFn]
-  · simp [relabel, List.map_map, Function.comp_def]
+    (m.relabel σ).relabel τ = m.relabel (σ.trans τ) :=
+  ext (relabelVec_relabelVec σ τ m.atoms) <| by simp [bonds_relabel]
 
 /-! ### Printing -/
 

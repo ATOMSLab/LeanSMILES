@@ -31,7 +31,7 @@ def rocCurve (pairs : Array (Float × Bool)) : Array (Float × Float) := Id.run 
   let pos := (pairs.filter (·.2)).size.toFloat
   let neg := (pairs.filter (!·.2)).size.toFloat
   if pos == 0 || neg == 0 then return #[]
-  let sorted := pairs.toList.mergeSort fun a b ↦ a.1 ≥ b.1
+  let sorted := pairs.toList.mergeSort fun a b ↦ b.1 ≤ a.1
   let mut points : Array (Float × Float) := #[(0, 0)]
   let mut tp : Float := 0
   let mut fp : Float := 0
@@ -54,7 +54,8 @@ def auc (curve : Array (Float × Float)) : Float :=
   ((curve.toList.zip curve.toList.tail).map fun ((x₁, y₁), (x₂, y₂)) ↦
     (x₂ - x₁) * (y₁ + y₂) / 2).foldl (· + ·) 0
 
-/-- The ROC AUC of (score, class) pairs. -/
+/-- The ROC AUC of (score, class) pairs: `auc` of their `rocCurve`, so 0 when either class is
+missing. -/
 def rocAuc (pairs : Array (Float × Bool)) : Float := auc (rocCurve pairs)
 
 end LeanLearn.Classification

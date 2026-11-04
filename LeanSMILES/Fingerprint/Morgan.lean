@@ -72,60 +72,44 @@ section SortBy
 
 variable {α : Type*} {le : α → α → Bool}
 
-lemma mem_insertBy {a x : α} {l : List α} : x ∈ insertBy le a l ↔ x = a ∨ x ∈ l := by
-  induction l with
-  | nil => simp [insertBy]
-  | cons b l ih => unfold insertBy; split <;> simp [ih, or_left_comm]
-
+/-- Inserting `a` is a permutation of consing it: the comparator only chooses the position. -/
 lemma perm_insertBy (a : α) (l : List α) : (insertBy le a l).Perm (a :: l) := by
   induction l with
   | nil => simp [insertBy]
   | cons b l ih =>
     unfold insertBy
     split
-    · exact List.Perm.refl _
-    · exact (ih.cons b).trans (List.Perm.swap a b l)
+    · exact .refl _
+    · exact (ih.cons b).trans (.swap a b l)
 
+/-- `insertBy le a l` holds exactly `a` and the elements of `l`, whatever `le` decides. -/
+lemma mem_insertBy {a x : α} {l : List α} : x ∈ insertBy le a l ↔ x = a ∨ x ∈ l :=
+  (perm_insertBy a l).mem_iff.trans List.mem_cons
+
+/-- `sortBy` permutes its input for every comparator, even one that is not an order. -/
 lemma perm_sortBy (l : List α) : (sortBy le l).Perm l := by
   induction l with
   | nil => simp [sortBy]
   | cons a l ih => exact (perm_insertBy a _).trans (ih.cons a)
 
+/-- Sorting does not change membership; the `simp` normal form of `x ∈ sortBy le l`. -/
 @[simp] lemma mem_sortBy {x : α} {l : List α} : x ∈ sortBy le l ↔ x ∈ l :=
   (perm_sortBy l).mem_iff
 
+/-- Inserting into a `le`-sorted list keeps it sorted when `le` is total and transitive:
+the inductive step of `pairwise_sortBy`. -/
 lemma pairwise_insertBy (total : ∀ a b, (le a b || le b a) = true)
     (trans : ∀ a b c, le a b = true → le b c = true → le a c = true) (a : α) {l : List α}
     (hl : l.Pairwise fun x y ↦ le x y = true) :
     (insertBy le a l).Pairwise fun x y ↦ le x y = true := by
-  induction l with
-  | nil => simp [insertBy]
-  | cons b l ih =>
-    rw [List.pairwise_cons] at hl
-    unfold insertBy
-    split
-    · rename_i h
-      refine List.Pairwise.cons ?_ (List.pairwise_cons.mpr hl)
-      intro x hx
-      rcases List.mem_cons.mp hx with rfl | hx
-      · exact h
-      · exact trans _ _ _ h (hl.1 x hx)
-    · rename_i h
-      have hba : le b a = true := by
-        have := total a b
-        simp_all
-      refine List.Pairwise.cons ?_ (ih hl.2)
-      intro x hx
-      rcases mem_insertBy.mp hx with rfl | hx
-      · exact hba
-      · exact hl.1 x hx
+  induction l <;> grind [insertBy, List.pairwise_cons, mem_insertBy]
 
+/-- `sortBy` sorts when `le` is total and transitive: each element is `le` every later one.
+Totality is needed because `insertBy` only ever tests `le a b`, never `le b a`. -/
 lemma pairwise_sortBy (total : ∀ a b, (le a b || le b a) = true)
     (trans : ∀ a b c, le a b = true → le b c = true → le a c = true) (l : List α) :
     (sortBy le l).Pairwise fun x y ↦ le x y = true := by
-  induction l with
-  | nil => simp [sortBy]
-  | cons a l ih => exact pairwise_insertBy total trans a ih
+  induction l <;> grind [sortBy, pairwise_insertBy]
 
 end SortBy
 
@@ -150,7 +134,7 @@ def hashPair (a b : UInt32) : UInt32 := hashCombine (hashCombine 0 a) b
 
 /-- A signed integer as RDKit stores it in a `uint32` (negative numbers wrap). -/
 def intToUInt32 (i : ℤ) : UInt32 :=
-  (if i ≥ 0 then i.toNat else (4294967296 + i).toNat).toUInt32
+  (if 0 ≤ i then i.toNat else (4294967296 + i).toNat).toUInt32
 
 /-- RDKit's `Chem.BondType` value, which Morgan hashes (aromatic is 12, not an
 order like 3/2). -/

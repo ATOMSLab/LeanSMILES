@@ -29,35 +29,30 @@ open Finset
 
 /-! ## Exact data, read in `ℝ` -/
 
+/-- `RatEmbed.ofRat` at `ℝ` is `Rat.cast`: the `simp` normal form of an exact rational constant
+read in `ℝ` (the executable reading `Rat.toFloat` has no such lemma). -/
 @[simp] theorem ratEmbed_real (q : ℚ) : (RatEmbed.ofRat q : ℝ) = q := rfl
 
+/-- The cast to `ℝ` of an exact `sumGen` is the `sumGen` of the casts: `Rat.cast` through the
+executable fold, over any index list. -/
 theorem cast_sumGen {X : Type} (l : List X) (g : X → ℚ) :
     ((sumGen l g : ℚ) : ℝ) = sumGen l fun x ↦ (g x : ℝ) := by
-  induction l with
-  | nil => simp [sumGen]
-  | cons a l ih =>
-    simp only [sumGen, List.foldr_cons] at ih ⊢
-    push_cast
-    rw [ih]
+  induction l <;> simp_all [sumGen]
 
+/-- The cast to `ℝ` of an exact `sumFin` is the `sumFin` of the casts; with `sumFin_eq_sum` it
+reads every exact sum of a check as a `Finset` sum in `ℝ`. -/
 theorem cast_sumFin {n : ℕ} (g : Fin n → ℚ) : ((sumFin g : ℚ) : ℝ) = sumFin fun i ↦ (g i : ℝ) :=
   cast_sumGen _ _
 
+/-- The cast to `ℝ` of the exact count `k` is the count in `ℝ` (which is `k`, by
+`count_eq_natCast`): `Rat.cast` through `nsmulGen`, for the `1/m` of the normal equations. -/
 theorem cast_count (k : ℕ) : ((count k : ℚ) : ℝ) = count k := by
-  induction k with
-  | zero => simp [count, nsmulGen]
-  | succ k ih =>
-    simp only [count, nsmulGen] at ih ⊢
-    push_cast
-    rw [ih]
+  induction k <;> simp_all [count, nsmulGen]
 
+/-- The cast to `ℝ` of the executable power `npowGen x k` is `(x : ℝ) ^ k`: how the `ρ²ᵏ` of
+`SolverWitness.excess` is read in `ℝ`. -/
 theorem cast_npowGen (x : ℚ) (k : ℕ) : ((npowGen x k : ℚ) : ℝ) = (x : ℝ) ^ k := by
-  induction k with
-  | zero => simp [npowGen]
-  | succ k ih =>
-    simp only [npowGen] at ih ⊢
-    push_cast
-    rw [ih, pow_succ, mul_comm]
+  induction k <;> simp_all [npowGen, pow_succ']
 
 /-- A rational matrix, read in `ℝ`. -/
 abbrev castMat {m n : ℕ} (A : Mat ℚ m n) : Mat ℝ m n := A.map (·.map fun q : ℚ ↦ (q : ℝ))
@@ -69,12 +64,11 @@ namespace Problem
 
 variable {m d : ℕ} (P : Problem ℚ m d)
 
+/-- Reading the data in `ℝ` and forming the design matrix gives the cast of the exact design
+matrix, entrywise: the base case of `map_normalMatrix` and `map_normalVector`. -/
 theorem map_design_getElem (r : Fin m) (i : Fin (d + 1)) :
     (P.map fun q : ℚ ↦ (q : ℝ)).design[r][i] = ((P.design[r][i] : ℚ) : ℝ) := by
-  simp only [design, row, augment, Problem.map, Fin.getElem_fin, Vector.getElem_ofFn,
-    Vector.getElem_map]
-  rw [Vector.getElem_push, Vector.getElem_push]
-  split_ifs <;> simp
+  simp [design, row, augment, Problem.map, Vector.getElem_push, apply_dite (fun q : ℚ ↦ (q : ℝ))]
 
 /-- Reading the data in `ℝ` and forming `A` gives the cast of the exact `A`. -/
 theorem map_normalMatrix (i j : Fin (d + 1)) :
@@ -102,29 +96,24 @@ theorem map_residualAt (θ : Vec ℚ (d + 1)) (i : Fin (d + 1)) :
   simp only [← Fin.getElem_fin, map_normalMatrix, map_normalVector]
   simp [castVec]
 
-/-- **Soundness of the residual check**: if it passes, the cast of `θ` is within `ε` of the
-loss of every `u`, read in `ℝ`. -/
+/-- **Soundness of `Problem.checkResidual`**: if the exact check passes, the cast of `θ` is
+within `ε` of the loss of every `u`, read in `ℝ` — whatever solver produced `θ`. -/
 theorem checkResidual_sound {θ : Vec ℚ (d + 1)} {ε : ℚ} (h : P.checkResidual θ ε = true)
     (u : Vec ℝ (d + 1)) :
     (P.map fun q : ℚ ↦ (q : ℝ)).loss (castVec θ) ≤ (P.map fun q : ℚ ↦ (q : ℝ)).loss u + ε := by
   simp only [checkResidual, Bool.and_eq_true, decide_eq_true_eq] at h
   obtain ⟨hridgePos, hres⟩ := h
-  have hridgeReal : (0 : ℝ) < (P.map fun q : ℚ ↦ (q : ℝ)).ridge := by
-    change (0 : ℝ) < (P.ridge : ℝ)
-    exact_mod_cast hridgePos
-  have hb := (P.map fun q : ℚ ↦ (q : ℝ)).loss_le_add_residual hridgeReal (castVec θ) u
+  have hridgeReal : (0 : ℝ) < (P.map fun q : ℚ ↦ (q : ℝ)).ridge := Rat.cast_pos.mpr hridgePos
+  refine ((P.map fun q : ℚ ↦ (q : ℝ)).loss_le_add_residual hridgeReal (castVec θ) u).trans ?_
+  -- the squared residual norm in `ℝ` is the cast of the exact `⟪r, r⟫` the check compares
   have hcast : ∑ i : Fin (d + 1), (residual (P.map fun q : ℚ ↦ (q : ℝ)).normalMatrix
       (P.map fun q : ℚ ↦ (q : ℝ)).normalVector (castVec θ))[i] ^ 2 =
       ((dot (P.residualAt θ) (P.residualAt θ) : ℚ) : ℝ) := by
     rw [dot, cast_sumFin, sumFin_eq_sum]
-    exact sum_congr rfl fun i _ ↦ by rw [map_residualAt]; push_cast; ring
-  have hε : ((dot (P.residualAt θ) (P.residualAt θ) : ℚ) : ℝ) /
-      (P.map fun q : ℚ ↦ (q : ℝ)).ridge ≤ ε := by
-    rw [div_le_iff₀ hridgeReal]
-    change ((dot (P.residualAt θ) (P.residualAt θ) : ℚ) : ℝ) ≤ (ε : ℝ) * (P.ridge : ℝ)
-    exact_mod_cast hres
-  rw [hcast] at hb
-  linarith
+    exact sum_congr rfl fun i _ ↦ by rw [map_residualAt, sq, Rat.cast_mul]
+  rw [hcast, add_le_add_iff_left, div_le_iff₀ hridgeReal]
+  change _ ≤ (ε : ℝ) * (P.ridge : ℝ)
+  exact_mod_cast hres
 
 end Problem
 
@@ -134,21 +123,20 @@ namespace SolverWitness
 
 variable {n : ℕ}
 
+/-- The exact row weight `Check.offDiagWeight` casts to the `offDiagWeight` of the cast data: the
+row condition of `SolverWitness.check` is the `dominant` field of `DiagDominant`, in `ℝ`. -/
 theorem cast_offDiagWeight (A : Mat ℚ n n) (w : Vec ℚ n) (i : Fin n) :
     ((Check.offDiagWeight A w i : ℚ) : ℝ) = offDiagWeight (castMat A) (castVec w) i := by
-  rw [Check.offDiagWeight, cast_sumFin, sumFin_eq_sum, offDiagWeight]
-  refine sum_congr rfl fun j _ ↦ ?_
-  split_ifs <;> simp
+  simp [Check.offDiagWeight, offDiagWeight, sumFin_eq_sum, apply_ite (fun q : ℚ ↦ (q : ℝ))]
 
+/-- The exact `Check.weightedMass` casts to the `weightedMass` of the cast data: the `Γ` of
+`SolverWitness.excess` is the `Γ` of `loss_jacobi_le` and `loss_gaussSeidel_le`, in `ℝ`. -/
 theorem cast_weightedMass (A : Mat ℚ n n) (w : Vec ℚ n) :
     ((Check.weightedMass A w : ℚ) : ℝ) = weightedMass (castMat A) (castVec w) := by
-  rw [Check.weightedMass, cast_sumFin, sumFin_eq_sum, weightedMass]
-  refine sum_congr rfl fun i _ ↦ ?_
-  rw [cast_sumFin, sumFin_eq_sum]
-  exact sum_congr rfl fun j _ ↦ by simp
+  simp [Check.weightedMass, weightedMass, sumFin_eq_sum]
 
-/-- **What a passing check gives, in `ℝ`**: weighted diagonal dominance, the bound on the
-right-hand side, and the excess loss below `ε`. -/
+/-- **Soundness of `SolverWitness.check`**: a pass gives, in `ℝ`, weighted diagonal dominance, the
+bound on `b` and the excess below `ε` — what `loss_jacobi_le` and `loss_gaussSeidel_le` need. -/
 theorem check_sound {A : Mat ℚ n n} {b : Vec ℚ n} {k : ℕ} {ε : ℚ} (W : SolverWitness n)
     (h : W.check A b k ε = true) :
     DiagDominant (castMat A) (castVec W.weights) W.ratio ∧ (0 : ℝ) ≤ W.bound ∧
@@ -159,18 +147,14 @@ theorem check_sound {A : Mat ℚ n n} {b : Vec ℚ n} {k : ℕ} {ε : ℚ} (W : 
   simp only [check, Bool.and_eq_true, decide_eq_true_eq, List.all_eq_true, List.mem_finRange,
     true_implies] at h
   obtain ⟨⟨⟨⟨hρ0, hρ1⟩, hβ⟩, hrows⟩, hexc⟩ := h
-  refine ⟨⟨by exact_mod_cast hρ0, by exact_mod_cast hρ1, fun i ↦ ?_, fun i ↦ ?_,
-    fun i ↦ ?_⟩, by exact_mod_cast hβ, fun i ↦ ?_, ?_⟩
+  refine ⟨⟨mod_cast hρ0, mod_cast hρ1, fun i ↦ ?_, fun i ↦ ?_, fun i ↦ ?_⟩, mod_cast hβ,
+    fun i ↦ ?_, ?_⟩
   · simpa using (hrows i).1.1.1
   · simpa using (hrows i).1.1.2
-  · rw [← cast_offDiagWeight]
-    have := (hrows i).1.2
-    simpa using (Rat.cast_le (K := ℝ)).mpr this
-  · have := (hrows i).2
-    simpa using (Rat.cast_le (K := ℝ)).mpr this
+  · simpa [← cast_offDiagWeight] using (Rat.cast_le (K := ℝ)).mpr (hrows i).1.2
+  · simpa using (Rat.cast_le (K := ℝ)).mpr (hrows i).2
   · rw [← cast_weightedMass, ← cast_npowGen W.ratio (2 * k)]
-    have := (Rat.cast_le (K := ℝ)).mpr hexc
-    simpa [excess] using this
+    exact_mod_cast hexc
 
 end SolverWitness
 

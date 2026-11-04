@@ -36,12 +36,20 @@ model's parity plot is written to `PATH`:
 
 open LeanLearn LeanLearn.Regression LeanLearn.Plot Pipelines
 
+/-- One row of `datasets/delaney-ridge.csv`: a Delaney molecule with its measured solubility,
+its train/test split, scikit-learn's ridge prediction and RDKit's Morgan bits. -/
 structure SolRow where
+  /-- The compound name, used to list the SMILES the parser rejects. -/
   name : String
+  /-- The SMILES string, parsed in Lean by the pipeline stage. -/
   smiles : String
+  /-- Measured log solubility (log mol/L): the regression target. -/
   logS : Float
+  /-- `"train"` or `"test"`, from scikit-learn's `train_test_split`. -/
   split : String
+  /-- scikit-learn's `Ridge(alpha=1.0)` prediction for this molecule. -/
   skPred : Float
+  /-- RDKit's on-bits (Morgan, radius 2, 2048 bits), ascending: the solver stage's features. -/
   rdkitBits : Array ℕ
   deriving Inhabited
 
@@ -72,6 +80,8 @@ def fitAndReport (rows : Array SolRow) (feats : Array (Array ℕ)) : IO (Array F
       (scikit-learn: R² {fixed (r2 k) 4}, RMSE {fixed (rmse k) 4}, MAE {fixed (mae k) 4})"
   return preds
 
+/-- Runs both stages; `--svg PATH` also writes the pipeline's parity plot. Exits 0 iff every
+solver-stage prediction is within 10⁻⁶ of scikit-learn's (the pipeline stage is informational). -/
 public def main (args : List String) : IO UInt32 := do
   let lines := (← IO.FS.lines "datasets/delaney-ridge.csv").toList.drop 1
   let rows := (lines.filterMap fun l ↦ match l.splitOn "," with
@@ -91,7 +101,9 @@ public def main (args : List String) : IO UInt32 := do
   let mut skipped : Array String := #[]
   for r in rows do
     match morganFeatures r.smiles with
-    | .ok x => kept := kept.push r; feats := feats.push x
+    | .ok x =>
+      kept := kept.push r
+      feats := feats.push x
     | .error e => skipped := skipped.push s!"{r.name} ({r.split}): {e}"
   let same := (List.range kept.size).countP fun i ↦ feats[i]!.qsort (· < ·) == kept[i]!.rdkitBits
   IO.println "2. pipeline, on Lean's features [info]"

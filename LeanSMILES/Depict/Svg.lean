@@ -15,15 +15,15 @@ The drawing itself, from the coordinates of `LeanSMILES.Depict.Layout`:
 * bonds as lines — double and triple bonds as parallel lines, the inner line
   of a ring double bond on the ring side, aromatic bonds with an inner dashed
   line;
-* stereo bonds as filled wedges and fanned hashes, narrow end at the centre;
-* heteroatoms, charged atoms, isotopes and isolated atoms labelled with their
+* stereo bonds as filled wedges and fanned hashes, narrow end at the center;
+* heteroatoms, charged atoms, isotopes and isolated atoms labeled with their
   symbol, hydrogen count, charge and mass number (`D` and `T` for the heavy
-  hydrogens), in CPK-like colours; carbon skeletons unlabelled, as chemists
+  hydrogens), in CPK-like colors; carbon skeletons unlabeled, as chemists
   draw them.
 
-The picture is built as a small XML tree (`Xml`), so that the same value can
-be serialised to an SVG string (`Molecule.svg`) or handed to the editor's
-infoview (`LeanSMILES.Depict.Widget`).
+The picture is built as a small XML tree (`Molecule.svg`), so that the same
+value can be serialized to an SVG string (`Molecule.svgString`) or handed to
+the editor's infoview (`LeanSMILES.Depict.Widget`).
 
 `Molecule.molBlock` writes the same drawing as an MDL mol block (V2000) with
 the wedge/hash flags, so that any other toolkit can read the depicted
@@ -45,7 +45,7 @@ inductive Xml where
 
 namespace Xml
 
-/-- Escape `<`, `>`, `&` and `"`. -/
+/-- Escape `<`, `>`, `&` and `"` as XML entities, for text and attribute values alike. -/
 def escape (s : String) : String :=
   s.foldl (fun acc c ↦
     match c with
@@ -55,7 +55,8 @@ def escape (s : String) : String :=
     | '"' => acc ++ "&quot;"
     | c => acc.push c) ""
 
-/-- Serialise. -/
+/-- Serialize to XML text, with text and attribute values escaped and every element closed by an
+explicit end tag (never `<tag/>`). -/
 partial def render : Xml → String
   | .text s => escape s
   | .elem tag attrs children =>
@@ -66,7 +67,8 @@ instance : ToString Xml := ⟨render⟩
 
 end Xml
 
-/-- CPK-like colours for atom labels. -/
+/-- The CPK-like hex color of an atom label: one per common element, violet for any other
+element, gray for the wildcard `*` (no element). -/
 def color : Option Element → String
   | some .N => "#3050F8"
   | some .O => "#FF0D0D"
@@ -81,17 +83,17 @@ def color : Option Element → String
   | some _ => "#8060C0"
   | none => "#666666"
 
-/-- A number with one decimal, for SVG attributes. -/
+/-- `x` rounded to one decimal place and printed, for SVG attribute values. -/
 def num (x : Float) : String := toString ((x * 10).round / 10)
 
-/-- Whether an atom is drawn with a label rather than as a bare vertex: anything
-but an uncharged, unlabelled carbon with at least one bond. -/
-def labelled (g : Graph) (i : ℕ) : Bool :=
+/-- Whether an atom is drawn with a label rather than as a bare vertex: anything but an uncharged,
+non-isotopic carbon with at least one bond. -/
+def labeled (g : Graph) (i : ℕ) : Bool :=
   let a := g.atom i
   a.element != some .C || a.charge != 0 || a.isotope.isSome || g.degree i == 0
 
-/-- The SVG drawing of a depiction graph from given coordinates (bond
-lengths, `y` up); `scale` is the bond length in pixels. -/
+/-- The SVG drawing of a depiction graph from given coordinates (bond lengths, `y` up); `scale` is
+the bond length in pixels. A graph with no atoms gives the bare text `(empty molecule)`. -/
 def svgWith (g : Graph) (pos : Array Pt) (scale : Float := 32) : Xml := Id.run do
   let n := g.numAtoms
   if n == 0 then return .text "(empty molecule)"
@@ -129,13 +131,12 @@ def svgWith (g : Graph) (pos : Array Pt) (scale : Float := 32) : Xml := Id.run d
     let mut ring := [v]
     let mut x := v
     let mut fuel := n
-    while x != u && fuel > 0 do
+    while x != u && 0 < fuel do
       fuel := fuel - 1
       x := prev[x]!
       ring := x :: ring
     let k := ring.length.toFloat
-    return some (ring.foldl (fun s i ↦ s + (P i).1) 0 / k,
-      ring.foldl (fun s i ↦ s + (P i).2) 0 / k)
+    return some (ring.foldl (fun s i ↦ s + (P i).1) 0 / k, ring.foldl (fun s i ↦ s + (P i).2) 0 / k)
   let line (a b : Pt) (extra : List (String × String) := []) : Xml :=
     .elem "line" ([("x1", num a.1), ("y1", num a.2), ("x2", num b.1), ("y2", num b.2),
       ("stroke", "#222"), ("stroke-width", "1.6"), ("stroke-linecap", "round")] ++ extra) []
@@ -144,17 +145,17 @@ def svgWith (g : Graph) (pos : Array Pt) (scale : Float := 32) : Xml := Id.run d
   for e in g.edges do
     -- orient stereo bonds from the centre (narrow end) to the neighbor
     let st := stereo.find? fun s ↦
-      (s.centre == e.src && s.neighbor == e.dst) || (s.centre == e.dst && s.neighbor == e.src)
+      (s.center == e.src && s.neighbor == e.dst) || (s.center == e.dst && s.neighbor == e.src)
     let (u, v) := match st with
-      | some s => (s.centre, s.neighbor)
+      | some s => (s.center, s.neighbor)
       | none => (e.src, e.dst)
-    -- shorten at labelled atoms
+    -- shorten at labeled atoms
     let (x1, y1) := P u
     let (x2, y2) := P v
     let len := fmax (Float.sqrt (sq (x2 - x1) + sq (y2 - y1))) 1e-6
     let (ux, uy) := ((x2 - x1) / len, (y2 - y1) / len)
-    let s1 := if labelled g u then 8.0 else 0.0
-    let s2 := if labelled g v then 8.0 else 0.0
+    let s1 := if labeled g u then 8.0 else 0.0
+    let s2 := if labeled g v then 8.0 else 0.0
     let a : Pt := (x1 + ux * s1, y1 + uy * s1)
     let c : Pt := (x2 - ux * s2, y2 - uy * s2)
     let (nx, ny) := (-uy, ux)
@@ -162,12 +163,12 @@ def svgWith (g : Graph) (pos : Array Pt) (scale : Float := 32) : Xml := Id.run d
     let inner (off : Float) (dashed : Bool) : Xml :=
       let side : Float := match ringCenter u v with
         | some (cx, cy) =>
-          if (cx - (x1 + x2) / 2) * nx + (cy - (y1 + y2) / 2) * ny > 0 then 1 else -1
+          if 0 < (cx - (x1 + x2) / 2) * nx + (cy - (y1 + y2) / 2) * ny then 1 else -1
         | none => 1
       let sh := 0.18 * len
       line (a.1 + ux * sh + side * nx * off, a.2 + uy * sh + side * ny * off)
-           (c.1 - ux * sh + side * nx * off, c.2 - uy * sh + side * ny * off)
-           (if dashed then [("stroke-dasharray", "3,3")] else [])
+          (c.1 - ux * sh + side * nx * off, c.2 - uy * sh + side * ny * off)
+          (if dashed then [("stroke-dasharray", "3,3")] else [])
     let parallel (off : Float) : Xml :=
       line (a.1 + nx * off, a.2 + ny * off) (c.1 + nx * off, c.2 + ny * off)
     match e.kind, st with
@@ -192,14 +193,14 @@ def svgWith (g : Graph) (pos : Array Pt) (scale : Float := 32) : Xml := Id.run d
     | .quadruple, _ =>
       parts := parts ++ [parallel 1.5, parallel (-1.5), parallel 4.5, parallel (-4.5)]
   for i in [0:n] do
-    if labelled g i then
+    if labeled g i then
       let a := g.atom i
       let (x, y) := P i
       let h := a.totalH
       let hs := if h == 0 then "" else if h == 1 then "H" else "H" ++ toString h
       let chg := if a.charge == 0 then "" else
         (if a.charge.natAbs == 1 then "" else toString a.charge.natAbs) ++
-          (if a.charge > 0 then "+" else "−")
+          (if 0 < a.charge then "+" else "−")
       -- isotopes: D and T for the heavy hydrogens, otherwise a mass-number prefix
       let (iso, sym) := match a.element, a.isotope with
         | some .H, some 2 => ("", "D")
@@ -217,15 +218,13 @@ def svgWith (g : Graph) (pos : Array Pt) (scale : Float := 32) : Xml := Id.run d
   return .elem "svg" [("width", num W), ("height", num H), ("viewBox", s!"0 0 {num W} {num H}"),
     ("xmlns", "http://www.w3.org/2000/svg")] parts
 
-/-- The SVG drawing of a depiction graph; `scale` is the bond length in pixels. -/
+/-- `svgWith` at the coordinates of `layout`; `scale` is the bond length in pixels. -/
 def svgOf (g : Graph) (scale : Float := 32) : Xml := svgWith g (layout g) scale
 
-/-- MDL mol block (V2000) of the drawing from given coordinates, with wedge (`1`)
-and hash (`6`) flags
-on the stereo bonds and the "either" flag (`3`) on double bonds whose
-cis/trans arrangement the SMILES left open. Aromatic atoms that carry
-hydrogens get them as explicit atoms, so that readers can kekulize. A
-quadruple bond, which V2000 has no code for, is written as `8` (any). -/
+/-- MDL mol block (V2000) of the drawing from given coordinates, with wedge (`1`) and hash (`6`)
+flags on the stereo bonds and the "either" flag (`3`) on double bonds whose cis/trans arrangement
+the SMILES left open. Aromatic atoms that carry hydrogens get them as explicit atoms, so that
+readers can kekulize. A quadruple bond, which V2000 has no code for, is written as `8` (any). -/
 def molBlockWith (g : Graph) (pos : Array Pt) : String := Id.run do
   let stereo := wedges g pos
   let coord (x : Float) : String :=
@@ -235,7 +234,7 @@ def molBlockWith (g : Graph) (pos : Array Pt) : String := Id.run do
   let i3 (k : ℕ) : String :=
     String.ofList (List.replicate (3 - (toString k).length) ' ') ++ toString k
   let hAtoms : Array ℕ := (Array.range g.numAtoms).filter fun i ↦
-    (g.atom i).aromatic && (g.atom i).totalH > 0
+    (g.atom i).aromatic && 0 < (g.atom i).totalH
   let nA := g.numAtoms + hAtoms.size
   let nB := g.edges.size + hAtoms.size
   let mut lines : Array String := #["", "  LeanSMILES", "",
@@ -255,10 +254,10 @@ def molBlockWith (g : Graph) (pos : Array Pt) : String := Id.run do
       s!"{coord (x + 0.3)}{coord (y + 0.3)}{coord 0} H   0  0  0  0  0  0  0  0  0  0  0  0"
   for e in g.edges do
     let st := stereo.find? fun s ↦
-      (s.centre == e.src && s.neighbor == e.dst) || (s.centre == e.dst && s.neighbor == e.src)
+      (s.center == e.src && s.neighbor == e.dst) || (s.center == e.dst && s.neighbor == e.src)
     let unspecified := e.kind == .double && !e.ring && !g.stereoSpecified e
     let (u, v, flag) := match st with
-      | some s => (s.centre, s.neighbor, if s.wedge then 1 else 6)
+      | some s => (s.center, s.neighbor, if s.wedge then 1 else 6)
       | none => (e.src, e.dst, if unspecified then 3 else 0)
     let o := match e.kind with
       | .single => 1 | .double => 2 | .triple => 3 | .aromatic => 4 | .quadruple => 8
@@ -271,7 +270,7 @@ def molBlockWith (g : Graph) (pos : Array Pt) : String := Id.run do
   lines := lines.push "M  END"
   return "\n".intercalate lines.toList ++ "\n"
 
-/-- The mol block of a depiction graph, laid out here. -/
+/-- `molBlockWith` at the coordinates of `layout`. -/
 def molBlockOf (g : Graph) : String := molBlockWith g (layout g)
 
 end LeanSMILES.Depict
@@ -290,13 +289,13 @@ def Molecule.svgString {n : ℕ} (m : Molecule n) (scale : Float := 32) : String
 def Molecule.molBlock {n : ℕ} (m : Molecule n) : String :=
   Depict.molBlockOf (Depict.Graph.ofMolecule m)
 
-/-- The SVG drawing of a parsed molecule. -/
+/-- The SVG drawing of a parsed molecule; `scale` is the bond length in pixels. -/
 def Mol.svg (M : Mol) (scale : Float := 32) : Depict.Xml := M.mol.svg scale
 
 /-- The SVG drawing as a string. -/
 def Mol.svgString (M : Mol) (scale : Float := 32) : String := M.mol.svgString scale
 
-/-- The MDL mol block of the drawing. -/
+/-- The MDL mol block (V2000) of the drawing, with wedge/hash flags. -/
 def Mol.molBlock (M : Mol) : String := M.mol.molBlock
 
 /-- The 2D coordinates of a parsed molecule, in bond lengths with `y` up. -/

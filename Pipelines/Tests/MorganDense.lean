@@ -34,22 +34,28 @@ def parseRatStr (s : String) : ℚ :=
     | _ => (body.toNat! : ℚ)
   if neg then -v else v
 
+/-- One parsed row of the Delaney CSV: a molecule, its measured solubility, and its split. -/
 structure Row where
+  /-- The aromatized molecule parsed from the row's SMILES. -/
   mol : Mol
+  /-- The measured log solubility (mol/L), read exactly as a rational. -/
   y : ℚ
+  /-- Whether the row is held out for testing (every fifth CSV row). -/
   isTest : Bool
 
 instance : Inhabited Row := ⟨{ mol := Mol.empty, y := 0, isTest := false }⟩
 
-def runOne (train test : Array Row) (fp : ℕ) (ridge : ℚ) (name : String)
-    (alg : Algorithm) : IO Unit := do
+/-- Fits a `Pipeline` (radius-2 Morgan bits folded to `fp`, ridge `ridge`, solver `alg`) on
+`train` with mean-centered targets, then prints its wall time and train/test scores as `name`. -/
+def runOne (train test : Array Row) (fp : ℕ) (ridge : ℚ) (name : String) (alg : Algorithm) :
+    IO Unit := do
   let m := train.size
   let mQ : ℚ := m
-  let yBar : ℚ := (train.foldl (fun acc r => acc + r.y) 0) / mQ
+  let yBar : ℚ := (train.foldl (fun acc r ↦ acc + r.y) 0) / mQ
   let rep : Representation fp := Representation.morgan 2 fp
-  let labelled : LabelledMolecules m :=
-    { molecules := Vector.ofFn fun i => train[i.val]!.mol
-      targets := Vector.ofFn fun i => train[i.val]!.y - yBar }
+  let labelled : LabeledMolecules m :=
+    { molecules := Vector.ofFn fun i ↦ train[i.val]!.mol
+      targets := Vector.ofFn fun i ↦ train[i.val]!.y - yBar }
   let pipe : Pipeline m fp :=
     { data := labelled, representation := rep, ridge := ridge, algorithm := alg }
   let t0 ← IO.monoMsNow
@@ -60,11 +66,13 @@ def runOne (train test : Array Row) (fp : ℕ) (ridge : ℚ) (name : String)
   let t1 ← IO.monoMsNow
   let yBarF := yBar.toFloat
   let pairs (rs : Array Row) : Array (Float × Float) :=
-    rs.map fun r => (r.y.toFloat, pipe.predictWith θ r.mol + yBarF)
+    rs.map fun r ↦ (r.y.toFloat, pipe.predictWith θ r.mol + yBarF)
   let (tr, te) := (pairs train, pairs test)
   IO.println s!"  fp={fp} λ={ridge.toFloat} {name}: {t1 - t0} ms · train R² {fixed (r2 tr) 3} · \
     test R² {fixed (r2 te) 3} RMSE {fixed (rmse te) 3}"
 
+/-- Entry point of `lake exe morgan-dense-test [rows] [fpSize ...]`: holds out every fifth of the
+first `rows` Delaney molecules, then runs Gauss–Seidel and gradient descent per fold and ridge. -/
 public def main (args : List String) : IO UInt32 := do
   let limit := (args.head? >>= String.toNat?).getD 204
   let fps := (args.drop 1).filterMap String.toNat?
@@ -84,14 +92,13 @@ public def main (args : List String) : IO UInt32 := do
   let train := rows.filter (!·.isTest)
   let test := rows.filter (·.isTest)
   IO.println s!"{rows.size} molecules ({skipped} skipped): {train.size} train, {test.size} test"
-  -- the largest number of on-bits in a training molecule bounds ‖x‖², hence the smoothness
   let m := train.size
   for fp in fps do
     let rep : Representation fp := Representation.morgan 2 fp
     -- the smoothness Λ = (1/m) Σᵣ ‖xᵣ‖² + λ of `loss_gradientDescent_le_add`, exactly;
     -- the bias column adds 1 to every ‖xᵣ‖²
     let meanSq : ℚ :=
-      (train.foldl (fun acc r => acc + (rep r.mol).toList.foldl (· + ·) 0) 0) / m + 1
+      (train.foldl (fun acc r ↦ acc + (rep r.mol).toList.foldl (· + ·) 0) 0) / m + 1
     IO.println s!"fp={fp}: mean ‖x‖² {meanSq.toFloat}"
     for ridge in [mkRat 1 m, mkRat 1 20] do
       let η : ℚ := 1 / (2 * (meanSq + ridge))

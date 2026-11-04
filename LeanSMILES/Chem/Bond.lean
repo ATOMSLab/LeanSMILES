@@ -50,9 +50,10 @@ def order : BondKind → ℚ
   | quadruple => 4
   | aromatic => 3 / 2
 
-lemma order_pos (k : BondKind) : 0 < k.order := by
-  cases k <;> norm_num [order]
+/-- Every bond order is positive: the smallest, `single.order`, is `1`. -/
+lemma order_pos (k : BondKind) : 0 < k.order := by cases k <;> norm_num [order]
 
+/-- No bond kind has order `0`: a zero entry in a bond matrix means no bond, never a kind. -/
 lemma order_ne_zero (k : BondKind) : k.order ≠ 0 := (order_pos k).ne'
 
 /-- The SMILES bond symbol. -/
@@ -81,23 +82,17 @@ def ofOrder? (q : ℚ) : Option BondKind :=
   else if q = 3 / 2 then some aromatic
   else none
 
+/-- `ofOrder?` is a left inverse of `order`: a kind's order reads back as that kind. -/
 @[simp] lemma ofOrder?_order (k : BondKind) : ofOrder? k.order = some k := by
   cases k <;> norm_num [ofOrder?, order]
 
+/-- When `ofOrder? q` returns a kind, `q` is exactly that kind's order: the converse of
+`ofOrder?_order`. -/
 lemma ofOrder?_eq_some {q : ℚ} {k : BondKind} (h : ofOrder? q = some k) : q = k.order := by
-  unfold ofOrder? at h
-  split_ifs at h with h1 h2 h3 h4 h5
-  · obtain rfl := Option.some.inj h; exact h1
-  · obtain rfl := Option.some.inj h; exact h2
-  · obtain rfl := Option.some.inj h; exact h3
-  · obtain rfl := Option.some.inj h; exact h4
-  · obtain rfl := Option.some.inj h; exact h5
+  grind [ofOrder?, order]
 
 /-- Distinct kinds have distinct orders: an order determines the kind. -/
-lemma order_injective : Function.Injective order := by
-  intro k k' h
-  have := congrArg ofOrder? h
-  rwa [ofOrder?_order, ofOrder?_order, Option.some.injEq] at this
+lemma order_injective : Function.Injective order := fun k k' h ↦ by simpa using congrArg ofOrder? h
 
 end BondKind
 
@@ -111,7 +106,7 @@ inductive BondDir
 
 namespace BondDir
 
-/-- The SMILES character: `/` or `\\`. -/
+/-- The SMILES character: `/` or `\`. -/
 def toChar : BondDir → Char
   | up => '/'
   | down => '\\'
@@ -131,8 +126,9 @@ structure Bond (n : ℕ) where
   dst : Fin n
   /-- The bond kind. -/
   kind : BondKind := .single
-  /-- The `/` `\\` mark, if written, relative to `src → dst`. -/
+  /-- The `/` `\` mark, if written, relative to `src → dst`. -/
   dir : Option BondDir := none
+  /-- The endpoints are distinct: a molecule has no self-bonds, by construction. -/
   ne : src ≠ dst
   deriving DecidableEq
 
@@ -157,51 +153,53 @@ def flip (b : Bond n) : Bond n :=
 def map (σ : Fin n → Fin m) (hσ : Function.Injective σ) (b : Bond n) : Bond m :=
   { src := σ b.src, dst := σ b.dst, kind := b.kind, dir := b.dir, ne := hσ.ne b.ne }
 
+/-- `map` acts on the edge as `Sym2.map`: relabeling commutes with taking the undirected edge. -/
 @[simp] lemma edge_map (σ : Fin n → Fin m) (hσ : Function.Injective σ) (b : Bond n) :
     (b.map σ hσ).edge = Sym2.map σ b.edge := rfl
 
+/-- Two relabelings in a row are one relabeling along the composite. -/
 @[simp] lemma map_map {k : ℕ} (σ : Fin n → Fin m) (hσ : Function.Injective σ)
     (τ : Fin m → Fin k) (hτ : Function.Injective τ) (b : Bond n) :
     (b.map σ hσ).map τ hτ = b.map (τ ∘ σ) (hτ.comp hσ) := rfl
 
+/-- Relabeling the atoms leaves the bond kind alone. -/
 @[simp] lemma kind_map (σ : Fin n → Fin m) (hσ : Function.Injective σ) (b : Bond n) :
     (b.map σ hσ).kind = b.kind := rfl
 
+/-- Relabeling preserves incidence: the relabeled bond touches `σ i` exactly when `b` touches
+`i`. -/
 @[simp] lemma touches_map (σ : Fin n → Fin m) (hσ : Function.Injective σ) (b : Bond n)
-    (i : Fin n) : (b.map σ hσ).touches (σ i) = b.touches i := by
-  simp only [touches, map]
-  rw [Bool.eq_iff_iff]
-  simp [hσ.eq_iff]
+    (i : Fin n) : (b.map σ hσ).touches (σ i) = b.touches i := by grind [touches, map]
 
+/-- Relabeling commutes with `other`: the far endpoint of the relabeled bond is the relabeled far
+endpoint. -/
 @[simp] lemma other_map (σ : Fin n → Fin m) (hσ : Function.Injective σ) (b : Bond n)
-    (i : Fin n) : (b.map σ hσ).other (σ i) = σ (b.other i) := by
-  simp only [other, map, hσ.eq_iff]
-  split_ifs <;> rfl
+    (i : Fin n) : (b.map σ hσ).other (σ i) = σ (b.other i) := by grind [other, map]
 
+/-- Reading a bond from the other end does not change its undirected edge. -/
 @[simp] lemma edge_flip (b : Bond n) : b.flip.edge = b.edge := Sym2.eq_swap
 
-lemma edge_not_isDiag (b : Bond n) : ¬ b.edge.IsDiag := by
-  simpa [edge, Sym2.mk_isDiag_iff] using b.ne
+/-- A bond's edge is never a loop: `Sym2.IsDiag` fails because `src ≠ dst`. -/
+lemma edge_not_isDiag (b : Bond n) : ¬ b.edge.IsDiag := Sym2.mk_isDiag_iff.not.mpr b.ne
 
+/-- A bond's edge is `s(i, j)` exactly when its endpoints are `i` and `j` in either order:
+`Sym2.eq_iff` with `edge` unfolded. -/
 lemma edge_eq_mk_iff {b : Bond n} {i j : Fin n} :
     b.edge = s(i, j) ↔ (b.src = i ∧ b.dst = j) ∨ (b.src = j ∧ b.dst = i) :=
   Sym2.eq_iff
 
 /-- A bond never joins an atom to itself. -/
-lemma edge_ne_diag (b : Bond n) (i : Fin n) : b.edge ≠ s(i, i) := by
-  intro h
-  rcases edge_eq_mk_iff.mp h with ⟨h1, h2⟩ | ⟨h1, h2⟩ <;> exact b.ne (h1.trans h2.symm)
+lemma edge_ne_diag (b : Bond n) (i : Fin n) : b.edge ≠ s(i, i) :=
+  fun h ↦ b.edge_not_isDiag (h ▸ Sym2.mk_isDiag_iff.2 rfl)
 
 /-- A bond touches `i` with `j` at the other end exactly when its edge is `s(i, j)`. -/
 lemma touches_and_other_iff (b : Bond n) (i j : Fin n) :
     (b.touches i = true ∧ (b.other i == j) = true) ↔ b.edge = s(i, j) := by
-  simp only [touches, Bool.or_eq_true, beq_iff_eq, other, edge_eq_mk_iff]
-  have hne := b.ne
-  split_ifs with hs <;> aesop
+  grind [touches, other, edge_eq_mk_iff, b.ne]
 
+/-- `touches` agrees with `Sym2` membership: `i` is an endpoint exactly when `i ∈ b.edge`. -/
 lemma touches_iff {b : Bond n} {i : Fin n} : b.touches i = true ↔ i ∈ b.edge := by
-  simp only [touches, edge, Bool.or_eq_true, beq_iff_eq, Sym2.mem_iff]
-  exact ⟨fun h ↦ h.imp Eq.symm Eq.symm, fun h ↦ h.imp Eq.symm Eq.symm⟩
+  grind [touches, edge]
 
 /-- `0-1`, `1=2`, `2:3`, … -/
 def toString (b : Bond n) : String :=

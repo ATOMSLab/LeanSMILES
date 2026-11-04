@@ -103,14 +103,14 @@ private def cases : Array (String × IO Unit) := #[
   ("negative penalty", expectError (fit lineX #[1, 3, 5] { penalty := -1 }) .invalidPenalty),
   ("NaN penalty", expectError (fit lineX #[1, 3, 5] { penalty := 0.0 / 0.0 }) .invalidPenalty),
   ("infinite penalty", expectError (fit lineX #[1, 3, 5] { penalty := 1.0 / 0.0 }) .invalidPenalty),
-  ("invalid exempt column", expectError (fit lineX #[1, 3, 5]
-    { unpenalizedColumn := some 2 }) (.invalidUnpenalizedColumn 2 2)),
-  ("invalid tolerance", expectError (fit lineX #[1, 3, 5]
-    { rankTolerance := 0 }) .invalidTolerance),
-  ("zero penalty underdetermined", expectError (fit #[#[1, 2]] #[3]
-    { penalty := 0 }) (.underdetermined 1 2)),
-  ("zero penalty duplicate columns", expectError (fit #[#[1, 1], #[1, 1]] #[1, 3]
-    { penalty := 0 }) (.rankDeficient 1)),
+  ("invalid exempt column", expectError (fit lineX #[1, 3, 5] { unpenalizedColumn := some 2 })
+    (.invalidUnpenalizedColumn 2 2)),
+  ("invalid tolerance", expectError (fit lineX #[1, 3, 5] { rankTolerance := 0 })
+    .invalidTolerance),
+  ("zero penalty underdetermined", expectError (fit #[#[1, 2]] #[3] { penalty := 0 })
+    (.underdetermined 1 2)),
+  ("zero penalty duplicate columns", expectError (fit #[#[1, 1], #[1, 1]] #[1, 3] { penalty := 0 })
+    (.rankDeficient 1)),
   ("unpenalized zero column", expectError (fit #[#[0, 1], #[0, 2]] #[1, 2]
     { unpenalizedColumn := some 0 }) (.rankDeficient 0)),
   ("prediction width", do
@@ -124,10 +124,11 @@ private def cases : Array (String × IO Unit) := #[
     expectError (m.penalizedLoss lineX #[1]) (.targetCount 3 1)),
   ("loss overflow", do
     let m ← getResult (fit #[#[1]] #[1])
-    expectError (m.sumSquaredError #[#[1]] #[1e308])
-      (.numericalFailure "sum of squared errors"))
+    expectError (m.sumSquaredError #[#[1]] #[1e308]) (.numericalFailure "sum of squared errors"))
 ]
 
+/-- Runs every check in `cases` in order, printing `PASS <name>` for each, and aborts with
+`FAIL <name>: …` at the first failure. -/
 def run : IO Unit := do
   for (name, action) in cases do
     try
@@ -138,4 +139,6 @@ def run : IO Unit := do
 
 end LeanLearn.Tests.RidgeFloat
 
+/-- Entry point of the `ridge-float-test` executable: runs every RidgeFloat check and exits
+nonzero at the first failure. -/
 public def main : IO Unit := LeanLearn.Tests.RidgeFloat.run

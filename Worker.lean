@@ -1,3 +1,8 @@
+/-
+Copyright (c) 2026 Tyler Josephson. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Tyler Josephson, Kevin Ishimwe, Samiha Sharlin
+-/
 import LeanSMILES.SMILES.Canon
 import LeanSMILES.Chem.Graph
 import LeanSMILES.Chem.Charge
@@ -34,6 +39,8 @@ page and the Regression page compute runs here as native code.
 open LeanSMILES LeanSMILES.SMILES LeanSMILES.Molecule Lean
 open LeanLearn LeanLearn.Regression LeanLearn.Plot Pipelines
 
+/-- How the interpreter page labels one SMILES token: an atom's own SMILES, a bond's symbol,
+or a short tag such as `ring 1`. -/
 def tokenLabel (t : Token) : String :=
   match t.kind with
   | .atom a => a.toSmiles
@@ -44,6 +51,7 @@ def tokenLabel (t : Token) : String :=
   | .branchClose => ")"
   | .ring k => s!"ring {k}"
 
+/-- The lowercase name of a bond kind, as the API's `bonds[].kind` field spells it. -/
 def bondKindName : BondKind → String
   | .single => "single"
   | .double => "double"
@@ -51,6 +59,7 @@ def bondKindName : BondKind → String
   | .quadruple => "quadruple"
   | .aromatic => "aromatic"
 
+/-- A rational as the API prints it: `num/den`, or just `num` when the denominator is 1. -/
 def ratStr (q : ℚ) : String :=
   if q.den == 1 then s!"{q.num}" else s!"{q.num}/{q.den}"
 
@@ -59,18 +68,23 @@ def sci (x : Float) (digits : Nat := 2) : String :=
   if x == 0 || !x.isFinite then s!"{x}" else
     let e := (Float.log10 x.abs).floor
     let mant := x / (10 : Float) ^ e
-    let (mant, e) := if mant.abs >= 10 then (mant / 10, e + 1) else (mant, e)
+    let (mant, e) := if 10 ≤ mant.abs then (mant / 10, e + 1) else (mant, e)
     s!"{fixed mant digits}e{e.toInt64.toInt}"
 
+/-- A plain decimal such as `-3.3`, `+1.25` or `.5` as a `Float`; `none` when the string is
+blank or not of that form (exponents are not accepted). -/
 def parseSigned? (s : String) : Option Float :=
   let s := s.trimAscii.toString
   if s.isEmpty then none else
   let neg := s.startsWith "-"
-  let body := if neg then (s.drop 1).toString else if s.startsWith "+" then (s.drop 1).toString else s
+  let body :=
+    if neg then (s.drop 1).toString else if s.startsWith "+" then (s.drop 1).toString else s
   match body.splitOn "." with
   | [i, f] =>
     match (i ++ f).toNat? with
-    | some n => some (if neg then -Float.ofScientific n true f.length else Float.ofScientific n true f.length)
+    | some n =>
+      some (if neg then -Float.ofScientific n true f.length
+        else Float.ofScientific n true f.length)
     | none => none
   | [i] =>
     match i.toNat? with
@@ -78,43 +92,63 @@ def parseSigned? (s : String) : Option Float :=
     | none => none
   | _ => none
 
+/-- The decimals `parseSigned?` reads, read exactly as a rational instead; malformed input
+gives `0` rather than failing. -/
 def parseRat (s : String) : ℚ :=
   let s := s.trimAscii.toString
   let neg := s.startsWith "-"
-  let body := if neg then (s.drop 1).toString else if s.startsWith "+" then (s.drop 1).toString else s
+  let body :=
+    if neg then (s.drop 1).toString else if s.startsWith "+" then (s.drop 1).toString else s
   let q : ℚ := match body.splitOn "." with
     | [i, f] =>
       let num : ℕ := (i ++ f).toNat?.getD 0
       let den : ℕ := 10 ^ f.length
-      (num : ℚ) / (den : ℚ)
+      (num : ℚ) / den
     | [i] => (i.toNat?.getD 0 : ℚ)
     | _ => 0
   if neg then -q else q
 
+/-- What `runParse` reports about one molecule, computed once by `buildMolSnap`: canonical
+form, fingerprint, 2D depiction, and the JSON tables of atoms, bonds and bond orders. -/
 structure MolSnap where
+  /-- The canonical SMILES. -/
   canon : String
+  /-- The molecular formula in Hill order (`hillFormula`). -/
   formula : String
+  /-- The on-bits of the Morgan fingerprint (`Mol.morganBits` at its defaults). -/
   bits : List ℕ
+  /-- Hydrogens summed over all atoms (`Atom.totalH`). -/
   totalH : ℕ
+  /-- The number of symmetry classes of the initial atom ranks. -/
   symClasses : ℕ
+  /-- The 2D depiction as an SVG document. -/
   svgStr : String
+  /-- The same 2D layout as a V2000 MolBlock. -/
   molBlk : String
+  /-- The layout's atom coordinates, one `{x, y}` object per atom. -/
   coordsJson : Array Json
+  /-- One object per atom: element, degree, hydrogens, charge, ring membership and ranks. -/
   atomsJson : Array Json
+  /-- One object per bond: its two endpoints and its kind. -/
   bondsJson : Array Json
+  /-- The bond-order matrix, row by row, each entry printed by `ratStr`. -/
   matJson : Array Json
+  /-- The valence check as JSON: `ok`, and on failure the first bad atom, its message, the
+  charge that would fix it, and every invalid atom. -/
   valenceStatus : Json
+  /-- The valence check as the interpreter's log shows it: `Except.ok ()` or the first error. -/
   valenceLog : String
+  /-- The 2D layout itself, kept so the aromatized molecule can reuse it. -/
   pos : Array Depict.Pt
 
-/-- Compute Hill-system molecular formula (`C` first, then `H`, then alphabetical)
-directly from a `Mol` in Lean 4. -/
+/-- The molecular formula in Hill order: `C`, then `H`, then the other elements alphabetically
+(all alphabetically when there is no carbon), with implicit hydrogens counted; `—` when empty. -/
 def hillFormula (M : Mol) : String := Id.run do
   let mut counts : List (String × ℕ) := []
   let addCount (tbl : List (String × ℕ)) (sym : String) (k : ℕ) : List (String × ℕ) :=
     if k == 0 then tbl
     else if tbl.any (·.1 == sym) then
-      tbl.map fun (s, c) => if s == sym then (s, c + k) else (s, c)
+      tbl.map fun (s, c) ↦ if s == sym then (s, c + k) else (s, c)
     else tbl ++ [(sym, k)]
   for i in List.finRange M.n do
     let a := M.mol.atom i
@@ -126,7 +160,7 @@ def hillFormula (M : Mol) : String := Id.run do
       counts := addCount counts "H" a.totalH
   if counts.isEmpty then return "—"
   let hasC := counts.any (·.1 == "C")
-  let sorted := counts.mergeSort fun (a, _) (b, _) =>
+  let sorted := counts.mergeSort fun (a, _) (b, _) ↦
     if hasC then
       if a == "C" then true
       else if b == "C" then false
@@ -134,10 +168,13 @@ def hillFormula (M : Mol) : String := Id.run do
       else if b == "H" then false
       else a ≤ b
     else a ≤ b
-  return String.join (sorted.map fun (sym, c) => if c == 1 then sym else s!"{sym}{c}")
+  return String.join (sorted.map fun (sym, c) ↦ if c == 1 then sym else s!"{sym}{c}")
 
-/-- Per-atom valence check using `LeanSMILES.Aromaticity.Work` (`explicitValence`,
-`effectiveZ`, `canBeHypervalent`, `valences`). Returns `(explicitValence, allowedMax, ok, suggestedCharge)`. -/
+/-- Checks atom `i` of `w` against the valence table the way `Work.implicitHs` reads it: the
+atom passes when some allowed valence is at least its explicit valence. Returns the explicit
+valence, the largest allowed valence, whether the atom passes, and for a failing atom the first
+formal charge among `+1, -1, +2, -2` that makes its valence allowed (none is tried for an atom
+of the first two periods with valence above 4). -/
 def atomValenceCheck (w : Aromaticity.Work) (i : ℕ) : ℕ × ℕ × Bool × Option ℤ := Id.run do
   let wa := w.atoms[i]!
   let ev := w.explicitValence i
@@ -148,29 +185,38 @@ def atomValenceCheck (w : Aromaticity.Work) (i : ℕ) : ℕ × ℕ × Bool × Op
     evCheck := evCheck - wa.charge
   let allowed := Aromaticity.valences eff
   let allowedMax := allowed.getLast?.getD ev
-  let ok := allowed.isEmpty || allowed.any (fun v => evCheck ≤ (v : ℤ))
+  let ok := allowed.isEmpty || allowed.any (evCheck ≤ ·)
   if ok then
     return (ev, allowedMax, true, none)
   let mut suggested : Option ℤ := none
-  if !(wa.z ≤ 10 && ev > 4) then
+  if !(wa.z ≤ 10 && 4 < ev) then
     for c in ([1, -1, 2, -2] : List ℤ) do
       if suggested.isNone then
         let wa' : Aromaticity.WAtom := { wa with charge := c }
-        let eff' := Aromaticity.Work.effectiveZ wa'
-        if (Aromaticity.valences eff').contains ev then
+        if (Aromaticity.valences (Aromaticity.Work.effectiveZ wa')).contains ev then
           suggested := some c
   return (ev, allowedMax, false, suggested)
 
-/-- Everything the interpreter shows for one molecule. The 2D layout is the
-expensive step (hundreds of stress-majorisation sweeps), so a caller that
-already has one for the same skeleton passes it in as pos?. -/
+/-- One atom that fails `atomValenceCheck`: index, symbol, formal charge, explicit valence,
+largest allowed valence, and the charge that would fix it. -/
+abbrev BadValence := ℕ × String × ℤ × ℕ × ℕ × Option ℤ
+
+/-- The message shown for an atom that fails the valence check. -/
+def BadValence.message : BadValence → String
+  | (k, s, kc, v, _, some c) =>
+    s!"atom {k} ({s}) has valence {v} with charge {signedString kc}; \
+      expected formal charge {signedString c}"
+  | (k, s, _, v, mx, none) => s!"atom {k} ({s}) has valence {v}; maximum allowed for {s} is {mx}"
+
+/-- Everything the interpreter shows for one molecule. The 2D layout is the expensive step
+(hundreds of stress-majorisation sweeps): pass one made for the same skeleton as `pos?`. -/
 def buildMolSnap (M : Mol) (pos? : Option (Array Depict.Pt) := none) : MolSnap :=
   let inRing := M.mol.inRingVector
   let B := M.mol.toBondMatrix
   let canon := M.canonicalSmiles
   let formula := hillFormula M
   let bits := M.morganBits
-  let totalH := ((List.finRange M.n).map fun i => (M.mol.atom i).totalH).sum
+  let totalH := ((List.finRange M.n).map fun i ↦ (M.mol.atom i).totalH).sum
   let dg := Depict.Graph.ofMol M
   let pos := match pos? with | some p => p | none => Depict.layout dg
   let svgStr := (Depict.svgWith dg pos 36).render
@@ -180,9 +226,9 @@ def buildMolSnap (M : Mol) (pos? : Option (Array Depict.Pt) := none) : MolSnap :
   let canonRanks := M.mol.canonicalRanks
   let canonPerm := M.mol.canonicalPerm
   let work := (Aromaticity.Work.ofMolecule M.mol).freezeHs.cleanUp
-  let coordsJson : Array Json := pos.map fun (p : Float × Float) =>
+  let coordsJson : Array Json := pos.map fun (p : Float × Float) ↦
     Json.mkObj [("x", toJson p.1), ("y", toJson p.2)]
-  let atomsJson : Array Json := (List.finRange M.n).toArray.map fun i =>
+  let atomsJson : Array Json := (List.finRange M.n).toArray.map fun i ↦
     let a := M.mol.atom i
     let sym := match a.element with | some e => e.symbol | none => "*"
     let (ev, allowedMax, valOk, sugChg) := atomValenceCheck work i.val
@@ -205,59 +251,55 @@ def buildMolSnap (M : Mol) (pos? : Option (Array Depict.Pt) := none) : MolSnap :
       ("chargeOk", toJson chgOk),
       ("suggestedCharge", match sugChg with | some c => toJson c | none => Json.null)
     ]
-  let invalidValenceAtoms : List (ℕ × String × ℤ × ℕ × ℕ × Option ℤ) :=
-    (List.finRange M.n).filterMap fun i =>
-      let a := M.mol.atom i
-      let sym := match a.element with | some e => e.symbol | none => "*"
-      let (ev, allowedMax, valOk, sugChg) := atomValenceCheck work i.val
-      if valOk then none else some (i.val, sym, a.charge, ev, allowedMax, sugChg)
-  let (valenceStatus, valenceLog) := match invalidValenceAtoms with
+  let badValences : List BadValence := (List.finRange M.n).filterMap fun i ↦
+    let a := M.mol.atom i
+    let sym := match a.element with | some e => e.symbol | none => "*"
+    let (ev, allowedMax, valOk, sugChg) := atomValenceCheck work i.val
+    if valOk then none else some (i.val, sym, a.charge, ev, allowedMax, sugChg)
+  let chargeJson : Option ℤ → Json := fun | some c => toJson c | none => Json.null
+  let (valenceStatus, valenceLog) := match badValences with
     | [] => (Json.mkObj [("ok", toJson true)], "Except.ok ()")
-    | (idx, sym, chg, ev, allowedMax, sugChg) :: _ =>
-      let msg := match sugChg with
-        | some c =>
-          s!"atom {idx} ({sym}) has valence {ev} with charge {signedString chg}; expected formal charge {signedString c}"
-        | none =>
-          s!"atom {idx} ({sym}) has valence {ev}; maximum allowed for {sym} is {allowedMax}"
-      let itemsJson : Array Json := invalidValenceAtoms.toArray.map fun (k, s, kc, v, mx, sc) =>
-        let m := match sc with
-          | some c => s!"atom {k} ({s}) has valence {v} with charge {signedString kc}; expected formal charge {signedString c}"
-          | none => s!"atom {k} ({s}) has valence {v}; maximum allowed for {s} is {mx}"
+    | first :: _ =>
+      let itemsJson : Array Json := badValences.toArray.map fun bad ↦
         Json.mkObj [
-          ("atomIdx", toJson k),
-          ("symbol", toJson s),
-          ("explicitValence", toJson v),
-          ("allowedValence", toJson mx),
-          ("suggestedCharge", match sc with | some c => toJson c | none => Json.null),
-          ("message", toJson m)
+          ("atomIdx", toJson bad.1),
+          ("symbol", toJson bad.2.1),
+          ("explicitValence", toJson bad.2.2.2.1),
+          ("allowedValence", toJson bad.2.2.2.2.1),
+          ("suggestedCharge", chargeJson bad.2.2.2.2.2),
+          ("message", toJson bad.message)
         ]
       (Json.mkObj [
         ("ok", toJson false),
-        ("atomIdx", toJson idx),
-        ("suggestedCharge", match sugChg with | some c => toJson c | none => Json.null),
-        ("message", toJson msg),
+        ("atomIdx", toJson first.1),
+        ("suggestedCharge", chargeJson first.2.2.2.2.2),
+        ("message", toJson first.message),
         ("invalidAtoms", toJson itemsJson)
-      ], s!"Except.error \"{msg}\"")
-  let bondsJson : Array Json := M.mol.bonds.toArray.map fun (b : Bond M.n) =>
+      ], s!"Except.error \"{first.message}\"")
+  let bondsJson : Array Json := M.mol.bonds.toArray.map fun (b : Bond M.n) ↦
     Json.mkObj [
       ("src", toJson b.src.val),
       ("dst", toJson b.dst.val),
       ("kind", toJson (bondKindName b.kind))
     ]
-  let matJson : Array Json := (List.finRange M.n).toArray.map fun i =>
-    toJson ((List.finRange M.n).toArray.map fun j => ratStr (B i j))
-  { canon, formula, bits, totalH, symClasses, svgStr, molBlk, coordsJson, atomsJson, bondsJson, matJson, valenceStatus, valenceLog, pos }
+  let matJson : Array Json := (List.finRange M.n).toArray.map fun i ↦
+    toJson ((List.finRange M.n).toArray.map fun j ↦ ratStr (B i j))
+  { canon, formula, bits, totalH, symClasses, svgStr, molBlk, coordsJson, atomsJson, bondsJson,
+    matJson, valenceStatus, valenceLog, pos }
 
+/-- Answer a `parse` request: tokenize and parse the SMILES, and print the molecule, its charge
+check and its aromatized form as one JSON line, or the tokenizer's or parser's error. -/
 def runParse (s : String) : IO Unit := do
   match tokenize s, parse s with
   | .ok toks, .ok M =>
     let snap := buildMolSnap M
-    let toksJson : Array Json := toks.map fun (t : Token) =>
+    let toksJson : Array Json := toks.map fun (t : Token) ↦
       Json.mkObj [("pos", toJson t.pos), ("show", toJson (tokenLabel t))]
     let (chargeStatus, chargeLog) := match M.mol.firstBadCharge, M.checkCharges with
       | _, .ok () => (Json.mkObj [("ok", toJson true)], "Except.ok ()")
       | some idx, .error msg =>
-        (Json.mkObj [("ok", toJson false), ("atomIdx", toJson idx.val), ("message", toJson msg)], s!"Except.error \"{msg}\"")
+        (Json.mkObj [("ok", toJson false), ("atomIdx", toJson idx.val), ("message", toJson msg)],
+          s!"Except.error \"{msg}\"")
       | none, .error msg =>
         (Json.mkObj [("ok", toJson false), ("message", toJson msg)], s!"Except.error \"{msg}\"")
     let (aromStatus, aromLog) := match M.aromatize with
@@ -265,7 +307,8 @@ def runParse (s : String) : IO Unit := do
         -- aromatization changes bond kinds, not the skeleton: reuse the layout
         let snapA := buildMolSnap MA (some snap.pos)
         let toksJsonA : Array Json := match tokenize snapA.canon with
-          | .ok ts => ts.map fun (t : Token) => Json.mkObj [("pos", toJson t.pos), ("show", toJson (tokenLabel t))]
+          | .ok ts => ts.map fun (t : Token) ↦
+            Json.mkObj [("pos", toJson t.pos), ("show", toJson (tokenLabel t))]
           | .error _ => toksJson
         (Json.mkObj [
           ("ok", toJson true),
@@ -287,10 +330,12 @@ def runParse (s : String) : IO Unit := do
         (Json.mkObj [("ok", toJson false), ("message", toJson msg)], s!"Except.error \"{msg}\"")
     let logs : Array String := #[
       s!"tokenize \"{s}\" --> Except.ok ({toks.size} tokens)",
-      s!"parse \"{s}\" --> Except.ok (Molecule {M.n} : {M.n} atoms, {M.mol.numBonds} bonds, {snap.totalH} H)",
+      s!"parse \"{s}\" --> Except.ok (Molecule {M.n} : {M.n} atoms, {M.mol.numBonds} bonds, \
+        {snap.totalH} H)",
       s!"numClasses M.mol.toMolData.initialRanks --> {snap.symClasses} symmetry classes",
       s!"(Mol.ofSmiles! \"{s}\").canonicalSmiles --> \"{snap.canon}\"",
-      s!"(Depict.svgWith dg pos 36).render --> 2D SVG ({snap.svgStr.length} chars) + V2000 MolBlock",
+      s!"(Depict.svgWith dg pos 36).render --> 2D SVG ({snap.svgStr.length} chars) \
+        + V2000 MolBlock",
       s!"M.checkCharges --> {chargeLog}",
       s!"M.checkValence --> {snap.valenceLog}",
       s!"M.aromatize --> {aromLog}",
@@ -347,6 +392,8 @@ def runParse (s : String) : IO Unit := do
     ]
     IO.println s!"__JSON_START__{out.compress}__JSON_END__"
 
+/-- Answer a `tanimoto` request: the Morgan fingerprints of two SMILES, their shared bits, and
+their Tanimoto similarity, both exact (`num / den`) and as a `Float` score. -/
 def runTanimoto (sA sB : String) : IO Unit := do
   match parse sA, parse sB with
   | .ok mA, .ok mB =>
@@ -363,8 +410,16 @@ def runTanimoto (sA sB : String) : IO Unit := do
     ]
     let out := Json.mkObj [
       ("ok", toJson true),
-      ("molA", Json.mkObj [("smiles", toJson sA), ("canonicalSmiles", toJson mA.canonicalSmiles), ("morganBits", toJson bitsA)]),
-      ("molB", Json.mkObj [("smiles", toJson sB), ("canonicalSmiles", toJson mB.canonicalSmiles), ("morganBits", toJson bitsB)]),
+      ("molA", Json.mkObj [
+        ("smiles", toJson sA),
+        ("canonicalSmiles", toJson mA.canonicalSmiles),
+        ("morganBits", toJson bitsA)
+      ]),
+      ("molB", Json.mkObj [
+        ("smiles", toJson sB),
+        ("canonicalSmiles", toJson mB.canonicalSmiles),
+        ("morganBits", toJson bitsB)
+      ]),
       ("sharedBits", toJson shared),
       ("intersection", toJson shared.length),
       ("union", toJson unionCount),
@@ -388,14 +443,17 @@ def runTanimoto (sA sB : String) : IO Unit := do
     ]
     IO.println s!"__JSON_START__{out.compress}__JSON_END__"
 
+/-- Answer a `dataset` request: for `delaney` the first 30 rows of the Delaney CSV, for any other
+id the first 25 of the thermophysical-properties CSV, each with its canonical SMILES. -/
 def runDataset (datasetId : String) : IO Unit := do
   if datasetId == "delaney" then
     let path := "datasets/delaney-processed.csv"
     let records := CSVparser.load path
     let raw ← IO.FS.readFile path
-    let lines := (raw.splitOn "\n").map (fun l => (l.dropEndWhile (· == '\r')).toString) |>.drop 1 |>.filter (fun l => !l.trimAscii.isEmpty)
+    let lines := (raw.splitOn "\n").map (fun l ↦ (l.dropEndWhile (· == '\r')).toString)
+      |>.drop 1 |>.filter (fun l ↦ !l.trimAscii.isEmpty)
     let slice := (lines.zip records.toList).take 30
-    let rowsJson : Array Json := slice.toArray.map fun (line, recMol) =>
+    let rowsJson : Array Json := slice.toArray.map fun (line, recMol) ↦
       let cells := CSVparser.splitLine line
       let name := (cells.getD 0 "").trimAscii.toString
       let logS := recMol.get .measuredLogSolubility
@@ -427,9 +485,10 @@ def runDataset (datasetId : String) : IO Unit := do
   else
     let path := "datasets/ThermoPropertiesSMILES.csv"
     let raw ← IO.FS.readFile path
-    let lines := (raw.splitOn "\n").map (fun l => (l.dropEndWhile (· == '\r')).toString) |>.drop 1 |>.filter (fun l => !l.trimAscii.isEmpty)
+    let lines := (raw.splitOn "\n").map (fun l ↦ (l.dropEndWhile (· == '\r')).toString)
+      |>.drop 1 |>.filter (fun l ↦ !l.trimAscii.isEmpty)
     let slice := lines.take 25
-    let rowsJson : Array Json := slice.toArray.map fun line =>
+    let rowsJson : Array Json := slice.toArray.map fun line ↦
       let cells := CSVparser.splitLine line
       let name := (cells.getD 0 "").trimAscii.toString
       let mw := (cells.getD 1 "").trimAscii.toString
@@ -460,28 +519,41 @@ def runDataset (datasetId : String) : IO Unit := do
     ]
     IO.println s!"__JSON_START__{out.compress}__JSON_END__"
 
+/-- One usable row of a fit TSV: the parsed molecule, its fingerprint, and the target read both
+as a `Float` and exactly as a rational. -/
 structure FitSample where
+  /-- The compound name from the row's first column. -/
   name : String
+  /-- The row's SMILES, trimmed. -/
   smiles : String
+  /-- The molecule the SMILES parses to. -/
   mol : Mol
   /-- `mol` aromatized (`mol` itself if that fails): what the fingerprint and the
   certified pipeline's descriptors are read from. -/
   aro : Mol
+  /-- The on-bits of the Morgan fingerprint of `aro` (radius 2, 2048 bits). -/
   bits : Array ℕ
+  /-- The target as a `Float` (`parseSigned?`). -/
   yFloat : Float
+  /-- The same target read exactly (`parseRat`). -/
   yRat : ℚ
+  /-- Whether the row is held out for testing: its split column, or every fifth line when that
+  column is neither `train` nor `test`. -/
   isTest : Bool
 
 instance : Inhabited FitSample := ⟨⟨"", "", Mol.empty, Mol.empty, #[], 0.0, 0, false⟩⟩
 
-def loadSamplesCached (cacheRef : IO.Ref (List (String × Array FitSample × Array String))) (tsvPath : String) :
-    IO (Array FitSample × Array String) := do
+/-- Read and featurize a fit TSV (`name, smiles, target, split`): the samples, and one message
+per row whose SMILES or target fails to parse. The last nine files read stay in `cacheRef`. -/
+def loadSamplesCached (cacheRef : IO.Ref (List (String × Array FitSample × Array String)))
+    (tsvPath : String) : IO (Array FitSample × Array String) := do
   let cache ← cacheRef.get
   match cache.find? (·.1 == tsvPath) with
   | some (_, s, sk) => return (s, sk)
   | none =>
     let raw ← IO.FS.readFile tsvPath
-    let lines := (raw.splitOn "\n").map (fun l => (l.dropEndWhile (· == '\r')).toString) |>.filter (fun l => !l.trimAscii.isEmpty)
+    let lines := (raw.splitOn "\n").map (fun l ↦ (l.dropEndWhile (· == '\r')).toString)
+      |>.filter (fun l ↦ !l.trimAscii.isEmpty)
     let mut samples : Array FitSample := #[]
     let mut skipped : Array String := #[]
     for (line, idx) in lines.zipIdx do
@@ -507,10 +579,13 @@ def loadSamplesCached (cacheRef : IO.Ref (List (String × Array FitSample × Arr
         | .error e, _ => skipped := skipped.push s!"{name}: {e}"
         | _, none => skipped := skipped.push s!"{name}: invalid numeric target '{yStr}'"
       | _ => pure ()
-    cacheRef.modify fun c => (tsvPath, samples, skipped) :: c.take 8
+    cacheRef.modify fun c ↦ (tsvPath, samples, skipped) :: c.take 8
     return (samples, skipped)
 
-def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))) (tsvPath modelType alphaStr targetLabel : String) : IO Unit := do
+/-- Answer a `fit` request: train `modelType` (`dense-qr`, `gradient-descent`, `gauss-seidel`,
+`jacobi`, else sparse ridge); print metrics, parity plot, predictions and any certificate. -/
+def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String)))
+    (tsvPath modelType alphaStr targetLabel : String) : IO Unit := do
   let (samples, skipped) ← loadSamplesCached cacheRef tsvPath
   if samples.size < 4 then
     let out := Json.mkObj [
@@ -519,27 +594,32 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
     ]
     IO.println s!"__JSON_START__{out.compress}__JSON_END__"
     return ()
-
+  -- The split (the first fifth stands in for a missing test set) and α, as `Float` and as `ℚ`.
   let trainSamples := samples.filter (!·.isTest)
-  let testSamples := if (samples.filter (·.isTest)).isEmpty then samples.extract 0 (max 1 (samples.size / 5)) else samples.filter (·.isTest)
+  let testSamples :=
+    if (samples.filter (·.isTest)).isEmpty then samples.extract 0 (max 1 (samples.size / 5))
+    else samples.filter (·.isTest)
   let alphaFloat := (parseSigned? alphaStr).getD 1.0
   let alphaRat := parseRat alphaStr
-
+  -- One branch per model type; any type not named below is sparse ridge.
   if modelType == "dense-qr" then
     let featOf (M : Mol) : Array Float :=
       let c := (Representation.counts M).toArray.map Rat.toFloat
       #[1.0] ++ c
     let XTrain : RidgeFloat.Design := trainSamples.map (featOf ·.mol)
     let yTrain : Array Float := trainSamples.map (·.yFloat)
-    let pen := if alphaFloat <= 0.0 then 0.0001 else alphaFloat
+    let pen := if alphaFloat ≤ 0.0 then 0.0001 else alphaFloat
     let qrCfg : RidgeFloat.Config := { penalty := pen, unpenalizedColumn := some 0 }
     match RidgeFloat.fit XTrain yTrain qrCfg with
     | .ok model =>
       let predictMol (M : Mol) : Float :=
         let row := featOf M
-        (List.range row.size).foldl (fun s j => s + row.getD j 0.0 * model.coefficients.getD j 0.0) 0.0
-      let trainPairs : Array (Float × Float) := trainSamples.map fun s => (s.yFloat, predictMol s.mol)
-      let testPairs : Array (Float × Float) := testSamples.map fun s => (s.yFloat, predictMol s.mol)
+        (List.range row.size).foldl
+          (fun s j ↦ s + row.getD j 0.0 * model.coefficients.getD j 0.0) 0.0
+      let trainPairs : Array (Float × Float) :=
+        trainSamples.map fun s ↦ (s.yFloat, predictMol s.mol)
+      let testPairs : Array (Float × Float) :=
+        testSamples.map fun s ↦ (s.yFloat, predictMol s.mol)
       let trR2 := r2 trainPairs
       let trRmse := rmse trainPairs
       let trMae := mae trainPairs
@@ -548,16 +628,21 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
       let teMae := mae testPairs
       let svg := paritySvg
         s!"Householder-QR Ridge Regression (λ = {fixed pen 2})"
-        "LeanLearn.Regression.RidgeFloat on Representation.counts (atoms, bonds, H, aromatic, hetero)"
+        "LeanLearn.Regression.RidgeFloat on Representation.counts \
+          (atoms, bonds, H, aromatic, hetero)"
         targetLabel
         [
-          { label := "Training", points := trainPairs, r2 := trR2, rmse := trRmse, mae := trMae, filled := false },
-          { label := "Test", points := testPairs, r2 := teR2, rmse := teRmse, mae := teMae, filled := true }
+          { label := "Training", points := trainPairs, r2 := trR2, rmse := trRmse, mae := trMae,
+            filled := false },
+          { label := "Test", points := testPairs, r2 := teR2, rmse := teRmse, mae := teMae,
+            filled := true }
         ]
-      let names := #["Intercept", "Heavy Atoms (n)", "Bonds", "Total H", "Aromatic Atoms", "Heteroatoms"]
-      let topJson : Array Json := (List.range names.size).toArray.map fun j =>
-        Json.mkObj [("feature", toJson (names.getD j "")), ("weight", toJson (model.coefficients.getD j 0.0))]
-      let predsJson : Array Json := (samples.take 20).map fun s =>
+      let names :=
+        #["Intercept", "Heavy Atoms (n)", "Bonds", "Total H", "Aromatic Atoms", "Heteroatoms"]
+      let topJson : Array Json := (List.range names.size).toArray.map fun j ↦
+        Json.mkObj [("feature", toJson (names.getD j "")),
+          ("weight", toJson (model.coefficients.getD j 0.0))]
+      let predsJson : Array Json := (samples.take 20).map fun s ↦
         Json.mkObj [
           ("name", toJson s.name),
           ("smiles", toJson s.smiles),
@@ -608,15 +693,16 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
     let m := trainSamples.size
     let mQ : ℚ := m
     let rep : Representation 2048 := Representation.morgan 2 2048
-    let yBar : ℚ := (trainSamples.foldl (fun acc s => acc + s.yRat) (0 : ℚ)) / mQ
-    let molVec : Vector Mol m := Vector.ofFn fun i => trainSamples[i.val]!.aro
-    let yVec : Vector ℚ m := Vector.ofFn fun i => trainSamples[i.val]!.yRat - yBar
-    let labelled : LabelledMolecules m := { molecules := molVec, targets := yVec }
-    let alphaQ : ℚ := if alphaRat <= 0 then 1 else alphaRat
+    let yBar : ℚ := (trainSamples.foldl (fun acc s ↦ acc + s.yRat) (0 : ℚ)) / mQ
+    let molVec : Vector Mol m := Vector.ofFn fun i ↦ trainSamples[i.val]!.aro
+    let yVec : Vector ℚ m := Vector.ofFn fun i ↦ trainSamples[i.val]!.yRat - yBar
+    let labelled : LabeledMolecules m := { molecules := molVec, targets := yVec }
+    let alphaQ : ℚ := if alphaRat ≤ 0 then 1 else alphaRat
     let ridgeVal : ℚ := alphaQ / mQ
     let steps : ℕ := 800
     let base : Pipeline m 2048 :=
-      { data := labelled, representation := rep, ridge := ridgeVal, algorithm := .gradientDescent 0 steps }
+      { data := labelled, representation := rep, ridge := ridgeVal,
+        algorithm := .gradientDescent 0 steps }
     let smooth : ℚ := base.smoothnessExact
     let η : ℚ := base.maxStepSizeData
     let pipe : Pipeline m 2048 := { base with algorithm := .gradientDescent η steps }
@@ -628,13 +714,16 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
     let rateF := rate.toFloat
     let certSummary :=
       if gdOk then
-        s!"checkGDData = true: λ = α/m = {ratStr ridgeVal}, Λ = {fixed smoothF 3}, η = 1/(2Λ) = {ratStr η}, k = {steps} — for every u: L(θ) ≤ L(u) + ‖u‖²/(2ηk) = L(u) + {fixed rateF 4} · ‖u‖²"
+        s!"checkGDData = true: λ = α/m = {ratStr ridgeVal}, Λ = {fixed smoothF 3}, \
+          η = 1/(2Λ) = {ratStr η}, k = {steps} — for every u: L(θ) ≤ L(u) + ‖u‖²/(2ηk) = \
+          L(u) + {fixed rateF 4} · ‖u‖²"
       else
-        s!"checkGDData = false (λ = {ratStr ridgeVal}, Λ = {fixed smoothF 3}, η = {ratStr η}, k = {steps})"
+        s!"checkGDData = false (λ = {ratStr ridgeVal}, Λ = {fixed smoothF 3}, η = {ratStr η}, \
+          k = {steps})"
     let yBarF := yBar.toFloat
     let predictMol (s : FitSample) : Float := pipe.predictWith θ s.aro + yBarF
-    let trainPairs : Array (Float × Float) := trainSamples.map fun s => (s.yFloat, predictMol s)
-    let testPairs : Array (Float × Float) := testSamples.map fun s => (s.yFloat, predictMol s)
+    let trainPairs : Array (Float × Float) := trainSamples.map fun s ↦ (s.yFloat, predictMol s)
+    let testPairs : Array (Float × Float) := testSamples.map fun s ↦ (s.yFloat, predictMol s)
     let trR2 := r2 trainPairs
     let trRmse := rmse trainPairs
     let trMae := mae trainPairs
@@ -643,13 +732,16 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
     let teMae := mae testPairs
     let svg := paritySvg
       s!"Verified Gradient Descent on Morgan Fingerprints (α = {fixed alphaQ.toFloat 2})"
-      s!"parse, aromatize, Morgan (2048 bits) · gradientDescent, {steps} steps, η = 1/(2Λ) · L(θ) ≤ L(u) + {fixed rateF 3} ‖u‖²"
+      s!"parse, aromatize, Morgan (2048 bits) · gradientDescent, {steps} steps, η = 1/(2Λ) · \
+        L(θ) ≤ L(u) + {fixed rateF 3} ‖u‖²"
       targetLabel
       [
-        { label := "Training", points := trainPairs, r2 := trR2, rmse := trRmse, mae := trMae, filled := false },
-        { label := "Test", points := testPairs, r2 := teR2, rmse := teRmse, mae := teMae, filled := true }
+        { label := "Training", points := trainPairs, r2 := trR2, rmse := trRmse, mae := trMae,
+          filled := false },
+        { label := "Test", points := testPairs, r2 := teR2, rmse := teRmse, mae := teMae,
+          filled := true }
       ]
-    let predsJson : Array Json := (samples.take 20).map fun s =>
+    let predsJson : Array Json := (samples.take 20).map fun s ↦
       Json.mkObj [
         ("name", toJson s.name),
         ("smiles", toJson s.smiles),
@@ -658,10 +750,15 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
         ("predicted", toJson (predictMol s))
       ]
     let logs : Array String := #[
-      s!"morganFeatures (×{samples.size}) --> {trainSamples.size} train, {testSamples.size} test (skipped {skipped.size})",
-      s!"Pipeline.exactProblem ({m} molecules, Representation.morgan 2 2048, target centred on {fixed yBarF 2}, λ = α/m = {ratStr ridgeVal}) --> 2049×2049 normal equations over ℚ, read in Float",
-      s!"pipe.smoothnessExact --> Λ = (1/m) Σ ‖xᵣ‖² + λ = {fixed smoothF 4}; η = 1/(2Λ) = {ratStr η}; pipe.checkGDData (λ ≥ 0, η > 0, 2ηΛ ≤ 1, k > 0) --> {gdOk}",
-      s!"pipe.model Float (gradientDescent, {steps} steps from θ = 0) --> train R² {fixed trR2 3}, test R² {fixed teR2 3}, ‖θ‖² = {fixed normSq 3}",
+      s!"morganFeatures (×{samples.size}) --> {trainSamples.size} train, \
+        {testSamples.size} test (skipped {skipped.size})",
+      s!"Pipeline.exactProblem ({m} molecules, Representation.morgan 2 2048, target centred on \
+        {fixed yBarF 2}, λ = α/m = {ratStr ridgeVal}) --> 2049×2049 normal equations over ℚ, \
+        read in Float",
+      s!"pipe.smoothnessExact --> Λ = (1/m) Σ ‖xᵣ‖² + λ = {fixed smoothF 4}; \
+        η = 1/(2Λ) = {ratStr η}; pipe.checkGDData (λ ≥ 0, η > 0, 2ηΛ ≤ 1, k > 0) --> {gdOk}",
+      s!"pipe.model Float (gradientDescent, {steps} steps from θ = 0) --> \
+        train R² {fixed trR2 3}, test R² {fixed teR2 3}, ‖θ‖² = {fixed normSq 3}",
       s!"Pipeline.checkGDData_sound --> {certSummary}",
       s!"LeanLearn.Plot.paritySvg --> rendered SVG parity plot"
     ]
@@ -709,22 +806,24 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
     -- without the scaling the raw counts (hydrogens run past 40) are never
     -- diagonally dominant. Both are part of the pipeline (its representation and its
     -- data), so the certificate covers exactly the problem that is trained.
-    let trainCounts : Array (Vector ℚ 5) := trainSamples.map fun s => Representation.counts s.aro
-    let μ : Vector ℚ 5 := Vector.ofFn fun j => (trainCounts.foldl (fun acc v => acc + v[j]) (0 : ℚ)) / mQ
-    let σ : Vector ℚ 5 := Vector.ofFn fun j =>
-      let sj := (trainCounts.foldl (fun acc v => acc + |v[j] - μ[j]|) (0 : ℚ)) / mQ
+    let trainCounts : Array (Vector ℚ 5) := trainSamples.map fun s ↦ Representation.counts s.aro
+    let μ : Vector ℚ 5 := Vector.ofFn fun j ↦
+      (trainCounts.foldl (fun acc v ↦ acc + v[j]) (0 : ℚ)) / mQ
+    let σ : Vector ℚ 5 := Vector.ofFn fun j ↦
+      let sj := (trainCounts.foldl (fun acc v ↦ acc + |v[j] - μ[j]|) (0 : ℚ)) / mQ
       if sj == 0 then 1 else sj
-    let rep : Representation 5 := fun M =>
+    let rep : Representation 5 := fun M ↦
       let c := Representation.counts M
-      Vector.ofFn fun j => (c[j] - μ[j]) / σ[j]
-    let yBar : ℚ := (trainSamples.foldl (fun acc s => acc + s.yRat) (0 : ℚ)) / mQ
-    let molVec : Vector Mol m := Vector.ofFn fun i => trainSamples[i.val]!.aro
-    let yVec : Vector ℚ m := Vector.ofFn fun i => trainSamples[i.val]!.yRat - yBar
-    let labelled : LabelledMolecules m := { molecules := molVec, targets := yVec }
-    let ridgeVal : ℚ := if alphaRat <= 0 then 1 else alphaRat
+      Vector.ofFn fun j ↦ (c[j] - μ[j]) / σ[j]
+    let yBar : ℚ := (trainSamples.foldl (fun acc s ↦ acc + s.yRat) (0 : ℚ)) / mQ
+    let molVec : Vector Mol m := Vector.ofFn fun i ↦ trainSamples[i.val]!.aro
+    let yVec : Vector ℚ m := Vector.ofFn fun i ↦ trainSamples[i.val]!.yRat - yBar
+    let labelled : LabeledMolecules m := { molecules := molVec, targets := yVec }
+    let ridgeVal : ℚ := if alphaRat ≤ 0 then 1 else alphaRat
     let alg : Algorithm :=
       if modelType == "jacobi" then .jacobi 30 else .gaussSeidel 30
-    let pipe : Pipeline m 5 := { data := labelled, representation := rep, ridge := ridgeVal, algorithm := alg }
+    let pipe : Pipeline m 5 :=
+      { data := labelled, representation := rep, ridge := ridgeVal, algorithm := alg }
     let W := pipe.suggestWitness
     let rhoFloat := W.ratio.toFloat
     let certExcessOpt := pipe.certifiedSolverExcess
@@ -734,7 +833,8 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
     let witnessSummary :=
       match certExcessOpt with
       | some e => s!"checkSolver = true (ρ = {fixed rhoFloat 3} < 1, excess ≤ {fixed e.toFloat 6})"
-      | none => s!"uncertified (diagonal dominance ratio ρ = {fixed rhoFloat 2} ≥ 1; increase ridge λ)"
+      | none =>
+        s!"uncertified (diagonal dominance ratio ρ = {fixed rhoFloat 2} ≥ 1; increase ridge λ)"
     let θ : Vec Float 6 := pipe.model Float
     -- The a posteriori certificate: read the trained Float weights exactly and check the
     -- residual of the exact normal equations at them. `Pipeline.checkResidual_sound` then
@@ -747,19 +847,22 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
     let isCertified := pipe.checkResidual θQ resTol
     let resExcessF := resExcess.toFloat
     let lossF := lossQ.toFloat
-    let resShare := if lossF > 0 then resExcessF / lossF else 0
+    let resShare := if 0 < lossF then resExcessF / lossF else 0
     let certSummary :=
       if isCertified then
-        s!"checkResidual = true: ‖Aθ − b‖²/λ = {sci resExcessF} ≤ 10⁻⁶ · L(θ) (L(θ) = {fixed lossF 4})"
+        s!"checkResidual = true: ‖Aθ − b‖²/λ = {sci resExcessF} ≤ 10⁻⁶ · L(θ) \
+          (L(θ) = {fixed lossF 4})"
       else
-        s!"checkResidual = false: ‖Aθ − b‖²/λ = {sci resExcessF} = {sci resShare} · L(θ) (L(θ) = {fixed lossF 4}), above the 10⁻⁶ · L(θ) tolerance — 30 sweeps stopped short of the optimum"
+        s!"checkResidual = false: ‖Aθ − b‖²/λ = {sci resExcessF} = {sci resShare} · L(θ) \
+          (L(θ) = {fixed lossF 4}), above the 10⁻⁶ · L(θ) tolerance — 30 sweeps stopped short \
+          of the optimum"
     let certShort :=
       if isCertified then s!"residual certificate: excess loss ≤ {sci resExcessF}"
       else s!"residual bound {sci resExcessF}, above the 10⁻⁶ L(θ) tolerance"
     let yBarF := yBar.toFloat
     let predictMol (s : FitSample) : Float := pipe.predictWith θ s.aro + yBarF
-    let trainPairs : Array (Float × Float) := trainSamples.map fun s => (s.yFloat, predictMol s)
-    let testPairs : Array (Float × Float) := testSamples.map fun s => (s.yFloat, predictMol s)
+    let trainPairs : Array (Float × Float) := trainSamples.map fun s ↦ (s.yFloat, predictMol s)
+    let testPairs : Array (Float × Float) := testSamples.map fun s ↦ (s.yFloat, predictMol s)
     let trR2 := r2 trainPairs
     let trRmse := rmse trainPairs
     let trMae := mae trainPairs
@@ -771,10 +874,12 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
       s!"Pipelines.Pipeline on 5 standardized count descriptors · {certShort}"
       targetLabel
       [
-        { label := "Training", points := trainPairs, r2 := trR2, rmse := trRmse, mae := trMae, filled := false },
-        { label := "Test", points := testPairs, r2 := teR2, rmse := teRmse, mae := teMae, filled := true }
+        { label := "Training", points := trainPairs, r2 := trR2, rmse := trRmse, mae := trMae,
+          filled := false },
+        { label := "Test", points := testPairs, r2 := teR2, rmse := teRmse, mae := teMae,
+          filled := true }
       ]
-    let predsJson : Array Json := (samples.take 20).map fun s =>
+    let predsJson : Array Json := (samples.take 20).map fun s ↦
       Json.mkObj [
         ("name", toJson s.name),
         ("smiles", toJson s.smiles),
@@ -783,11 +888,13 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
         ("predicted", toJson (predictMol s))
       ]
     let names := #["Heavy Atoms (n)", "Bonds", "Total H", "Aromatic Atoms", "Heteroatoms"]
-    let topJson : Array Json := (List.range names.size).toArray.map fun j =>
+    let topJson : Array Json := (List.range names.size).toArray.map fun j ↦
       Json.mkObj [("feature", toJson (names.getD j "")), ("weight", toJson (θ.toArray.getD j 0.0))]
     let logs : Array String := #[
-      s!"Pipeline.exactProblem ({m} molecules, Representation.counts centred and scaled by mean absolute deviation, target centred on {fixed yBarF 2}) --> 6×6 normal equations over ℚ",
-      s!"pipe.suggestWitness (a priori, before training) --> ρ = {fixed rhoFloat 4}: {witnessSummary}",
+      s!"Pipeline.exactProblem ({m} molecules, Representation.counts centred and scaled by mean \
+        absolute deviation, target centred on {fixed yBarF 2}) --> 6×6 normal equations over ℚ",
+      s!"pipe.suggestWitness (a priori, before training) --> ρ = {fixed rhoFloat 4}: \
+        {witnessSummary}",
       s!"pipe.model Float ({modelType}) --> train R² {fixed trR2 3}, test R² {fixed teR2 3}",
       s!"pipe.checkResidual θ (a posteriori, θ read exactly as ℚ, ε = 10⁻⁶ L(θ)) --> {certSummary}",
       s!"paritySvg --> generated SVG parity plot"
@@ -825,8 +932,8 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
     ]
     IO.println s!"__JSON_START__{out.compress}__JSON_END__"
   else
-    let trainData : Array (Array ℕ × Float) := trainSamples.map fun s => (s.bits, s.yFloat)
-    let pen := if alphaFloat <= 0.0 then 0.01 else alphaFloat
+    let trainData : Array (Array ℕ × Float) := trainSamples.map fun s ↦ (s.bits, s.yFloat)
+    let pen := if alphaFloat ≤ 0.0 then 0.01 else alphaFloat
     let srCfg : SparseRidge.Config Float := { alpha := pen, maxIter := 500, tol := 0.00001 }
     let (model, iters) := SparseRidge.fit srCfg 2048 trainData
     -- The a posteriori certificate, as for the certified pipeline: read the trained Float
@@ -840,31 +947,36 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
     -- training loss of exactly these weights, whatever conjugate gradients did in Float.
     let m := trainSamples.size
     let mQ : ℚ := m
-    let alphaQ : ℚ := if alphaRat <= 0 then 1 / 100 else alphaRat
+    let alphaQ : ℚ := if alphaRat ≤ 0 then 1 / 100 else alphaRat
     let ridgeQ : ℚ := alphaQ / mQ
-    let bitsQ : Vector (List (Fin 2048)) m := Vector.ofFn fun i =>
-      trainSamples[i.val]!.bits.toList.filterMap fun b => if h : b < 2048 then some ⟨b, h⟩ else none
-    let yQ : Vector ℚ m := Vector.ofFn fun i => trainSamples[i.val]!.yRat
+    let bitsQ : Vector (List (Fin 2048)) m := Vector.ofFn fun i ↦
+      trainSamples[i.val]!.bits.toList.filterMap fun b ↦ if h : b < 2048 then some ⟨b, h⟩ else none
+    let yQ : Vector ℚ m := Vector.ofFn fun i ↦ trainSamples[i.val]!.yRat
     let sparse : SparseProblem m 2048 := { bits := bitsQ, y := yQ, ridge := ridgeQ }
     let θQ : Vec ℚ 2049 :=
-      (Vector.ofFn fun j : Fin 2048 => ratOfFloatExact (model.weights.getD j.val 0.0)).push 0
+      (Vector.ofFn fun j : Fin 2048 ↦ ratOfFloatExact (model.weights.getD j.val 0.0)).push 0
     let lossQ : ℚ := sparse.loss θQ
     let resExcess : ℚ := sparse.residualExcess θQ
     let resTol : ℚ := lossQ / 1000000
     let isCertified := sparse.checkResidual θQ resTol
     let resExcessF := resExcess.toFloat
     let lossF := lossQ.toFloat
-    let resShare := if lossF > 0 then resExcessF / lossF else 0
+    let resShare := if 0 < lossF then resExcessF / lossF else 0
     let certSummary :=
       if isCertified then
-        s!"checkResidual = true: ‖Aθ − b‖²/λ = {sci resExcessF} ≤ 10⁻⁶ · L(θ) (L(θ) = {fixed lossF 4}, λ = α/m = {ratStr ridgeQ})"
+        s!"checkResidual = true: ‖Aθ − b‖²/λ = {sci resExcessF} ≤ 10⁻⁶ · L(θ) \
+          (L(θ) = {fixed lossF 4}, λ = α/m = {ratStr ridgeQ})"
       else
-        s!"checkResidual = false: ‖Aθ − b‖²/λ = {sci resExcessF} = {sci resShare} · L(θ) (L(θ) = {fixed lossF 4}, λ = α/m = {ratStr ridgeQ}), above the 10⁻⁶ · L(θ) tolerance — {iters} conjugate-gradient steps stopped short of the optimum"
+        s!"checkResidual = false: ‖Aθ − b‖²/λ = {sci resExcessF} = {sci resShare} · L(θ) \
+          (L(θ) = {fixed lossF 4}, λ = α/m = {ratStr ridgeQ}), above the 10⁻⁶ · L(θ) tolerance \
+          — {iters} conjugate-gradient steps stopped short of the optimum"
     let certShort :=
       if isCertified then s!"residual certificate: excess loss ≤ {sci resExcessF}"
       else s!"residual bound {sci resExcessF}, above the 10⁻⁶ L(θ) tolerance"
-    let trainPairs : Array (Float × Float) := trainSamples.map fun s => (s.yFloat, model.predict s.bits)
-    let testPairs : Array (Float × Float) := testSamples.map fun s => (s.yFloat, model.predict s.bits)
+    let trainPairs : Array (Float × Float) :=
+      trainSamples.map fun s ↦ (s.yFloat, model.predict s.bits)
+    let testPairs : Array (Float × Float) :=
+      testSamples.map fun s ↦ (s.yFloat, model.predict s.bits)
     let trR2 := r2 trainPairs
     let trRmse := rmse trainPairs
     let trMae := mae trainPairs
@@ -876,14 +988,16 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
       s!"parse, aromatize, Morgan (2048 bits), {iters} CG steps · {certShort}"
       targetLabel
       [
-        { label := "Training", points := trainPairs, r2 := trR2, rmse := trRmse, mae := trMae, filled := false },
-        { label := "Test", points := testPairs, r2 := teR2, rmse := teRmse, mae := teMae, filled := true }
+        { label := "Training", points := trainPairs, r2 := trR2, rmse := trRmse, mae := trMae,
+          filled := false },
+        { label := "Test", points := testPairs, r2 := teR2, rmse := teRmse, mae := teMae,
+          filled := true }
       ]
-    let topWeights := ((List.range 2048).map fun j => (j, model.weights.getD j 0.0)).mergeSort
-      (fun a b => a.2.abs ≥ b.2.abs) |>.take 6
-    let topJson : Array Json := topWeights.toArray.map fun (bit, w) =>
+    let topWeights := ((List.range 2048).map fun j ↦ (j, model.weights.getD j 0.0)).mergeSort
+      (fun a b ↦ b.2.abs ≤ a.2.abs) |>.take 6
+    let topJson : Array Json := topWeights.toArray.map fun (bit, w) ↦
       Json.mkObj [("feature", toJson s!"Bit #{bit}"), ("weight", toJson w)]
-    let predsJson : Array Json := (samples.take 20).map fun s =>
+    let predsJson : Array Json := (samples.take 20).map fun s ↦
       Json.mkObj [
         ("name", toJson s.name),
         ("smiles", toJson s.smiles),
@@ -892,9 +1006,11 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
         ("predicted", toJson (model.predict s.bits))
       ]
     let logs : Array String := #[
-      s!"morganFeatures (×{samples.size}) --> {trainSamples.size} train, {testSamples.size} test (skipped {skipped.size})",
+      s!"morganFeatures (×{samples.size}) --> {trainSamples.size} train, \
+        {testSamples.size} test (skipped {skipped.size})",
       s!"SparseRidge.fit (alpha = {fixed pen 2}) 2048 train --> {iters} conjugate-gradient steps",
-      s!"sparse.checkResidual θ (a posteriori, 2048 weights read exactly as ℚ, bias 0, bits and target centred, λ = α/m, ε = 10⁻⁶ L(θ)) --> {certSummary}",
+      s!"sparse.checkResidual θ (a posteriori, 2048 weights read exactly as ℚ, bias 0, \
+        bits and target centred, λ = α/m, ε = 10⁻⁶ L(θ)) --> {certSummary}",
       s!"train metrics --> R² {fixed trR2 3}, RMSE {fixed trRmse 3}, MAE {fixed trMae 3}",
       s!"test metrics  --> R² {fixed teR2 3}, RMSE {fixed teRmse 3}, MAE {fixed teMae 3}",
       s!"LeanLearn.Plot.paritySvg --> rendered SVG parity plot"
@@ -930,7 +1046,10 @@ def runFit (cacheRef : IO.Ref (List (String × Array FitSample × Array String))
     ]
     IO.println s!"__JSON_START__{out.compress}__JSON_END__"
 
-partial def loop (cacheRef : IO.Ref (List (String × Array FitSample × Array String))) (stdin stdout : IO.FS.Stream) : IO Unit := do
+/-- Serve requests from `stdin` until end of input: one answer line per request (an error object
+for an unknown command), flushed after each. -/
+partial def loop (cacheRef : IO.Ref (List (String × Array FitSample × Array String)))
+    (stdin stdout : IO.FS.Stream) : IO Unit := do
   let line ← stdin.getLine
   if line.isEmpty then return ()
   let parts := line.trimAscii.toString.splitOn "\t"
@@ -952,6 +1071,7 @@ partial def loop (cacheRef : IO.Ref (List (String × Array FitSample × Array St
     stdout.flush
   loop cacheRef stdin stdout
 
+/-- The worker's entry point: print `__WORKER_READY__`, then serve requests until stdin closes. -/
 def main : IO UInt32 := do
   let stdin ← IO.getStdin
   let stdout ← IO.getStdout

@@ -143,6 +143,8 @@ private def cases : Array (String × IO Unit) := #[
       (.numericalFailure "sum of squared errors"))
 ]
 
+/-- Runs every check in `cases` in order, printing `PASS <name>` for each, and aborts with
+`FAIL <name>: …` at the first failure. -/
 def run : IO Unit := do
   for (name, action) in cases do
     try
@@ -153,4 +155,6 @@ def run : IO Unit := do
 
 end LeanLearn.Tests.OLSFloat
 
+/-- Entry point of the `ols-float-test` executable: runs every OLSFloat check and exits
+nonzero at the first failure. -/
 public def main : IO Unit := LeanLearn.Tests.OLSFloat.run
