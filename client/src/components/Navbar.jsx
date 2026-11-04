@@ -5,6 +5,7 @@ import { Atom } from 'lucide-react'
 const LINKS = [
   { to: '/', label: 'Overview' },
   { to: '/lab', label: 'SMILES Interpreter' },
+  { to: '/chemdraw', label: 'ChemDraw' },
   { to: '/datasets', label: 'Regression' },
 ]
 

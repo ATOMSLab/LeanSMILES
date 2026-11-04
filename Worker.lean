@@ -93,6 +93,7 @@ def parseRat (s : String) : ℚ :=
 
 structure MolSnap where
   canon : String
+  formula : String
   bits : List ℕ
   totalH : ℕ
   symClasses : ℕ
@@ -102,7 +103,63 @@ structure MolSnap where
   atomsJson : Array Json
   bondsJson : Array Json
   matJson : Array Json
+  valenceStatus : Json
+  valenceLog : String
   pos : Array Depict.Pt
+
+/-- Compute Hill-system molecular formula (`C` first, then `H`, then alphabetical)
+directly from a `Mol` in Lean 4. -/
+def hillFormula (M : Mol) : String := Id.run do
+  let mut counts : List (String × ℕ) := []
+  let addCount (tbl : List (String × ℕ)) (sym : String) (k : ℕ) : List (String × ℕ) :=
+    if k == 0 then tbl
+    else if tbl.any (·.1 == sym) then
+      tbl.map fun (s, c) => if s == sym then (s, c + k) else (s, c)
+    else tbl ++ [(sym, k)]
+  for i in List.finRange M.n do
+    let a := M.mol.atom i
+    let sym := match a.element with | some e => e.symbol | none => "*"
+    if sym == "H" then
+      counts := addCount counts "H" (1 + a.totalH)
+    else
+      counts := addCount counts sym 1
+      counts := addCount counts "H" a.totalH
+  if counts.isEmpty then return "—"
+  let hasC := counts.any (·.1 == "C")
+  let sorted := counts.mergeSort fun (a, _) (b, _) =>
+    if hasC then
+      if a == "C" then true
+      else if b == "C" then false
+      else if a == "H" then true
+      else if b == "H" then false
+      else a ≤ b
+    else a ≤ b
+  return String.join (sorted.map fun (sym, c) => if c == 1 then sym else s!"{sym}{c}")
+
+/-- Per-atom valence check using `LeanSMILES.Aromaticity.Work` (`explicitValence`,
+`effectiveZ`, `canBeHypervalent`, `valences`). Returns `(explicitValence, allowedMax, ok, suggestedCharge)`. -/
+def atomValenceCheck (w : Aromaticity.Work) (i : ℕ) : ℕ × ℕ × Bool × Option ℤ := Id.run do
+  let wa := w.atoms[i]!
+  let ev := w.explicitValence i
+  let mut eff := Aromaticity.Work.effectiveZ wa
+  let mut evCheck : ℤ := ev
+  if Aromaticity.Work.canBeHypervalent wa eff then
+    eff := wa.z
+    evCheck := evCheck - wa.charge
+  let allowed := Aromaticity.valences eff
+  let allowedMax := allowed.getLast?.getD ev
+  let ok := allowed.isEmpty || allowed.any (fun v => evCheck ≤ (v : ℤ))
+  if ok then
+    return (ev, allowedMax, true, none)
+  let mut suggested : Option ℤ := none
+  if !(wa.z ≤ 10 && ev > 4) then
+    for c in ([1, -1, 2, -2] : List ℤ) do
+      if suggested.isNone then
+        let wa' : Aromaticity.WAtom := { wa with charge := c }
+        let eff' := Aromaticity.Work.effectiveZ wa'
+        if (Aromaticity.valences eff').contains ev then
+          suggested := some c
+  return (ev, allowedMax, false, suggested)
 
 /-- Everything the interpreter shows for one molecule. The 2D layout is the
 expensive step (hundreds of stress-majorisation sweeps), so a caller that
@@ -111,6 +168,7 @@ def buildMolSnap (M : Mol) (pos? : Option (Array Depict.Pt) := none) : MolSnap :
   let inRing := M.mol.inRingVector
   let B := M.mol.toBondMatrix
   let canon := M.canonicalSmiles
+  let formula := hillFormula M
   let bits := M.morganBits
   let totalH := ((List.finRange M.n).map fun i => (M.mol.atom i).totalH).sum
   let dg := Depict.Graph.ofMol M
@@ -121,11 +179,14 @@ def buildMolSnap (M : Mol) (pos? : Option (Array Depict.Pt) := none) : MolSnap :
   let symClasses := numClasses initRanks
   let canonRanks := M.mol.canonicalRanks
   let canonPerm := M.mol.canonicalPerm
+  let work := (Aromaticity.Work.ofMolecule M.mol).freezeHs.cleanUp
   let coordsJson : Array Json := pos.map fun (p : Float × Float) =>
     Json.mkObj [("x", toJson p.1), ("y", toJson p.2)]
   let atomsJson : Array Json := (List.finRange M.n).toArray.map fun i =>
     let a := M.mol.atom i
     let sym := match a.element with | some e => e.symbol | none => "*"
+    let (ev, allowedMax, valOk, sugChg) := atomValenceCheck work i.val
+    let chgOk := decide a.chargeConsistent
     Json.mkObj [
       ("idx", toJson i.val),
       ("raw", toJson a.toSmiles),
@@ -137,8 +198,46 @@ def buildMolSnap (M : Mol) (pos? : Option (Array Depict.Pt) := none) : MolSnap :
       ("inRing", toJson inRing[i]),
       ("symmetryRank", toJson initRanks[i]),
       ("canonicalRank", toJson canonRanks[i]),
-      ("canonicalIdx", toJson (canonPerm i).val)
+      ("canonicalIdx", toJson (canonPerm i).val),
+      ("explicitValence", toJson ev),
+      ("allowedValence", toJson allowedMax),
+      ("valenceOk", toJson valOk),
+      ("chargeOk", toJson chgOk),
+      ("suggestedCharge", match sugChg with | some c => toJson c | none => Json.null)
     ]
+  let invalidValenceAtoms : List (ℕ × String × ℤ × ℕ × ℕ × Option ℤ) :=
+    (List.finRange M.n).filterMap fun i =>
+      let a := M.mol.atom i
+      let sym := match a.element with | some e => e.symbol | none => "*"
+      let (ev, allowedMax, valOk, sugChg) := atomValenceCheck work i.val
+      if valOk then none else some (i.val, sym, a.charge, ev, allowedMax, sugChg)
+  let (valenceStatus, valenceLog) := match invalidValenceAtoms with
+    | [] => (Json.mkObj [("ok", toJson true)], "Except.ok ()")
+    | (idx, sym, chg, ev, allowedMax, sugChg) :: _ =>
+      let msg := match sugChg with
+        | some c =>
+          s!"atom {idx} ({sym}) has valence {ev} with charge {signedString chg}; expected formal charge {signedString c}"
+        | none =>
+          s!"atom {idx} ({sym}) has valence {ev}; maximum allowed for {sym} is {allowedMax}"
+      let itemsJson : Array Json := invalidValenceAtoms.toArray.map fun (k, s, kc, v, mx, sc) =>
+        let m := match sc with
+          | some c => s!"atom {k} ({s}) has valence {v} with charge {signedString kc}; expected formal charge {signedString c}"
+          | none => s!"atom {k} ({s}) has valence {v}; maximum allowed for {s} is {mx}"
+        Json.mkObj [
+          ("atomIdx", toJson k),
+          ("symbol", toJson s),
+          ("explicitValence", toJson v),
+          ("allowedValence", toJson mx),
+          ("suggestedCharge", match sc with | some c => toJson c | none => Json.null),
+          ("message", toJson m)
+        ]
+      (Json.mkObj [
+        ("ok", toJson false),
+        ("atomIdx", toJson idx),
+        ("suggestedCharge", match sugChg with | some c => toJson c | none => Json.null),
+        ("message", toJson msg),
+        ("invalidAtoms", toJson itemsJson)
+      ], s!"Except.error \"{msg}\"")
   let bondsJson : Array Json := M.mol.bonds.toArray.map fun (b : Bond M.n) =>
     Json.mkObj [
       ("src", toJson b.src.val),
@@ -147,7 +246,7 @@ def buildMolSnap (M : Mol) (pos? : Option (Array Depict.Pt) := none) : MolSnap :
     ]
   let matJson : Array Json := (List.finRange M.n).toArray.map fun i =>
     toJson ((List.finRange M.n).toArray.map fun j => ratStr (B i j))
-  { canon, bits, totalH, symClasses, svgStr, molBlk, coordsJson, atomsJson, bondsJson, matJson, pos }
+  { canon, formula, bits, totalH, symClasses, svgStr, molBlk, coordsJson, atomsJson, bondsJson, matJson, valenceStatus, valenceLog, pos }
 
 def runParse (s : String) : IO Unit := do
   match tokenize s, parse s with
@@ -155,9 +254,12 @@ def runParse (s : String) : IO Unit := do
     let snap := buildMolSnap M
     let toksJson : Array Json := toks.map fun (t : Token) =>
       Json.mkObj [("pos", toJson t.pos), ("show", toJson (tokenLabel t))]
-    let (chargeStatus, chargeLog) := match M.checkCharges with
-      | .ok () => (Json.mkObj [("ok", toJson true)], "Except.ok ()")
-      | .error msg => (Json.mkObj [("ok", toJson false), ("message", toJson msg)], s!"Except.error \"{msg}\"")
+    let (chargeStatus, chargeLog) := match M.mol.firstBadCharge, M.checkCharges with
+      | _, .ok () => (Json.mkObj [("ok", toJson true)], "Except.ok ()")
+      | some idx, .error msg =>
+        (Json.mkObj [("ok", toJson false), ("atomIdx", toJson idx.val), ("message", toJson msg)], s!"Except.error \"{msg}\"")
+      | none, .error msg =>
+        (Json.mkObj [("ok", toJson false), ("message", toJson msg)], s!"Except.error \"{msg}\"")
     let (aromStatus, aromLog) := match M.aromatize with
       | .ok MA =>
         -- aromatization changes bond kinds, not the skeleton: reuse the layout
@@ -168,6 +270,7 @@ def runParse (s : String) : IO Unit := do
         (Json.mkObj [
           ("ok", toJson true),
           ("canonicalSmiles", toJson snapA.canon),
+          ("formula", toJson snapA.formula),
           ("isNormal", toJson MA.isNormal),
           ("symmetryClasses", toJson snapA.symClasses),
           ("totalHydrogens", toJson snapA.totalH),
@@ -189,6 +292,7 @@ def runParse (s : String) : IO Unit := do
       s!"(Mol.ofSmiles! \"{s}\").canonicalSmiles --> \"{snap.canon}\"",
       s!"(Depict.svgWith dg pos 36).render --> 2D SVG ({snap.svgStr.length} chars) + V2000 MolBlock",
       s!"M.checkCharges --> {chargeLog}",
+      s!"M.checkValence --> {snap.valenceLog}",
       s!"M.aromatize --> {aromLog}",
       s!"M.morganBits 2 --> {snap.bits} ({snap.bits.length} on-bits)"
     ]
@@ -196,6 +300,7 @@ def runParse (s : String) : IO Unit := do
       ("ok", toJson true),
       ("smiles", toJson s),
       ("canonicalSmiles", toJson snap.canon),
+      ("formula", toJson snap.formula),
       ("svg", toJson snap.svgStr),
       ("molBlock", toJson snap.molBlk),
       ("coordinates", toJson snap.coordsJson),
@@ -205,6 +310,7 @@ def runParse (s : String) : IO Unit := do
       ("isNormal", toJson M.isNormal),
       ("symmetryClasses", toJson snap.symClasses),
       ("chargeCheck", chargeStatus),
+      ("valenceCheck", snap.valenceStatus),
       ("aromatized", aromStatus),
       ("tokens", toJson toksJson),
       ("atoms", toJson snap.atomsJson),
