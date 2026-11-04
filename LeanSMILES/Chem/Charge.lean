@@ -56,10 +56,15 @@ def shellVacancy (e : Element) : ℕ :=
     - e.atomicNumber
 
 example : Element.H.shellVacancy = 1 := by decide
+
 example : Element.C.shellVacancy = 4 := by decide
+
 example : Element.O.shellVacancy = 2 := by decide
+
 example : Element.Ne.shellVacancy = 0 := by decide
+
 example : Element.Fe.shellVacancy = 10 := by decide
+
 example : Element.Og.shellVacancy = 0 := by decide
 
 end Element
@@ -93,11 +98,8 @@ instance (a : Atom) : Decidable a.chargeConsistent :=
   inferInstanceAs (Decidable (a.minCharge ≤ a.charge ∧ a.charge ≤ a.maxCharge))
 
 /-- A neutral atom is always consistent — in particular every bare atom. -/
-theorem chargeConsistent_of_charge_eq_zero {a : Atom} (h : a.charge = 0) :
-    a.chargeConsistent := by
-  unfold chargeConsistent minCharge maxCharge wildcardChargeBound
-  rw [h]
-  cases a.element <;> simp
+theorem chargeConsistent_of_charge_eq_zero {a : Atom} (h : a.charge = 0) : a.chargeConsistent := by
+  grind [chargeConsistent, minCharge, maxCharge, wildcardChargeBound]
 
 end Atom
 
@@ -115,8 +117,10 @@ variable {n : ℕ} (m : Molecule n)
 def firstBadCharge : Option (Fin n) :=
   (List.finRange n).find? fun i ↦ !decide (m.atom i).chargeConsistent
 
+/-- `firstBadCharge` finds no atom exactly when every charge is in range: the search decides
+`chargesConsistent`, and `checkCharges_eq_ok_iff` lifts this to the `Except`. -/
 theorem firstBadCharge_eq_none_iff : m.firstBadCharge = none ↔ m.chargesConsistent := by
-  simp [firstBadCharge, chargesConsistent, List.find?_eq_none]
+  simp [firstBadCharge, chargesConsistent]
 
 /-- `+3`, `-2`, `0`: a signed charge for messages. -/
 def signedString (c : ℤ) : String := if 0 < c then s!"+{c}" else toString c
@@ -137,19 +141,12 @@ def checkCharges : Except String Unit :=
 
 /-- The checker is the predicate. -/
 theorem checkCharges_eq_ok_iff : m.checkCharges = .ok () ↔ m.chargesConsistent := by
-  rw [← firstBadCharge_eq_none_iff]
-  unfold checkCharges
-  split <;> simp_all
+  grind [checkCharges, firstBadCharge_eq_none_iff]
 
 /-- Relabeling the atoms neither creates nor removes an inconsistent charge. -/
 theorem chargesConsistent_relabel (σ : Equiv.Perm (Fin n)) :
-    (m.relabel σ).chargesConsistent ↔ m.chargesConsistent := by
-  constructor
-  · intro h i
-    simpa using h (σ i)
-  · intro h j
-    have := h (σ.symm j)
-    rwa [← atom_relabel m σ (σ.symm j), Equiv.apply_symm_apply] at this
+    (m.relabel σ).chargesConsistent ↔ m.chargesConsistent :=
+  σ.symm.forall_congr' fun _ ↦ by simp
 
 end Molecule
 
@@ -163,6 +160,8 @@ instance (M : Mol) : Decidable M.chargesConsistent :=
 `SMILES.parse`, which checks syntax only. -/
 def Mol.checkCharges (M : Mol) : Except String Unit := M.mol.checkCharges
 
+/-- `Mol.checkCharges` succeeds exactly when `Mol.chargesConsistent` holds: the bundled form of
+`Molecule.checkCharges_eq_ok_iff`, so a passed check is a proof about the `Mol`. -/
 theorem Mol.checkCharges_eq_ok_iff (M : Mol) : M.checkCharges = .ok () ↔ M.chargesConsistent :=
   M.mol.checkCharges_eq_ok_iff
 

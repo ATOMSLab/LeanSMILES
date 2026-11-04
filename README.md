@@ -34,8 +34,8 @@ LeanLearn/            learning algorithms on tabular data (imports Mathlib only)
 
 Pipelines/            molecules as tabular data (imports both)
   Representation.lean morgan, bondOrders, counts, canonical, clip, ++; morganFeatures (aromatized)
-  Pipeline.lean       LabelledMolecules (from SMILES), Pipeline, model, losses, predictions
-  Data.lean           LabelledMolecules from the CSV tables in datasets/ (via CSVparser)
+  Pipeline.lean       LabeledMolecules (from SMILES), Pipeline, model, losses, predictions
+  Data.lean           LabeledMolecules from the CSV tables in datasets/ (via CSVparser)
   Certificates.lean   the exact checks on a pipeline: checkGD, checkSolver, certifiedSolverExcess
                       (before training); checkResidual, residualExcess (after it)
   Proofs/             representations (bounds, canonicity), certificate soundness
@@ -504,7 +504,7 @@ above); `Regression/` reads the executable code in `ℝ`:
 Open [`Pipelines/Examples/delaney.lean`](Pipelines/Examples/delaney.lean): like
 `caffeine.lean`, it walks through the pipeline one `#eval` at a time, on the Delaney table.
 
-**1. Data and pipeline.** Molecules come from SMILES (`LabelledMolecules.ofSmiles!`) or from
+**1. Data and pipeline.** Molecules come from SMILES (`LabeledMolecules.ofSmiles!`) or from
 a table in `datasets/` (`ofRecords`, through the toolkit's `CSVparser`), with exact rational
 targets. A pipeline adds a representation (`Mol → ℚᵈ`: Morgan bits, bond-order matrices,
 counts, read through canonical SMILES or not), a ridge penalty `λ` (default `0`) and a
@@ -512,7 +512,7 @@ solver:
 
 ```lean
 def delaney := CSVparser.load "datasets/delaney-processed.csv"
-def train : LabelledMolecules 40 := .ofRecords delaney 0 40
+def train : LabeledMolecules 40 := .ofRecords delaney 0 40
 
 def gd : Pipeline 40 32 :=
   { data := train, representation := .morgan 2 32, algorithm := .gradientDescent (1 / 66) 3000 }
@@ -532,9 +532,8 @@ it holds for every dataset:
 
 theorem gd_certified (u : Vec ℝ 33) (hu : ∑ i : Fin 33, u[i] ^ 2 ≤ 4) :
     gd.trainLoss ℝ ≤ (gd.problem ℝ).loss u + 1 / 20 := by
-  have := gd.checkGD_sound (R2 := (32 : ℕ)) (B := 4) (ε := 1 / 20)
+  simpa using gd.checkGD_sound (R2 := (32 : ℕ)) (B := 4) (ε := 1 / 20)
     (Representation.morgan_bounded 2 32) (by decide +kernel) u (by exact_mod_cast hu)
-  simpa using this
 ```
 
 **3. Jacobi and Gauss–Seidel.** The condition is about the data: the normal equations must
@@ -552,9 +551,8 @@ def gs : Pipeline 40 16 :=
 
 theorem smallJacobi_certified (u : Vec ℝ 10) :           -- within 0.001 of the optimum
     smallJacobi.trainLoss ℝ ≤ (smallJacobi.problem ℝ).loss u + 1 / 1000 := by
-  have := smallJacobi.checkSolver_sound (W := smallJacobi.suggestWitness) (ε := 1 / 1000)
+  simpa using smallJacobi.checkSolver_sound (W := smallJacobi.suggestWitness) (ε := 1 / 1000)
     (by decide +kernel) u
-  simpa using this
 ```
 
 When a condition fails there is no certificate: `checkGD` returns `false` for a step size
@@ -573,10 +571,10 @@ diverged is caught by the same check:
 
 ```lean
 def weakGS : Pipeline 40 16 := { weak with algorithm := .gaussSeidel 100 }
-def θweak : Vec ℚ 17 := (weakGS.model Float).map ratOfFloatExact
+def weakGSModel : Vec ℚ 17 := (weakGS.model Float).map ratOfFloatExact
 
-#eval decide (weakGS.residualExcess θweak < 1 / 10 ^ 12)   -- true: ‖Aθ − b‖²/λ, the certified excess
-#eval weakGS.checkResidual θweak (1 / 10 ^ 6)                -- true
+#eval decide (weakGS.residualExcess weakGSModel < 1 / 10 ^ 12)    -- true: ‖Aθ − b‖²/λ, the certified excess
+#eval weakGS.checkResidual weakGSModel (1 / 10 ^ 6)               -- true
 #eval weak.checkResidual ((weak.model Float).map ratOfFloatExact) (1 / 10 ^ 6)   -- false
 ```
 

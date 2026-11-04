@@ -67,7 +67,7 @@ namespace LeanSMILES.SMILES
 structure PendingBond where
   /-- The kind written, if any. -/
   kind : Option BondKind := none
-  /-- The `/` `\\` mark, if written. -/
+  /-- The `/` `\` mark, if written. -/
   dir : Option BondDir := none
   /-- Position of the symbol. -/
   pos : ℕ
@@ -81,7 +81,7 @@ structure RawBond where
   dst : ℕ
   /-- The bond kind. -/
   kind : BondKind
-  /-- The `/` `\\` mark, if written. -/
+  /-- The `/` `\` mark, if written. -/
   dir : Option BondDir
   /-- Position of the token that created the bond. -/
   pos : ℕ
@@ -99,7 +99,8 @@ structure RingOpen where
   slot : ℕ
   deriving Repr, Inhabited
 
-/-- Parser state. -/
+/-- Parser state: the state machine of the module docstring, advanced by `step` on each token and
+checked by `finish` at end of input. -/
 structure State where
   /-- Atoms so far, in order of appearance. -/
   atoms : Array Atom := #[]
@@ -136,24 +137,27 @@ def implicitKind (a b : Atom) : BondKind :=
 /-- The atom with index `i` (a default atom if out of range). -/
 def atomAt (st : State) (i : ℕ) : Atom := st.atoms.getD i default
 
-/-- Whether a bond between `i` and `j` has already been created. -/
+/-- Whether a bond between `i` and `j`, in either orientation, has already been created. -/
 def hasBond (st : State) (i j : ℕ) : Bool :=
   st.bonds.any fun b ↦ (b.src == i && b.dst == j) || (b.src == j && b.dst == i)
 
-/-- Add a bond, rejecting self-bonds and duplicates. -/
+/-- Add the bond `src`–`dst`; `src = dst` is `ParseError.selfBond` and a pair already bonded is
+`ParseError.duplicateBond`, both reported at `pos`. -/
 def addBond (st : State) (src dst : ℕ) (kind : BondKind) (dir : Option BondDir) (pos : ℕ) :
     Except ParseError State :=
   if src == dst then .error (.selfBond pos src)
   else if st.hasBond src dst then .error (.duplicateBond pos src dst)
   else .ok { st with bonds := st.bonds.push ⟨src, dst, kind, dir, pos⟩ }
 
-/-- Record a bond symbol, rejecting two in a row. -/
+/-- Record a bond symbol as pending; a second symbol before an atom is `ParseError.bondWithoutAtom`
+at the position of the first. -/
 def setPending (st : State) (p : PendingBond) : Except ParseError State :=
   match st.pending with
   | some q => .error (.bondWithoutAtom q.pos)
   | none => .ok { st with pending := some p }
 
-/-- Consume one token. -/
+/-- Consume one token, advancing the state machine of the module docstring.  The bond, branch,
+dot and ring-closure `ParseError`s are raised here; `finish` raises the end-of-input ones. -/
 def step (st : State) (t : Token) : Except ParseError State :=
   match t.kind with
   | .atom a =>
@@ -227,7 +231,8 @@ def step (st : State) (t : Token) : Except ParseError State :=
         .ok { st with rings := (num, ro) :: st.rings, pending := none,
                       nbrs := st.nbrs.modify a (·.push (some a)) }
 
-/-- End-of-input checks. -/
+/-- End-of-input checks: a pending bond symbol, a trailing `.`, an unclosed branch or an unclosed
+ring is a `ParseError`; otherwise the state is returned unchanged. -/
 def finish (st : State) : Except ParseError State :=
   match st.pending with
   | some p => .error (.bondWithoutAtom p.pos)
@@ -331,18 +336,19 @@ def toMolecule (st : State) : Except ParseError Mol := do
 
 end State
 
-/-- Run the state machine over a token array. -/
+/-- Run the state machine over a token array: `State.step` on each token, then `State.finish`. -/
 def run (toks : Array Token) : Except ParseError State :=
   toks.foldlM State.step {} >>= State.finish
 
-/-- Parse a SMILES string to a molecule, without assigning implicit hydrogens. -/
+/-- Parse a SMILES string to a molecule, without assigning implicit hydrogens: `tokenize`, `run`,
+`State.toMolecule`, each of which may return a `ParseError`. -/
 def parseRaw (s : String) : Except ParseError Mol := do
   let toks ← tokenize s
   let st ← run toks
   st.toMolecule
 
-/-- Parse a SMILES string to a molecule, with implicit hydrogens assigned by
-the default-valence rule. -/
+/-- Parse a SMILES string to a molecule, with implicit hydrogens assigned by the default-valence
+rule (`Molecule.assignImplicitH`): the parser callers want; `parseRaw` skips that pass. -/
 def parse (s : String) : Except ParseError Mol := do
   let M ← parseRaw s
   pure ⟨M.n, M.mol.assignImplicitH⟩
@@ -351,16 +357,16 @@ end LeanSMILES.SMILES
 
 namespace LeanSMILES
 
+-- The empty molecule, so that `Mol.ofSmiles!` may `panic!`.
 instance : Inhabited Mol :=
   ⟨⟨0, { atoms := ⟨#[], rfl⟩, bonds := [], nodup := List.nodup_nil, stereo := ⟨#[], rfl⟩ }⟩⟩
 
-/-- Parse, or panic with the error: for examples and tests.
-
-Irreducible so that `(Mol.ofSmiles! s).n` is atomic to the elaborator: a
-`#eval` whose result type mentions it (a `Molecule (Mol.ofSmiles! s).n`, a
-`Vector α (Mol.ofSmiles! s).n`) would otherwise make `whnf` run the parser
-symbolically, which does not terminate in practice for an aromatic ring.
-Compiled code is unaffected (design notes §8). -/
+-- Irreducible so that `(Mol.ofSmiles! s).n` is atomic to the elaborator: a `#eval` whose result
+-- type mentions it (a `Molecule (Mol.ofSmiles! s).n`, a `Vector α (Mol.ofSmiles! s).n`) would
+-- otherwise make `whnf` run the parser symbolically, which does not terminate in practice for an
+-- aromatic ring.  Compiled code is unaffected (design notes §8).
+/-- Parse, or panic with the error: for examples and tests.  Irreducible, so that a type mentioning
+`(Mol.ofSmiles! s).n` does not make the elaborator run the parser symbolically. -/
 @[irreducible] def Mol.ofSmiles! (s : String) : Mol :=
   match SMILES.parse s with
   | .ok M => M

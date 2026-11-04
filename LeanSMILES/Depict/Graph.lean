@@ -49,7 +49,8 @@ structure Edge where
   sides : List (ℕ × ℕ × Bool) := []
   deriving Repr, Inhabited
 
-/-- A molecule flattened for layout. -/
+/-- A molecule flattened for layout: atoms, bonds and adjacency lists with `ℕ` indices, built
+by `ofMolecule` and read by `Depict.layout` and the SVG / mol-block writers. -/
 structure Graph where
   /-- The atoms, in SMILES order. -/
   atoms : Array Atom
@@ -68,7 +69,8 @@ def Edge.stereoSpecified (e : Edge) : Bool := e.kind == .double && !e.ring && !e
 
 namespace Graph
 
-/-- Forget the size index of a `Molecule n`. -/
+/-- Forget the size index of a `Molecule n`, recording which bonds lie on rings
+(`Molecule.bondInRing`) and building the adjacency lists in bond-list order. -/
 def ofMolecule {n : ℕ} (m : Molecule n) : Graph :=
   let sides (b : Bond n) : List (ℕ × ℕ × Bool) :=
     match b.kind, m.stereo[b.src] with
@@ -106,14 +108,15 @@ def numAtoms : ℕ := g.atoms.size
 /-- The atom with index `i` (a default atom if out of range). -/
 def atom (i : ℕ) : Atom := g.atoms.getD i default
 
-/-- Heavy-atom degree. -/
+/-- The degree of atom `i` in the depiction graph: bonds to atoms the string lists, so
+implicit hydrogens are not counted but explicit `[H]` atoms are. -/
 def degree (i : ℕ) : ℕ := (g.adj.getD i []).length
 
 /-- The index of the bond joining `i` and `j`, if any. -/
 def edgeIndex? (i j : ℕ) : Option ℕ :=
   ((g.adj.getD i []).find? (·.2 == j)).map (·.1)
 
-/-- Whether the bond joining `i` and `j` lies on a ring. -/
+/-- Whether the bond joining `i` and `j` lies on a ring (`false` if there is none). -/
 def inRing (i j : ℕ) : Bool :=
   match g.edgeIndex? i j with
   | some k => (g.edges.getD k default).ring
@@ -125,7 +128,8 @@ def kindBetween (i j : ℕ) : BondKind :=
   | some k => (g.edges.getD k default).kind
   | none => .single
 
-/-- Connected components, each as a list of atoms in increasing order. -/
+/-- Connected components, each a list of atoms in increasing order, in order of their smallest
+atom; `Depict.layout` places them side by side. -/
 def components : List (List ℕ) := Id.run do
   let n := g.numAtoms
   let mut assigned := Array.replicate n false
@@ -135,7 +139,7 @@ def components : List (List ℕ) := Id.run do
       let mut seen := (Array.replicate n false).set! i true
       let mut stack := [i]
       let mut fuel := n + 1
-      while fuel > 0 do
+      while 0 < fuel do
         fuel := fuel - 1
         match stack with
         | [] => break
@@ -177,13 +181,15 @@ def distances : Array (Array ℕ) := Id.run do
     D := D.push dist
   return D
 
-/-- Atoms reachable from `start` without crossing the bond `u–v`. -/
+/-- Atoms reachable from `start` without crossing the bond `u–v`, as a mask over all atoms:
+for a non-ring bond and `start = v` this is the `v` side, which the layout reflects to fix a
+cis/trans drawing. -/
 def sideOf (u v start : ℕ) : Array Bool := Id.run do
   let mut seen := Array.replicate g.numAtoms false
   let mut stack := [start]
   seen := seen.set! start true
   let mut fuel := g.numAtoms + 1
-  while fuel > 0 do
+  while 0 < fuel do
     fuel := fuel - 1
     match stack with
     | [] => break

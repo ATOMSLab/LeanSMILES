@@ -39,7 +39,9 @@ their index, one-based in the string and zero-based here: tetrahedral
 trigonal-bipyramidal `@TB1`–`@TB20` and octahedral `@OH1`–`@OH30`.  The
 shorthand equivalence (`@` for `@TH1`, and so on) is not applied. -/
 inductive Chirality
+  /-- `@`. -/
   | anticlockwise
+  /-- `@@`. -/
   | clockwise
   /-- `@TH1`, `@TH2`. -/
   | th (k : Fin 2)
@@ -135,8 +137,8 @@ def symbol (a : Atom) : String :=
 /-- Whether the atom can be written without brackets: an organic-subset
 element (or `*`) carrying no bracket-only information. -/
 def canBeBare (a : Atom) : Bool :=
-  a.explicitH.isNone && a.isotope.isNone && a.charge == 0 &&
-    a.chirality.isNone && a.atomClass.isNone &&
+  a.explicitH.isNone && a.isotope.isNone && a.charge == 0 && a.chirality.isNone &&
+    a.atomClass.isNone &&
     (match a.element with
       | none => true
       | some e => e.inOrganicSubset)
@@ -146,7 +148,7 @@ def chargeString (c : ℤ) : String :=
   if c == 0 then ""
   else if c == 1 then "+"
   else if c == -1 then "-"
-  else if c > 0 then s!"+{c}"
+  else if 0 < c then s!"+{c}"
   else s!"{c}"
 
 /-- `H`, `H2`, …; empty for no hydrogens. -/
@@ -156,13 +158,9 @@ def hString (h : ℕ) : String :=
 /-- The bracket form `[isotope symbol chirality H charge :class]`, always
 valid, carrying the *total* hydrogen count. -/
 def toBracket (a : Atom) : String :=
-  "[" ++ (a.isotope.map toString).getD ""
-    ++ a.symbol
-    ++ (a.chirality.map Chirality.toSmiles).getD ""
-    ++ hString a.totalH
-    ++ chargeString a.charge
-    ++ (a.atomClass.map fun c ↦ s!":{c}").getD ""
-    ++ "]"
+  "[" ++ (a.isotope.map toString).getD "" ++ a.symbol
+    ++ (a.chirality.map Chirality.toSmiles).getD "" ++ hString a.totalH ++ chargeString a.charge
+    ++ (a.atomClass.map fun c ↦ s!":{c}").getD "" ++ "]"
 
 /-- The atom as SMILES writes it: bare when it can be, bracketed otherwise. -/
 def toSmiles (a : Atom) : String :=

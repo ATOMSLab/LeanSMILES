@@ -70,7 +70,8 @@ theorem parse_radius3Example :
           radius3Example.bonds.map fun b ↦ (b.src.val, b.dst.val, b.kind)) := by
   decide +kernel
 
-/-- Swapping the two ring CH carbons changes the radius-3 fingerprint. -/
+/-- Swapping the two ring CH carbons changes the radius-3 fingerprint: the swap decides which
+of them survives the radius-2 duplicate removal, and their radius-3 identifiers differ. -/
 theorem morganBits_relabel_swap_ne :
     (radius3Example.relabel (Equiv.swap 0 4)).morganBits 3 ≠ radius3Example.morganBits 3 := by
   decide +kernel

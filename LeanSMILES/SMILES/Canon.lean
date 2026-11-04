@@ -165,29 +165,24 @@ a permutation. -/
 def isPermTable (pos : Vector (Fin n) n) : Bool :=
   (List.finRange n).all fun j ↦ (List.finRange n).any fun i ↦ pos[i] == j
 
+/-- A permutation table hits every index: the tabulated function is surjective, hence (on
+`Fin n`) bijective. This is the direction `permOfRanks` needs. -/
 lemma surjective_of_isPermTable {pos : Vector (Fin n) n} (h : isPermTable pos = true) :
     Function.Surjective fun i : Fin n ↦ pos[i] := by
-  intro j
-  simp only [isPermTable, List.all_eq_true, List.any_eq_true, List.mem_finRange, true_and,
-    true_implies, beq_iff_eq] at h
-  exact h j
+  simpa [isPermTable, Function.Surjective] using h
 
 /-- The preimage of `j` under a permutation table, found by lookup. -/
 def invTable (pos : Vector (Fin n) n) (j : Fin n) : Fin n :=
   ((List.finRange n).find? fun i ↦ pos[i] == j).getD j
 
+/-- Looking up the preimage of `j` in a permutation table and reading it back gives `j`:
+`invTable` is a right inverse of the table. -/
 lemma getElem_invTable {pos : Vector (Fin n) n} (h : isPermTable pos = true) (j : Fin n) :
     pos[invTable pos j] = j := by
-  obtain ⟨i, hi⟩ := surjective_of_isPermTable h j
   have hs : ((List.finRange n).find? fun i ↦ pos[i] == j).isSome :=
-    List.find?_isSome.mpr ⟨i, List.mem_finRange i, by simp [hi]⟩
-  obtain ⟨i', hi'⟩ := Option.isSome_iff_exists.mp hs
-  have e : invTable pos j = i' := by
-    unfold invTable
-    rw [hi', Option.getD_some]
-  have h' := List.find?_some hi'
-  rw [← e] at h'
-  simpa using h'
+    List.find?_isSome.mpr <| by simpa using surjective_of_isPermTable h j
+  obtain ⟨i, hi⟩ := Option.isSome_iff_exists.mp hs
+  simpa only [invTable, hi, Option.getD_some, beq_iff_eq] using List.find?_some hi
 
 /-- A ranking as a permutation of the atoms, `rankPos`, when that is a
 bijection (which a discrete ranking guarantees); the identity otherwise. Both
@@ -450,13 +445,9 @@ theorem writeRanked_canonical : d.writeRanked d.canonical.1 = d.canonical.2 := b
   · rfl
   · rename_i s hmin
     obtain ⟨r, hr, hrs⟩ := List.mem_map.mp (List.min?_mem hmin)
-    have hfind : ((d.search n d.initialRanks).find? fun r ↦ d.writeRanked r == s).isSome :=
-      List.find?_isSome.mpr ⟨r, hr, by simp [hrs]⟩
-    obtain ⟨r', hr'⟩ := Option.isSome_iff_exists.mp hfind
-    have h := List.find?_some hr'
-    simp only [beq_iff_eq] at h
-    rw [hr']
-    exact h
+    obtain ⟨r', hr'⟩ : ∃ r', (d.search n d.initialRanks).find? (fun r ↦ d.writeRanked r == s) =
+        some r' := Option.isSome_iff_exists.mp <| List.find?_isSome.mpr ⟨r, hr, by simp [hrs]⟩
+    simpa [hr'] using List.find?_some hr'
 
 /-- Erasing nowhere changes nothing. -/
 lemma eraseStereo_of_forall_false {p : Fin n → Bool} (h : ∀ i, p i = false) :
@@ -535,10 +526,13 @@ theorem toSmiles_canonicalize : m.canonicalize.toSmiles = m.canonicalSmiles := b
     MolData.reduceAndCanonical_snd]
   exact m.toMolData.reduce.writeRanked_canonical
 
+/-- Canonicalization keeps the bond count: it only relabels and normalizes. -/
 lemma numBonds_canonicalize : m.canonicalize.numBonds = m.numBonds := by
   rw [canonicalize_eq_normalize_relabel, numBonds_normalize, numBonds_relabel]
   rfl
 
+/-- The canonical molecule's graph is that of the molecule relabeled into canonical order;
+normalization does not touch the graph. -/
 lemma graph_canonicalize : m.canonicalize.graph = (m.relabel m.canonicalPerm).graph := by
   rw [canonicalize_eq_normalize_relabel, graph_normalize]
   rfl
@@ -554,6 +548,7 @@ def canonicalizeIso : SimpleGraph.Iso m.graph m.canonicalize.graph :=
 `Molecule` and the pipeline carries no chemistry; but it is a property of the
 atoms alone, and canonicalization only permutes them. -/
 
+/-- Normalization keeps the atoms, so it keeps charge consistency, definitionally. -/
 lemma chargesConsistent_normalize : m.normalize.chargesConsistent ↔ m.chargesConsistent :=
   Iff.rfl
 
@@ -592,10 +587,14 @@ def Mol.canonicalize (M : Mol) : Mol := ⟨M.n, M.mol.canonicalize⟩
 /-- Relabel the atoms of a bundled molecule. -/
 def Mol.relabel (M : Mol) (σ : Equiv.Perm (Fin M.n)) : Mol := ⟨M.n, M.mol.relabel σ⟩
 
+/-- Relabeling a bundled molecule keeps charge consistency: `Molecule.chargesConsistent_relabel`
+on the carrier. -/
 theorem Mol.chargesConsistent_relabel (M : Mol) (σ : Equiv.Perm (Fin M.n)) :
     (M.relabel σ).chargesConsistent ↔ M.chargesConsistent :=
   M.mol.chargesConsistent_relabel σ
 
+/-- Canonicalizing a bundled molecule keeps charge consistency:
+`Molecule.chargesConsistent_canonicalize` on the carrier. -/
 theorem Mol.chargesConsistent_canonicalize (M : Mol) :
     M.canonicalize.chargesConsistent ↔ M.chargesConsistent :=
   M.mol.chargesConsistent_canonicalize

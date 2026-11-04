@@ -1,9 +1,9 @@
+/-
+Copyright (c) 2026 Tyler Josephson. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Tyler Josephson
+-/
 module
-
--- LeanLearn: learning algorithms on tabular data `(X, y)` and their proofs. Imports Mathlib only.
--- Every executable algorithm is written once over the scalar interface: `Float` is what runs,
--- `ℝ` is what the theorems are about. The executable code is at the top level and exposes its
--- definition bodies; everything under `Proofs/` is over `ℝ`.
 
 -- The scalar interface: `ScalarLike`, its polynomial fragment, and the `Float`-usable sums
 public import LeanLearn.Scalar
@@ -46,3 +46,13 @@ public import LeanLearn.Examples.ols
 public import LeanLearn.Examples.ridge
 public import LeanLearn.Examples.olsFloat
 public import LeanLearn.Examples.ridgeFloat
+
+/-!
+# LeanLearn
+
+Learning algorithms on tabular data `(X, y)` and their proofs; imports Mathlib only. Every
+executable algorithm is written once over the scalar interface of `LeanLearn.Scalar`: `Float`
+is what runs, `ℝ` is what the theorems are about. The executable code (`Regression/`,
+`Classification/`, `Plot/`) is at the top level and exposes its definition bodies; everything
+under `Proofs/` is over `ℝ`. Importing this module imports all of them.
+-/

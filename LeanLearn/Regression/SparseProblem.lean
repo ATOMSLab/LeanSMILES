@@ -41,15 +41,19 @@ namespace LeanLearn.Regression
 on-bits among `d` (a bit listed twice counts twice), their targets, and the ridge penalty
 `λ` of the centred dense problem `toProblem` — `α / m` for scikit-learn's `alpha`. -/
 structure SparseProblem (m d : ℕ) where
+  /-- Row `r` is the list of on-bits of sample `r`; a bit listed twice counts twice. -/
   bits : Vector (List (Fin d)) m
+  /-- The targets, one per sample. -/
   y : Vec ℚ m
+  /-- The ridge penalty `λ` of `toProblem`: `α / m` for scikit-learn's `alpha`. -/
   ridge : ℚ
 
 namespace SparseProblem
 
 variable {m d : ℕ}
 
-/-- `acc` with `c` added at every index in `l` (at an index listed twice, twice). -/
+/-- `acc` with `c` added at every index in `l` (at an index listed twice, twice), so entry `i`
+gains `c` times the count of `i` in `l` (`addAt_getElem`). -/
 def addAt (acc : Vec ℚ d) (c : ℚ) (l : List (Fin d)) : Vec ℚ d :=
   l.foldl (fun acc (j : Fin d) ↦ acc.set j (acc[j] + c)) acc
 
@@ -60,14 +64,15 @@ def scatter (bits : Vector (List (Fin d)) m) (v : Vec ℚ m) : Vec ℚ d :=
 
 variable (S : SparseProblem m d)
 
-/-- The bit means `x̄ⱼ = (1/m) Σᵣ xᵣⱼ`. -/
+/-- The bit means `x̄ⱼ = (1/m) Σᵣ xᵣⱼ`, the column centring of `toProblem` (`means_getElem`). -/
 def means : Vec ℚ d := (scatter S.bits (Vector.replicate m 1)).map (· / m)
 
-/-- The target mean `ȳ`. -/
+/-- The target mean `ȳ`, the target centring of `toProblem` (`toProblem_y`). -/
 def yMean : ℚ := sumFin (fun r : Fin m ↦ S.y[r]) / m
 
 /-- The dense problem: bit counts centred on their means, targets centred on theirs, the
-same `λ`. Never formed for 2048 bits; it is what `residual` and `loss` are proved equal to. -/
+same `λ`. Never formed for 2048 bits; it is what `residual` and `loss` are proved equal to
+(`residual_eq`, `loss_eq`). -/
 def toProblem : Problem ℚ m d :=
   { X := Vector.ofFn fun r ↦ Vector.ofFn fun j ↦ (S.bits[r].count j : ℚ) - S.means[j]
     y := Vector.ofFn fun r ↦ S.y[r] - S.yMean

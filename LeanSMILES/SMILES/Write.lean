@@ -21,10 +21,11 @@ every SMILES writer since Weininger (1989):
    digit at the opening, freed at the closing), then every child but the last
    in parentheses.
 
-With the identity rank, `toSmiles` writes the molecule in its stored atom
-order; with `canonicalRanks` (`LeanSMILES.SMILES.Canon`) it writes the
-canonical SMILES.  Everything the writer decides it decides from ranks and
-bond kinds alone, so when the ranks are label-independent, so is the string.
+`toSmiles` is `write` with the identity rank: the molecule in its stored atom
+order. The canonical SMILES (`LeanSMILES.SMILES.Canon`) relabels the atoms by
+`permOfRanks` of the canonical ranks and then calls `toSmiles`. Everything the
+writer decides it decides from ranks and bond kinds alone, so when the ranks are
+label-independent, so is the string.
 
 Tetrahedral marks are not copied from the input but computed: a centre's
 neighbors are listed in the order this walk writes them (`listedLigands`, the
@@ -46,22 +47,23 @@ namespace LeanSMILES.Molecule
 
 variable {n : ℕ}
 
-/-- The bond symbol the parser's implicit-kind rule makes redundant is
-omitted: a single bond is written only between two aromatic atoms, an aromatic
-bond only when not between two aromatic atoms. -/
+/-- The symbol written for a bond between `a` and `b`.  The one the parser's implicit-kind rule
+makes redundant is omitted: a single bond is written only between two aromatic atoms, an
+aromatic bond only when not between two aromatic atoms. -/
 def bondSymbol (a b : Atom) : BondKind → String
   | .single => if a.aromatic && b.aromatic then "-" else ""
   | .aromatic => if a.aromatic && b.aromatic then "" else ":"
   | k => k.symbol
 
-/-- `1`–`9`, then `%10`, `%11`, … -/
+/-- The ring-closure label for `d`: `1`–`9`, then `%10`, `%11`, … -/
 def ringDigit (d : ℕ) : String := if d < 10 then toString d else s!"%{d}"
 
-/-- Rank order, with the stored index to break ties. -/
+/-- `i` before `j` in rank order, the stored index breaking ties — the comparator every sort in
+the writer uses. -/
 def rankLE (rank : Fin n → ℕ) (i j : Fin n) : Bool :=
   decide (rank i < rank j ∨ (rank i = rank j ∧ i.val ≤ j.val))
 
-/-- The bonds at `a`, by the rank of the atom at the other end. -/
+/-- The bonds at `a`, in rank order (`rankLE`) of the atom at the other end. -/
 def sortedBondsAt (m : Molecule n) (rank : Fin n → ℕ) (a : Fin n) : List (Bond n) :=
   (m.bondsAt a).mergeSort fun b c ↦ rankLE rank (b.other a) (c.other a)
 
@@ -82,7 +84,8 @@ structure Walk (n : ℕ) where
 def Walk.init : Walk n :=
   ⟨Vector.replicate n false, Vector.replicate n none, Vector.replicate n [], []⟩
 
-/-- Depth-first walk from `a`; `fuel` bounds the depth (`n + 1` suffices). -/
+/-- Depth-first walk from `a`, neighbors in rank order; a bond back to a visited atom (not the
+parent's) is recorded once as a ring closure.  `fuel` bounds the depth; `n + 1` suffices. -/
 def dfs (m : Molecule n) (rank : Fin n → ℕ) : ℕ → Fin n → Walk n → Walk n
   | 0, _, w => w
   | fuel + 1, a, w₀ =>
@@ -200,7 +203,7 @@ structure Emit (n : ℕ) where
   /-- Ring closures opened and not yet closed, with their digit. -/
   opened : List (Sym2 (Fin n) × ℕ)
 
-/-- The smallest digit from `1` not in use. -/
+/-- The smallest digit from `1` not in `used`. -/
 def freeDigit (used : List ℕ) : ℕ := go (used.length + 1) 1
 where
   /-- The first candidate from `d` not in use, with fuel. -/
@@ -208,7 +211,9 @@ where
     | 0, d => d
     | fuel + 1, d => if used.contains d then go fuel (d + 1) else d
 
-/-- Write the ring-closure digits at `a`, a bond symbol at the opening one. -/
+/-- Write the ring-closure digits at `a`, in the order of `cls`: an open closure is closed and
+its digit freed; a new one is opened with the lowest free digit, after its bond symbol (the
+`/` `\` mark `dirs` gives the bond, if any). -/
 def emitClosures (m : Molecule n) (dirs : List (Sym2 (Fin n) × BondDir)) (a : Fin n)
     (cls : List (Bond n)) (e : Emit n) : Emit n :=
   cls.foldl (init := e) fun e c ↦
@@ -219,7 +224,9 @@ def emitClosures (m : Molecule n) (dirs : List (Sym2 (Fin n) × BondDir)) (a : F
       { out := e.out ++ m.bondSymbolAt dirs a c ++ ringDigit d,
         opened := (c.edge, d) :: e.opened }
 
-/-- Write the subtree at `a`. -/
+/-- Write the subtree at `a`, `fuel` bounding the depth: the atom with its tetrahedral mark, its
+ring closures in rank order of the far atom, then the children in visit order after their bond
+symbols (with the `/` `\` marks of `dirs`), all but the last in parentheses. -/
 def emit (m : Molecule n) (rank : Fin n → ℕ) (w : Walk n) (dirs : List (Sym2 (Fin n) × BondDir)) :
     ℕ → Fin n → Emit n → Emit n
   | 0, _, e => e
@@ -256,7 +263,7 @@ def write (m : Molecule n) (rank : Fin n → ℕ) : String :=
     emit m rank w dirs (n + 1) r e
   e.out
 
-/-- The molecule written in its stored atom order. -/
+/-- The molecule written in its stored atom order: `write` with the identity rank. -/
 def toSmiles (m : Molecule n) : String := m.write (·.val)
 
 end LeanSMILES.Molecule

@@ -54,16 +54,22 @@ variable {K : Type} [PolynomialLike K] {m n : ℕ}
 /-- The count `n` as a scalar, by repeated addition (no `NatCast` needed). -/
 def count (n : ℕ) : K := nsmulGen n 1
 
+/-- The inner product `⟪u, v⟫ = ∑ᵢ uᵢ vᵢ`, a `sumFin` so it runs unchanged on `Float`. -/
 @[specialize] def dot (u v : Vec K n) : K := sumFin fun i : Fin n ↦ u[i] * v[i]
 
+/-- The matrix–vector product `A v`: entry `i` is the `dot` of row `A[i]` with `v`. -/
 @[specialize] def matVec (A : Mat K m n) (v : Vec K n) : Vec K m := Vector.ofFn fun i ↦ dot A[i] v
 
+/-- The componentwise difference `u - v`; the residual `A θ - b` is `vsub (matVec A θ) b`. -/
 @[specialize] def vsub (u v : Vec K n) : Vec K n := Vector.ofFn fun i ↦ u[i] - v[i]
 
+/-- The componentwise sum `u + v`; a gradient step is `vadd θ` of a `smul` of the residual. -/
 @[specialize] def vadd (u v : Vec K n) : Vec K n := Vector.ofFn fun i ↦ u[i] + v[i]
 
+/-- The scalar multiple `c • v`, componentwise. -/
 @[specialize] def smul (c : K) (v : Vec K n) : Vec K n := Vector.ofFn fun i ↦ c * v[i]
 
+/-- The zero vector, the starting point of every iterative solver in `Solvers.lean`. -/
 def vzero : Vec K n := Vector.ofFn fun _ ↦ 0
 
 /-- Append the constant feature `1`, so an affine model `⟪w, x⟫ + b` is the linear model
@@ -78,8 +84,11 @@ end Polynomial
 /-- A ridge regression problem: `m` samples of `d` features, targets, and the ridge
 penalty `λ` (`0` for ordinary least squares). -/
 structure Problem (K : Type) (m d : ℕ) where
+  /-- The feature matrix: row `r` is sample `r`, without the constant feature. -/
   X : Mat K m d
+  /-- The target of each sample. -/
   y : Vec K m
+  /-- The ridge penalty `λ`; `0` for ordinary least squares. -/
   ridge : K
 
 namespace Problem

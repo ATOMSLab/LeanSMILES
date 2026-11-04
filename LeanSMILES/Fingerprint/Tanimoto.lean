@@ -66,8 +66,8 @@ inequality on four points `p, u, v, w` — writing `a = δ(u,p)`, `b = δ(v,p)`,
 Only three of the triangle inequalities are needed. Division by zero is `0`, so the degenerate
 cases need no hypotheses. -/
 theorem steinhaus_triangle {K : Type*} [Field K] [LinearOrder K] [IsStrictOrderedRing K]
-    {a b c x y z : K} (ha : 0 ≤ a) (hb : 0 ≤ b) (hc : 0 ≤ c) (hx : 0 ≤ x) (hy : 0 ≤ y)
-    (hz : 0 ≤ z) (hxyz : z ≤ x + y) (hbcy : b ≤ c + y) (hbax : b ≤ a + x) :
+    {a b c x y z : K} (ha : 0 ≤ a) (hb : 0 ≤ b) (hc : 0 ≤ c) (hx : 0 ≤ x) (hy : 0 ≤ y) (hz : 0 ≤ z)
+    (hxyz : z ≤ x + y) (hbcy : b ≤ c + y) (hbax : b ≤ a + x) :
     z / (a + c + z) ≤ x / (a + b + x) + y / (b + c + y) := by
   have h1 : x / (a + c + x + y) ≤ x / (a + b + x) := by
     rcases hx.eq_or_lt with rfl | hx'
@@ -79,9 +79,8 @@ theorem steinhaus_triangle {K : Type*} [Field K] [LinearOrder K] [IsStrictOrdere
     · exact div_le_div_of_nonneg_left hy'.le (by linarith) (by linarith)
   have h3 : z / (a + c + z) ≤ (x + y) / (a + c + x + y) := by
     rcases (add_nonneg (add_nonneg ha hc) hz).eq_or_lt with h0 | hpos
-    · have hz0 : z = 0 := by linarith
-      rw [hz0, zero_div]
-      exact div_nonneg (by linarith) (by linarith)
+    · rw [show z = 0 by linarith, zero_div]
+      positivity
     · rw [div_le_div_iff₀ hpos (by linarith)]
       nlinarith [mul_le_mul_of_nonneg_right hxyz (add_nonneg ha hc)]
   calc z / (a + c + z) ≤ (x + y) / (a + c + x + y) := h3
@@ -106,54 +105,67 @@ def tanimoto (A B : Finset α) : ℚ := #(A ∩ B) / #(A ∪ B)
 (`tanimotoMetricSpace`) where `1 - tanimoto` is not. -/
 def tanimotoDist (A B : Finset α) : ℚ := #(A ∆ B) / #(A ∪ B)
 
+/-- Tanimoto similarity is symmetric in its two fingerprints. -/
 theorem tanimoto_comm (A B : Finset α) : A.tanimoto B = B.tanimoto A := by
-  unfold tanimoto; rw [inter_comm A B, union_comm A B]
+  rw [tanimoto, tanimoto, inter_comm, union_comm]
 
+/-- Tanimoto distance is symmetric; it is `dist_comm` of `tanimotoMetricSpace`. -/
 theorem tanimotoDist_comm (A B : Finset α) : A.tanimotoDist B = B.tanimotoDist A := by
-  unfold tanimotoDist; rw [symmDiff_comm A B, union_comm A B]
+  rw [tanimotoDist, tanimotoDist, symmDiff_comm, union_comm]
 
+/-- Two empty fingerprints have similarity `0`, not `1`: the RDKit convention, and the reason
+`1 - tanimoto` is not a distance (`one_sub_tanimoto_empty_empty`). -/
 @[simp] theorem tanimoto_empty_empty : (∅ : Finset α).tanimoto ∅ = 0 := by simp [tanimoto]
 
+/-- A nonempty fingerprint is perfectly similar to itself; the empty one is not
+(`tanimoto_empty_empty`), hence the hypothesis. -/
 theorem tanimoto_self {A : Finset α} (h : A.Nonempty) : A.tanimoto A = 1 := by
-  rw [tanimoto, inter_self, union_self, div_self]
-  exact_mod_cast h.card_pos.ne'
+  simp [tanimoto, h.ne_empty]
 
-@[simp] theorem tanimotoDist_self (A : Finset α) : A.tanimotoDist A = 0 := by
-  simp [tanimotoDist]
+/-- A fingerprint is at distance `0` from itself, with no nonemptiness hypothesis, unlike
+`tanimoto_self`. -/
+@[simp] theorem tanimotoDist_self (A : Finset α) : A.tanimotoDist A = 0 := by simp [tanimotoDist]
 
-theorem tanimoto_nonneg (A B : Finset α) : 0 ≤ A.tanimoto B := by
-  unfold tanimoto; positivity
+/-- Tanimoto similarity is nonnegative. -/
+theorem tanimoto_nonneg (A B : Finset α) : 0 ≤ A.tanimoto B :=
+  div_nonneg (Nat.cast_nonneg _) (Nat.cast_nonneg _)
 
+/-- Tanimoto similarity is at most `1`, because `A ∩ B ⊆ A ∪ B`. -/
 theorem tanimoto_le_one (A B : Finset α) : A.tanimoto B ≤ 1 :=
-  div_le_one_of_le₀ (by exact_mod_cast card_le_card inter_subset_union) (by positivity)
+  div_le_one_of_le₀ (mod_cast card_le_card inter_subset_union) (by positivity)
 
-theorem tanimotoDist_nonneg (A B : Finset α) : 0 ≤ A.tanimotoDist B := by
-  unfold tanimotoDist; positivity
+/-- Tanimoto distance is nonnegative. -/
+theorem tanimotoDist_nonneg (A B : Finset α) : 0 ≤ A.tanimotoDist B :=
+  div_nonneg (Nat.cast_nonneg _) (Nat.cast_nonneg _)
 
+/-- Tanimoto distance is at most `1`, because `A ∆ B ⊆ A ∪ B`. -/
 theorem tanimotoDist_le_one (A B : Finset α) : A.tanimotoDist B ≤ 1 :=
-  div_le_one_of_le₀ (by exact_mod_cast card_le_card symmDiff_subset_union) (by positivity)
+  div_le_one_of_le₀ (mod_cast card_le_card symmDiff_subset_union) (by positivity)
 
 /-! ### Counting -/
 
+/-- The union splits into the symmetric difference and the intersection:
+`|A ∆ B| + |A ∩ B| = |A ∪ B|`, the `∆` counterpart of `Finset.card_union_add_card_inter`. -/
 theorem card_symmDiff_add_card_inter (A B : Finset α) : #(A ∆ B) + #(A ∩ B) = #(A ∪ B) := by
   rw [symmDiff_eq_sup_sdiff_inf, sup_eq_union, inf_eq_inter]
   exact card_sdiff_add_card_eq_card inter_subset_union
 
+/-- `2|A ∪ B| = |A| + |B| + |A ∆ B|`: the identity that makes the Steinhaus transform of the
+Hamming distance the Tanimoto distance (`tanimotoDist_eq_two_mul_div`). -/
 theorem two_mul_card_union (A B : Finset α) : 2 * #(A ∪ B) = #A + #B + #(A ∆ B) := by
-  have h₁ := card_union_add_card_inter A B
-  have h₂ := card_symmDiff_add_card_inter A B
-  omega
+  linarith [card_union_add_card_inter A B, card_symmDiff_add_card_inter A B]
 
 /-- Similarity and distance sum to one, as soon as either set has an element. -/
 theorem tanimoto_add_tanimotoDist (A B : Finset α) (h : (A ∪ B).Nonempty) :
     A.tanimoto B + A.tanimotoDist B = 1 := by
-  unfold tanimoto tanimotoDist
-  rw [← add_div, div_eq_one_iff_eq (by exact_mod_cast h.card_pos.ne')]
-  exact_mod_cast (add_comm _ _).trans (card_symmDiff_add_card_inter A B)
+  rw [tanimoto, tanimotoDist, ← add_div, add_comm, ← Nat.cast_add, card_symmDiff_add_card_inter,
+    div_self (mod_cast h.card_pos.ne')]
 
+/-- Tanimoto distance is one minus Tanimoto similarity as soon as either set has an element; at
+`(∅, ∅)` the two sides are `0` and `1`. -/
 theorem tanimotoDist_eq_one_sub (A B : Finset α) (h : (A ∪ B).Nonempty) :
-    A.tanimotoDist B = 1 - A.tanimoto B := by
-  rw [← tanimoto_add_tanimotoDist A B h]; ring
+    A.tanimotoDist B = 1 - A.tanimoto B :=
+  eq_sub_of_add_eq' (tanimoto_add_tanimotoDist A B h)
 
 /-- The one pair where `1 - tanimoto` is not a distance: two empty fingerprints are at
 distance `1` from each other, not `0`. -/
@@ -161,42 +173,40 @@ theorem one_sub_tanimoto_empty_empty : 1 - (∅ : Finset α).tanimoto ∅ = 1 :=
 
 /-- The Hamming distance `|A ∆ B|` satisfies the triangle inequality. -/
 theorem card_symmDiff_le (A B C : Finset α) : #(A ∆ C) ≤ #(A ∆ B) + #(B ∆ C) :=
-  calc #(A ∆ C) ≤ #(A ∆ B ∪ B ∆ C) := card_le_card (symmDiff_triangle (a := A) (b := B) (c := C))
-    _ ≤ #(A ∆ B) + #(B ∆ C) := card_union_le _ _
+  (card_le_card (symmDiff_triangle (a := A) (b := B) (c := C))).trans (card_union_le _ _)
 
 /-! ### The metric -/
 
+/-- Tanimoto distance vanishes exactly on equal fingerprints, `(∅, ∅)` included; the
+`eq_of_dist_eq_zero` of `tanimotoMetricSpace`. -/
 theorem tanimotoDist_eq_zero_iff {A B : Finset α} : A.tanimotoDist B = 0 ↔ A = B := by
-  refine ⟨fun h ↦ ?_, fun h ↦ by subst h; exact tanimotoDist_self A⟩
-  rcases div_eq_zero_iff.1 h with h | h
-  · exact symmDiff_eq_empty.1 (card_eq_zero.1 (by exact_mod_cast h))
-  · obtain ⟨rfl, rfl⟩ := union_eq_empty.1 (card_eq_zero.1 (by exact_mod_cast h))
-    rfl
+  simp only [tanimotoDist, div_eq_zero_iff, Nat.cast_eq_zero, card_eq_zero, symmDiff_eq_empty,
+    union_eq_empty, or_iff_left_iff_imp, and_imp]
+  rintro rfl rfl
+  rfl
 
 /-- The Tanimoto distance as the Steinhaus transform of the Hamming distance. -/
 theorem tanimotoDist_eq_two_mul_div (A B : Finset α) :
     A.tanimotoDist B = 2 * #(A ∆ B) / (#A + #B + #(A ∆ B) : ℚ) := by
-  unfold tanimotoDist
-  have h : (#(A ∪ B) : ℚ) = (#A + #B + #(A ∆ B)) / 2 := by
-    rw [eq_div_iff two_ne_zero, mul_comm]; exact_mod_cast two_mul_card_union A B
-  rw [h, div_div_eq_mul_div, mul_comm]
+  have h : (2 * #(A ∪ B) : ℚ) = #A + #B + #(A ∆ B) := mod_cast two_mul_card_union A B
+  rw [tanimotoDist, ← h, mul_div_mul_left _ _ two_ne_zero]
 
 /-- **Triangle inequality for the Tanimoto distance** (Marczewski–Steinhaus 1958; Lipkus 1999).
 -/
 theorem tanimotoDist_triangle (A B C : Finset α) :
     A.tanimotoDist C ≤ A.tanimotoDist B + B.tanimotoDist C := by
-  have hAC := card_symmDiff_le A B C
-  have hB₁ := card_symmDiff_le B C ⊥
-  have hB₂ := card_symmDiff_le B A ⊥
-  rw [symmDiff_bot, symmDiff_bot] at hB₁ hB₂
-  rw [symmDiff_comm B A] at hB₂
+  -- Hamming triangle inequalities through `∅`: the `b ≤ c + y` and `b ≤ a + x` of
+  -- `steinhaus_triangle`.
+  have hB₁ : #B ≤ #C + #(B ∆ C) := by
+    simpa only [symmDiff_bot, add_comm] using card_symmDiff_le B C ⊥
+  have hB₂ : #B ≤ #A + #(A ∆ B) := by
+    simpa only [symmDiff_bot, symmDiff_comm, add_comm] using card_symmDiff_le B A ⊥
   rw [tanimotoDist_eq_two_mul_div, tanimotoDist_eq_two_mul_div, tanimotoDist_eq_two_mul_div,
     mul_div_assoc, mul_div_assoc, mul_div_assoc, ← mul_add]
   refine mul_le_mul_of_nonneg_left ?_ zero_le_two
   exact LeanSMILES.steinhaus_triangle (by positivity) (by positivity) (by positivity)
-    (by positivity) (by positivity) (by positivity) (by exact_mod_cast hAC)
-    (by exact_mod_cast (show #B ≤ #C + #(B ∆ C) by omega))
-    (by exact_mod_cast (show #B ≤ #A + #(A ∆ B) by omega))
+    (by positivity) (by positivity) (by positivity) (mod_cast card_symmDiff_le A B C)
+    (mod_cast hB₁) (mod_cast hB₂)
 
 /-- **Tanimoto distance is a metric.** Binary fingerprints over bit type `α`, with
 `dist A B = |A ∆ B| / |A ∪ B|`. A definition rather than an instance, so that `Finset α` is not
@@ -205,17 +215,13 @@ given a topology behind your back: `letI := Finset.tanimotoMetricSpace α` to us
   dist A B := (A.tanimotoDist B : ℝ)
   dist_self A := by simp
   dist_comm A B := by rw [tanimotoDist_comm]
-  dist_triangle A B C := by exact_mod_cast tanimotoDist_triangle A B C
-  eq_of_dist_eq_zero h := tanimotoDist_eq_zero_iff.1 (by exact_mod_cast h)
+  dist_triangle A B C := mod_cast tanimotoDist_triangle A B C
+  eq_of_dist_eq_zero h := tanimotoDist_eq_zero_iff.1 (mod_cast h)
 
-example : ({0, 1, 2} : Finset ℕ).tanimoto {1, 2, 3} = 1 / 2 := by
-  rw [tanimoto, show ({0, 1, 2} ∩ {1, 2, 3} : Finset ℕ).card = 2 by decide,
-    show ({0, 1, 2} ∪ {1, 2, 3} : Finset ℕ).card = 4 by decide]
-  norm_num
+example : ({0, 1, 2} : Finset ℕ).tanimoto {1, 2, 3} = 1 / 2 := by norm_num [tanimoto]
 
 example : ({0, 1, 2} : Finset ℕ).tanimotoDist {1, 2, 3} = 1 / 2 := by
-  rw [tanimotoDist, show ({0, 1, 2} ∆ {1, 2, 3} : Finset ℕ).card = 2 by decide,
-    show ({0, 1, 2} ∪ {1, 2, 3} : Finset ℕ).card = 4 by decide]
+  rw [tanimotoDist, show ({0, 1, 2} ∆ {1, 2, 3} : Finset ℕ).card = 2 by decide]
   norm_num
 
 end Finset
@@ -234,55 +240,43 @@ variable {ι : Type*} [Fintype ι] {K : Type*} [Field K]
 nonnegative vectors it vanishes only at `x = y = 0`, where the value is `0`. -/
 def tanimotoVec (x y : ι → K) : K := x ⬝ᵥ y / (x ⬝ᵥ x + y ⬝ᵥ y - x ⬝ᵥ y)
 
+/-- The vector Tanimoto similarity is symmetric. -/
 theorem tanimotoVec_comm (x y : ι → K) : tanimotoVec x y = tanimotoVec y x := by
-  unfold tanimotoVec; rw [dotProduct_comm x y, add_comm (x ⬝ᵥ x)]
+  rw [tanimotoVec, tanimotoVec, dotProduct_comm x y, add_comm (x ⬝ᵥ x)]
 
+/-- The dot product of two 0/1 indicator vectors counts the bits they share. -/
 theorem dotProduct_indicator [DecidableEq ι] (A B : Finset ι) :
     (fun i ↦ if i ∈ A then (1 : K) else 0) ⬝ᵥ (fun i ↦ if i ∈ B then 1 else 0) = #(A ∩ B) := by
-  have h : ∀ i, (if i ∈ A then (1 : K) else 0) * (if i ∈ B then 1 else 0) =
-      if i ∈ A ∩ B then 1 else 0 := by
-    intro i; by_cases hA : i ∈ A <;> by_cases hB : i ∈ B <;> simp [hA, hB]
-  simp only [dotProduct, h, Finset.sum_boole, Finset.filter_univ_mem]
+  simp [dotProduct, Finset.inter_comm]
 
 /-- On 0/1 vectors, the vector formula is the bit-set Tanimoto of the supports. -/
 theorem tanimotoVec_indicator [DecidableEq ι] [CharZero K] (A B : Finset ι) :
     tanimotoVec (fun i ↦ if i ∈ A then (1 : K) else 0) (fun i ↦ if i ∈ B then 1 else 0) =
       (A.tanimoto B : K) := by
-  unfold tanimotoVec Finset.tanimoto
-  rw [dotProduct_indicator, dotProduct_indicator, dotProduct_indicator, Finset.inter_self,
-    Finset.inter_self]
-  have h : (#(A ∪ B) : K) = #A + #B - #(A ∩ B) := by
-    rw [eq_sub_iff_add_eq]; exact_mod_cast Finset.card_union_add_card_inter A B
-  push_cast
-  rw [h]
+  have h : (#(A ∪ B) : K) = #A + #B - #(A ∩ B) :=
+    eq_sub_of_add_eq (mod_cast Finset.card_union_add_card_inter A B)
+  simp [tanimotoVec, Finset.tanimoto, dotProduct_indicator, h]
 
 /-- **`1 - tanimotoVec` is not a metric** on real-valued vectors: the triangle inequality fails
 already for three scalars in `[0, 1]`. With `x = 1/3`, `y = 2/3`, `z = 1` the distances are
 `d(x,y) = 1/3`, `d(y,z) = 1/7`, `d(x,z) = 4/7`, and `1/3 + 1/7 = 10/21 < 12/21`. -/
-theorem not_tanimotoVec_dist_triangle :
-    ¬ ∀ x y z : Fin 1 → ℝ,
-      1 - tanimotoVec x z ≤ (1 - tanimotoVec x y) + (1 - tanimotoVec y z) := by
-  intro h
-  have := h ![1 / 3] ![2 / 3] ![1]
-  norm_num [tanimotoVec, dotProduct] at this
+theorem not_tanimotoVec_dist_triangle : ¬ ∀ x y z : Fin 1 → ℝ,
+    1 - tanimotoVec x z ≤ (1 - tanimotoVec x y) + (1 - tanimotoVec y z) :=
+  fun h ↦ absurd (h ![1 / 3] ![2 / 3] ![1]) (by norm_num [tanimotoVec, dotProduct])
 
 /-- The paper's counterexample, `x = (1, 0)`, `y = (1, 1)/√2`, `z = (0, 1)`, with `y` rounded to
 `(0.7, 0.7)` to stay in `ℚ`: `d(x,y) + d(y,z) = 29/32 < 1 = d(x,z)`. `x` and `z` are binary; one
 real-valued vector between them is enough. -/
 example : ¬ ∀ x y z : Fin 2 → ℝ,
-    1 - tanimotoVec x z ≤ (1 - tanimotoVec x y) + (1 - tanimotoVec y z) := by
-  intro h
-  have := h ![1, 0] ![7 / 10, 7 / 10] ![0, 1]
-  norm_num [tanimotoVec, dotProduct, Fin.sum_univ_two] at this
+    1 - tanimotoVec x z ≤ (1 - tanimotoVec x y) + (1 - tanimotoVec y z) :=
+  fun h ↦ absurd (h ![1, 0] ![7 / 10, 7 / 10] ![0, 1]) <| by
+    norm_num [tanimotoVec, dotProduct, Fin.sum_univ_two]
 
 /-- No metric space structure on real-valued vectors has `1 - tanimotoVec` as its distance. -/
-theorem not_exists_metricSpace_tanimotoVec :
-    ¬ ∃ m : MetricSpace (Fin 1 → ℝ),
-      ∀ x y, @dist _ m.toPseudoMetricSpace.toDist x y = 1 - tanimotoVec x y := by
-  rintro ⟨m, hm⟩
-  exact not_tanimotoVec_dist_triangle fun x y z ↦ by
-    rw [← hm, ← hm, ← hm]
-    exact @dist_triangle _ m.toPseudoMetricSpace x y z
+theorem not_exists_metricSpace_tanimotoVec : ¬ ∃ m : MetricSpace (Fin 1 → ℝ),
+    ∀ x y, @dist _ m.toPseudoMetricSpace.toDist x y = 1 - tanimotoVec x y :=
+  fun ⟨m, hm⟩ ↦ not_tanimotoVec_dist_triangle fun x y z ↦ by
+    simpa only [← hm] using @dist_triangle _ m.toPseudoMetricSpace x y z
 
 /-! ### The code: `tanimoto` on lists of on-bits -/
 
@@ -291,22 +285,14 @@ sets. -/
 theorem tanimoto_eq_toFinset {a b : List ℕ} (ha : a.Nodup) (hb : b.Nodup) :
     tanimoto a b = a.toFinset.tanimoto b.toFinset := by
   have hc : (a.filter b.contains).length = #(a.toFinset ∩ b.toFinset) := by
-    rw [← List.toFinset_card_of_nodup (ha.filter _), List.toFinset_filter]
+    rw [← List.toFinset_card_of_nodup (ha.filter _)]
     congr 1
     ext x
     simp
-  have hu : a.length + b.length - (a.filter b.contains).length = #(a.toFinset ∪ b.toFinset) := by
-    have := Finset.card_union_add_card_inter a.toFinset b.toFinset
-    rw [List.toFinset_card_of_nodup ha, List.toFinset_card_of_nodup hb] at this
-    rw [hc]
-    omega
-  unfold tanimoto Finset.tanimoto
-  dsimp only
-  rw [hu, hc]
-  simp only [beq_iff_eq]
-  split_ifs with h
-  · rw [h]; simp
-  · rfl
+  have hu : a.length + b.length - #(a.toFinset ∩ b.toFinset) = #(a.toFinset ∪ b.toFinset) := by
+    rw [Finset.card_union, List.toFinset_card_of_nodup ha, List.toFinset_card_of_nodup hb]
+  simp only [tanimoto, Finset.tanimoto, hc, hu, beq_iff_eq]
+  split_ifs with h <;> simp [h]
 
 /-- `List.eraseDups` removes all duplicates. (Core has `List.mem_eraseDups` but no `Nodup`
 lemma for it at this toolchain.) -/
@@ -315,12 +301,9 @@ theorem _root_.List.nodup_eraseDups {β : Type*} [BEq β] [LawfulBEq β] :
   | [] => by simp
   | a :: as => by
     rw [List.eraseDups_cons]
-    refine List.Nodup.cons ?_ (List.nodup_eraseDups _)
-    intro h
-    rw [List.mem_eraseDups, List.mem_filter] at h
-    simp at h
+    exact List.Nodup.cons (by simp [List.mem_eraseDups]) (List.nodup_eraseDups _)
 termination_by l => l.length
-decreasing_by simp_wf; exact Nat.lt_succ_of_le (List.length_filter_le _ _)
+decreasing_by exact Nat.lt_succ_of_le (List.length_filter_le _ _)
 
 /-- Folded Morgan fingerprints have no repeated bits. -/
 theorem Molecule.nodup_morganBits {n : ℕ} (m : Molecule n) (radius fpSize : ℕ) :

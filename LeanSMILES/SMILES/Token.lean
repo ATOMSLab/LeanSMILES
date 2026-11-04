@@ -58,7 +58,7 @@ inductive ParseError
 
 namespace ParseError
 
-/-- A message with the position. -/
+/-- The error as a one-line message, naming the position where it has one. -/
 def toString : ParseError → String
   | unexpectedChar pos c => s!"unexpected character '{c}' at {pos}"
   | unexpectedEnd expected => s!"unexpected end of input, expected {expected}"
@@ -104,7 +104,9 @@ inductive TokenKind
   | dirBond (d : BondDir)
   /-- `.`: no bond. -/
   | dot
+  /-- `(`: opens a branch. -/
   | branchOpen
+  /-- `)`: closes a branch. -/
   | branchClose
   /-- A ring-closure label: a digit, or `%` followed by two digits. -/
   | ring (num : ℕ)
@@ -123,7 +125,7 @@ namespace Tokenizer
 /-- Split off a (possibly empty) run of digits. -/
 def takeDigits (cs : List Char) : List Char × List Char := cs.span Char.isDigit
 
-/-- The number a run of digits denotes. -/
+/-- The number a run of digits denotes; the empty run denotes `0`. -/
 def digitsToNat (ds : List Char) : ℕ :=
   ds.foldl (fun n d ↦ 10 * n + (d.toNat - '0'.toNat)) 0
 
@@ -136,7 +138,9 @@ lowercase, and the remaining characters. -/
 abbrev BracketSymbol := Option Element × Bool × List Char
 
 /-- The element symbol inside brackets, greedy on two-letter symbols (`[Sc]` is scandium,
-`[Co]` cobalt); lowercase symbols are aromatic. -/
+`[Co]` cobalt), lowercase symbols aromatic.  A letter naming no element is an `unknownElement`,
+a non-letter an `unexpectedChar`, and a lowercase symbol of an element that may not be
+aromatic a `badBracket`. -/
 def bracketSymbol (bracketPos symbolPos : ℕ) : List Char → Except ParseError BracketSymbol
   | '*' :: rest => .ok (none, false, rest)
   | c :: rest =>
@@ -178,12 +182,14 @@ where
       else .error (.badBracket bracketPos s!"'{c}' may not be written aromatic")
     | none => .error (.unknownElement symbolPos (String.ofList [c]))
 
-/-- The zero-based index of a one-based class number `k` in `1 … n`. -/
+/-- The zero-based index of a one-based class number `k` in `1 … n`; `none` outside that
+range. -/
 def classIndex (n k : ℕ) : Option (Fin n) :=
-  if h : 1 ≤ k ∧ k ≤ n then some ⟨k - 1, by omega⟩ else none
+  if h : 1 ≤ k ∧ k ≤ n then some ⟨k - 1, by lia⟩ else none
 
-/-- `@@`, `@`, a named class `@TH1` … `@OH30` (OpenSMILES §3.7), or nothing.
-`pos` is the position of the `[`, for errors. -/
+/-- `@@`, `@`, a named class `@TH1` … `@OH30` (OpenSMILES §3.7), or nothing.  A named class
+whose number is outside its range (`@TH3`, `@SP0`) is a `badBracket`.  `pos` is the position
+of the `[`, for errors. -/
 def parseChirality (pos : ℕ) : List Char → Except ParseError (Option Chirality × List Char)
   | '@' :: '@' :: rest => .ok (some .clockwise, rest)
   | '@' :: rest =>
@@ -247,8 +253,9 @@ def parseClass (pos : ℕ) : List Char → Except ParseError (Option ℕ × List
     else .ok (some (digitsToNat ds), rest')
   | cs => .ok (none, cs)
 
-/-- Decode the inside of a bracket atom, given the characters after `[`.
-Returns the atom and the characters after the closing `]`. -/
+/-- Decode the inside of a bracket atom, given the characters after `[`.  Returns the atom
+and the characters after the closing `]`; any other character where `]` should be is a
+`badBracket`, and running out of input is an `unexpectedEnd`. -/
 def bracketAtom (pos : ℕ) (cs : List Char) : Except ParseError (Atom × List Char) := do
   let (isoDigits, cs) := takeDigits cs
   let isotope := if isoDigits.isEmpty then none else some (digitsToNat isoDigits)
@@ -265,7 +272,8 @@ def bracketAtom (pos : ℕ) (cs : List Char) : Except ParseError (Atom × List C
 
 /-! ### Bare atoms: the organic subset -/
 
-/-- A bare atom: `B C N O P S F Cl Br I *` and aromatic `b c n o p s`. -/
+/-- A bare atom: `B C N O P S F Cl Br I *` and aromatic `b c n o p s`, with `Cl` and `Br`
+read greedily; `none` for any other character. -/
 def organicAtom (c : Char) (rest : List Char) : Option (Atom × List Char) :=
   match c, rest with
   | 'C', 'l' :: rest' => some (Atom.ofElement .Cl, rest')
@@ -289,8 +297,9 @@ def organicAtom (c : Char) (rest : List Char) : Option (Atom × List Char) :=
 
 /-! ### The tokenizer -/
 
-/-- Tokenize, with `fuel` bounding the number of tokens (one per character
-suffices). -/
+/-- The tokenizer loop: `go fuel cs pos acc` tokenizes `cs`, whose first character is at
+position `pos`, onto `acc`.  `fuel` bounds the number of tokens (one per character suffices;
+running out is an `internal` error).  Reading stops at the first whitespace. -/
 def go : ℕ → List Char → ℕ → Array Token → Except ParseError (Array Token)
   | 0, _, _, _ => .error (.internal "tokenizer out of fuel")
   | _, [], _, acc => .ok acc
@@ -325,8 +334,8 @@ def go : ℕ → List Char → ℕ → Array Token → Except ParseError (Array 
 
 end Tokenizer
 
-/-- Tokenize a SMILES string.  Leading whitespace is skipped; positions still
-count from the start of the string. -/
+/-- Tokenize a SMILES string.  Leading whitespace is skipped, positions still count from the
+start of the string, and reading stops at the next whitespace (what follows is a title). -/
 def tokenize (s : String) : Except ParseError (Array Token) :=
   let (lead, cs) := s.toList.span Char.isWhitespace
   Tokenizer.go (cs.length + 1) cs lead.length #[]

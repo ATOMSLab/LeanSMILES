@@ -34,31 +34,35 @@ abbrev Design (K : Type) (n p : ℕ) := Matrix (Fin n) (Fin p) K
 /-- One coefficient per supplied feature. -/
 abbrev Coefficients (K : Type) (p : ℕ) := Fin p → K
 
-/-- Prediction for one feature vector, including a supplied intercept feature. -/
+/-- The inner product `Σⱼ xⱼ wⱼ` of one feature row with the coefficients; an intercept, if
+any, is a feature of `x` rather than an added term. -/
 def predictRow (x w : Fin p → K) : K := sumFin fun j ↦ x j * w j
 
-/-- Predicted targets on a supplied numerical design. -/
+/-- The predicted targets `Xw`: `predictRow` applied to every row of the design. -/
 def predict (X : Design K n p) (w : Coefficients K p) : Fin n → K :=
   fun i ↦ predictRow (X i) w
 
-/-- Prediction minus observed target. -/
+/-- The residual `Xw − y`, prediction minus observed target, one entry per observation. -/
 def residual (X : Design K n p) (y : Fin n → K) (w : Coefficients K p) : Fin n → K :=
   fun i ↦ predict X w i - y i
 
-/-- OLS objective, a sum of squared residuals without averaging. -/
+/-- The OLS objective `‖Xw − y‖²`, a sum of squared residuals without averaging. -/
 def squaredError (X : Design K n p) (y : Fin n → K) (w : Coefficients K p) : K :=
-  sumFin fun i ↦ let r := residual X y w i; r * r
+  sumFin fun i ↦
+    let r := residual X y w i
+    r * r
 
-/-- Diagonal coefficient penalty. A zero weight exempts that coefficient. -/
+/-- The diagonal penalty `Σⱼ ρⱼ wⱼ²`; a zero weight exempts that coefficient, e.g. an
+intercept. -/
 def penalty (weights w : Fin p → K) : K := sumFin fun j ↦ weights j * (w j * w j)
 
-/-- Ridge objective; constant weights give standard ridge. -/
+/-- The ridge objective `‖Xw − y‖² + Σⱼ ρⱼ wⱼ²`; constant weights give standard ridge. -/
 def ridgeLoss (X : Design K n p) (y : Fin n → K) (weights w : Fin p → K) : K :=
   squaredError X y w + penalty weights w
 
-/-- Half the exact-real objective gradient, expressed with Float-compatible operations. -/
-def normalResidual (X : Design K n p) (y : Fin n → K)
-    (weights w : Fin p → K) : Fin p → K :=
+/-- `Xᵀ(Xw − y) + ρ ⊙ w`, half the gradient of `ridgeLoss` at `ℝ`; it vanishes exactly when
+the ridge normal equations hold, and runs at `Float` like the objective itself. -/
+def normalResidual (X : Design K n p) (y : Fin n → K) (weights w : Fin p → K) : Fin p → K :=
   fun j ↦ (sumFin fun i ↦ X i j * residual X y w i) + weights j * w j
 
 end LeanLearn.Regression.LinearModel

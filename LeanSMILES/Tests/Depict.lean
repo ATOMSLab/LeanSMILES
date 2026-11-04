@@ -49,7 +49,7 @@ def stereoProblems (g : Graph) (pos : Array Pt) : List String := Id.run do
   let mut out : List String := []
   for i in [0:g.numAtoms] do
     if (g.tetraMark i).isSome && (g.sortedLigands i).length == 4 then
-      let k := (stereo.filter (·.centre == i)).length
+      let k := (stereo.filter (·.center == i)).length
       if k != 1 then out := out ++ [s!"atom {i}: {k} stereo bonds"]
   let (cis, all) := g.cisPairs
   for e in g.edges do
@@ -59,7 +59,7 @@ def stereoProblems (g : Graph) (pos : Array Pt) : List String := Id.run do
     let side (p : Pt) : Float := (vx - ux) * (p.2 - uy) - (vy - uy) * (p.1 - ux)
     for (a, c) in all do
       if (g.edgeIndex? a e.src).isNone || (g.edgeIndex? c e.dst).isNone then continue
-      let same := side pos[a]! * side pos[c]! > 0
+      let same := 0 < side pos[a]! * side pos[c]!
       let wantCis := cis.contains (a, c) || cis.contains (c, a)
       if same != wantCis then out := out ++ [s!"bond {e.src}={e.dst}: {a},{c} drawn wrong"]
   return out
@@ -72,16 +72,18 @@ def geometryProblems (g : Graph) (pos : Array Pt) : List String := Id.run do
     let (ux, uy) := pos[e.src]!
     let (vx, vy) := pos[e.dst]!
     let len := Float.sqrt (sq (vx - ux) + sq (vy - uy))
-    if len < 0.7 || len > 1.6 then out := out ++ [s!"bond {e.src}-{e.dst}: length {len}"]
+    if len < 0.7 || 1.6 < len then out := out ++ [s!"bond {e.src}-{e.dst}: length {len}"]
   let D := g.distances
   for i in [0:g.numAtoms] do
     for j in [i + 1:g.numAtoms] do
-      if D[i]![j]! > 0 then
+      if 0 < D[i]![j]! then
         let (xi, yi) := pos[i]!
         let (xj, yj) := pos[j]!
         if sq (xi - xj) + sq (yi - yj) < 0.01 then out := out ++ [s!"atoms {i},{j} coincide"]
   return out
 
+/-- The `depict-test` entry point: check the drawing of every SMILES in a file and write the mol
+blocks to an SDF; exit code 1 when over 1 % of the drawings get the stereochemistry wrong. -/
 def main (args : List String) : IO UInt32 := do
   let inp := args.headD "datasets/stereo.smi"
   let out := (args.drop 1).headD "out/stereo.sdf"
@@ -90,7 +92,7 @@ def main (args : List String) : IO UInt32 := do
   let mut bad : Array (String × List String) := #[]
   let mut blemished : Array (String × List String) := #[]
   let mut rejected : Array String := #[]
-  let mut centres := 0
+  let mut centers := 0
   let mut alkenes := 0
   let mut blocks : Array String := #[]
   for s in smiles do
@@ -102,7 +104,7 @@ def main (args : List String) : IO UInt32 := do
       let g := Graph.ofMol M
       let pos := layout g
       blocks := blocks.push s!"{s}\n{molBlockWith g pos}$$$$\n"
-      centres := centres + ((List.range g.numAtoms).filter fun i ↦
+      centers := centers + ((List.range g.numAtoms).filter fun i ↦
         (g.tetraMark i).isSome).length
       alkenes := alkenes + (g.edges.filter Edge.stereoSpecified).size
       match stereoProblems g pos with
@@ -113,7 +115,7 @@ def main (args : List String) : IO UInt32 := do
       | ps => blemished := blemished.push (s, ps)
   IO.println s!"{smiles.size} SMILES, {rejected.size} rejected by the parser"
   IO.println s!"stereochemistry: {ok} drawings as written, {bad.size} not \
-    ({centres} tetrahedral centres and {alkenes} specified double bonds)"
+    ({centers} tetrahedral centres and {alkenes} specified double bonds)"
   for (s, ps) in bad.toList.take 10 do
     IO.println s!"  {s}"
     for p in ps.take 3 do IO.println s!"    {p}"
