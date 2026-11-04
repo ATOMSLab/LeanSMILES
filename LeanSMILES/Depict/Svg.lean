@@ -255,7 +255,7 @@ def molBlockWith (g : Graph) (pos : Array Pt) : String := Id.run do
   for e in g.edges do
     let st := stereo.find? fun s ↦
       (s.center == e.src && s.neighbor == e.dst) || (s.center == e.dst && s.neighbor == e.src)
-    let unspecified := e.kind == .double && !e.ring && !g.stereoSpecified e
+    let unspecified := e.kind == .double && !e.ring && !e.stereoSpecified
     let (u, v, flag) := match st with
       | some s => (s.center, s.neighbor, if s.wedge then 1 else 6)
       | none => (e.src, e.dst, if unspecified then 3 else 0)

@@ -7,6 +7,7 @@ module
 
 public import LeanSMILES.Chem.Atom
 public import LeanSMILES.Chem.Bond
+public import LeanSMILES.Chem.Stereo
 
 /-!
 # LeanSMILES.Chem.Molecule
@@ -21,6 +22,14 @@ The structure is RDKit-shaped (typed atoms and bonds, index-based) rather than
 pysmiles-shaped (attribute dictionaries on an untyped graph), and the
 invariants RDKit checks at runtime — endpoints in range, no self-bond, no
 duplicate bond — are the type here: a `Molecule n` cannot violate them.
+
+Stereochemistry is a third component, `stereo`, one entry per atom
+(`LeanSMILES.Chem.Stereo`): a tetrahedral centre's ligands up to even
+permutation (`Tetra n`), or, at both ends of a double bond, its cis/trans
+arrangement (`Planar n`).  It does not depend on how a SMILES string happened
+to list neighbors or orient bonds — which is what `@`/`@@` and `/`/`\` refer
+to, and the parser and writer translate — so relabeling the atoms moves the
+configurations along with everything else (`relabelStereo`).
 
 The one piece of chemistry in this file is `assignImplicitH`, the OpenSMILES
 default-valence rule for bare organic-subset atoms.  Everything else is graph.
@@ -38,6 +47,10 @@ structure Molecule (n : ℕ) where
   bonds : List (Bond n)
   /-- No two bonds join the same pair of atoms: the molecular graph is simple. -/
   nodup : (bonds.map Bond.edge).Nodup
+  /-- The stereochemistry of each atom, `none` where there is none: a
+  tetrahedral centre's configuration, or a stereo double bond's arrangement
+  (at both of its ends). -/
+  stereo : Vector (Option (Stereo n)) n
 
 /-- A molecule whose size is not known at the type level — what a parser
 returns. -/
@@ -69,23 +82,62 @@ lemma relabelVec_apply (σ : Equiv.Perm (Fin n)) (v : Vector α n) (i : Fin n) :
 lemma relabelVec_relabelVec (σ τ : Equiv.Perm (Fin n)) (v : Vector α n) :
     relabelVec τ (relabelVec σ v) = relabelVec (σ.trans τ) v := Vector.ext fun _ _ ↦ by simp
 
+/-- No stereocentres. -/
+def noStereo (n : ℕ) : Vector (Option (Stereo n)) n := Vector.replicate n none
+
+/-- Transport configurations along a relabeling: position `σ i` receives what
+`i` had, with its ligands relabeled too. `relabel` does this to `stereo`. -/
+def relabelStereo (σ : Equiv.Perm (Fin n)) (v : Vector (Option (Stereo n)) n) :
+    Vector (Option (Stereo n)) n :=
+  Vector.ofFn fun i ↦ v[σ.symm i].map (Stereo.map σ)
+
+/-- Position `j` of `relabelStereo σ v` holds what `v` had at `σ.symm j`, relabeled. -/
+@[simp] lemma getElem_relabelStereo (σ : Equiv.Perm (Fin n)) (v : Vector (Option (Stereo n)) n)
+    (j : ℕ) (h : j < n) : (relabelStereo σ v)[j] = v[σ.symm ⟨j, h⟩].map (Stereo.map σ) := by
+  simp [relabelStereo, Vector.getElem_ofFn]
+
+/-- Position `σ i` of `relabelStereo σ v` holds `i`'s configuration, relabeled. -/
+lemma relabelStereo_apply (σ : Equiv.Perm (Fin n)) (v : Vector (Option (Stereo n)) n) (i : Fin n) :
+    (relabelStereo σ v)[σ i] = v[i].map (Stereo.map σ) := by
+  simp [relabelStereo, Vector.getElem_ofFn]
+
+/-- A vector is `relabelStereo σ v` iff position `σ i` holds `i`'s configuration,
+relabeled, for every `i`. -/
+lemma eq_relabelStereo_of_apply (σ : Equiv.Perm (Fin n)) {v' v : Vector (Option (Stereo n)) n}
+    (h : ∀ i, v'[σ i] = v[i].map (Stereo.map σ)) : v' = relabelStereo σ v := by
+  apply Vector.ext
+  intro j hj
+  simpa using h (σ.symm ⟨j, hj⟩)
+
+/-- Relabeling configurations twice is relabeling by the composite: first `σ`, then `τ`. -/
+lemma relabelStereo_relabelStereo (σ τ : Equiv.Perm (Fin n)) (v : Vector (Option (Stereo n)) n) :
+    relabelStereo τ (relabelStereo σ v) = relabelStereo (σ.trans τ) v := by
+  ext i hi
+  simp [relabelStereo, Vector.getElem_ofFn, Option.map_map, Function.comp_def, Stereo.map_map]
+
+/-- With no stereocentres there is nothing to relabel. -/
+@[simp] lemma relabelStereo_noStereo (σ : Equiv.Perm (Fin n)) :
+    relabelStereo σ (noStereo n) = noStereo n := by
+  ext i hi
+  simp [relabelStereo, noStereo, Vector.getElem_ofFn]
+
 end RelabelVec
 
 namespace Molecule
 
 variable {n : ℕ} (m : Molecule n)
 
-/-- Two molecules with the same atoms and the same bonds are equal: the `nodup` proof carries no
-data. -/
-@[ext] lemma ext {m m' : Molecule n} (ha : m.atoms = m'.atoms) (hb : m.bonds = m'.bonds) :
-    m = m' := by
+/-- Two molecules with the same atoms, bonds and stereochemistry are equal: the `nodup` proof
+carries no data. -/
+@[ext] lemma ext {m m' : Molecule n} (ha : m.atoms = m'.atoms) (hb : m.bonds = m'.bonds)
+    (hs : m.stereo = m'.stereo) : m = m' := by
   cases m
   cases m'
   congr
 
 instance : DecidableEq (Molecule n) := fun m m' ↦
-  decidable_of_iff (m.atoms = m'.atoms ∧ m.bonds = m'.bonds)
-    ⟨fun ⟨h1, h2⟩ ↦ ext h1 h2, fun h ↦ h ▸ ⟨rfl, rfl⟩⟩
+  decidable_of_iff (m.atoms = m'.atoms ∧ m.bonds = m'.bonds ∧ m.stereo = m'.stereo)
+    ⟨fun ⟨h1, h2, h3⟩ ↦ ext h1 h2 h3, fun h ↦ h ▸ ⟨rfl, rfl, rfl⟩⟩
 
 /-- The number of bonds. -/
 def numBonds : ℕ := m.bonds.length
@@ -176,6 +228,7 @@ def relabel (σ : Equiv.Perm (Fin n)) : Molecule n where
       simp [List.map_map, Function.comp_def]
     rw [h]
     exact m.nodup.map (Sym2.map.injective σ.injective)
+  stereo := relabelStereo σ m.stereo
 
 /-- The edges of a relabeled molecule are the edges relabeled by `Sym2.map σ`, in order. -/
 lemma edges_relabel (σ : Equiv.Perm (Fin n)) : (m.relabel σ).edges = m.edges.map (Sym2.map σ) := by
@@ -197,6 +250,10 @@ definitionally. -/
 lemma bonds_relabel (σ : Equiv.Perm (Fin n)) :
     (m.relabel σ).bonds = m.bonds.map (Bond.map σ σ.injective) := rfl
 
+/-- Relabeling a molecule moves its stereochemistry with the atoms (`relabelStereo`). -/
+lemma stereo_relabel (σ : Equiv.Perm (Fin n)) :
+    (m.relabel σ).stereo = relabelStereo σ m.stereo := rfl
+
 /-- The bonds at `σ i` after relabeling are the bonds at `i`, relabeled, in order. -/
 lemma bondsAt_relabel (σ : Equiv.Perm (Fin n)) (i : Fin n) :
     (m.relabel σ).bondsAt (σ i) = (m.bondsAt i).map (Bond.map σ σ.injective) := by
@@ -210,7 +267,8 @@ lemma bondsAt_relabel (σ : Equiv.Perm (Fin n)) (i : Fin n) :
 /-- Relabeling twice is relabeling by the composite: first `σ`, then `τ`. -/
 theorem relabel_relabel (σ τ : Equiv.Perm (Fin n)) :
     (m.relabel σ).relabel τ = m.relabel (σ.trans τ) :=
-  ext (relabelVec_relabelVec σ τ m.atoms) <| by simp [bonds_relabel]
+  ext (relabelVec_relabelVec σ τ m.atoms) (by simp [bonds_relabel])
+    (relabelStereo_relabelStereo σ τ m.stereo)
 
 /-! ### Printing -/
 

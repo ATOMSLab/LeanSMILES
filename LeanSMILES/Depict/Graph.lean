@@ -16,18 +16,13 @@ arrays: adjacency lists, which bonds lie on rings, all-pairs graph distances,
 connected components, and the two pieces of *recorded* stereochemistry read
 back into geometric form:
 
-* **tetrahedral centres** — `Atom.chirality` is `@`/`@@` relative to the order
-  in which the atom's neighbors appear in the SMILES string. `Molecule` keeps
-  the bonds in the order the parser created them, which is not quite that
-  order: a ring-closure bond is created when the ring *closes*, at the second
-  digit, while the SMILES convention places it at the *first* digit, right
-  after the opening atom. `stereoNeighbors` reconstructs the SMILES order from
-  the bond list: the atom the centre was reached from, then the implicit
-  hydrogen of `[C@H]`, then the ring-closure neighbors, then the branches and
-  the chain, each group in bond-list order.
-* **cis/trans** — `Bond.dir` is `/` or `\` relative to `src → dst`.
-  `dirSides` turns the marks at the two ends of a non-ring double bond into
-  "which side" flags: two substituents with equal flags are cis.
+* **tetrahedral centres** — `Molecule.stereo` holds each centre's
+  configuration independently of any listing; `tetra` reads it off as the
+  mark for one fixed listing, the neighbors in increasing index order with the
+  implicit hydrogen or lone pair last (`sortedLigands`).
+* **cis/trans** — a stereo double bond's arrangement (`Molecule.stereo` at
+  its ends) is read off as `Edge.sides`: every pair of heavy substituents,
+  one at each end, with whether they are cis.
 
 Nothing here is chemistry beyond those two conventions; the rest is graph.
 -/
@@ -49,6 +44,9 @@ structure Edge where
   dir : Option BondDir
   /-- Whether the bond lies on a cycle. -/
   ring : Bool
+  /-- For a double bond with a cis/trans arrangement: every pair of heavy
+  substituents `(at src, at dst)` with whether they are cis; `[]` otherwise. -/
+  sides : List (ℕ × ℕ × Bool) := []
   deriving Repr, Inhabited
 
 /-- A molecule flattened for layout: atoms, bonds and adjacency lists with `ℕ` indices, built
@@ -60,15 +58,29 @@ structure Graph where
   edges : Array Edge
   /-- Neighbors of every atom as `(bond index, neighbor)`, in bond-list order. -/
   adj : Array (List (ℕ × ℕ))
+  /-- For each tetrahedral centre, `true` if it is `@` with its ligands listed
+  as `sortedLigands` (neighbors in increasing index order, the implicit
+  hydrogen or lone pair last), `false` if `@@`. -/
+  tetra : Array (Option Bool)
   deriving Repr, Inhabited
+
+/-- Whether a non-ring double bond has a specified cis/trans arrangement. -/
+def Edge.stereoSpecified (e : Edge) : Bool := e.kind == .double && !e.ring && !e.sides.isEmpty
 
 namespace Graph
 
 /-- Forget the size index of a `Molecule n`, recording which bonds lie on rings
 (`Molecule.bondInRing`) and building the adjacency lists in bond-list order. -/
 def ofMolecule {n : ℕ} (m : Molecule n) : Graph :=
+  let sides (b : Bond n) : List (ℕ × ℕ × Bool) :=
+    match b.kind, m.stereo[b.src] with
+    | .double, some (.planar p) =>
+      let subs (x y : Fin n) := (m.neighbors x).filter (· != y)
+      (subs b.src b.dst).flatMap fun a ↦ (subs b.dst b.src).map fun c ↦
+        (a.val, c.val, p.cis (some a) (some c))
+    | _, _ => []
   let edges : Array Edge := m.bonds.toArray.map fun b ↦
-    ⟨b.src.val, b.dst.val, b.kind, b.dir, m.bondInRing b⟩
+    ⟨b.src.val, b.dst.val, b.kind, b.dir, m.bondInRing b, sides b⟩
   let adj := Id.run do
     let mut adj : Array (List (ℕ × ℕ)) := Array.replicate n []
     for h : k in [0:edges.size] do
@@ -76,7 +88,14 @@ def ofMolecule {n : ℕ} (m : Molecule n) : Graph :=
       adj := adj.modify e.src (· ++ [(k, e.dst)])
       adj := adj.modify e.dst (· ++ [(k, e.src)])
     return adj
-  ⟨m.atoms.toArray, edges, adj⟩
+  let tetra := Array.ofFn fun i : Fin n ↦ do
+    let .tetra t ← m.stereo[i] | none
+    let sorted := ((m.neighbors i).mergeSort fun a b ↦ decide (a ≤ b)).map some
+    let o ← Ligands.ofList? (if sorted.length = 3 then sorted ++ [none] else sorted)
+    if t.isAnticlockwise o then some true
+    else if t.isAnticlockwise (o ∘ Ligands.swapLast) then some false
+    else none
+  ⟨m.atoms.toArray, edges, adj, tetra⟩
 
 /-- The depiction graph of a parsed molecule. -/
 def ofMol (M : Mol) : Graph := ofMolecule M.mol
@@ -185,71 +204,27 @@ def sideOf (u v start : ℕ) : Array Bool := Id.run do
 
 /-! ### Reading the stereochemistry back -/
 
-/-- The bond that introduced atom `d`: the first bond in the list with `dst = d`
-and `src < d`. Every atom but the first of each component has one, and it comes
-before any ring-closure bond at `d`, because the closing digit follows the
-atom. -/
-def chainBond? (d : ℕ) : Option ℕ :=
-  ((g.adj.getD d []).find? fun (k, _) ↦
-    let e := g.edges.getD k default
-    e.dst == d && e.src < d).map (·.1)
+/-- The listing `tetra` is relative to: the neighbors of `i` in increasing
+index order, then `none` for an implicit hydrogen or lone pair when there are
+three. -/
+def sortedLigands (i : ℕ) : List (Option ℕ) :=
+  let sorted := (((g.adj.getD i []).map (·.2)).mergeSort fun a b ↦ decide (a ≤ b)).map some
+  if sorted.length == 3 then sorted ++ [none] else sorted
 
-/-- The neighbors of a stereocentre in the order the SMILES string lists them,
-`none` standing for the implicit hydrogen of `[C@H]`: the atom the centre was
-reached from, the hydrogen, the ring-closure neighbors, then the branches and
-the chain. A centre with three listed neighbors and no hydrogen (a sulfoxide
-sulfur, say) gets its lone pair as a fourth entry at the end. -/
-def stereoNeighbors (i : ℕ) : List (Option ℕ) := Id.run do
-  let a := g.atom i
-  let parent := g.chainBond? i
-  let nbrs := g.adj.getD i []
-  let mut rings : List (Option ℕ) := []
-  let mut children : List (Option ℕ) := []
-  for (k, j) in nbrs do
-    if parent == some k then continue
-    let e := g.edges.getD k default
-    if e.src == i && g.chainBond? j == some k then children := children ++ [some j]
-    else rings := rings ++ [some j]
-  let before := match parent with
-    | some k => [some (g.edges.getD k default).src]
-    | none => []
-  let hydrogen := if a.explicitH == some 1 then [none] else []
-  let listed := before ++ hydrogen ++ rings ++ children
-  return if listed.length == 3 && hydrogen.isEmpty then listed ++ [none] else listed
+/-- The mark of a tetrahedral centre for `sortedLigands`: `true` for `@`. -/
+def tetraMark (i : ℕ) : Option Bool := g.tetra.getD i none
 
-/-- The `/` `\` marks at a bond's ends as side flags: at `src` the flag for
-`dst`, at `dst` the flag for `src`, chosen so that two substituents of a double
-bond with *equal* flags lie on the same side (cis). -/
-def dirFlags (e : Edge) : Option (Bool × Bool) :=
-  e.dir.map fun d ↦ (d != .up, d == .up)
-
-/-- The side flags of every marked single bond at atom `i`, as
-`(neighbor, flag)`. -/
-def dirSides (i : ℕ) : List (ℕ × Bool) :=
-  (g.adj.getD i []).filterMap fun (k, j) ↦
-    let e := g.edges.getD k default
-    (dirFlags e).map fun (atSrc, atDst) ↦ (j, if e.src == i then atSrc else atDst)
-
-/-- Substituent pairs across non-ring double bonds whose arrangement the `/` `\`
-marks specify: `(cis pairs, all specified pairs)`. -/
+/-- Substituent pairs across non-ring double bonds whose arrangement the
+molecule specifies: `(cis pairs, all specified pairs)`. -/
 def cisPairs : List (ℕ × ℕ) × List (ℕ × ℕ) := Id.run do
   let mut cis : List (ℕ × ℕ) := []
   let mut all : List (ℕ × ℕ) := []
   for e in g.edges do
     if e.kind != .double || e.ring then continue
-    let du := (g.dirSides e.src).filter (·.1 != e.dst)
-    let dv := (g.dirSides e.dst).filter (·.1 != e.src)
-    for (a, sa) in du do
-      for (c, sc) in dv do
-        all := (a, c) :: all
-        if sa == sc then cis := (a, c) :: cis
+    for (a, c, isCis) in e.sides do
+      all := (a, c) :: all
+      if isCis then cis := (a, c) :: cis
   return (cis, all)
-
-/-- Whether `e` is a non-ring double bond whose cis/trans arrangement the string specifies: a
-`/` `\` mark on a substituent bond at each end. -/
-def stereoSpecified (e : Edge) : Bool :=
-  e.kind == .double && !e.ring &&
-    ((g.dirSides e.src).any (·.1 != e.dst)) && ((g.dirSides e.dst).any (·.1 != e.src))
 
 end Graph
 

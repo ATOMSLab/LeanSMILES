@@ -171,18 +171,58 @@ open LeanSMILES LeanSMILES.SMILES
 #eval (Mol.ofSmiles! "C=CO").mol.graph.adjMatrix ℚ        -- Mathlib's 0/1 matrix
 ```
 
-A `Molecule n` is a `Vector Atom n` and a list of `Bond n` between distinct
-atoms with no duplicate bonds — the invariants are the type, so
+A `Molecule n` is a `Vector Atom n`, a list of `Bond n` between distinct
+atoms with no duplicate bonds, and the tetrahedral configuration of each
+stereocentre (below) — the invariants are the type, so
 `Molecule.graph : SimpleGraph (Fin n)` and `Molecule.adjMatrix : Matrix (Fin n) (Fin n) ℚ`
 come with Mathlib's theorems (`sum_degrees`, `card_edgeFinset`, `relabelIso`,
 `canonicalizeIso`). The matrices also exist as subtypes that say they come
 from a molecule — `BondMatrix n` (bond orders, O(1) lookups) and `FlatMatrix n`
-(0/1, Mathlib's `IsAdjMatrix`) — with `normalEquiv : {m // m.IsNormal} ≃ Vector Atom n × BondMatrix n`
+(0/1, Mathlib's `IsAdjMatrix`) — with `normalEquiv : {m // m.IsNormal} ≃ Vector Atom n × BondMatrix n × Vector (Option (Tetra n)) n`
 proving that nothing but bond orientation is lost. The parser checks syntax, not valence; the only chemistry
 applied is the OpenSMILES implicit-hydrogen rule. Canonical SMILES is
 color refinement plus exhaustive tie-breaking (lexicographically smallest
 string), and it is canonical by theorem (`Molecule.canonicalSmiles_relabel`)
 rather than by matching RDKit.
+
+**Stereocentres.** `@` and `@@` mean nothing on their own: they say which
+way the neighbors turn *in the order the string lists them*, so the same
+centre is `N[C@@H](C)C(=O)O` or `N[C@H](C(=O)O)C`. A molecule therefore does
+not store the mark but the configuration (`LeanSMILES.Chem.Stereo`): the
+centre's four ligands (an implicit hydrogen or lone pair as `none`) up to an
+even permutation, `Tetra n := Quotient` of `Fin 4 → Option (Fin n)` under
+"related by a permutation of sign 1" — Mathlib's `Equiv.Perm.sign`. That a
+reordering keeps the mark exactly when it is even is a theorem
+(`Tetra.isAnticlockwise_comp`), as are "a centre with distinct ligands is
+chiral" (`mirror_ne`, `eq_or_eq_mirror`) and "the mark is label-independent"
+(`isAnticlockwise_map`). The parser turns each mark and its neighbor order
+(OpenSMILES §3.7: the atom before, the implicit hydrogen, ring-closure digits
+in the order written, branches, chain; a lone pair last, as RDKit reads it)
+into a configuration,
+and the writer computes the mark afresh for the order it writes. Relabeling
+moves configurations with their ligands, automorphisms must preserve them, and
+a mark whose mirror image is the same molecule (`C[C@H](C)C`) is erased
+before canonicalizing, by asking the canonical search whether mirroring it
+changes the string — so canonical SMILES distinguishes enantiomers and
+diastereomers, ignores meaningless marks, and is still canonical by theorem.
+For the same reason brackets that only restate the default hydrogen count are
+dropped before canonicalizing (`[CH](C)(C)C` is `CC(C)C`).
+
+**Cis/trans.** `/` and `\` are likewise relative — to the direction each
+single bond is written in — so `F/C=C/F`, `F\C=C\F` and `C(\F)=C/F` are one
+molecule. A double bond's arrangement is stored as its four substituent places
+`(a, a', c, c')`, "`a` cis to `c`", up to the Klein four-group (swap the ends,
+or both pairs at once): `Planar n`. Swapping one pair is the other
+arrangement, and theorems say a double bond with distinct substituents has
+exactly two (`Planar.flip_ne`), flipping exchanges cis and trans
+(`cis_flip`), writing then reading returns the arrangement (`cis_ofCis`), and
+cis is label-independent (`cis_map`). Both ends of the double bond carry it,
+in the same per-atom slot as a tetrahedral centre, so relabeling,
+automorphisms, meaningless-mark erasure (`C/C=C(/C)C` loses its marks) and
+the canonicity theorem cover both at once. The writer places one mark per end,
+reusing the one a neighboring double bond of a conjugated chain already put
+on the shared bond. As in RDKit and InChI, a double bond on a ring of fewer
+than eight atoms gets no arrangement.
 
 Because the parser checks syntax only, `[C+123]` parses, round-trips and
 canonicalizes like any other atom (RDKit accepts it too). The chemistry check
@@ -221,7 +261,7 @@ below. Every row is pinned by `lake exe parse-errors-test`.
 | `" C"` — leading whitespace                                            | methane                      | empty molecule, then a title             | methane                                                                                                                         |
 | `[Fe+++]`, `[C+123]` — charge forms                                    | rejects, accepts             | rejects both: `++`/`--` only, two digits | accepts both; whether the element has the electrons is `Molecule.checkCharges`, a post-parse chemistry check, not a lexical one |
 | `[CH10]`, `[C:]` — two-digit H count, empty class                      | accepts, rejects             | rejects both                             | rejects both                                                                                                                    |
-| `[C@TH1]` … `[Fe@OH30]` — named chirality classes                      | accepts                      | accepts                                  | accepts, recorded as written (`@` is not rewritten to `@TH1`)                                                                   |
+| `[C@TH1]` … `[Fe@OH30]` — named chirality classes                      | accepts                      | accepts                                  | accepts; `@TH1`/`@TH2` become a configuration like `@`/`@@`, the other classes are recorded as written                          |
 | `C=1CC-1` — different bond symbols on one ring closure                 | accepts, opening symbol wins | rejects                                  | rejects (`conflictingRingBond`)                                                                                                 |
 | `C%(123)CC%(123)` — RDKit's long ring labels                           | accepts                      | rejects                                  | rejects                                                                                                                         |
 | `[02H]` — isotope with a leading zero                                  | rejects                      | accepts                                  | accepts                                                                                                                         |
@@ -234,6 +274,9 @@ lake exe validity-test      # 10 000 broken SMILES: accepts everything RDKit acc
 lake exe oracle-test        # 1 128 Delaney molecules: graph = RDKit's, canonical SMILES round-trips and is relabeling-invariant (1 skipped, see above)
 lake exe morgan-test        # Morgan fingerprints: ring membership = RDKit's, bits = RDKit's wherever the graph is, relabeling-invariant
 lake exe charge-test        # formal charges: [C+123], [H+++], [C-123] parse but fail checkCharges; [Na+], [O-2], [Fe+3], [NH4+] pass
+lake exe stereo-test        # stereoisomers vs RDKit and InChI (datasets/stereo-*.tsv from tools/rdkit_stereo.py):
+                            # one canonical SMILES per stereoisomer, a different one per different isomer,
+                            # @/@@ and / \ read as RDKit reads them
 ```
 
 ### Morgan fingerprints
@@ -318,13 +361,11 @@ The layout is deterministic: classical multidimensional scaling on the graph
 distances (chains zigzag at 120°, rings become regular polygons), refined by
 stress majorisation; a component with three or more rings that cannot lie flat
 is laid out in three dimensions and projected obliquely, which is how chemists
-draw cubane or norbornane. The stereochemistry is read back from what the
-parser _recorded_: `Atom.chirality` is `@`/`@@` (or `@TH1`/`@TH2`) relative
-to the SMILES neighbor order, which `Depict.Graph.stereoNeighbors`
-reconstructs from the bond list (ring-closure bonds belong at the _opening_
-digit, not where the parser created them), and one bond per centre becomes a
-wedge or a hash so that the signed volume of the drawn neighbors has the
-written sign; `Bond.dir` gives the cis/trans arrangement, enforced by target
+draw cubane or norbornane. The stereochemistry is read from the molecule:
+each centre's configuration (`Molecule.stereo`, below) is turned into a mark
+for one fixed listing of its neighbors, and one bond per centre becomes a
+wedge or a hash so that the signed volume of the drawn neighbors has that
+sign; `Bond.dir` gives the cis/trans arrangement, enforced by target
 distances and, if the layout still came out the other way, by reflecting one
 side of the double bond. Bonds are drawn as written; to draw RDKit's view of
 an aromatic system, `aromatize` first.
@@ -339,7 +380,7 @@ python3 tools/check_depiction.py out/stereo.sdf   # RDKit reads the mol blocks b
 
 The Lean check passes 552 of the 557 drawings (the five misses are crowded
 tri- and tetrasubstituted alkenes); RDKit recovers the written
-stereochemistry exactly from 481 of them (86 %), the rest being mostly
+stereochemistry exactly from 490 of them (88 %), the rest being mostly
 bridged bicyclics, where one wedge per centre is not always enough for a
 reader to settle the configuration, and double bonds in large rings, for
 which RDKit assigns an E/Z the SMILES did not specify.
@@ -729,6 +770,24 @@ checked against.
   nauty-style automorphism pruning, checked at every use, keeps symmetric
   molecules tractable — a 53-atom _tert_-butyl dendrimer with about 7 × 10¹³
   tie-breaking leaves canonicalizes in seconds.
+- **RDKit reads some lone-pair stereocentres against OpenSMILES.** When a
+  centre whose fourth ligand is a lone pair carries a ring-closure digit,
+  RDKit 2025.09 takes `@` for the opposite hand for amines, phosphines and
+  sulfonium ions — `C[N@]1CC1C`, `F[P@]1CC1C`, `C[S@+]1CC1C`, checked against
+  RDKit's own 3D embedding — but not for sulfoxides (`O=[S@]1CC1C`) or without
+  the digit (`CC1[N@](C)C1`). RDKit writes such strings by the same rule, so
+  it is self-consistent, but another reader takes them for the mirror image.
+  LeanSMILES follows the specification; `tools/rdkit_stereo.py` leaves such
+  strings out of the stereo test data.
+- **RDKit sometimes writes a stereoisomer other than the one it holds.**
+  Writing chiro-inositol, `O[C@H]1[C@H](O)[C@H](O)[C@@H](O)[C@H](O)[C@H]1O`,
+  from random atom orders (`MolToSmiles(..., doRandom=True)`, or after
+  `RenumberAtoms`), RDKit 2025.09 produces its enantiomer about half the time —
+  RDKit's own reader, InChI and LeanSMILES all read those strings as the
+  mirror image. Over the stereo test set, 49 of about 6 000 such writings (also
+  sugars, steroids, peptides and `/` `\` in conjugated macrocycles) do not
+  read back as the molecule written; `tools/rdkit_stereo.py` checks every
+  writing by InChI and leaves those out.
 - **OpenSMILES underdetermines implicit hydrogens on aromatic atoms.** §3.1.5
   computes the count from a sum of bond orders but never says what an
   aromatic bond contributes; §3.5 only requires that electrons be assignable

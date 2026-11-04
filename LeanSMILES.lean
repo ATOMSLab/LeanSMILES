@@ -14,6 +14,7 @@ public import LeanSMILES.Chem.Molecule
 public import LeanSMILES.Chem.Charge
 public import LeanSMILES.Chem.Graph
 public import LeanSMILES.Chem.BondMatrix
+public import LeanSMILES.Chem.Stereo
 public import LeanSMILES.SMILES.Token
 public import LeanSMILES.SMILES.Parse
 public import LeanSMILES.SMILES.Write

@@ -133,7 +133,7 @@ def accepted : List AcceptCase := [
   ⟨"whitespace ends the SMILES; the rest is a title", "C C", 1, "C"⟩,
   ⟨"ring labels before a branch", "C1(C)CC1", 4, "C"⟩,
   ⟨"ring closure across a dot", "C1.C1", 2, "C"⟩,
-  ⟨"tetrahedral class", "[C@TH1](F)(Cl)(Br)I", 5, "[C@TH1]"⟩,
+  ⟨"tetrahedral class (a configuration, not an atom mark)", "[C@TH1](F)(Cl)(Br)I", 5, "[C]"⟩,
   ⟨"allenal class", "[C@AL2](F)(Cl)", 3, "[C@AL2]"⟩,
   ⟨"square-planar class", "[S@SP3](F)(Cl)(Br)I", 5, "[S@SP3]"⟩,
   ⟨"trigonal-bipyramidal class", "[P@TB20](F)(F)(F)(F)F", 6, "[P@TB20]"⟩,

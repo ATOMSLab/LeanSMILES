@@ -59,6 +59,7 @@ def radius3Example : Molecule 8 where
      { src := 5, dst := 6, ne := by decide },
      { src := 6, dst := 7, ne := by decide }]
   nodup := by decide
+  stereo := noStereo 8
 
 /-- `radius3Example` is what the parser reads from `C1=C(CO)C=C1CC`: the same
 atoms, and the same bonds in the same order. -/
