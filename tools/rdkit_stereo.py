@@ -26,6 +26,10 @@ Two files, both tab-separated with a header row:
    lone pair as its fourth ligand carries a ring-closure digit: RDKit reads
    some of those against OpenSMILES (see `lone_pair_ring_digit`), and its
    answers would then be about the mirror image of what the string says.
+   The canonical file also leaves out a string RDKit writes from a variant but
+   reads back as a different molecule, by InChI (it happens with `/` `\\` in
+   some conjugated macrocycles): RDKit's answers about it would be about that
+   other molecule.
 
 2. `datasets/stereo-parity.tsv`: does the parser read each mark the way
    RDKit does?  Columns:
@@ -229,17 +233,30 @@ def variants_of(mol, rng):
     return out
 
 
-def canon_rows(family, mol, extra, rewrites, rng):
+def canon_rows(family, mol, extra, rewrites, rng, unread):
+    """Rows for every variant of mol and every hand string.  A string RDKit
+    writes from a variant but reads back as another molecule — its InChI is not
+    the variant's — is left out and listed in `unread`: RDKit's answers about
+    it would be about that other molecule.  (RDKit's own key is no test: its
+    canonical SMILES of one molecule can differ with the atom order.)"""
     rows = []
     for name, v in variants_of(mol, rng):
         strings = [Chem.MolToSmiles(v)]
         strings += [random_writing(v, rng)[0] for _ in range(rewrites)]
-        rows += [(family, name, s) for s in strings]
+        rows += [(family, name, s, Chem.MolToInchi(v)) for s in strings]
     for k, s in enumerate(extra):
         v = Chem.MolFromSmiles(s)
-        rows.append((family, f"hand{k + 1}", s))
-        rows += [(family, f"hand{k + 1}", random_writing(v, rng)[0]) for _ in range(rewrites)]
-    return [(f, v, s, rdkit_key(s), inchi(s)) for f, v, s in rows]
+        rows.append((family, f"hand{k + 1}", s, inchi(s)))
+        rows += [(family, f"hand{k + 1}", random_writing(v, rng)[0], inchi(s))
+                 for _ in range(rewrites)]
+    out = []
+    for f, v, s, ref in rows:
+        i = inchi(s)
+        if i != ref:
+            unread.append(f"{f} {v}: {s} reads back as {i}, written from {ref}")
+            continue
+        out.append((f, v, s, rdkit_key(s), i))
+    return out
 
 
 def without_lone_pair_ring_digits(rows, excluded):
@@ -397,7 +414,7 @@ def main():
     args = ap.parse_args()
     rng = random.Random(args.seed)
 
-    canon, parity, dropped, skipped, excluded = [], [], [], [], []
+    canon, parity, dropped, skipped, excluded, unread = [], [], [], [], [], []
     checks = {"agrees": 0, "disagrees": 0, "unchecked": 0}
     sources = [(f"stereo:{k}", s, []) for k, s in enumerate(read_smi(SOURCE))]
     sources += [(f"hard:{name}", strings[0], strings) for name, strings in HARD.items()]
@@ -413,7 +430,7 @@ def main():
         if mol.GetNumAtoms() > args.max_atoms:
             skipped.append(f"{family} ({mol.GetNumAtoms()} heavy atoms)")
             continue
-        canon += canon_rows(family, mol, extra, args.rewrites, rng)
+        canon += canon_rows(family, mol, extra, args.rewrites, rng, unread)
         for w in (extra or [s]):
             rows, status = parity_rows(w, args.rewrites, rng, args.embed_timeout, dropped)
             parity += rows
@@ -430,7 +447,9 @@ def main():
           f"{checks['disagrees']} disagree (dropped), {checks['unchecked']} not embedded in time")
     print(f"strings left out for a lone-pair centre with a ring digit "
           f"(RDKit reads some against OpenSMILES): {len(excluded)}")
-    for d in skipped + dropped + [f"lone pair + ring digit: {e}" for e in excluded]:
+    print(f"strings RDKit wrote but does not read back as the molecule written: {len(unread)}")
+    for d in (skipped + dropped + [f"lone pair + ring digit: {e}" for e in excluded]
+              + [f"not read back: {e}" for e in unread]):
         print(f"  {d}")
 
 

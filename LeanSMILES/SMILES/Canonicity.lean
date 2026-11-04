@@ -419,7 +419,7 @@ lemma degree_relabel (σ : Equiv.Perm (Fin n)) (i : Fin n) :
 /-- An atom's invariant does not depend on its label. -/
 lemma atomInvariant_relabel (σ : Equiv.Perm (Fin n)) (i : Fin n) :
     (d.relabel σ).atomInvariant (σ i) = d.atomInvariant i := by
-  simp [atomInvariant, degree_relabel]
+  simp [atomInvariant, degree_relabel, Function.comp_def]
 
 /-- The invariant vector of the relabeled data is the relabeled invariant vector. -/
 lemma ofFn_atomInvariant_relabel (σ : Equiv.Perm (Fin n)) :
@@ -774,8 +774,18 @@ lemma stereo_eraseStereo_apply (p : Fin n → Bool) (i : Fin n) :
   simp [eraseStereo]
 
 lemma stereo_mirrorAt_apply (i j : Fin n) :
-    (d.mirrorAt i).stereo[j] = if j = i then d.stereo[j].map Tetra.mirror else d.stereo[j] := by
+    (d.mirrorAt i).stereo[j] = if d.sameUnit i j then d.stereo[j].map Stereo.mirror
+      else d.stereo[j] := by
   simp [mirrorAt]
+
+lemma sameUnit_relabel (σ : Equiv.Perm (Fin n)) (i j : Fin n) :
+    (d.relabel σ).sameUnit (σ i) (σ j) = d.sameUnit i j := by
+  simp only [sameUnit, stereo_relabel, relabelStereo_apply]
+  congr 1
+  · rw [beq_eq_decide, beq_eq_decide, decide_eq_decide.mpr σ.injective.eq_iff]
+  · congr 1
+    · rcases d.stereo[i] with _ | t <;> simp
+    · rw [decide_eq_decide.mpr (Option.map_injective (Stereo.map_injective σ)).eq_iff]
 
 lemma eraseStereo_relabel (σ : Equiv.Perm (Fin n)) {p' p : Fin n → Bool}
     (hp : ∀ i, p' (σ i) = p i) : (d.relabel σ).eraseStereo p' = (d.eraseStereo p).relabel σ := by
@@ -786,12 +796,13 @@ lemma eraseStereo_relabel (σ : Equiv.Perm (Fin n)) {p' p : Fin n → Bool}
 lemma mirrorAt_relabel (σ : Equiv.Perm (Fin n)) (i : Fin n) :
     (d.relabel σ).mirrorAt (σ i) = (d.mirrorAt i).relabel σ := by
   refine ext rfl rfl (eq_relabelStereo_of_apply σ fun j ↦ ?_)
-  simp only [stereo_mirrorAt_apply, stereo_relabel, relabelStereo_apply, σ.injective.eq_iff]
+  simp only [stereo_mirrorAt_apply, stereo_relabel, relabelStereo_apply]
+  rw [sameUnit_relabel]
   split_ifs
   · simp only [Option.map_map]
     congr 1
     funext t
-    exact (Tetra.map_mirror σ t).symm
+    exact (Stereo.map_mirror σ t).symm
   · rfl
 
 lemma selfMirror_relabel (σ : Equiv.Perm (Fin n)) (i : Fin n) :
@@ -799,8 +810,8 @@ lemma selfMirror_relabel (σ : Equiv.Perm (Fin n)) (i : Fin n) :
   simp only [selfMirror, stereo_relabel, relabelStereo_apply]
   rcases d.stereo[i] with _ | t
   · rfl
-  · simp only [Option.map_some, Option.any_some, ← Tetra.map_mirror,
-      (Tetra.map_injective σ).eq_iff]
+  · simp only [Option.map_some, Option.any_some, ← Stereo.map_mirror,
+      (Stereo.map_injective σ).eq_iff]
 
 lemma tiedNeighbors_relabel (σ : Equiv.Perm (Fin n)) (r : Ranks n) (i : Fin n) :
     (d.relabel σ).tiedNeighbors (relabelVec σ r) (σ i) = d.tiedNeighbors r i := by
@@ -817,8 +828,10 @@ lemma tiedNeighbors_relabel (σ : Equiv.Perm (Fin n)) (r : Ranks n) (i : Fin n) 
 
 lemma candidate_relabel (σ : Equiv.Perm (Fin n)) (r : Ranks n) (i : Fin n) :
     (d.relabel σ).candidate (relabelVec σ r) (σ i) = d.candidate r i := by
-  simp only [candidate, stereo_relabel, relabelStereo_apply, Option.isSome_map,
-    tiedNeighbors_relabel]
+  unfold candidate
+  rw [← any_finRange_comp σ]
+  simp only [sameUnit_relabel, tiedNeighbors_relabel]
+  simp only [stereo_relabel, relabelStereo_apply, Option.isSome_map]
 
 lemma mirrorInvisible_relabel (σ : Equiv.Perm (Fin n)) (s : String) (i : Fin n) :
     (d.relabel σ).mirrorInvisible s (σ i) = d.mirrorInvisible s i := by
@@ -833,12 +846,10 @@ lemma invisible_relabel (σ : Equiv.Perm (Fin n)) (s : String) (r : Ranks n) :
 
 lemma droppable_relabel (σ : Equiv.Perm (Fin n)) (D : Vector Bool n) (i : Fin n) :
     (d.relabel σ).droppable (relabelVec σ D) (σ i) = d.droppable D i := by
-  have e : (d.relabel σ).eraseStereo (fun j ↦ (relabelVec σ D)[j] && j != σ i)
-      = (d.eraseStereo fun j ↦ D[j] && j != i).relabel σ :=
-    eraseStereo_relabel d σ fun j ↦ by
-      rw [relabelVec_apply]
-      congr 1
-      rw [bne, bne, beq_eq_decide, beq_eq_decide, decide_eq_decide.mpr σ.injective.eq_iff]
+  have e : (d.relabel σ).eraseStereo
+        (fun j ↦ (relabelVec σ D)[j] && !(d.relabel σ).sameUnit (σ i) j)
+      = (d.eraseStereo fun j ↦ D[j] && !d.sameUnit i j).relabel σ :=
+    eraseStereo_relabel d σ fun j ↦ by rw [relabelVec_apply, sameUnit_relabel]
   simp only [droppable, relabelVec_apply, e, mirrorInvisible_relabel, canonical_relabel]
 
 lemma stripStereo_relabel (σ : Equiv.Perm (Fin n)) :

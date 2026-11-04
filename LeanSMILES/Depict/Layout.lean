@@ -210,23 +210,21 @@ def cageLike (D : Array (Array ℕ)) (idx : Array ℕ) (X : Array Pt) (nRings : 
         cnt := cnt + 1
   return cnt > 0 && err / cnt > 0.15
 
-/-- Enforce the written cis/trans arrangement: a non-ring double bond drawn
-the wrong way round has its `dst` side reflected across the bond axis (the
-stress layout alone can be trapped in the other configuration). -/
+/-- Enforce the cis/trans arrangement: a non-ring double bond drawn the wrong
+way round has its `dst` side reflected across the bond axis (the stress layout
+alone can be trapped in the other configuration). -/
 def fixDoubleBonds (g : Graph) (pos : Array Pt) : Array Pt := Id.run do
   let mut pos := pos
   for e in g.edges do
     if e.kind != .double || e.ring then continue
-    let du := (g.dirSides e.src).filter (·.1 != e.dst)
-    let dv := (g.dirSides e.dst).filter (·.1 != e.src)
-    match du, dv with
-    | (a, sa) :: _, (c, sc) :: _ =>
+    match e.sides with
+    | (a, c, isCis) :: _ =>
       let (ux, uy) := pos[e.src]!
       let (vx, vy) := pos[e.dst]!
       let (dx, dy) := (vx - ux, vy - uy)
       let side (p : Pt) : Float := dx * (p.2 - uy) - dy * (p.1 - ux)
       let sameSide := side pos[a]! * side pos[c]! > 0
-      if sameSide != (sa == sc) then
+      if sameSide != isCis then
         let len2 := fmax (dx * dx + dy * dy) 1e-9
         let mask := g.sideOf e.src e.dst e.dst
         for i in [0:g.numAtoms] do
@@ -235,7 +233,7 @@ def fixDoubleBonds (g : Graph) (pos : Array Pt) : Array Pt := Id.run do
             let t := ((px - ux) * dx + (py - uy) * dy) / len2
             let (fx, fy) := (ux + t * dx, uy + t * dy)
             pos := pos.set! i (2 * fx - px, 2 * fy - py)
-    | _, _ => pure ()
+    | [] => pure ()
   return pos
 
 /-- Coordinates for every atom, in bond lengths with `y` up; components are

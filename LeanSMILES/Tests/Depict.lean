@@ -104,7 +104,7 @@ def main (args : List String) : IO UInt32 := do
       blocks := blocks.push s!"{s}\n{molBlockWith g pos}$$$$\n"
       centres := centres + ((List.range g.numAtoms).filter fun i ↦
         (g.tetraMark i).isSome).length
-      alkenes := alkenes + (g.edges.filter g.stereoSpecified).size
+      alkenes := alkenes + (g.edges.filter Edge.stereoSpecified).size
       match stereoProblems g pos with
       | [] => ok := ok + 1
       | ps => bad := bad.push (s, ps)

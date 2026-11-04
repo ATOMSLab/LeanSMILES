@@ -42,6 +42,15 @@ mark and order into an order-independent configuration (`Molecule.stereo`,
 `Tetra.ofMark`) and clears the mark from the atom; a tetrahedral mark on an
 atom without four such ligands is dropped.
 
+**Cis/trans marks.** `/` and `\` are relative to the direction the string
+writes a single bond in (`Bond.dir`, from `src` to `dst`): seen from one end,
+a mark is a *flag* for the atom at the other end (`dirFlagAt`), and two
+substituents of a double bond with equal flags are cis.  A double bond with
+a marked substituent at each end gets the arrangement those two determine,
+each end's other substituent — or its hydrogen — lying opposite (`planarOf`);
+both ends carry it.  A double bond on a ring of fewer than eight atoms gets
+none, as in RDKit and InChI.  The marks stay on the bonds as written.
+
 The syntactic checks — self-bond, duplicate bond, unmatched branch or ring,
 dangling bond symbol — are reported as `ParseError`s.  The result is a
 `Molecule`, whose type already guarantees in-range endpoints, no self-bonds
@@ -205,7 +214,9 @@ def step (st : State) (t : Token) : Except ParseError State :=
             if k₁ == k₂ then pure k₁ else throw (.conflictingRingBond t.pos num)
           | some k, none | none, some k => pure k
           | none, none => pure (implicitKind (st.atomAt ro.atom) (st.atomAt a))
-        let dir := (st.pending.bind (·.dir)) <|> (ro.bond.bind (·.dir))
+        -- the bond is stored opening → closing; a `/` `\` at the closing digit is
+        -- written from the closing atom towards the opening one, so it flips
+        let dir := (st.pending.bind (·.dir)).map BondDir.flip <|> (ro.bond.bind (·.dir))
         let st' ← st.addBond ro.atom a kind dir t.pos
         pure { st' with rings := st.rings.filter (·.1 != num), pending := none,
                         nbrs := (st.nbrs.modify ro.atom (·.set! ro.slot (some a))).modify a
@@ -248,9 +259,53 @@ def tetraOf (N : ℕ) (a : Atom) (listed : Array (Option ℕ)) : Option (Tetra N
 def clearTetrahedral (a : Atom) : Atom :=
   if (a.chirality.bind Chirality.tetrahedral).isSome then { a with chirality := none } else a
 
+/-- A `/` `\` mark as seen from `atom`, one end of the bond: a flag for the
+atom at the other end. Two substituents of a double bond whose flags, seen
+from its two ends, are equal lie cis. -/
+def dirFlagAt {N : ℕ} (b : Bond N) (atom : Fin N) : Option Bool :=
+  b.dir.map fun d ↦ if b.src = atom then d != .up else d == .up
+
+/-- Whether the bond `b` lies on a ring of fewer than eight atoms: its ends are
+joined by a path of at most six other bonds (`adj`: neighbors by index). In so
+small a ring a double bond has only one possible arrangement, and RDKit and
+InChI give it none. -/
+def inSmallRing {N : ℕ} (adj : Array (List ℕ)) (b : Bond N) : Bool := Id.run do
+  let (u, v) := (b.src.val, b.dst.val)
+  let mut frontier := [u]
+  let mut seen := [u]
+  for depth in [0:6] do
+    let mut next := []
+    for x in frontier do
+      for y in adj.getD x [] do
+        if depth == 0 && y == v then continue
+        if y == v then return true
+        if !seen.contains y then
+          seen := y :: seen
+          next := y :: next
+    frontier := next
+  return false
+
+/-- The cis/trans arrangement the marks give the double bond `b`: at each end
+the first substituent (in bond order) whose bond carries a mark, with its
+flag; the end's other substituent, or `none` for its hydrogen, opposite.
+`none` unless both ends have a marked substituent, and for a double bond on a
+ring of fewer than eight atoms (`inSmallRing`). -/
+def planarOf {N : ℕ} (bonds : List (Bond N)) (adj : Array (List ℕ)) (b : Bond N) :
+    Option (Planar N) := do
+  guard (b.kind == .double && !inSmallRing adj b)
+  let around (x : Fin N) : List (Bond N) :=
+    bonds.filter fun e ↦ e.touches x && e.edge != b.edge
+  let marked (x : Fin N) : Option (Fin N × Bool) :=
+    (around x).findSome? fun e ↦ (dirFlagAt e x).map (e.other x, ·)
+  let other (x s : Fin N) : Option (Fin N) := ((around x).map (·.other x)).find? (· != s)
+  let (a, fa) ← marked b.src
+  let (c, fc) ← marked b.dst
+  pure (Planar.ofCis (some a) (other b.src a) (some c) (other b.dst c) (fa == fc))
+
 /-- Package the state as a `Molecule`, discharging the type's invariants by
 decision: endpoints in range, no self-bond, no duplicate edge.  Tetrahedral
-marks become configurations (`tetraOf`). -/
+marks become configurations (`tetraOf`), and `/` `\` around a double bond its
+arrangement (`planarOf`), at both of its ends. -/
 def toMolecule (st : State) : Except ParseError Mol := do
   let bonds ← st.bonds.toList.mapM fun (b : RawBond) ↦
     if h₁ : b.src < st.atoms.size then
@@ -262,8 +317,14 @@ def toMolecule (st : State) : Except ParseError Mol := do
       else throw (.internal "bond endpoint out of range")
     else throw (.internal "bond endpoint out of range")
   if h : (bonds.map Bond.edge).Nodup then
-    let stereo : Vector (Option (Tetra st.atoms.size)) st.atoms.size :=
-      Vector.ofFn fun i ↦ tetraOf st.atoms.size st.atoms[i] (st.nbrs.getD i #[])
+    let adj : Array (List ℕ) := bonds.foldl (init := Array.replicate st.atoms.size [])
+      fun adj b ↦ (adj.modify b.src (b.dst.val :: ·)).modify b.dst (b.src.val :: ·)
+    let planarAt (i : Fin st.atoms.size) : Option (Planar st.atoms.size) :=
+      (bonds.filter (·.touches i)).findSome? (planarOf bonds adj)
+    let stereo : Vector (Option (Stereo st.atoms.size)) st.atoms.size :=
+      Vector.ofFn fun i ↦
+        (tetraOf st.atoms.size st.atoms[i] (st.nbrs.getD i #[])).map .tetra <|>
+          (planarAt i).map .planar
     pure ⟨st.atoms.size, { atoms := ⟨st.atoms.map clearTetrahedral, Array.size_map ..⟩,
                            bonds := bonds, nodup := h, stereo := stereo }⟩
   else throw (.internal "duplicate bond survived parsing")

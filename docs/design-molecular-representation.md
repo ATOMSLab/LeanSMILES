@@ -18,10 +18,10 @@ library is organized around it:
 RDKit and pysmiles both parse into the middle layer and both have to work to
 reach the third.  The ordered graph remembers the string in two places — the
 atom numbering, and the neighbor order that `@`/`@@` and `/`/`\` refer to —
-which is why `Molecule.relabel` exists as an explicit operation.  `/` `\`
-are *recorded* on bonds but not yet interpreted; `@`/`@@` are interpreted by
-the parser into an order-independent configuration (`stereo`, below) and
-recomputed by the writer for the order it writes.
+which is why `Molecule.relabel` exists as an explicit operation.  `@`/`@@`
+and `/` `\` are interpreted by the parser into order-independent
+configurations (`stereo`, below) and recomputed by the writer for the order it
+writes; the `/` `\` also stay recorded on the bonds as written.
 
 ## 2. The typed representation
 
@@ -30,7 +30,7 @@ structure Molecule (n : ℕ) where
   atoms : Vector Atom n
   bonds : List (Bond n)
   nodup : (bonds.map Bond.edge).Nodup          -- no two bonds join the same pair
-  stereo : Vector (Option (Tetra n)) n         -- tetrahedral configurations
+  stereo : Vector (Option (Stereo n)) n        -- tetrahedral centres, cis/trans double bonds
 
 structure Bond (n : ℕ) where
   src dst : Fin n                              -- cannot dangle
@@ -320,9 +320,8 @@ Compiled code (`lake exe …`) is unaffected either way.
 3. **Degree lemma**: `graph.degree i = degree i` (needs `nodup`).
 4. **Chemistry as passes**: port the branch's sanitization as
    `Molecule n → Molecule n` functions, each with its own tests, each optional.
-5. **Stereo**: ~~interpret `@`/`@@`~~ — done, `Tetra` and `Molecule.stereo`;
-   next, interpret `/` `\` as a cis/trans configuration on the double bond
-   and write it from the walk.
+5. **Stereo**: ~~interpret `@`/`@@` and `/` `\`~~ — done, `Tetra`, `Planar`
+   and `Molecule.stereo`; next, allenes and the other chirality classes.
 6. **Featurization**: ~~Morgan fingerprints~~ — done, `LeanSMILES/Fingerprint/Morgan.lean`
    (§7); next, `Atom → Fin k` one-hots and feeding `morganVector` to the ML
    side once the ML algorithms (`Scalar.lean`'s `ScalarLike`, the branch's

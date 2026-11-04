@@ -269,17 +269,18 @@ lemma nodup_bondsOfMatrix (A : Matrix (Fin n) (Fin n) ℚ) :
 configurations; entries that are zero or not a bond order give no bond. Faithful
 on `IsBondMatrix` matrices. -/
 def ofAdjMatrix (atoms : Vector Atom n) (A : Matrix (Fin n) (Fin n) ℚ)
-    (stereo : Vector (Option (Tetra n)) n) : Molecule n :=
+    (stereo : Vector (Option (Stereo n)) n) : Molecule n :=
   ⟨atoms, bondsOfMatrix A, nodup_bondsOfMatrix A, stereo⟩
 
 @[simp] lemma atoms_ofAdjMatrix (atoms : Vector Atom n) (A : Matrix (Fin n) (Fin n) ℚ)
-    (stereo : Vector (Option (Tetra n)) n) : (ofAdjMatrix atoms A stereo).atoms = atoms := rfl
+    (stereo : Vector (Option (Stereo n)) n) : (ofAdjMatrix atoms A stereo).atoms = atoms := rfl
 
 @[simp] lemma stereo_ofAdjMatrix (atoms : Vector Atom n) (A : Matrix (Fin n) (Fin n) ℚ)
-    (stereo : Vector (Option (Tetra n)) n) : (ofAdjMatrix atoms A stereo).stereo = stereo := rfl
+    (stereo : Vector (Option (Stereo n)) n) : (ofAdjMatrix atoms A stereo).stereo = stereo := rfl
 
 /-- Where a valid matrix is zero, the decoded molecule has no bond. -/
-lemma bondBetween_ofAdjMatrix_eq_none (atoms : Vector Atom n) (stereo : Vector (Option (Tetra n)) n)
+lemma bondBetween_ofAdjMatrix_eq_none (atoms : Vector Atom n)
+    (stereo : Vector (Option (Stereo n)) n)
     {A : Matrix (Fin n) (Fin n) ℚ} (hA : IsBondMatrix A) {i j : Fin n} (h0 : A i j = 0) :
     (ofAdjMatrix atoms A stereo).bondBetween i j = none := by
   unfold bondBetween
@@ -294,7 +295,7 @@ lemma bondBetween_ofAdjMatrix_eq_none (atoms : Vector Atom n) (stereo : Vector (
 
 /-- Where a valid matrix is nonzero, the decoded molecule's matrix agrees with it. -/
 lemma adjMatrix_ofAdjMatrix_apply_of_ne_zero (atoms : Vector Atom n)
-    (stereo : Vector (Option (Tetra n)) n)
+    (stereo : Vector (Option (Stereo n)) n)
     {A : Matrix (Fin n) (Fin n) ℚ} (hA : IsBondMatrix A) {i j : Fin n} (h0 : A i j ≠ 0) :
     (ofAdjMatrix atoms A stereo).adjMatrix i j = A i j := by
   obtain ⟨k, hk⟩ := hA.entry i j h0
@@ -313,7 +314,7 @@ lemma adjMatrix_ofAdjMatrix_apply_of_ne_zero (atoms : Vector Atom n)
     simp [hk]
 
 /-- Decoding a valid matrix and re-encoding gives the matrix back. -/
-theorem adjMatrix_ofAdjMatrix (atoms : Vector Atom n) (stereo : Vector (Option (Tetra n)) n)
+theorem adjMatrix_ofAdjMatrix (atoms : Vector Atom n) (stereo : Vector (Option (Stereo n)) n)
     {A : Matrix (Fin n) (Fin n) ℚ} (hA : IsBondMatrix A) :
     (ofAdjMatrix atoms A stereo).adjMatrix = A := by
   ext i j
@@ -323,7 +324,7 @@ theorem adjMatrix_ofAdjMatrix (atoms : Vector Atom n) (stereo : Vector (Option (
   · exact adjMatrix_ofAdjMatrix_apply_of_ne_zero atoms stereo hA h0
 
 /-- The graph of a decoded valid matrix is the matrix's graph. -/
-lemma graph_ofAdjMatrix (atoms : Vector Atom n) (stereo : Vector (Option (Tetra n)) n)
+lemma graph_ofAdjMatrix (atoms : Vector Atom n) (stereo : Vector (Option (Stereo n)) n)
     {A : Matrix (Fin n) (Fin n) ℚ} (hA : IsBondMatrix A) :
     (ofAdjMatrix atoms A stereo).graph = graphOfMatrix A := by
   rw [← graphOfMatrix_adjMatrix, adjMatrix_ofAdjMatrix atoms stereo hA]
@@ -373,7 +374,7 @@ end Molecule
 
 /-- Decode a bond matrix, given the atoms and configurations. -/
 def BondMatrix.toMolecule (B : BondMatrix n) (atoms : Vector Atom n)
-    (stereo : Vector (Option (Tetra n)) n) : Molecule n :=
+    (stereo : Vector (Option (Stereo n)) n) : Molecule n :=
   Molecule.ofAdjMatrix atoms B.1 stereo
 
 namespace Molecule
@@ -460,7 +461,7 @@ theorem normalize_normalize : m.normalize.normalize = m.normalize := by
 
 lemma isNormal_normalize : m.normalize.IsNormal := m.normalize_normalize
 
-lemma isNormal_ofAdjMatrix (atoms : Vector Atom n) (stereo : Vector (Option (Tetra n)) n)
+lemma isNormal_ofAdjMatrix (atoms : Vector Atom n) (stereo : Vector (Option (Stereo n)) n)
     {A : Matrix (Fin n) (Fin n) ℚ} (hA : IsBondMatrix A) :
     (ofAdjMatrix atoms A stereo).IsNormal := by
   unfold IsNormal normalize
@@ -485,7 +486,7 @@ lemma numBonds_normalize : m.normalize.numBonds = m.numBonds := by
 matrix and the tetrahedral configurations. -/
 def normalEquiv :
     {m : Molecule n // m.IsNormal} ≃
-      Vector Atom n × BondMatrix n × Vector (Option (Tetra n)) n where
+      Vector Atom n × BondMatrix n × Vector (Option (Stereo n)) n where
   toFun m := (m.1.atoms, m.1.toBondMatrix, m.1.stereo)
   invFun p := ⟨p.2.1.toMolecule p.1 p.2.2, isNormal_ofAdjMatrix p.1 p.2.2 p.2.1.2⟩
   left_inv m := by
@@ -551,7 +552,7 @@ structure MolData (n : ℕ) where
   /-- The table is a bond matrix. -/
   isBondMatrix : IsBondMatrix (Matrix.of fun i j : Fin n ↦ table[i][j])
   /-- The tetrahedral configurations. -/
-  stereo : Vector (Option (Tetra n)) n
+  stereo : Vector (Option (Stereo n)) n
 
 namespace MolData
 

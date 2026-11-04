@@ -53,15 +53,18 @@ Soundness rests on the check alone, never on the heuristic that proposed the
 candidate; `LeanSMILES.SMILES.Canonicity` proves that `search` and
 `leavesAll` have the same minimum, and that the minimum is label-independent.
 
-**Stereochemistry.** The data carries each centre's configuration, which a
-relabeling moves along with its ligands, so automorphisms, pruning and the
-written marks all respect it: the string a leaf writes has the `@`/`@@` of
-the configurations for the order it writes (`LeanSMILES.SMILES.Write`), and
-the minimum over leaves picks among them like any other character.  Whether
-an atom is a centre at all is part of its invariant.
+**Stereochemistry.** The data carries each centre's configuration and each
+stereo double bond's arrangement (at both ends), which a relabeling moves
+along with their atoms, so automorphisms, pruning and the written marks all
+respect them: the string a leaf writes has the `@`/`@@` and `/` `\` for the
+order it writes (`LeanSMILES.SMILES.Write`), and the minimum over leaves picks
+among them like any other character.  Whether an atom is a centre or the end
+of a stereo double bond is part of its invariant.
 
 A mark can be meaningless — `C[C@H](C)C`, whose mirror image is the same
-molecule — and must canonicalize like no mark.  `dropFake` erases such marks
+molecule, or `C/C=C(/C)C`, whose flipped double bond is — and must
+canonicalize like no mark.  A double bond's two ends are one unit
+(`sameUnit`): mirrored and erased together.  `dropFake` erases such marks
 first, by asking the canonical search itself: a mark goes when mirroring it
 alone gives the same canonical string, and still does once the other such
 marks are erased (`keptStereo`).  The second condition keeps the marks of
@@ -221,14 +224,15 @@ def degree (i : Fin n) : ℕ := ((List.finRange n).filter fun j ↦ d.bonds i j 
 
 /-- What an atom is, independent of its label: degree, element, hydrogens,
 aromaticity, charge, isotope, whether it was bracketed, class, a
-non-tetrahedral chirality mark, whether it is a tetrahedral centre. -/
+non-tetrahedral chirality mark, whether it is a tetrahedral centre or the end
+of a stereo double bond. -/
 def atomInvariant (i : Fin n) : List ℤ :=
   let a := d.atoms[i]
   [(d.degree i : ℤ), (a.atomicNumber : ℤ), (a.totalH : ℤ), (if a.aromatic then 1 else 0),
     a.charge, ((a.isotope.getD 0 : ℕ) : ℤ), (if a.explicitH.isSome then 1 else 0),
     ((a.atomClass.getD 0 : ℕ) : ℤ),
     (((a.chirality.map Chirality.code).getD 0 : ℕ) : ℤ),
-    (if d.stereo[i].isSome then 1 else 0)]
+    (((d.stereo[i].map Stereo.code).getD 0 : ℕ) : ℤ)]
 
 /-- The sorted (neighbor rank, bond kind) pairs of an atom. -/
 def neighborInvariant (rank : Ranks n) (i : Fin n) : List (ℤ × ℤ) :=
@@ -285,7 +289,7 @@ configurations included. -/
 def isAutomorphism (γ : Equiv.Perm (Fin n)) : Bool :=
   let g : Vector (Fin n) n := Vector.ofFn γ
   (List.finRange n).all fun i ↦ d.atoms[g[i]] == d.atoms[i] &&
-    decide (d.stereo[g[i]] = d.stereo[i].map (Tetra.map γ)) &&
+    decide (d.stereo[g[i]] = d.stereo[i].map (Stereo.map γ)) &&
     (List.finRange n).all fun j ↦ d.bonds g[i] g[j] == d.bonds i j
 
 /-- Whether `γ` certifies that the subtree under tied atom `a` is the image of
@@ -345,23 +349,32 @@ def canonicalMolecule : Molecule n := (d.relabel (permOfRanks d.canonical.1)).to
 def eraseStereo (p : Fin n → Bool) : MolData n :=
   { d with stereo := Vector.ofFn fun i ↦ if p i then none else d.stereo[i] }
 
-/-- The data with the configuration at `i` mirrored. -/
+/-- Whether `i` and `j` carry one configuration: the same atom, or the two ends
+of a stereo double bond, which carry the same arrangement. Mirroring and
+erasing act on such a unit as a whole. -/
+def sameUnit (i j : Fin n) : Bool :=
+  j == i || (d.stereo[i].any Stereo.isPlanar && decide (d.stereo[j] = d.stereo[i]))
+
+/-- The data with the configuration of `i`'s unit mirrored. -/
 def mirrorAt (i : Fin n) : MolData n :=
   { d with
-    stereo := Vector.ofFn fun j ↦ if j = i then d.stereo[j].map Tetra.mirror else d.stereo[j] }
+    stereo := Vector.ofFn fun j ↦
+      if d.sameUnit i j then d.stereo[j].map Stereo.mirror else d.stereo[j] }
 
 /-- Whether the configuration at `i` is its own mirror image (two alike
 ligands, as two hydrogens): a mark that cannot mean anything. -/
 def selfMirror (i : Fin n) : Bool := d.stereo[i].any fun t ↦ decide (t.mirror = t)
 
 /-- Whether two neighbors of `i` have the same rank. Only then can mirroring
-`i` give an isomorphic molecule (an automorphism doing it must permute
-`i`'s ligands oddly, or a power of it must). -/
+the unit of `i` give an isomorphic molecule (an automorphism doing it must
+permute the ligands at one of its atoms oddly, or a power of it must). -/
 def tiedNeighbors (r : Ranks n) (i : Fin n) : Bool :=
   !decide (((List.finRange n).filter fun j ↦ d.bonds i j != 0).map fun j ↦ r[j]).Nodup
 
-/-- A centre whose mark might be meaningless. -/
-def candidate (r : Ranks n) (i : Fin n) : Bool := d.stereo[i].isSome && d.tiedNeighbors r i
+/-- An atom whose mark might be meaningless: some atom of its unit has two
+neighbors of the same rank. -/
+def candidate (r : Ranks n) (i : Fin n) : Bool :=
+  d.stereo[i].isSome && (List.finRange n).any fun j ↦ d.sameUnit i j && d.tiedNeighbors r j
 
 /-- Whether mirroring `i` alone leaves the canonical string `s` — the data's
 own — unchanged: the mirrored molecule is the same molecule. -/
@@ -372,15 +385,15 @@ canonical string `s` and ranks `r`. -/
 def invisible (s : String) (r : Ranks n) : Vector Bool n :=
   Vector.ofFn fun i ↦ d.candidate r i && d.mirrorInvisible s i
 
-/-- Whether the invisible centre `i` stays invisible once the other invisible
-centres `D` are erased: then its mark carries nothing the rest do not. -/
+/-- Whether the invisible unit of `i` stays invisible once the other invisible
+units `D` are erased: then its mark carries nothing the rest do not. -/
 def droppable (D : Vector Bool n) (i : Fin n) : Bool :=
   D[i] &&
-    let dA := d.eraseStereo fun j ↦ D[j] && j != i
+    let dA := d.eraseStereo fun j ↦ D[j] && !d.sameUnit i j
     dA.mirrorInvisible dA.canonical.2 i
 
 /-- The configurations left once the droppable marks are erased. -/
-def stripStereo : Vector (Option (Tetra n)) n :=
+def stripStereo : Vector (Option (Stereo n)) n :=
   if (List.finRange n).all fun i ↦ d.stereo[i].isNone then d.stereo else
   let r := d.initialRanks
   if (List.finRange n).any (d.candidate r) then
@@ -389,7 +402,7 @@ def stripStereo : Vector (Option (Tetra n)) n :=
 
 /-- The configurations worth writing: neither their own mirror image nor
 droppable. -/
-def keptStereo : Vector (Option (Tetra n)) n := (d.eraseStereo d.selfMirror).stripStereo
+def keptStereo : Vector (Option (Stereo n)) n := (d.eraseStereo d.selfMirror).stripStereo
 
 /-- The data with its meaningless marks erased. -/
 def dropFake : MolData n := { d with stereo := d.keptStereo }

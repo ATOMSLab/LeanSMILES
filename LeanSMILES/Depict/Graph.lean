@@ -20,9 +20,9 @@ back into geometric form:
   configuration independently of any listing; `tetra` reads it off as the
   mark for one fixed listing, the neighbors in increasing index order with the
   implicit hydrogen or lone pair last (`sortedLigands`).
-* **cis/trans** — `Bond.dir` is `/` or `\` relative to `src → dst`.
-  `dirSides` turns the marks at the two ends of a non-ring double bond into
-  "which side" flags: two substituents with equal flags are cis.
+* **cis/trans** — a stereo double bond's arrangement (`Molecule.stereo` at
+  its ends) is read off as `Edge.sides`: every pair of heavy substituents,
+  one at each end, with whether they are cis.
 
 Nothing here is chemistry beyond those two conventions; the rest is graph.
 -/
@@ -44,6 +44,9 @@ structure Edge where
   dir : Option BondDir
   /-- Whether the bond lies on a cycle. -/
   ring : Bool
+  /-- For a double bond with a cis/trans arrangement: every pair of heavy
+  substituents `(at src, at dst)` with whether they are cis; `[]` otherwise. -/
+  sides : List (ℕ × ℕ × Bool) := []
   deriving Repr, Inhabited
 
 /-- A molecule flattened for layout. -/
@@ -60,12 +63,22 @@ structure Graph where
   tetra : Array (Option Bool)
   deriving Repr, Inhabited
 
+/-- Whether a non-ring double bond has a specified cis/trans arrangement. -/
+def Edge.stereoSpecified (e : Edge) : Bool := e.kind == .double && !e.ring && !e.sides.isEmpty
+
 namespace Graph
 
 /-- Forget the size index of a `Molecule n`. -/
 def ofMolecule {n : ℕ} (m : Molecule n) : Graph :=
+  let sides (b : Bond n) : List (ℕ × ℕ × Bool) :=
+    match b.kind, m.stereo[b.src] with
+    | .double, some (.planar p) =>
+      let subs (x y : Fin n) := (m.neighbors x).filter (· != y)
+      (subs b.src b.dst).flatMap fun a ↦ (subs b.dst b.src).map fun c ↦
+        (a.val, c.val, p.cis (some a) (some c))
+    | _, _ => []
   let edges : Array Edge := m.bonds.toArray.map fun b ↦
-    ⟨b.src.val, b.dst.val, b.kind, b.dir, m.bondInRing b⟩
+    ⟨b.src.val, b.dst.val, b.kind, b.dir, m.bondInRing b, sides b⟩
   let adj := Id.run do
     let mut adj : Array (List (ℕ × ℕ)) := Array.replicate n []
     for h : k in [0:edges.size] do
@@ -74,7 +87,7 @@ def ofMolecule {n : ℕ} (m : Molecule n) : Graph :=
       adj := adj.modify e.dst (· ++ [(k, e.src)])
     return adj
   let tetra := Array.ofFn fun i : Fin n ↦ do
-    let t ← m.stereo[i]
+    let .tetra t ← m.stereo[i] | none
     let sorted := ((m.neighbors i).mergeSort fun a b ↦ decide (a ≤ b)).map some
     let o ← Ligands.ofList? (if sorted.length = 3 then sorted ++ [none] else sorted)
     if t.isAnticlockwise o then some true
@@ -195,38 +208,17 @@ def sortedLigands (i : ℕ) : List (Option ℕ) :=
 /-- The mark of a tetrahedral centre for `sortedLigands`: `true` for `@`. -/
 def tetraMark (i : ℕ) : Option Bool := g.tetra.getD i none
 
-/-- The `/` `\` marks at a bond's ends as side flags: at `src` the flag for
-`dst`, at `dst` the flag for `src`, chosen so that two substituents of a double
-bond with *equal* flags lie on the same side (cis). -/
-def dirFlags (e : Edge) : Option (Bool × Bool) :=
-  e.dir.map fun d ↦ (d != .up, d == .up)
-
-/-- The side flags of every marked single bond at atom `i`, as
-`(neighbor, flag)`. -/
-def dirSides (i : ℕ) : List (ℕ × Bool) :=
-  (g.adj.getD i []).filterMap fun (k, j) ↦
-    let e := g.edges.getD k default
-    (dirFlags e).map fun (atSrc, atDst) ↦ (j, if e.src == i then atSrc else atDst)
-
-/-- Substituent pairs across non-ring double bonds whose arrangement the `/` `\`
-marks specify: `(cis pairs, all specified pairs)`. -/
+/-- Substituent pairs across non-ring double bonds whose arrangement the
+molecule specifies: `(cis pairs, all specified pairs)`. -/
 def cisPairs : List (ℕ × ℕ) × List (ℕ × ℕ) := Id.run do
   let mut cis : List (ℕ × ℕ) := []
   let mut all : List (ℕ × ℕ) := []
   for e in g.edges do
     if e.kind != .double || e.ring then continue
-    let du := (g.dirSides e.src).filter (·.1 != e.dst)
-    let dv := (g.dirSides e.dst).filter (·.1 != e.src)
-    for (a, sa) in du do
-      for (c, sc) in dv do
-        all := (a, c) :: all
-        if sa == sc then cis := (a, c) :: cis
+    for (a, c, isCis) in e.sides do
+      all := (a, c) :: all
+      if isCis then cis := (a, c) :: cis
   return (cis, all)
-
-/-- Whether a non-ring double bond has `/` `\` marks on both ends. -/
-def stereoSpecified (e : Edge) : Bool :=
-  e.kind == .double && !e.ring &&
-    ((g.dirSides e.src).any (·.1 != e.dst)) && ((g.dirSides e.dst).any (·.1 != e.src))
 
 end Graph
 

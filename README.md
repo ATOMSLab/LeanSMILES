@@ -207,7 +207,22 @@ changes the string — so canonical SMILES distinguishes enantiomers and
 diastereomers, ignores meaningless marks, and is still canonical by theorem.
 For the same reason brackets that only restate the default hydrogen count are
 dropped before canonicalizing (`[CH](C)(C)C` is `CC(C)C`).
-`/` `\` are parsed but not yet part of the canonical form.
+
+**Cis/trans.** `/` and `\` are likewise relative — to the direction each
+single bond is written in — so `F/C=C/F`, `F\C=C\F` and `C(\F)=C/F` are one
+molecule. A double bond's arrangement is stored as its four substituent places
+`(a, a', c, c')`, "`a` cis to `c`", up to the Klein four-group (swap the ends,
+or both pairs at once): `Planar n`. Swapping one pair is the other
+arrangement, and theorems say a double bond with distinct substituents has
+exactly two (`Planar.flip_ne`), flipping exchanges cis and trans
+(`cis_flip`), writing then reading returns the arrangement (`cis_ofCis`), and
+cis is label-independent (`cis_map`). Both ends of the double bond carry it,
+in the same per-atom slot as a tetrahedral centre, so relabeling,
+automorphisms, meaningless-mark erasure (`C/C=C(/C)C` loses its marks) and
+the canonicity theorem cover both at once. The writer places one mark per end,
+reusing the one a neighboring double bond of a conjugated chain already put
+on the shared bond. As in RDKit and InChI, a double bond on a ring of fewer
+than eight atoms gets no arrangement.
 
 Because the parser checks syntax only, `[C+123]` parses, round-trips and
 canonicalizes like any other atom (RDKit accepts it too). The chemistry check
@@ -260,7 +275,8 @@ lake exe oracle-test        # 1 128 Delaney molecules: graph = RDKit's, canonica
 lake exe morgan-test        # Morgan fingerprints: ring membership = RDKit's, bits = RDKit's wherever the graph is, relabeling-invariant
 lake exe charge-test        # formal charges: [C+123], [H+++], [C-123] parse but fail checkCharges; [Na+], [O-2], [Fe+3], [NH4+] pass
 lake exe stereo-test        # stereoisomers vs RDKit and InChI (datasets/stereo-*.tsv from tools/rdkit_stereo.py):
-                            # one canonical SMILES per stereoisomer, a different one per different isomer, @/@@ read as RDKit reads them
+                            # one canonical SMILES per stereoisomer, a different one per different isomer,
+                            # @/@@ and / \ read as RDKit reads them
 ```
 
 ### Morgan fingerprints
@@ -765,6 +781,15 @@ checked against.
   it is self-consistent, but another reader takes them for the mirror image.
   LeanSMILES follows the specification; `tools/rdkit_stereo.py` leaves such
   strings out of the stereo test data.
+- **RDKit sometimes writes a stereoisomer other than the one it holds.**
+  Writing chiro-inositol, `O[C@H]1[C@H](O)[C@H](O)[C@@H](O)[C@H](O)[C@H]1O`,
+  from random atom orders (`MolToSmiles(..., doRandom=True)`, or after
+  `RenumberAtoms`), RDKit 2025.09 produces its enantiomer about half the time —
+  RDKit's own reader, InChI and LeanSMILES all read those strings as the
+  mirror image. Over the stereo test set, 49 of about 6 000 such writings (also
+  sugars, steroids, peptides and `/` `\` in conjugated macrocycles) do not
+  read back as the molecule written; `tools/rdkit_stereo.py` checks every
+  writing by InChI and leaves those out.
 - **OpenSMILES underdetermines implicit hydrogens on aromatic atoms.** §3.1.5
   computes the count from a sum of bond orders but never says what an
   aromatic bond contributes; §3.5 only requires that electrons be assignable
