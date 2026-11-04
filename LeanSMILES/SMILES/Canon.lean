@@ -79,7 +79,10 @@ asked about; the rest cost nothing.  Every step is label-independent, so
 the hydrogen count the default-valence rule gives anyway are dropped first
 (`normalizeBrackets`, `Atom.unbracket`) — which is also what lets a
 meaningless `[C@H]` become the plain `C` it stands for.  `reduce` is both
-steps; it is what the search sees.
+steps; it is what the search sees.  `reduceAndCanonical` computes it together
+with its canonical form, reusing the search the mark check ran first whenever
+the check erases nothing — the usual case — and is proved to agree with
+`reduce` and `reduce.canonical`.
 
 **Relabeling.** A discrete ranking is a permutation, `permOfRanks`: atom `i`
 goes to its position in rank order.  The string a ranking writes is the data
@@ -103,12 +106,13 @@ abbrev Ranks (n : ℕ) := Vector ℕ n
 
 /-- The atom without redundant brackets: when nothing but its hydrogen count
 needs brackets and that count is what the default-valence rule gives for its
-bond-order sum, the bare atom, the hydrogens implicit. -/
-def Atom.unbracket (a : Atom) (orderSum : ℚ) : Atom :=
+bond-order sum, the bare atom, the hydrogens implicit. The sum is asked for
+only for a bracket atom (most atoms are not). -/
+def Atom.unbracket (a : Atom) (orderSum : Unit → ℚ) : Atom :=
   let bare := { a with explicitH := none, implicitH := 0 }
   match a.explicitH with
   | some h =>
-    if bare.canBeBare && h == Molecule.implicitHydrogens bare orderSum then
+    if bare.canBeBare && h == Molecule.implicitHydrogens bare (orderSum ()) then
       { bare with implicitH := h }
     else a
   | none => a
@@ -410,15 +414,34 @@ def dropFake : MolData n := { d with stereo := d.keptStereo }
 /-! ### Redundant brackets -/
 
 /-- The bond orders at `i`, summed. -/
-def orderSum (i : Fin n) : ℚ := ∑ j, d.bonds i j
+def orderSum (i : Fin n) : ℚ := ((List.finRange n).map fun j ↦ d.bonds i j).sum
 
 /-- The data with redundant brackets dropped (`Atom.unbracket`). -/
 def normalizeBrackets : MolData n :=
-  { d with atoms := Vector.ofFn fun i ↦ d.atoms[i].unbracket (d.orderSum i) }
+  { d with atoms := Vector.ofFn fun i ↦ d.atoms[i].unbracket fun _ ↦ d.orderSum i }
 
 /-- What is canonicalized: the data without redundant brackets, then without
 meaningless marks. -/
 def reduce : MolData n := d.normalizeBrackets.dropFake
+
+/-- `reduce` and its canonical form, sharing work: the meaningless-mark check
+canonicalizes the data (marks of their own mirror image erased) before it
+decides anything, and when it then erases nothing, that data is `reduce` and
+its canonical form is reused rather than searched for again
+(`reduceAndCanonical_fst`, `reduceAndCanonical_snd`). -/
+def reduceAndCanonical : MolData n × (Ranks n × String) :=
+  let nb := d.normalizeBrackets
+  let d₀ := nb.eraseStereo nb.selfMirror
+  if (List.finRange n).all fun i ↦ d₀.stereo[i].isNone then (d₀, d₀.canonical) else
+  let r := d₀.initialRanks
+  if (List.finRange n).any (d₀.candidate r) then
+    let c := d₀.canonical
+    let drop : Vector Bool n := Vector.ofFn (d₀.droppable (d₀.invisible c.2 r))
+    if (List.finRange n).all fun i ↦ !drop[i] then (d₀, c)
+    else
+      let d₁ := d₀.eraseStereo fun i ↦ drop[i]
+      (d₁, d₁.canonical)
+  else (d₀, d₀.canonical)
 
 /-- The canonical molecule writes the canonical string. -/
 theorem writeRanked_canonical : d.writeRanked d.canonical.1 = d.canonical.2 := by
@@ -435,6 +458,39 @@ theorem writeRanked_canonical : d.writeRanked d.canonical.1 = d.canonical.2 := b
     rw [hr']
     exact h
 
+/-- Erasing nowhere changes nothing. -/
+lemma eraseStereo_of_forall_false {p : Fin n → Bool} (h : ∀ i, p i = false) :
+    d.eraseStereo p = d := by
+  cases d
+  simp only [eraseStereo, h, Bool.false_eq_true, if_false, MolData.mk.injEq, true_and]
+  ext i hi
+  simp
+
+/-- The data `reduceAndCanonical` returns is `reduce`. -/
+theorem reduceAndCanonical_fst : d.reduceAndCanonical.1 = d.reduce := by
+  simp only [reduceAndCanonical, reduce, dropFake, keptStereo, stripStereo]
+  set d₀ := d.normalizeBrackets.eraseStereo d.normalizeBrackets.selfMirror
+  split_ifs with h₁ h₂ h₃
+  · rfl
+  · have hf : ∀ i, d₀.droppable (d₀.invisible d₀.canonical.2 d₀.initialRanks) i = false := by
+      intro i
+      have := List.all_eq_true.mp h₃ i (List.mem_finRange i)
+      simpa using this
+    rw [eraseStereo_of_forall_false _ hf]
+    rfl
+  · simp only [Fin.getElem_fin, Vector.getElem_ofFn]
+    rfl
+  · rfl
+
+/-- The canonical form `reduceAndCanonical` returns is that of its data. -/
+lemma reduceAndCanonical_snd_eq : d.reduceAndCanonical.2 = d.reduceAndCanonical.1.canonical := by
+  simp only [reduceAndCanonical]
+  split_ifs <;> rfl
+
+/-- The canonical form `reduceAndCanonical` returns is `reduce`'s. -/
+theorem reduceAndCanonical_snd : d.reduceAndCanonical.2 = d.reduce.canonical := by
+  rw [reduceAndCanonical_snd_eq, reduceAndCanonical_fst]
+
 end MolData
 
 namespace Molecule
@@ -450,10 +506,10 @@ def reduce : Molecule n :=
 lemma toMolData_reduce : m.reduce.toMolData = m.toMolData.reduce := rfl
 
 /-- The canonical ranks. -/
-def canonicalRanks : Ranks n := m.toMolData.reduce.canonical.1
+def canonicalRanks : Ranks n := m.toMolData.reduceAndCanonical.2.1
 
 /-- The canonical SMILES string. -/
-def canonicalSmiles : String := m.toMolData.reduce.canonical.2
+def canonicalSmiles : String := m.toMolData.reduceAndCanonical.2.2
 
 /-- The canonical ranks as a permutation of the atoms. -/
 def canonicalPerm : Equiv.Perm (Fin n) := permOfRanks m.canonicalRanks
@@ -462,18 +518,22 @@ def canonicalPerm : Equiv.Perm (Fin n) := permOfRanks m.canonicalRanks
 redundant brackets and meaningless marks. That this changes labels and nothing
 else is `canonicalizeIso`; that writing it out gives the canonical SMILES is
 `toSmiles_canonicalize`. -/
-def canonicalize : Molecule n := m.toMolData.reduce.canonicalMolecule
+def canonicalize : Molecule n :=
+  let rc := m.toMolData.reduceAndCanonical
+  (rc.1.relabel (permOfRanks rc.2.1)).toMolecule
 
 /-- The canonical molecule is the reduced molecule relabeled into canonical
 order, normalized. -/
 theorem canonicalize_eq_normalize_relabel :
     m.canonicalize = (m.reduce.relabel m.canonicalPerm).normalize := by
   rw [← toMolecule_toMolData, toMolData_relabel, toMolData_reduce]
-  rfl
+  simp only [canonicalize, canonicalPerm, canonicalRanks, MolData.reduceAndCanonical_fst]
 
 /-- The canonical molecule, written in its atom order, is the canonical SMILES. -/
-theorem toSmiles_canonicalize : m.canonicalize.toSmiles = m.canonicalSmiles :=
-  m.toMolData.reduce.writeRanked_canonical
+theorem toSmiles_canonicalize : m.canonicalize.toSmiles = m.canonicalSmiles := by
+  simp only [canonicalize, canonicalSmiles, MolData.reduceAndCanonical_fst,
+    MolData.reduceAndCanonical_snd]
+  exact m.toMolData.reduce.writeRanked_canonical
 
 lemma numBonds_canonicalize : m.canonicalize.numBonds = m.numBonds := by
   rw [canonicalize_eq_normalize_relabel, numBonds_normalize, numBonds_relabel]
@@ -498,7 +558,7 @@ lemma chargesConsistent_normalize : m.normalize.chargesConsistent ↔ m.chargesC
   Iff.rfl
 
 /-- Dropping a redundant bracket keeps the charge, which is zero. -/
-lemma _root_.LeanSMILES.Atom.chargeConsistent_unbracket (a : Atom) (q : ℚ) :
+lemma _root_.LeanSMILES.Atom.chargeConsistent_unbracket (a : Atom) (q : Unit → ℚ) :
     (a.unbracket q).chargeConsistent ↔ a.chargeConsistent := by
   unfold Atom.unbracket
   split

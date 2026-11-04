@@ -882,13 +882,15 @@ theorem dropFake_relabel (σ : Equiv.Perm (Fin n)) : (d.relabel σ).dropFake = d
 lemma orderSum_relabel (σ : Equiv.Perm (Fin n)) (i : Fin n) :
     (d.relabel σ).orderSum (σ i) = d.orderSum i := by
   simp only [orderSum, bonds_relabel, BondMatrix.relabel_apply, Equiv.symm_apply_apply]
-  exact Equiv.sum_comp σ.symm fun j ↦ d.bonds i j
+  have h := ((map_finRange_perm σ.symm).map fun j ↦ d.bonds i j).sum_eq
+  rwa [List.map_map] at h
 
 lemma normalizeBrackets_relabel (σ : Equiv.Perm (Fin n)) :
     (d.relabel σ).normalizeBrackets = d.normalizeBrackets.relabel σ := by
   refine ext (eq_relabelVec_of_apply σ fun i ↦ ?_) rfl rfl
-  simp only [normalizeBrackets, Fin.getElem_fin, Vector.getElem_ofFn, Fin.eta, atoms_relabel]
-  rw [← Fin.getElem_fin, relabelVec_apply, orderSum_relabel]
+  simp only [normalizeBrackets, Fin.getElem_fin, Vector.getElem_ofFn, Fin.eta, atoms_relabel,
+    orderSum_relabel]
+  rw [← Fin.getElem_fin, relabelVec_apply]
   rfl
 
 /-- Reducing — redundant brackets, then meaningless marks — commutes with
@@ -904,7 +906,8 @@ relabeling of the molecule writes the same string. -/
 theorem Molecule.canonicalSmiles_relabel (m : Molecule n) (σ : Equiv.Perm (Fin n)) :
     (m.relabel σ).canonicalSmiles = m.canonicalSmiles := by
   unfold canonicalSmiles
-  rw [toMolData_relabel, MolData.reduce_relabel]
+  rw [MolData.reduceAndCanonical_snd, MolData.reduceAndCanonical_snd, toMolData_relabel,
+    MolData.reduce_relabel]
   exact m.toMolData.reduce.canonical_relabel σ
 
 /-- The canonical SMILES of a bundled molecule does not depend on its atom order. -/
