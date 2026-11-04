@@ -430,7 +430,7 @@ def write_tsv(path, header, rows):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--rewrites", type=int, default=2)
+    ap.add_argument("--rewrites", type=int, default=1)
     ap.add_argument("--seed", type=int, default=470)
     ap.add_argument("--embed-timeout", type=int, default=2)
     ap.add_argument("--max-atoms", type=int, default=100)
