@@ -165,11 +165,14 @@ def cisTransDirs (m : Molecule n) (pos : Vector ℕ n) : List (Sym2 (Fin n) × B
     match m.stereo[b.src] with
     | some (.planar p) =>
       let (x, y) := if pos[b.src] ≤ pos[b.dst] then (b.src, b.dst) else (b.dst, b.src)
-      -- the substituents a mark can go on: single bonds a reader takes as single
+      -- the substituents a mark can go on: bonds whose kind the string leaves implicit (single
+      -- unless both atoms are aromatic, aromatic if both are), so a `/` `\` in place of the
+      -- symbol reads back as the same kind — an aromatic ring bond included, as at the ring end
+      -- of an exocyclic `c=N`
       let subs (e o : Fin n) : List (Fin n) :=
-        (((m.bondsAt e).filter fun c ↦ c.other e != o && c.kind == .single &&
-            !((m.atom e).aromatic && (m.atom (c.other e)).aromatic)).map (·.other e)).mergeSort
-          fun a c ↦ pos[a] ≤ pos[c]
+        (((m.bondsAt e).filter fun c ↦
+            c.other e != o && bondSymbol (m.atom e) (m.atom (c.other e)) c.kind == "").map
+          (·.other e)).mergeSort fun a c ↦ pos[a] ≤ pos[c]
       let fixed (e o : Fin n) : Option (Fin n × Bool) :=
         (subs e o).findSome? fun s ↦ (dirs.lookup s(e, s)).map fun d ↦ (s, flagOf pos e s d)
       match subs x y, subs y x with
