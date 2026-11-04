@@ -16,15 +16,10 @@ arrays: adjacency lists, which bonds lie on rings, all-pairs graph distances,
 connected components, and the two pieces of *recorded* stereochemistry read
 back into geometric form:
 
-* **tetrahedral centres** — `Atom.chirality` is `@`/`@@` relative to the order
-  in which the atom's neighbors appear in the SMILES string. `Molecule` keeps
-  the bonds in the order the parser created them, which is not quite that
-  order: a ring-closure bond is created when the ring *closes*, at the second
-  digit, while the SMILES convention places it at the *first* digit, right
-  after the opening atom. `stereoNeighbors` reconstructs the SMILES order from
-  the bond list: the atom the centre was reached from, then the implicit
-  hydrogen of `[C@H]`, then the ring-closure neighbors, then the branches and
-  the chain, each group in bond-list order.
+* **tetrahedral centres** — `Molecule.stereo` holds each centre's
+  configuration independently of any listing; `tetra` reads it off as the
+  mark for one fixed listing, the neighbors in increasing index order with the
+  implicit hydrogen or lone pair last (`sortedLigands`).
 * **cis/trans** — `Bond.dir` is `/` or `\` relative to `src → dst`.
   `dirSides` turns the marks at the two ends of a non-ring double bond into
   "which side" flags: two substituents with equal flags are cis.
@@ -59,6 +54,10 @@ structure Graph where
   edges : Array Edge
   /-- Neighbors of every atom as `(bond index, neighbor)`, in bond-list order. -/
   adj : Array (List (ℕ × ℕ))
+  /-- For each tetrahedral centre, `true` if it is `@` with its ligands listed
+  as `sortedLigands` (neighbors in increasing index order, the implicit
+  hydrogen or lone pair last), `false` if `@@`. -/
+  tetra : Array (Option Bool)
   deriving Repr, Inhabited
 
 namespace Graph
@@ -74,7 +73,14 @@ def ofMolecule {n : ℕ} (m : Molecule n) : Graph :=
       adj := adj.modify e.src (· ++ [(k, e.dst)])
       adj := adj.modify e.dst (· ++ [(k, e.src)])
     return adj
-  ⟨m.atoms.toArray, edges, adj⟩
+  let tetra := Array.ofFn fun i : Fin n ↦ do
+    let t ← m.stereo[i]
+    let sorted := ((m.neighbors i).mergeSort fun a b ↦ decide (a ≤ b)).map some
+    let o ← Ligands.ofList? (if sorted.length = 3 then sorted ++ [none] else sorted)
+    if t.isAnticlockwise o then some true
+    else if t.isAnticlockwise (o ∘ Ligands.swapLast) then some false
+    else none
+  ⟨m.atoms.toArray, edges, adj, tetra⟩
 
 /-- The depiction graph of a parsed molecule. -/
 def ofMol (M : Mol) : Graph := ofMolecule M.mol
@@ -179,37 +185,15 @@ def sideOf (u v start : ℕ) : Array Bool := Id.run do
 
 /-! ### Reading the stereochemistry back -/
 
-/-- The bond that introduced atom `d`: the first bond in the list with `dst = d`
-and `src < d`. Every atom but the first of each component has one, and it comes
-before any ring-closure bond at `d`, because the closing digit follows the
-atom. -/
-def chainBond? (d : ℕ) : Option ℕ :=
-  ((g.adj.getD d []).find? fun (k, _) ↦
-    let e := g.edges.getD k default
-    e.dst == d && e.src < d).map (·.1)
+/-- The listing `tetra` is relative to: the neighbors of `i` in increasing
+index order, then `none` for an implicit hydrogen or lone pair when there are
+three. -/
+def sortedLigands (i : ℕ) : List (Option ℕ) :=
+  let sorted := (((g.adj.getD i []).map (·.2)).mergeSort fun a b ↦ decide (a ≤ b)).map some
+  if sorted.length == 3 then sorted ++ [none] else sorted
 
-/-- The neighbors of a stereocentre in the order the SMILES string lists them,
-`none` standing for the implicit hydrogen of `[C@H]`: the atom the centre was
-reached from, the hydrogen, the ring-closure neighbors, then the branches and
-the chain. A centre with three listed neighbors and no hydrogen (a sulfoxide
-sulfur, say) gets its lone pair as a fourth entry at the end. -/
-def stereoNeighbors (i : ℕ) : List (Option ℕ) := Id.run do
-  let a := g.atom i
-  let parent := g.chainBond? i
-  let nbrs := g.adj.getD i []
-  let mut rings : List (Option ℕ) := []
-  let mut children : List (Option ℕ) := []
-  for (k, j) in nbrs do
-    if parent == some k then continue
-    let e := g.edges.getD k default
-    if e.src == i && g.chainBond? j == some k then children := children ++ [some j]
-    else rings := rings ++ [some j]
-  let before := match parent with
-    | some k => [some (g.edges.getD k default).src]
-    | none => []
-  let hydrogen := if a.explicitH == some 1 then [none] else []
-  let listed := before ++ hydrogen ++ rings ++ children
-  return if listed.length == 3 && hydrogen.isEmpty then listed ++ [none] else listed
+/-- The mark of a tetrahedral centre for `sortedLigands`: `true` for `@`. -/
+def tetraMark (i : ℕ) : Option Bool := g.tetra.getD i none
 
 /-- The `/` `\` marks at a bond's ends as side flags: at `src` the flag for
 `dst`, at `dst` the flag for `src`, chosen so that two substituents of a double

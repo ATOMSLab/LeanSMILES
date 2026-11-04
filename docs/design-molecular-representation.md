@@ -18,8 +18,10 @@ library is organized around it:
 RDKit and pysmiles both parse into the middle layer and both have to work to
 reach the third.  The ordered graph remembers the string in two places — the
 atom numbering, and the neighbor order that `@`/`@@` and `/`/`\` refer to —
-which is why `Molecule.relabel` exists as an explicit operation and why
-stereo marks are *recorded* on atoms and bonds but not *interpreted*.
+which is why `Molecule.relabel` exists as an explicit operation.  `/` `\`
+are *recorded* on bonds but not yet interpreted; `@`/`@@` are interpreted by
+the parser into an order-independent configuration (`stereo`, below) and
+recomputed by the writer for the order it writes.
 
 ## 2. The typed representation
 
@@ -28,6 +30,7 @@ structure Molecule (n : ℕ) where
   atoms : Vector Atom n
   bonds : List (Bond n)
   nodup : (bonds.map Bond.edge).Nodup          -- no two bonds join the same pair
+  stereo : Vector (Option (Tetra n)) n         -- tetrahedral configurations
 
 structure Bond (n : ℕ) where
   src dst : Fin n                              -- cannot dangle
@@ -64,7 +67,14 @@ Design choices, and the reason for each:
 * **Two hydrogen counts**, as in RDKit: `explicitH` (written in brackets) and
   `implicitH` (inferred).  A bracket atom is "an atom whose `explicitH` is
   `some _`", and the writer brackets exactly those again, so what you wrote is
-  what you get back.
+  what you get back.  (Canonicalization drops brackets that only restate the
+  default hydrogen count: `[CH](C)(C)C` canonicalizes as `CC(C)C`.)
+* **`Tetra n`, a quotient** (`LeanSMILES/Chem/Stereo.lean`): a centre's four
+  ligands, `Fin 4 → Option (Fin n)` with `none` for an implicit hydrogen or
+  lone pair, up to permutations of sign 1 (Mathlib's `Equiv.Perm.sign`).  A
+  `@` mark *is* such a class once the listing is known, so storing the class
+  makes the molecule independent of how the string listed neighbors, and
+  `isAnticlockwise` recovers the mark for any listing a writer chooses.
 
 ## 3. The Mathlib views (`LeanSMILES/Chem/Graph.lean`)
 
@@ -111,7 +121,7 @@ molecule" is in the type.
 | `Molecule.toFlatMatrix`, `flatten_toBondMatrix` | the graph's own 0/1 matrix; flattening the bond matrix gives it |
 | `normalize`, `IsNormal` | forget bond orientation and bond-list order; a fixed point of `normalize` (decidable) |
 | `IsNormal.bond_spec` | in normal form every bond runs `src < dst` with no direction mark |
-| `normalEquiv` | **`{m // m.IsNormal} ≃ Vector Atom n × BondMatrix n`** — nothing is lost |
+| `normalEquiv` | **`{m // m.IsNormal} ≃ Vector Atom n × BondMatrix n × Vector (Option (Tetra n)) n`** — nothing is lost |
 
 The `Equiv` is the honest form of "the matrix stores everything": it does, for
 molecules that have forgotten what a symmetric matrix cannot hold.  For Morgan
@@ -159,8 +169,10 @@ rank on atoms; everything it decides, it decides from ranks and bond kinds.
 
 Canonicalization is **color refinement + exhaustive tie-breaking**:
 
+0. Reduce: drop redundant brackets, then erase tetrahedral marks whose
+   mirror image is the same molecule (judged by the canonical search itself).
 1. Invariant per atom (degree, Z, H, aromatic, charge, isotope, bracketed,
-   class, chirality mark) → ranks.
+   class, other chirality classes, whether it is a stereocentre) → ranks.
 2. Refine by sorted (neighbor rank, bond kind) until the partition stops
    splitting — Morgan / Weisfeiler–Lehman.
 3. If atoms remain tied: individualize *each* atom of the lowest tied class in
@@ -308,8 +320,9 @@ Compiled code (`lake exe …`) is unaffected either way.
 3. **Degree lemma**: `graph.degree i = degree i` (needs `nodup`).
 4. **Chemistry as passes**: port the branch's sanitization as
    `Molecule n → Molecule n` functions, each with its own tests, each optional.
-5. **Stereo**: interpret `@`/`@@` as a parity over the neighbor order, and
-   write `/` `\` from the walk.
+5. **Stereo**: ~~interpret `@`/`@@`~~ — done, `Tetra` and `Molecule.stereo`;
+   next, interpret `/` `\` as a cis/trans configuration on the double bond
+   and write it from the walk.
 6. **Featurization**: ~~Morgan fingerprints~~ — done, `LeanSMILES/Fingerprint/Morgan.lean`
    (§7); next, `Atom → Fin k` one-hots and feeding `morganVector` to the ML
    side once the ML algorithms (`Scalar.lean`'s `ScalarLike`, the branch's

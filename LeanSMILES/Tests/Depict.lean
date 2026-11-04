@@ -48,7 +48,7 @@ def stereoProblems (g : Graph) (pos : Array Pt) : List String := Id.run do
   let stereo := wedges g pos
   let mut out : List String := []
   for i in [0:g.numAtoms] do
-    if ((g.atom i).chirality.bind tetrahedral).isSome && (g.stereoNeighbors i).length == 4 then
+    if (g.tetraMark i).isSome && (g.sortedLigands i).length == 4 then
       let k := (stereo.filter (·.centre == i)).length
       if k != 1 then out := out ++ [s!"atom {i}: {k} stereo bonds"]
   let (cis, all) := g.cisPairs
@@ -103,7 +103,7 @@ def main (args : List String) : IO UInt32 := do
       let pos := layout g
       blocks := blocks.push s!"{s}\n{molBlockWith g pos}$$$$\n"
       centres := centres + ((List.range g.numAtoms).filter fun i ↦
-        ((g.atom i).chirality.bind tetrahedral).isSome).length
+        (g.tetraMark i).isSome).length
       alkenes := alkenes + (g.edges.filter g.stereoSpecified).size
       match stereoProblems g pos with
       | [] => ok := ok + 1

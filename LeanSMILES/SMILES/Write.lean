@@ -26,9 +26,15 @@ order; with `canonicalRanks` (`LeanSMILES.SMILES.Canon`) it writes the
 canonical SMILES.  Everything the writer decides it decides from ranks and
 bond kinds alone, so when the ranks are label-independent, so is the string.
 
+Tetrahedral marks are not copied from the input but computed: a centre's
+neighbors are listed in the order this walk writes them (`listedLigands`, the
+parser's convention), and the mark is `@` exactly when that listing is the
+stored configuration (`Tetra.isAnticlockwise`).  Other chirality classes are
+written as recorded.
+
 Not written: the `/` `\` direction marks (recorded on bonds, but their meaning
 depends on the walk, so writing them correctly needs the parity bookkeeping
-that is out of scope here).  Chirality marks are written as recorded.
+that is out of scope here).
 -/
 
 @[expose] public section
@@ -89,6 +95,32 @@ def dfs (m : Molecule n) (rank : Fin n → ℕ) : ℕ → Fin n → Walk n → W
           children := w.children.set a.val (w.children[a] ++ [o]) a.isLt }
         dfs m rank fuel o w
 
+/-! ### Tetrahedral marks -/
+
+/-- The ligands of `a` in the order the string lists them: the atom it is
+reached from, its hydrogen (when it has exactly one), its ring-closure partners
+in digit order, its children; a lone pair last when three atoms and no
+hydrogen are listed.  The parser reads `@`/`@@` against this same order
+(`SMILES.State.ligandsOf`). -/
+def listedLigands (m : Molecule n) (a : Fin n) (parent : Option (Fin n))
+    (rings kids : List (Fin n)) : List (Option (Fin n)) :=
+  let h := (m.atom a).totalH
+  let listed := parent.toList.map some ++ (if h = 1 then [none] else []) ++ rings.map some ++
+    kids.map some
+  if listed.length = 3 ∧ h = 0 then listed ++ [none] else listed
+
+/-- Atom `a` carrying the mark of its configuration for the listing `ligands`:
+`@` if the listing is the configuration, `@@` if its mirror image, no mark
+otherwise. -/
+def markedAtom (m : Molecule n) (a : Fin n) (ligands : List (Option (Fin n))) : Atom :=
+  match m.stereo[a], Ligands.ofList? ligands with
+  | some t, some o =>
+    if t.isAnticlockwise o then { m.atom a with chirality := some .anticlockwise }
+    else if t.isAnticlockwise (o ∘ Ligands.swapLast) then
+      { m.atom a with chirality := some .clockwise }
+    else m.atom a
+  | _, _ => m.atom a
+
 /-! ### Pass 2: the string -/
 
 /-- The state of the writer. -/
@@ -120,11 +152,12 @@ def emitClosures (m : Molecule n) (a : Fin n) (cls : List (Bond n)) (e : Emit n)
 def emit (m : Molecule n) (rank : Fin n → ℕ) (w : Walk n) : ℕ → Fin n → Emit n → Emit n
   | 0, _, e => e
   | fuel + 1, a, e =>
-    let e := { e with out := e.out ++ (m.atom a).toSmiles }
     let cls := (w.closures.filter (·.touches a)).mergeSort fun b c ↦
       rankLE rank (b.other a) (c.other a)
-    let e := emitClosures m a cls e
     let kids := w.children[a]
+    let ligands := m.listedLigands a w.parent[a] (cls.map (·.other a)) kids
+    let e := { e with out := e.out ++ (m.markedAtom a ligands).toSmiles }
+    let e := emitClosures m a cls e
     let numKids := kids.length
     kids.zipIdx.foldl (init := e) fun e ⟨o, k⟩ ↦
       let sym := match m.bondBetween a o with

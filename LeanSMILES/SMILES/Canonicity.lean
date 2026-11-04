@@ -42,6 +42,13 @@ writes the same string as some leaf the pruned search keeps
 (`exists_mem_search`), while every leaf the pruned search keeps is a leaf of
 the full search (`search_subset_leavesAll`); the two minima agree
 (`min?_search_eq`).
+
+Tetrahedral configurations ride along: relabeling moves each one with its
+ligands (`relabelStereo`), an automorphism must preserve them, and the steps
+that first drop redundant brackets and erase meaningless marks are made of
+label-independent tests — a bond-order sum, a canonical string, ranks, a
+configuration equal to its own mirror image — so they commute with
+relabeling too (`reduce_relabel`).
 -/
 
 public section
@@ -545,15 +552,16 @@ lemma writeRanked_relabel (σ : Equiv.Perm (Fin n)) {r : Ranks n}
 lemma relabel_eq_self_of_isAutomorphism {γ : Equiv.Perm (Fin n)}
     (h : d.isAutomorphism γ = true) : d.relabel γ = d := by
   simp only [isAutomorphism, List.all_eq_true, List.mem_finRange, true_implies, Bool.and_eq_true,
-    beq_iff_eq, Fin.getElem_fin, Vector.getElem_ofFn, Fin.eta] at h
-  refine ext ?_ ?_
+    beq_iff_eq, decide_eq_true_eq, Fin.getElem_fin, Vector.getElem_ofFn, Fin.eta] at h
+  refine ext ?_ ?_ ?_
   · ext j hj
-    have := (h (γ.symm ⟨j, hj⟩)).1
+    have := (h (γ.symm ⟨j, hj⟩)).1.1
     simpa using this.symm
   · ext i hi j hj
     have := (h (γ.symm ⟨i, hi⟩)).2 (γ.symm ⟨j, hj⟩)
     simp only [bonds_apply] at this
     simpa [relabel, Vector.getElem_ofFn] using this.symm
+  · exact (eq_relabelStereo_of_apply γ fun i ↦ by simpa using (h i).1.2).symm
 
 /-- What `isSymmetry` certifies: an automorphism fixing the ranking and sending `e` to `a`. -/
 lemma isSymmetry_spec {r : Ranks n} {e a : Fin n} {γ : Equiv.Perm (Fin n)}
@@ -743,6 +751,141 @@ theorem canonical_relabel (σ : Equiv.Perm (Fin n)) : (d.relabel σ).canonical.2
     exact absurd hm (d.search_ne_nil _)
   · rfl
 
+/-! ### Erasing meaningless marks commutes with relabeling
+
+Each test `dropFake` makes is about the data up to relabeling — a canonical
+string, a rank, whether a configuration is its own mirror image — so the set
+of marks it erases moves with the atoms. -/
+
+lemma _root_.LeanSMILES.all_finRange_comp (σ : Equiv.Perm (Fin n)) (p : Fin n → Bool) :
+    ((List.finRange n).all fun i ↦ p (σ i)) = (List.finRange n).all p := by
+  rw [Bool.eq_iff_iff]
+  simp only [List.all_eq_true, List.mem_finRange, true_implies]
+  exact ⟨fun h i ↦ by simpa using h (σ.symm i), fun h i ↦ h (σ i)⟩
+
+lemma _root_.LeanSMILES.any_finRange_comp (σ : Equiv.Perm (Fin n)) (p : Fin n → Bool) :
+    ((List.finRange n).any fun i ↦ p (σ i)) = (List.finRange n).any p := by
+  rw [Bool.eq_iff_iff]
+  simp only [List.any_eq_true, List.mem_finRange, true_and]
+  exact ⟨fun ⟨i, h⟩ ↦ ⟨σ i, h⟩, fun ⟨i, h⟩ ↦ ⟨σ.symm i, by simpa using h⟩⟩
+
+lemma stereo_eraseStereo_apply (p : Fin n → Bool) (i : Fin n) :
+    (d.eraseStereo p).stereo[i] = if p i then none else d.stereo[i] := by
+  simp [eraseStereo]
+
+lemma stereo_mirrorAt_apply (i j : Fin n) :
+    (d.mirrorAt i).stereo[j] = if j = i then d.stereo[j].map Tetra.mirror else d.stereo[j] := by
+  simp [mirrorAt]
+
+lemma eraseStereo_relabel (σ : Equiv.Perm (Fin n)) {p' p : Fin n → Bool}
+    (hp : ∀ i, p' (σ i) = p i) : (d.relabel σ).eraseStereo p' = (d.eraseStereo p).relabel σ := by
+  refine ext rfl rfl (eq_relabelStereo_of_apply σ fun i ↦ ?_)
+  simp only [stereo_eraseStereo_apply, stereo_relabel, relabelStereo_apply, hp]
+  split_ifs <;> rfl
+
+lemma mirrorAt_relabel (σ : Equiv.Perm (Fin n)) (i : Fin n) :
+    (d.relabel σ).mirrorAt (σ i) = (d.mirrorAt i).relabel σ := by
+  refine ext rfl rfl (eq_relabelStereo_of_apply σ fun j ↦ ?_)
+  simp only [stereo_mirrorAt_apply, stereo_relabel, relabelStereo_apply, σ.injective.eq_iff]
+  split_ifs
+  · simp only [Option.map_map]
+    congr 1
+    funext t
+    exact (Tetra.map_mirror σ t).symm
+  · rfl
+
+lemma selfMirror_relabel (σ : Equiv.Perm (Fin n)) (i : Fin n) :
+    (d.relabel σ).selfMirror (σ i) = d.selfMirror i := by
+  simp only [selfMirror, stereo_relabel, relabelStereo_apply]
+  rcases d.stereo[i] with _ | t
+  · rfl
+  · simp only [Option.map_some, Option.any_some, ← Tetra.map_mirror,
+      (Tetra.map_injective σ).eq_iff]
+
+lemma tiedNeighbors_relabel (σ : Equiv.Perm (Fin n)) (r : Ranks n) (i : Fin n) :
+    (d.relabel σ).tiedNeighbors (relabelVec σ r) (σ i) = d.tiedNeighbors r i := by
+  unfold tiedNeighbors
+  have h := ((map_finRange_perm σ.symm).filter fun j ↦ d.bonds i j != 0).map fun j ↦ r[j]
+  rw [List.filter_map, List.map_map] at h
+  have hp : (fun j ↦ (d.relabel σ).bonds (σ i) j != 0) = (fun j ↦ d.bonds i j != 0) ∘ σ.symm := by
+    funext j
+    simp [bonds_relabel]
+  have hf : (fun j : Fin n ↦ (relabelVec σ r)[j]) = (fun j ↦ r[j]) ∘ σ.symm := by
+    funext j
+    simp
+  rw [hp, hf, decide_eq_decide.mpr h.nodup_iff]
+
+lemma candidate_relabel (σ : Equiv.Perm (Fin n)) (r : Ranks n) (i : Fin n) :
+    (d.relabel σ).candidate (relabelVec σ r) (σ i) = d.candidate r i := by
+  simp only [candidate, stereo_relabel, relabelStereo_apply, Option.isSome_map,
+    tiedNeighbors_relabel]
+
+lemma mirrorInvisible_relabel (σ : Equiv.Perm (Fin n)) (s : String) (i : Fin n) :
+    (d.relabel σ).mirrorInvisible s (σ i) = d.mirrorInvisible s i := by
+  simp only [mirrorInvisible, mirrorAt_relabel, canonical_relabel]
+
+lemma invisible_relabel (σ : Equiv.Perm (Fin n)) (s : String) (r : Ranks n) :
+    (d.relabel σ).invisible s (relabelVec σ r) = relabelVec σ (d.invisible s r) := by
+  apply eq_relabelVec_of_apply
+  intro i
+  simp only [invisible, Fin.getElem_fin, Vector.getElem_ofFn, Fin.eta]
+  rw [candidate_relabel, mirrorInvisible_relabel]
+
+lemma droppable_relabel (σ : Equiv.Perm (Fin n)) (D : Vector Bool n) (i : Fin n) :
+    (d.relabel σ).droppable (relabelVec σ D) (σ i) = d.droppable D i := by
+  have e : (d.relabel σ).eraseStereo (fun j ↦ (relabelVec σ D)[j] && j != σ i)
+      = (d.eraseStereo fun j ↦ D[j] && j != i).relabel σ :=
+    eraseStereo_relabel d σ fun j ↦ by
+      rw [relabelVec_apply]
+      congr 1
+      rw [bne, bne, beq_eq_decide, beq_eq_decide, decide_eq_decide.mpr σ.injective.eq_iff]
+  simp only [droppable, relabelVec_apply, e, mirrorInvisible_relabel, canonical_relabel]
+
+lemma stripStereo_relabel (σ : Equiv.Perm (Fin n)) :
+    (d.relabel σ).stripStereo = relabelStereo σ d.stripStereo := by
+  have hall : ((List.finRange n).all fun i ↦ (d.relabel σ).stereo[i].isNone)
+      = (List.finRange n).all fun i ↦ d.stereo[i].isNone := by
+    rw [← all_finRange_comp σ]
+    simp
+  have hany : ∀ r, (List.finRange n).any ((d.relabel σ).candidate (relabelVec σ r))
+      = (List.finRange n).any (d.candidate r) := fun r ↦ by
+    rw [← any_finRange_comp σ]
+    simp only [candidate_relabel]
+  simp only [stripStereo, hall, initialRanks_relabel, hany, invisible_relabel, canonical_relabel]
+  split_ifs
+  · rfl
+  · rw [eraseStereo_relabel d σ (p := d.droppable (d.invisible d.canonical.2 d.initialRanks))
+      fun i ↦ droppable_relabel d σ _ i]
+    rfl
+  · rfl
+
+lemma keptStereo_relabel (σ : Equiv.Perm (Fin n)) :
+    (d.relabel σ).keptStereo = relabelStereo σ d.keptStereo := by
+  unfold keptStereo
+  rw [eraseStereo_relabel d σ fun i ↦ selfMirror_relabel d σ i, stripStereo_relabel]
+
+/-- Erasing the meaningless marks commutes with relabeling. -/
+theorem dropFake_relabel (σ : Equiv.Perm (Fin n)) : (d.relabel σ).dropFake = d.dropFake.relabel σ :=
+  ext rfl rfl (d.keptStereo_relabel σ)
+
+lemma orderSum_relabel (σ : Equiv.Perm (Fin n)) (i : Fin n) :
+    (d.relabel σ).orderSum (σ i) = d.orderSum i := by
+  simp only [orderSum, bonds_relabel, BondMatrix.relabel_apply, Equiv.symm_apply_apply]
+  exact Equiv.sum_comp σ.symm fun j ↦ d.bonds i j
+
+lemma normalizeBrackets_relabel (σ : Equiv.Perm (Fin n)) :
+    (d.relabel σ).normalizeBrackets = d.normalizeBrackets.relabel σ := by
+  refine ext (eq_relabelVec_of_apply σ fun i ↦ ?_) rfl rfl
+  simp only [normalizeBrackets, Fin.getElem_fin, Vector.getElem_ofFn, Fin.eta, atoms_relabel]
+  rw [← Fin.getElem_fin, relabelVec_apply, orderSum_relabel]
+  rfl
+
+/-- Reducing — redundant brackets, then meaningless marks — commutes with
+relabeling. -/
+theorem reduce_relabel (σ : Equiv.Perm (Fin n)) : (d.relabel σ).reduce = d.reduce.relabel σ := by
+  unfold reduce
+  rw [normalizeBrackets_relabel, dropFake_relabel]
+
 end MolData
 
 /-- The canonical SMILES does not depend on how the atoms are numbered: every
@@ -750,8 +893,8 @@ relabeling of the molecule writes the same string. -/
 theorem Molecule.canonicalSmiles_relabel (m : Molecule n) (σ : Equiv.Perm (Fin n)) :
     (m.relabel σ).canonicalSmiles = m.canonicalSmiles := by
   unfold canonicalSmiles
-  rw [toMolData_relabel]
-  exact m.toMolData.canonical_relabel σ
+  rw [toMolData_relabel, MolData.reduce_relabel]
+  exact m.toMolData.reduce.canonical_relabel σ
 
 /-- The canonical SMILES of a bundled molecule does not depend on its atom order. -/
 theorem Mol.canonicalSmiles_relabel (M : Mol) (σ : Equiv.Perm (Fin M.n)) :

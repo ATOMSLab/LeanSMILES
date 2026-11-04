@@ -17,11 +17,13 @@ RDKit does: `explicitH` is what the string said inside brackets (`[CH3]`), and
 `implicitH` is what the default-valence rule later infers for a bare
 organic-subset atom.  Their sum is `totalH`.
 
-Chirality is *recorded*, not *interpreted*: `@`/`@@` are relative to the order
-in which the atom's neighbors appear in the SMILES string, which is a property
-of the string and of the bond order in `Molecule.bonds`, not of the atom alone.
-The named classes `@TH1` … `@OH30` are recorded the same way, as written; the
-shorthand equivalence (`@` for `@TH1`) is not applied.
+A chirality mark is relative to the order in which the atom's neighbors
+appear in the SMILES string, a property of the string rather than of the atom.
+The tetrahedral marks (`@`, `@@`, `@TH1`, `@TH2`, `Chirality.tetrahedral`) are
+therefore not kept here: the parser turns them into the molecule's
+order-independent configuration (`Molecule.stereo`) and clears this field, and
+the writer computes the mark afresh for the order it writes.  The other named
+classes (`@AL1` … `@OH30`) are recorded as written and not interpreted.
 -/
 
 @[expose] public section
@@ -74,6 +76,15 @@ def code : Chirality → ℕ
   | tb k => 10 + k.val
   | oh k => 30 + k.val
 
+/-- Whether a mark is the tetrahedral anticlockwise (`@`, `@TH1`) or clockwise
+(`@@`, `@TH2`) one; `none` for the other classes. -/
+def tetrahedral : Chirality → Option Bool
+  | anticlockwise => some true
+  | clockwise => some false
+  | th ⟨0, _⟩ => some true
+  | th ⟨1, _⟩ => some false
+  | _ => none
+
 end Chirality
 
 /-- An atom. All fields default to the bare carbon-like reading so that
@@ -93,7 +104,8 @@ structure Atom where
   /-- Hydrogens implied by the default-valence rule; `0` until
   `Molecule.assignImplicitH` runs, and always `0` for bracket atoms. -/
   implicitH : ℕ := 0
-  /-- Chirality mark, when written. -/
+  /-- Chirality mark, when written and not tetrahedral (the parser moves
+  `@`/`@@` into `Molecule.stereo`); the writer sets it to the mark it writes. -/
   chirality : Option Chirality := none
   /-- Atom class `[C:1]`, when written. -/
   atomClass : Option ℕ := none

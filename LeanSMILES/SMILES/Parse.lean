@@ -27,8 +27,20 @@ one RDKit and pysmiles run:
   accepts" in the README.
 
 Atom indices are the order of appearance in the string, exactly as in RDKit,
-so a `Molecule` remembers the string's traversal order (which is what `@`/`@@`
-and `/`/`\` refer to); `LeanSMILES.SMILES.Canon` is what forgets it.
+so a `Molecule` remembers the string's traversal order (which is what `/`/`\`
+refer to); `LeanSMILES.SMILES.Canon` is what forgets it.
+
+**Tetrahedral marks.** `@` and `@@` are relative to the order in which the
+string lists a centre's neighbors (OpenSMILES §3.7): the atom it was reached
+from, then the implicit hydrogen of `[C@H]`, then its ring-closure digits in
+the order written, then its branches and the chain.  The state keeps that
+order for every atom (`nbrs`); a ring-closure digit takes its place at the
+*opening* atom when it is read and is filled in when the ring closes.  A
+centre with three listed neighbors and no hydrogen (a sulfoxide sulfur) gets
+its lone pair as the fourth, last — RDKit's reading.  `toMolecule` turns each
+mark and order into an order-independent configuration (`Molecule.stereo`,
+`Tetra.ofMark`) and clears the mark from the atom; a tetrahedral mark on an
+atom without four such ligands is dropped.
 
 The syntactic checks — self-bond, duplicate bond, unmatched branch or ring,
 dangling bond symbol — are reported as `ParseError`s.  The result is a
@@ -74,6 +86,8 @@ structure RingOpen where
   bond : Option PendingBond
   /-- Position of the opening label. -/
   pos : ℕ
+  /-- The digit's place in the opening atom's neighbor order (`State.nbrs`). -/
+  slot : ℕ
   deriving Repr, Inhabited
 
 /-- Parser state. -/
@@ -98,6 +112,9 @@ structure State where
   branches : List ℕ := []
   /-- Open ring labels with the atom and bond symbol that opened them. -/
   rings : List (ℕ × RingOpen) := []
+  /-- Each atom's neighbors in the order the string lists them, `none` for a
+  written hydrogen: what `@`/`@@` are relative to. -/
+  nbrs : Array (Array (Option ℕ)) := #[]
   deriving Repr, Inhabited
 
 namespace State
@@ -133,18 +150,20 @@ def step (st : State) (t : Token) : Except ParseError State :=
   | .atom a =>
     let idx := st.atoms.size
     let st' := { st with atoms := st.atoms.push a }
+    let hs : Array (Option ℕ) := Array.replicate (a.explicitH.getD 0) none
     match st.anchor, st.afterDot with
     | some k, false => do
       let kind := (st.pending.bind (·.kind)).getD (implicitKind (st.atomAt k) a)
       let dir := st.pending.bind (·.dir)
       let st'' ← st'.addBond k idx kind dir t.pos
       pure { st'' with anchor := some idx, pending := none, justOpened := false,
-                       afterBranch := false }
+                       afterBranch := false,
+                       nbrs := (st.nbrs.modify k (·.push (some idx))).push (#[some k] ++ hs) }
     | _, _ =>
       match st.pending with
       | some p => .error (.bondWithoutAtom p.pos)
       | none => .ok { st' with anchor := some idx, afterDot := false, justOpened := false,
-                               afterBranch := false }
+                               afterBranch := false, nbrs := st.nbrs.push hs }
   | .bond k => st.setPending ⟨some k, none, t.pos⟩
   -- `/` and `\` leave the kind implicit: between two aromatic atoms the bond
   -- stays aromatic (RDKit's reading), otherwise it is single.
@@ -188,9 +207,14 @@ def step (st : State) (t : Token) : Except ParseError State :=
           | none, none => pure (implicitKind (st.atomAt ro.atom) (st.atomAt a))
         let dir := (st.pending.bind (·.dir)) <|> (ro.bond.bind (·.dir))
         let st' ← st.addBond ro.atom a kind dir t.pos
-        pure { st' with rings := st.rings.filter (·.1 != num), pending := none }
+        pure { st' with rings := st.rings.filter (·.1 != num), pending := none,
+                        nbrs := (st.nbrs.modify ro.atom (·.set! ro.slot (some a))).modify a
+                          (·.push (some ro.atom)) }
       | none =>
-        .ok { st with rings := (num, ⟨a, st.pending, t.pos⟩) :: st.rings, pending := none }
+        -- the slot is a placeholder until the ring closes (`finish` rejects open rings)
+        let ro : RingOpen := ⟨a, st.pending, t.pos, (st.nbrs.getD a #[]).size⟩
+        .ok { st with rings := (num, ro) :: st.rings, pending := none,
+                      nbrs := st.nbrs.modify a (·.push (some a)) }
 
 /-- End-of-input checks. -/
 def finish (st : State) : Except ParseError State :=
@@ -202,8 +226,31 @@ def finish (st : State) : Except ParseError State :=
     else if !st.rings.isEmpty then .error (.unclosedRing (st.rings.reverse.map (·.1)))
     else .ok st
 
+/-- An atom's listed neighbors as the four ligands of a tetrahedral centre, a
+lone pair appended when three neighbors and no hydrogen are listed; `none`
+unless there are exactly four. -/
+def ligandsOf (N : ℕ) (a : Atom) (listed : Array (Option ℕ)) : Option (Ligands N) :=
+  let listed := if listed.size == 3 && a.explicitH.getD 0 == 0 then listed.push none else listed
+  let toFin : Option ℕ → Option (Option (Fin N))
+    | none => some none
+    | some i => if h : i < N then some (some ⟨i, h⟩) else none
+  listed.toList.mapM toFin >>= Ligands.ofList?
+
+/-- The configuration an atom's tetrahedral mark writes with its neighbors
+listed as `listed`. -/
+def tetraOf (N : ℕ) (a : Atom) (listed : Array (Option ℕ)) : Option (Tetra N) := do
+  let anticlockwise ← a.chirality.bind Chirality.tetrahedral
+  let o ← ligandsOf N a listed
+  pure (Tetra.ofMark o anticlockwise)
+
+/-- The atom without its tetrahedral mark, which `toMolecule` moves into
+`Molecule.stereo`. -/
+def clearTetrahedral (a : Atom) : Atom :=
+  if (a.chirality.bind Chirality.tetrahedral).isSome then { a with chirality := none } else a
+
 /-- Package the state as a `Molecule`, discharging the type's invariants by
-decision: endpoints in range, no self-bond, no duplicate edge. -/
+decision: endpoints in range, no self-bond, no duplicate edge.  Tetrahedral
+marks become configurations (`tetraOf`). -/
 def toMolecule (st : State) : Except ParseError Mol := do
   let bonds ← st.bonds.toList.mapM fun (b : RawBond) ↦
     if h₁ : b.src < st.atoms.size then
@@ -215,7 +262,10 @@ def toMolecule (st : State) : Except ParseError Mol := do
       else throw (.internal "bond endpoint out of range")
     else throw (.internal "bond endpoint out of range")
   if h : (bonds.map Bond.edge).Nodup then
-    pure ⟨st.atoms.size, { atoms := ⟨st.atoms, rfl⟩, bonds := bonds, nodup := h }⟩
+    let stereo : Vector (Option (Tetra st.atoms.size)) st.atoms.size :=
+      Vector.ofFn fun i ↦ tetraOf st.atoms.size st.atoms[i] (st.nbrs.getD i #[])
+    pure ⟨st.atoms.size, { atoms := ⟨st.atoms.map clearTetrahedral, Array.size_map ..⟩,
+                           bonds := bonds, nodup := h, stereo := stereo }⟩
   else throw (.internal "duplicate bond survived parsing")
 
 end State
@@ -241,7 +291,7 @@ end LeanSMILES.SMILES
 namespace LeanSMILES
 
 instance : Inhabited Mol :=
-  ⟨⟨0, { atoms := ⟨#[], rfl⟩, bonds := [], nodup := List.nodup_nil }⟩⟩
+  ⟨⟨0, { atoms := ⟨#[], rfl⟩, bonds := [], nodup := List.nodup_nil, stereo := ⟨#[], rfl⟩ }⟩⟩
 
 /-- Parse, or panic with the error: for examples and tests.
 

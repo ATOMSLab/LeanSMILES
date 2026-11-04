@@ -63,7 +63,7 @@ def bondOrder (i j : Fin n) : ℚ :=
 end Molecule
 
 /-- The molecule with no atoms. -/
-def Mol.empty : Mol := ⟨0, ⟨#v[], [], List.nodup_nil⟩⟩
+def Mol.empty : Mol := ⟨0, ⟨#v[], [], List.nodup_nil, #v[]⟩⟩
 
 /-- The molecule read back from its canonical SMILES (the empty molecule if that string
 does not parse). It depends only on the canonical SMILES. -/
