@@ -31,12 +31,51 @@ are relabeled (`finRotate`, `Fin.revPerm`) before canonicalizing.  Agreement
 with RDKit's canonical *string* is reported for information only — it is a
 different walk and a different tie-breaking rule.
 
+**Spellings, which must hold:** a handful of molecules written two ways (`spellings`).  Brackets
+that repeat what the default-valence rule says (`[CH4]`, `[n]`, `[Cl]`, caffeine as
+Sigma-Aldrich writes it) must not change the canonical SMILES; brackets that say something
+(`[CH3]`, `[C]`, `[13CH4]`, `[NH4+]`, `[nH]`) must.
+
 ```
 lake exe oracle-test [datasets/delaney-oracle.csv]
 ```
 -/
 
 open LeanSMILES LeanSMILES.SMILES LeanSMILES.Tests
+
+/-- Pairs of SMILES, and whether they must have the same canonical SMILES. -/
+def spellings : List (String × String × Bool) :=
+  [ ("C", "[CH4]", true)
+  , ("CCO", "[CH3][CH2][OH]", true)
+  , ("ClCCl", "[Cl]C[Cl]", true)
+  , ("c1ccncc1", "c1cc[n]cc1", true)
+  , ("*C", "[*]C", true)
+  , ("Cn1cnc2c1c(=O)n(C)c(=O)n2C", "C[n]1cnc2c1c(=O)n(C)c(=O)n2C", true)
+  -- caffeine as RCSB and as Sigma-Aldrich write it
+  , ("O=C2N(c1ncn(c1C(=O)N2C)C)C", "[n]1(c2c(nc1)N(C(=O)N(C2=O)C)C)C", true)
+  , ("C", "[CH3]", false)
+  , ("C", "[C]", false)
+  , ("C", "[13CH4]", false)
+  , ("N", "[NH4+]", false)
+  , ("c1cc[nH]c1", "c1ccnc1", false) ]
+
+/-- The `spellings` that fail: a pair that must agree and does not, or must differ and does
+not, or whose canonical SMILES does not survive a reparse. -/
+def spellingFailures : List String :=
+  spellings.filterMap fun (a, b, same) ↦
+    match parse a, parse b with
+    | .ok A, .ok B =>
+      let ca := A.canonicalSmiles
+      let cb := B.canonicalSmiles
+      let stable (c : String) : Bool := match parse c with
+        | .ok C => C.canonicalSmiles == c
+        | .error _ => false
+      if (ca == cb) != same then
+        some s!"{a} and {b} must {if same then "agree" else "differ"}: {ca} vs {cb}"
+      else if !(stable ca && stable cb) then
+        some s!"canonical SMILES of {a} or {b} changes on reparse: {ca}, {cb}"
+      else none
+    | _, _ => some s!"{a} or {b} does not parse"
 
 /-- Entry point of `lake exe oracle-test`: runs the checks described above on the CSV named by
 the first argument (default `datasets/delaney-oracle.csv`), exiting `0` iff every "must" holds. -/
@@ -98,9 +137,11 @@ public def main (args : List String) : IO UInt32 := do
   IO.println (line "bond types = RDKit (after its aromaticity model)" bondTypesOk "info")
   IO.println (line "hydrogen counts = RDKit (after its sanitization)" hydrogensOk "must be all")
   IO.println (line "canonical string = RDKit's string" sameAsRdkit "info")
-  for f in failures.toList.take 20 do
+  IO.println s!"spellings (redundant brackets dropped, meaningful ones kept): \
+    {spellings.length - spellingFailures.length}/{spellings.length}  [must be all]"
+  for f in spellingFailures ++ failures.toList.take 20 do
     IO.println s!"  {f}"
   let ok := parsed + skipped.size == rows.length && syntaxOk == parsed
     && roundTrip == parsed && invariant == parsed && canonicalizeOk == parsed
-    && hydrogensOk == parsed
+    && hydrogensOk == parsed && spellingFailures.isEmpty
   return if ok then 0 else 1

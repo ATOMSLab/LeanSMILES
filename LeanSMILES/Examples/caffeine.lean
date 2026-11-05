@@ -167,6 +167,8 @@ the canonical molecule written in its new atom order. -/
 -- Any other way of writing caffeine lands on the same string.
 #eval (Mol.ofSmiles! "O=c1c2c(ncn2C)n(C)c(=O)n1C").canonicalSmiles == caffeineMol.canonicalSmiles
 #eval (caffeineMol.relabel (finRotate caffeineMol.n)).canonicalSmiles == caffeineMol.canonicalSmiles
+-- Brackets that only repeat the default hydrogen count are dropped first, so `[n]` is `n`.
+#eval (Mol.ofSmiles! "C[n]1cnc2c1c(=O)n(C)c(=O)n2C").canonicalSmiles == caffeineMol.canonicalSmiles
 
 /-! ### 8. Morgan fingerprint
 

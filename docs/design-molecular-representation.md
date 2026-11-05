@@ -157,8 +157,16 @@ The writer is Weininger's two-pass DFS (find ring closures, then emit with
 lowest-free-digit allocation and parenthesised branches), parameterised by a
 rank on atoms; everything it decides, it decides from ranks and bond kinds.
 
-Canonicalization is **color refinement + exhaustive tie-breaking**:
+Canonicalization is **color refinement + exhaustive tie-breaking**, after one
+normalization:
 
+0. Drop redundant brackets (`Molecule.dropRedundantBrackets`): an atom whose
+   brackets hold only a hydrogen count, equal to what the default-valence rule
+   gives it bare, is written bare — `[CH4]` is `C`, and caffeine's `[n]` (as
+   Sigma-Aldrich writes it) is `n`.  RDKit's writer does the same
+   (`atomNeedsBracket`).  Without this step the "bracketed" invariant below
+   gives one molecule two canonical strings.  Brackets that carry anything
+   (`[nH]`, `[CH3]`, `[13C]`, `[O-]`, `[C@H]`) stay.
 1. Invariant per atom (degree, Z, H, aromatic, charge, isotope, bracketed,
    class, chirality mark) → ranks.
 2. Refine by sorted (neighbor rank, bond kind) until the partition stops

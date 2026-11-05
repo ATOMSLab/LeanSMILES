@@ -164,6 +164,58 @@ def implicitHydrogens (a : Atom) (orderSum : ℚ) : ℕ :=
 def assignImplicitH : Molecule n :=
   m.mapAtoms fun i a ↦ { a with implicitH := implicitHydrogens a (m.bondOrderSum i) }
 
+/-! ### Redundant brackets
+
+`[n]`, `[CH4]` and `[Cl]` say nothing their bare forms do not: the brackets hold only a
+hydrogen count, and it is the count the default-valence rule gives the bare atom.  Dropping
+such brackets is what makes `[n]1cncc1…` and `n1cncc1…` one canonical SMILES. -/
+
+/-- The atom without its brackets when they are redundant: it carries no isotope, charge,
+chirality or class, its element may be written bare, and `implicitHydrogens` at bond-order sum
+`orderSum` gives it exactly the hydrogens it has.  Otherwise the atom itself.  `[n]` (two
+aromatic bonds and a methyl) becomes `n`; `[nH]`, `[CH3]` (a radical), `[C]`, `[13CH4]` and
+`[O-]` keep their brackets. -/
+def unbracket (a : Atom) (orderSum : ℚ) : Atom :=
+  let b : Atom := { a with explicitH := none, implicitH := 0 }
+  let h := implicitHydrogens b orderSum
+  if a.explicitH.isSome && b.canBeBare && h == a.totalH then { b with implicitH := h } else a
+
+/-- Dropping redundant brackets keeps the element. -/
+@[simp] lemma element_unbracket (a : Atom) (s : ℚ) : (unbracket a s).element = a.element := by
+  dsimp only [unbracket]; split <;> rfl
+
+/-- Dropping redundant brackets keeps the formal charge. -/
+@[simp] lemma charge_unbracket (a : Atom) (s : ℚ) : (unbracket a s).charge = a.charge := by
+  dsimp only [unbracket]; split <;> rfl
+
+/-- Dropping redundant brackets keeps the hydrogen count: that is what makes them redundant. -/
+@[simp] lemma totalH_unbracket (a : Atom) (s : ℚ) : (unbracket a s).totalH = a.totalH := by
+  dsimp only [unbracket]
+  split
+  · next h =>
+    simp only [Bool.and_eq_true, beq_iff_eq] at h
+    simpa [Atom.totalH] using h.2
+  · rfl
+
+/-- Every atom with its redundant brackets dropped (`unbracket`, at the atom's own bond-order
+sum).  The bonds, and every atom's element, charge and hydrogen count, are unchanged.
+Canonicalization starts here. -/
+def dropRedundantBrackets : Molecule n :=
+  m.mapAtoms fun i a ↦ unbracket a (m.bondOrderSum i)
+
+/-- Dropping redundant brackets keeps the bonds, definitionally. -/
+@[simp] lemma bonds_dropRedundantBrackets : m.dropRedundantBrackets.bonds = m.bonds := rfl
+
+/-- Atom `i` with its redundant brackets dropped. -/
+@[simp] lemma atom_dropRedundantBrackets (i : Fin n) :
+    m.dropRedundantBrackets.atom i = unbracket (m.atom i) (m.bondOrderSum i) := by
+  simp [dropRedundantBrackets, mapAtoms, atom]
+
+/-- Dropping redundant brackets keeps every atom's hydrogen count. -/
+@[simp] lemma totalH_dropRedundantBrackets (i : Fin n) :
+    (m.dropRedundantBrackets.atom i).totalH = (m.atom i).totalH := by
+  simp
+
 /-! ### Relabeling -/
 
 /-- Relabel the atoms by a permutation: atom `i` becomes atom `σ i`. -/
@@ -211,6 +263,21 @@ lemma bondsAt_relabel (σ : Equiv.Perm (Fin n)) (i : Fin n) :
 theorem relabel_relabel (σ τ : Equiv.Perm (Fin n)) :
     (m.relabel σ).relabel τ = m.relabel (σ.trans τ) :=
   ext (relabelVec_relabelVec σ τ m.atoms) <| by simp [bonds_relabel]
+
+/-- Relabeling preserves bond-order sums: atom `σ i` has the sum atom `i` had. -/
+@[simp] lemma bondOrderSum_relabel (σ : Equiv.Perm (Fin n)) (i : Fin n) :
+    (m.relabel σ).bondOrderSum (σ i) = m.bondOrderSum i := by
+  simp [bondOrderSum, bondsAt_relabel, Function.comp_def]
+
+/-- Dropping redundant brackets commutes with relabeling: whether an atom's brackets are
+redundant depends on the atom and its bond-order sum, not on its label. -/
+theorem dropRedundantBrackets_relabel (σ : Equiv.Perm (Fin n)) :
+    (m.relabel σ).dropRedundantBrackets = m.dropRedundantBrackets.relabel σ := by
+  refine ext (Vector.ext fun j hj ↦ ?_) rfl
+  obtain ⟨i, hi⟩ : ∃ i, σ i = ⟨j, hj⟩ := ⟨σ.symm ⟨j, hj⟩, σ.apply_symm_apply _⟩
+  change (m.relabel σ).dropRedundantBrackets.atom ⟨j, hj⟩
+    = (m.dropRedundantBrackets.relabel σ).atom ⟨j, hj⟩
+  simp only [← hi, atom_dropRedundantBrackets, atom_relabel, bondOrderSum_relabel]
 
 /-! ### Printing -/
 

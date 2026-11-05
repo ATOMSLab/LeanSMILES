@@ -610,7 +610,8 @@ end MolData
 relabeling of the molecule writes the same string. -/
 theorem Molecule.canonicalSmiles_relabel (m : Molecule n) (σ : Equiv.Perm (Fin n)) :
     (m.relabel σ).canonicalSmiles = m.canonicalSmiles := by
-  simp only [canonicalSmiles, toMolData_relabel, MolData.canonical_relabel]
+  simp only [canonicalSmiles, dropRedundantBrackets_relabel, toMolData_relabel,
+    MolData.canonical_relabel]
 
 /-- The canonical SMILES of a bundled molecule does not depend on its atom order. -/
 theorem Mol.canonicalSmiles_relabel (M : Mol) (σ : Equiv.Perm (Fin M.n)) :
