@@ -157,6 +157,41 @@ theorem KekulePartner.isKekule {m₁ m₂ : Molecule n} (h : m₁.KekulePartner 
   rw [hba] at hk'
   exact hk.2 b' hb' (BondKind.forgetDouble_eq_aromatic.mp hk')
 
+/-! ### The hypervalent atoms `cleanUp` rewrites
+
+`aromatize` starts with RDKit's `cleanUp`, which rewrites a few hypervalent atoms into
+charge-separated form, and which ones it rewrites can depend on where the double bonds sit. In
+`O=P1=CC=CC=B1` the phosphorus has its second double bond to carbon, so `cleanUp` makes it
+`[P+]-[O-]` and the ring comes out aromatic; in its Kekulé partner `O=P1C=CC=CB=1` the second
+double bond goes to boron, `cleanUp` leaves it alone, and the ring does not. Moving double bonds
+next to such an atom is excluded below. -/
+
+/-- An atom RDKit's `cleanUp` may rewrite: a neutral N or P of valence 5, or a neutral Cl, Br or I
+of valence 3, 5 or 7. The valence is the bond-order sum plus the hydrogens written in brackets. -/
+def CleanUpTarget (m : Molecule n) (i : Fin n) : Prop :=
+  (m.atom i).charge = 0 ∧
+    (((m.atom i).atomicNumber = 7 ∨ (m.atom i).atomicNumber = 15) ∧
+        m.bondOrderSum i + ((m.atom i).explicitH.getD 0 : ℚ) = 5 ∨
+      ((m.atom i).atomicNumber = 17 ∨ (m.atom i).atomicNumber = 35 ∨
+          (m.atom i).atomicNumber = 53) ∧
+        (m.bondOrderSum i + ((m.atom i).explicitH.getD 0 : ℚ) = 3 ∨
+          m.bondOrderSum i + ((m.atom i).explicitH.getD 0 : ℚ) = 5 ∨
+          m.bondOrderSum i + ((m.atom i).explicitH.getD 0 : ℚ) = 7))
+
+instance (m : Molecule n) (i : Fin n) : Decidable (m.CleanUpTarget i) := by
+  unfold CleanUpTarget
+  infer_instance
+
+/-- No bond on which `m₁` and `m₂` differ touches an atom `cleanUp` may rewrite. The bond lists are
+compared position by position, as for Kekulé partners. -/
+def MovesAvoidCleanUp (m₁ m₂ : Molecule n) : Prop :=
+  ∀ p ∈ m₁.bonds.zip m₂.bonds, p.1.kind ≠ p.2.kind →
+    ¬ m₁.CleanUpTarget p.1.src ∧ ¬ m₁.CleanUpTarget p.1.dst
+
+instance (m₁ m₂ : Molecule n) : Decidable (m₁.MovesAvoidCleanUp m₂) := by
+  unfold MovesAvoidCleanUp
+  infer_instance
+
 /-! ### Resonance structures -/
 
 /-- Which bonds are aromatic, in bond-list order. -/
@@ -168,9 +203,11 @@ def differOnlyOn (m₁ m₂ : Molecule n) (mask : List Bool) : Bool :=
   ((m₁.bonds.zip m₂.bonds).zip mask).all fun ((b₁, b₂), a) ↦ b₁.kind == b₂.kind || a
 
 /-- `m₂` is a resonance structure of `m₁` in the aromaticity model of `aromatize`: a Kekulé
-partner that differs from `m₁` only on bonds that `m₁.aromatize` marks aromatic. -/
+partner that differs from `m₁` only on bonds that `m₁.aromatize` marks aromatic, and not next to
+an atom `cleanUp` rewrites. -/
 def ResonanceStructure (m₁ m₂ : Molecule n) : Prop :=
-  m₁.KekulePartner m₂ ∧ ∃ a, m₁.aromatize = .ok a ∧ m₁.differOnlyOn m₂ a.aromaticBonds = true
+  m₁.KekulePartner m₂ ∧ (∃ a, m₁.aromatize = .ok a ∧ m₁.differOnlyOn m₂ a.aromaticBonds = true) ∧
+    m₁.MovesAvoidCleanUp m₂
 
 /-- The canonical SMILES of the aromatized molecule; `none` when aromatization fails. -/
 def aromaticCanonicalSmiles (m : Molecule n) : Option String :=
@@ -183,16 +220,22 @@ namespace Aromaticity
 /-! ### The specification -/
 
 /-- **Property 1.** The bonds the model makes aromatic do not depend on which Kekulé structure is
-drawn. -/
+drawn, as long as the double bonds do not move next to an atom `cleanUp` rewrites
+(`Molecule.MovesAvoidCleanUp`). Without that it is false: `O=P1=CC=CC=B1` comes out aromatic and
+its partner `O=P1C=CC=CB=1` does not. -/
 def AromaticBondsKekuleInvariant : Prop :=
-  ∀ ⦃n : ℕ⦄ (m₁ m₂ : Molecule n), m₁.IsKekule → m₁.KekulePartner m₂ →
+  ∀ ⦃n : ℕ⦄ (m₁ m₂ : Molecule n), m₁.IsKekule → m₁.KekulePartner m₂ → m₁.MovesAvoidCleanUp m₂ →
     (m₁.aromatize.map Molecule.aromaticBonds).toOption =
       (m₂.aromatize.map Molecule.aromaticBonds).toOption
 
 /-- **Property 2.** Kekulé partners aromatize to one molecule exactly when they differ only on
-bonds the model makes aromatic. Aromatization merges resonance structures and nothing else. -/
+bonds the model makes aromatic. Aromatization merges resonance structures and nothing else. Like
+property 1 it needs the double bonds to stay away from the atoms `cleanUp` rewrites; the same pair
+`O=P1=CC=CC=B1`, `O=P1C=CC=CB=1` differs only on aromatic bonds of the first and aromatizes to two
+molecules. -/
 def AromatizeMergesExactlyResonance : Prop :=
-  ∀ ⦃n : ℕ⦄ (m₁ m₂ a : Molecule n), m₁.IsKekule → m₁.KekulePartner m₂ → m₁.aromatize = .ok a →
+  ∀ ⦃n : ℕ⦄ (m₁ m₂ a : Molecule n), m₁.IsKekule → m₁.KekulePartner m₂ →
+    m₁.MovesAvoidCleanUp m₂ → m₁.aromatize = .ok a →
     (m₂.aromatize = .ok a ↔ m₁.differOnlyOn m₂ a.aromaticBonds = true)
 
 /-- **Property 3.** On Kekulé input, aromatizing commutes with renumbering the atoms. -/
@@ -221,8 +264,8 @@ variable {n : ℕ}
 theorem aromaticCanonicalSmiles_eq_of_resonanceStructure (h : AromatizeMergesExactlyResonance)
     {m₁ m₂ : Molecule n} (hk : m₁.IsKekule) (hr : m₁.ResonanceStructure m₂) :
     m₂.aromaticCanonicalSmiles = m₁.aromaticCanonicalSmiles := by
-  obtain ⟨hp, a, ha, hd⟩ := hr
-  simp only [aromaticCanonicalSmiles, ha, (h m₁ m₂ a hk hp ha).mpr hd]
+  obtain ⟨hp, ⟨a, ha, hd⟩, hc⟩ := hr
+  simp only [aromaticCanonicalSmiles, ha, (h m₁ m₂ a hk hp hc ha).mpr hd]
 
 /-- Given property 3, the aromatic canonical SMILES of a Kekulé structure does not depend on how
 its atoms are numbered. -/

@@ -393,7 +393,7 @@ structure RelD (D : ℕ → Bool) (w₁ w₂ : Work) : Prop extends SameSkel w�
   dsum : ∀ i : ℕ, (((w₁.bondsOf i).filter D).map fun k ↦ halfOrder w₁.bonds[k]!.kind).sum =
     (((w₂.bondsOf i).filter D).map fun k ↦ halfOrder w₂.bonds[k]!.kind).sum
 
-lemma sum_map_filter {β : Type*} (l : List β) (p : β → Bool) (f : β → ℕ) :
+lemma sum_map_filter {β M : Type*} [AddMonoid M] (l : List β) (p : β → Bool) (f : β → M) :
     ((l.filter p).map f).sum = (l.map fun k ↦ if p k then f k else 0).sum := by
   induction l with
   | nil => simp
@@ -1394,6 +1394,187 @@ lemma CleanInv.cleanUp {D : ℕ → Bool} {w₀ w₁ w₂ : Work} (h : CleanInv 
     · rename_i _ hz
       exact hst.halogenCleanup hwf (by simpa [or_assoc] using hz)
     · exact hst
+
+/-! ### The passes keep the skeleton, and keep a Kekulé structure Kekulé -/
+
+lemma freezeHs_atom (w : Work) (i : ℕ) :
+    w.freezeHs.atoms[i]! =
+      if i < w.atoms.size then { w.atoms[i]! with frozenHs := some (w.totalHs i) } else w.atoms[i]! := by
+  by_cases hi : i < w.atoms.size
+  · rw [if_pos hi, getElem!_pos _ i (by simpa [Work.freezeHs, Work.numAtoms] using hi)]
+    simp [Work.freezeHs, Work.numAtoms]
+  · rw [if_neg hi, getElem!_neg _ i (by simpa [Work.freezeHs, Work.numAtoms] using hi),
+      getElem!_neg _ i hi]
+
+lemma cacheValences_atom (w : Work) (i : ℕ) :
+    w.cacheValences.atoms[i]! =
+      if i < w.atoms.size then
+        { w.atoms[i]! with cachedValence := some (w.explicitValence i),
+                           cachedImplicit := w.implicitHs i, adjustHs := w.isAromaticAtom i }
+      else w.atoms[i]! := by
+  by_cases hi : i < w.atoms.size
+  · rw [if_pos hi, getElem!_pos _ i (by simpa [Work.cacheValences, Work.numAtoms] using hi)]
+    simp [Work.cacheValences, Work.numAtoms]
+  · rw [if_neg hi, getElem!_neg _ i (by simpa [Work.cacheValences, Work.numAtoms] using hi),
+      getElem!_neg _ i hi]
+
+@[simp] lemma bonds_freezeHs (w : Work) : w.freezeHs.bonds = w.bonds := rfl
+
+@[simp] lemma bonds_cacheValences (w : Work) : w.cacheValences.bonds = w.cacheValences.bonds := rfl
+
+lemma bonds_cacheValences' (w : Work) : w.cacheValences.bonds = w.bonds := rfl
+
+lemma bonds_assignRadicals (w : Work) : w.assignRadicals.bonds = w.bonds := by
+  unfold Work.assignRadicals
+  generalize List.range w.numAtoms = l
+  induction l generalizing w with
+  | nil => rfl
+  | cons i l ih =>
+    rw [List.foldl_cons, ih]
+    dsimp only
+    split <;> rfl
+
+lemma skel_of_bonds {w w' : Work} (hb : w'.bonds = w.bonds) (ha : w'.atoms.size = w.atoms.size) :
+    SameSkel w w' :=
+  ⟨by simp [Work.numAtoms, ha], by simp [Work.numBonds, hb], fun _ ↦ by rw [hb],
+    fun _ ↦ by rw [hb]⟩
+
+lemma skel_freezeHs (w : Work) : SameSkel w w.freezeHs :=
+  skel_of_bonds rfl (by simp [Work.freezeHs, Work.numAtoms])
+
+lemma skel_cacheValences (w : Work) : SameSkel w w.cacheValences :=
+  skel_of_bonds rfl (by simp [Work.cacheValences, Work.numAtoms])
+
+lemma size_atoms_assignRadicals (w : Work) : w.assignRadicals.atoms.size = w.atoms.size := by
+  unfold Work.assignRadicals
+  generalize List.range w.numAtoms = l
+  induction l generalizing w with
+  | nil => rfl
+  | cons i l ih =>
+    rw [List.foldl_cons, ih]
+    dsimp only
+    split
+    · rfl
+    · simp
+
+lemma skel_assignRadicals (w : Work) : SameSkel w w.assignRadicals :=
+  skel_of_bonds (bonds_assignRadicals w) (size_atoms_assignRadicals w)
+
+lemma aromatic_assignRadicals (w : Work) (i : ℕ) :
+    (w.assignRadicals.atoms[i]! : WAtom).aromatic = (w.atoms[i]! : WAtom).aromatic := by
+  unfold Work.assignRadicals
+  generalize List.range w.numAtoms = l
+  induction l generalizing w with
+  | nil => rfl
+  | cons j l ih =>
+    rw [List.foldl_cons, ih]
+    dsimp only
+    split
+    · rfl
+    · rw [atom_modifyAtom]
+      split_ifs with h
+      · obtain ⟨rfl, -⟩ := h
+        rfl
+      · rfl
+
+lemma NoAromatic.freezeHs {w : Work} (h : NoAromatic w) : NoAromatic w.freezeHs :=
+  ⟨h.1, fun i ↦ by rw [freezeHs_atom]; split <;> exact h.2 i⟩
+
+lemma NoAromatic.cacheValences {w : Work} (h : NoAromatic w) : NoAromatic w.cacheValences :=
+  ⟨h.1, fun i ↦ by rw [cacheValences_atom]; split <;> exact h.2 i⟩
+
+lemma NoAromatic.assignRadicals {w : Work} (h : NoAromatic w) : NoAromatic w.assignRadicals :=
+  ⟨fun k ↦ by rw [bonds_assignRadicals]; exact h.1 k, fun i ↦ by
+    rw [aromatic_assignRadicals]; exact h.2 i⟩
+
+lemma NoAromatic.isAromaticAtom {w : Work} (h : NoAromatic w) (i : ℕ) : w.isAromaticAtom i = false := by
+  simp [Work.isAromaticAtom, h.2 i, h.1]
+
+/-- `freezeHs` leaves what `cleanUp` looks at alone. -/
+lemma explicitValence_freezeHs (w : Work) : w.freezeHs.explicitValence = w.explicitValence := by
+  funext i
+  have hz : (w.freezeHs.atoms[i]! : WAtom).z = (w.atoms[i]! : WAtom).z := by
+    rw [freezeHs_atom]; split <;> rfl
+  have hc : (w.freezeHs.atoms[i]! : WAtom).charge = (w.atoms[i]! : WAtom).charge := by
+    rw [freezeHs_atom]; split <;> rfl
+  have he : (w.freezeHs.atoms[i]! : WAtom).explicitHs = (w.atoms[i]! : WAtom).explicitHs := by
+    rw [freezeHs_atom]; split <;> rfl
+  have ha : (w.freezeHs.atoms[i]! : WAtom).aromatic = (w.atoms[i]! : WAtom).aromatic := by
+    rw [freezeHs_atom]; split <;> rfl
+  simp only [Work.explicitValence, Work.isAromaticAtom, effectiveZ, hz, hc, he, ha, bonds_freezeHs,
+    Work.bondsOf, Work.numBonds]
+
+lemma cleanUpCenter_freezeHs (w : Work) : w.freezeHs.cleanUpCenter = w.cleanUpCenter := by
+  funext i
+  have hz : (w.freezeHs.atoms[i]! : WAtom).z = (w.atoms[i]! : WAtom).z := by
+    rw [freezeHs_atom]; split <;> rfl
+  have hc : (w.freezeHs.atoms[i]! : WAtom).charge = (w.atoms[i]! : WAtom).charge := by
+    rw [freezeHs_atom]; split <;> rfl
+  simp only [Work.cleanUpCenter, hz, hc, explicitValence_freezeHs]
+
+/-- Explicit valence of an atom no aromatic bond touches: bond orders plus written hydrogens. -/
+lemma explicitValence_of_not_aromatic (w : Work) (i : ℕ) (h : w.isAromaticAtom i = false) :
+    w.explicitValence i = (2 * (w.atoms[i]! : WAtom).explicitHs + w.halfSum i + 1) / 2 := by
+  simp only [Work.explicitValence, Id.run, pure_bind, List.forIn_pure_yield_eq_foldl,
+    foldl_add_eq_sum, h, Bool.and_false]
+  split <;> rfl
+
+lemma bondsOf_eq_nil {w : Work} (hwf : WF w) {i : ℕ} (hi : w.numAtoms ≤ i) : w.bondsOf i = [] := by
+  refine List.filter_eq_nil_iff.mpr fun k hk ↦ ?_
+  obtain ⟨hs, hd, -⟩ := hwf k (List.mem_range.mp hk)
+  simp only [WBond.touches, Bool.or_eq_true, beq_iff_eq, not_or]
+  omega
+
+/-- The relation with no moved bonds relates a working copy to itself. -/
+lemma RelD.rfl (w : Work) : RelD (fun _ ↦ false) w w :=
+  ⟨SameSkel.refl w, _root_.rfl, fun _ _ ↦ _root_.rfl, fun _ h ↦ absurd h (by simp),
+    fun _ ↦ _root_.rfl⟩
+
+lemma CleanInv.rfl (w : Work) (h : NoAromatic w) : CleanInv (fun _ ↦ false) w w w :=
+  ⟨RelD.rfl w, fun _ _ _ hk ↦ absurd hk (by simp), h, SameSkel.refl w⟩
+
+/-- The lockstep, from equal bond-order sums at every atom. -/
+lemma RelD.of_halfSum {D : ℕ → Bool} {w₁ w₂ : Work} (hs : SameSkel w₁ w₂) (ha : w₁.atoms = w₂.atoms)
+    (hoff : ∀ k : ℕ, D k = false → (w₁.bonds[k]! : WBond).kind = (w₂.bonds[k]! : WBond).kind)
+    (hon : ∀ k : ℕ, D k = true → isSD (w₁.bonds[k]! : WBond).kind ∧
+      isSD (w₂.bonds[k]! : WBond).kind ∧ (w₁.bonds[k]! : WBond).kind ≠ (w₂.bonds[k]! : WBond).kind)
+    (hsum : ∀ i, w₁.halfSum i = w₂.halfSum i) : RelD D w₁ w₂ where
+  toSameSkel := hs
+  atoms := ha
+  off := hoff
+  on := hon
+  dsum i := by
+    have h := hsum i
+    simp only [halfSum, ← hs.bondsOf] at h
+    rw [← hs.bondsOf]
+    simp only [sum_map_filter]
+    have e : ∀ f : ℕ → ℕ, ((w₁.bondsOf i).map f).sum =
+        ((w₁.bondsOf i).map fun k ↦ if D k then f k else 0).sum +
+          ((w₁.bondsOf i).map fun k ↦ if D k then 0 else f k).sum := fun f ↦ by
+      rw [← List.sum_map_add]
+      congr 1
+      exact List.map_congr_left fun k _ ↦ by cases D k <;> simp
+    rw [e, e (fun k ↦ halfOrder (w₂.bonds[k]! : WBond).kind)] at h
+    have hrest : ((w₁.bondsOf i).map fun k ↦ if D k then 0 else halfOrder w₁.bonds[k]!.kind) =
+        (w₁.bondsOf i).map fun k ↦ if D k then 0 else halfOrder w₂.bonds[k]!.kind :=
+      List.map_congr_left fun k _ ↦ by
+        cases hD : D k
+        · simp [hoff k hD]
+        · simp
+    rw [hrest] at h
+    omega
+
+/-- Partners in lockstep make the same bonds aromatic. -/
+lemma RelD.aromaticBondList {D : ℕ → Bool} {w₁ w₂ : Work} (h : RelD D w₁ w₂) (hwf : WF w₁)
+    (rings : Array (List ℕ)) : w₁.aromaticBondList rings = w₂.aromaticBondList rings := by
+  have hr : ∀ k, (w₁.bonds[k]! : WBond).kind ≠ (w₂.bonds[k]! : WBond).kind → w₁.onCycle k = true :=
+    fun k hk ↦ by
+      cases hD : D k
+      · exact absurd (h.off k hD) hk
+      · exact h.onCycle_of_D hwf hD
+  unfold Work.aromaticBondList
+  rw [← h.toSameSkel.onCycle, h.sim.ringDonor _ hr, h.sim.isAromaticCandidate, h.numAtoms,
+    h.ringBonds]
 
 end Work
 
