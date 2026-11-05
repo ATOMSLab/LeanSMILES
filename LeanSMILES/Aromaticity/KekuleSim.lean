@@ -13,7 +13,26 @@ public import Mathlib.Algebra.BigOperators.Group.Finset.Sigma
 # LeanSMILES.Aromaticity.KekuleSim
 
 Two working copies that differ only in where their double bonds sit run through
-`Molecule.aromatize` in lockstep.
+`Molecule.aromatize` in lockstep. This is the working-copy half of the proofs
+in `LeanSMILES.Aromaticity.ResonanceProofs`.
+
+* `Work.RelD D w₁ w₂`: the same atoms and skeleton, the same kind on every bond
+  outside `D`, and on `D` one single and one double, with every atom keeping
+  its number of doubles among its `D` bonds. `Work.Sim` drops `D`, and
+  `Work.MarkRel` keeps only what marking aromatic bonds needs.
+* Everything donor typing and Hückel's rule read is the same on both sides:
+  valences, hydrogens, `countAtomElec`, `donorType`, `isAromaticCandidate`,
+  and so `aromaticBondList`.
+* **Moved bonds lie on cycles** (`Work.RelD.onCycle_of_D`). `onCycle` sweeps
+  out from one end of a bond to a closed set; if the other end is outside it,
+  a parity count of the moved bonds at the atoms of the set fails.
+* `cleanUp` makes the same rewrites on both sides when no moved bond touches
+  an atom it may rewrite (`Work.CleanInv.cleanUp`).
+* After `markAromatic`, a bond is aromatic exactly when it is in the list and
+  was single or double (`Work.kind_foldl_markAromatic`).
+
+The loops these passes run are folds (`Basic`, `Perceive`), so each is an
+induction on a list.
 -/
 
 @[expose] public section
@@ -330,7 +349,8 @@ lemma getElem!_modify {α : Type*} [Inhabited α] (a : Array α) (k j : ℕ) (f 
   rfl
 
 lemma atom_modifyAtom (w : Work) (i j : ℕ) (f : WAtom → WAtom) :
-    (w.modifyAtom i f).atoms[j]! = if i = j ∧ j < w.atoms.size then f w.atoms[j]! else w.atoms[j]! :=
+    (w.modifyAtom i f).atoms[j]! =
+      if i = j ∧ j < w.atoms.size then f w.atoms[j]! else w.atoms[j]! :=
   getElem!_modify _ _ _ _
 
 lemma bond_setKind (w : Work) (k j : ℕ) (o : BondKind) :
@@ -429,7 +449,8 @@ lemma sim : Sim w₁ w₂ where
     simp only [halfSum, ← h.bondsOf, e, e₂, List.sum_map_add, hd]
 
 /-- Rewriting a bond outside `D` the same way on both sides keeps the lockstep. -/
-lemma setKind (k : ℕ) (hk : D k = false) (o : BondKind) : RelD D (w₁.setKind k o) (w₂.setKind k o) where
+lemma setKind (k : ℕ) (hk : D k = false) (o : BondKind) :
+    RelD D (w₁.setKind k o) (w₂.setKind k o) where
   numAtoms := h.numAtoms
   numBonds := by simpa using h.numBonds
   src j := by simpa using h.src j
@@ -534,7 +555,8 @@ lemma MarkRel.foldl_markAromatic {w₁ w₂ : Work} (h : MarkRel w₁ w₂) (l :
     MarkRel (l.foldl Work.markAromatic w₁) (l.foldl Work.markAromatic w₂) :=
   foldl_rel (f := Work.markAromatic) l (fun _ _ b _ h ↦ h.markAromatic b) h
 
-@[simp] lemma size_markAromatic (w : Work) (b : ℕ) : (w.markAromatic b).bonds.size = w.bonds.size := by
+@[simp] lemma size_markAromatic (w : Work) (b : ℕ) :
+    (w.markAromatic b).bonds.size = w.bonds.size := by
   unfold Work.markAromatic
   dsimp only
   split <;> simp [Work.setKind]
@@ -543,7 +565,8 @@ lemma MarkRel.foldl_markAromatic {w₁ w₂ : Work} (h : MarkRel w₁ w₂) (l :
 and has its old kind otherwise. -/
 lemma kind_foldl_markAromatic (w : Work) (l : List ℕ) (k : ℕ) (hk : k < w.bonds.size) :
     ((l.foldl markAromatic w).bonds[k]! : WBond).kind =
-      if k ∈ l ∧ isSD (w.bonds[k]! : WBond).kind then .aromatic else (w.bonds[k]! : WBond).kind := by
+      if k ∈ l ∧ isSD (w.bonds[k]! : WBond).kind then .aromatic
+      else (w.bonds[k]! : WBond).kind := by
   induction l generalizing w with
   | nil => simp
   | cons b l ih =>
@@ -579,7 +602,8 @@ lemma kind_foldl_markAromatic (w : Work) (l : List ℕ) (k : ℕ) (hk : k < w.bo
 
 /-- No aromatic atom and no aromatic bond: nothing to kekulize. -/
 def NoAromatic (w : Work) : Prop :=
-  (∀ k : ℕ, (w.bonds[k]! : WBond).kind ≠ .aromatic) ∧ ∀ i : ℕ, (w.atoms[i]! : WAtom).aromatic = false
+  (∀ k : ℕ, (w.bonds[k]! : WBond).kind ≠ .aromatic) ∧
+    ∀ i : ℕ, (w.atoms[i]! : WAtom).aromatic = false
 
 lemma kekulize_of_noAromatic (w : Work) (h : NoAromatic w) (rings : Array (List ℕ)) :
     w.kekulize rings = .ok w := by
@@ -659,8 +683,8 @@ lemma mono_foldl_sweepStep (w : Work) (skip : ℕ) (l : List ℕ) (s : Array Boo
 
 /-- Every bond's endpoints are atoms of `w`, and distinct. -/
 def WF (w : Work) : Prop :=
-  ∀ k < w.numBonds, (w.bonds[k]! : WBond).src < w.numAtoms ∧ (w.bonds[k]! : WBond).dst < w.numAtoms ∧
-    (w.bonds[k]! : WBond).src ≠ (w.bonds[k]! : WBond).dst
+  ∀ k < w.numBonds, (w.bonds[k]! : WBond).src < w.numAtoms ∧
+    (w.bonds[k]! : WBond).dst < w.numAtoms ∧ (w.bonds[k]! : WBond).src ≠ (w.bonds[k]! : WBond).dst
 
 lemma closed_aux (w : Work) (skip : ℕ) (s : Array Bool) (l : List ℕ) (t : Array Bool)
     (hst : ∀ i : ℕ, s[i]! = true → t[i]! = true)
@@ -1007,8 +1031,8 @@ lemma SameSkel.refl (w : Work) : SameSkel w w := ⟨rfl, rfl, fun _ ↦ rfl, fun
 
 lemma SameSkel.trans {w₁ w₂ w₃ : Work} (h₁ : SameSkel w₁ w₂) (h₂ : SameSkel w₂ w₃) :
     SameSkel w₁ w₃ :=
-  ⟨h₁.numAtoms.trans h₂.numAtoms, h₁.numBonds.trans h₂.numBonds, fun k ↦ (h₁.src k).trans (h₂.src k),
-    fun k ↦ (h₁.dst k).trans (h₂.dst k)⟩
+  ⟨h₁.numAtoms.trans h₂.numAtoms, h₁.numBonds.trans h₂.numBonds,
+    fun k ↦ (h₁.src k).trans (h₂.src k), fun k ↦ (h₁.dst k).trans (h₂.dst k)⟩
 
 lemma SameSkel.touches' {w w' : Work} (h : SameSkel w w') (k i : ℕ) :
     (w.bonds[k]! : WBond).touches i = (w'.bonds[k]! : WBond).touches i := h.touches k i
@@ -1051,7 +1075,8 @@ lemma Local.noArom {w w' : Work} {c j : ℕ} (h : Local w w' c j) (hn : NoAromat
 invariant, provided the rewrite is the same composite of `setKind` and `modifyAtom` on both
 sides. -/
 lemma CleanInv.step {D : ℕ → Bool} {w₀ w₁ w₂ : Work} (h : CleanInv D w₀ w₁ w₂) {c j : ℕ}
-    (hc : OffD D w₁ c) (F : Work → Work) (hrel : RelD D (F w₁) (F w₂)) (hloc : Local w₁ (F w₁) c j) :
+    (hc : OffD D w₁ c) (F : Work → Work) (hrel : RelD D (F w₁) (F w₂))
+    (hloc : Local w₁ (F w₁) c j) :
     CleanInv D w₀ (F w₁) (F w₂) :=
   ⟨hrel, hloc.avoid h.avoid hc, hloc.noArom h.noArom, h.skel.trans hloc.skel⟩
 
@@ -1211,10 +1236,11 @@ lemma nitrogenOxideAt {i : ℕ} (hi : w₁.cleanUpCenter i = true) :
   rcases hf : (w₁.neighbors i).find? w₁.oxideTarget with _ | ⟨k, j⟩
   · exact h
   · obtain ⟨hk, rfl⟩ := mem_neighbors (List.mem_of_find?_eq_some hf)
-    exact h.step hc (fun w ↦ ((w.setKind k .single).modifyAtom i ({ · with charge := 1 })).modifyAtom
-        ((w₁.bonds[k]! : WBond).other i) ({ · with charge := -1 }))
+    exact h.step hc (fun w ↦ ((w.setKind k .single).modifyAtom i ({ · with charge := 1 }))
+        |>.modifyAtom ((w₁.bonds[k]! : WBond).other i) ({ · with charge := -1 }))
       (((h.rel.setKind k (hc.notD hk) _).modifyAtom _ _).modifyAtom _ _)
-      (local_kcj w₁ (h.wf₁ hwf) hk .single (by decide) _ _ (fun _ ↦ rfl) (fun _ ↦ rfl) (fun _ ↦ by simp))
+      (local_kcj w₁ (h.wf₁ hwf) hk .single (by decide) _ _ (fun _ ↦ rfl) (fun _ ↦ rfl)
+        (fun _ ↦ by simp))
 
 include hwf in
 lemma nitrogenAzideAt {i : ℕ} (hc : OffD D w₁ i) :
@@ -1226,10 +1252,11 @@ lemma nitrogenAzideAt {i : ℕ} (hc : OffD D w₁ i) :
   rcases hf : (w₁.neighbors i).find? w₁.azideTarget with _ | ⟨k, j⟩
   · exact h
   · obtain ⟨hk, rfl⟩ := mem_neighbors (List.mem_of_find?_eq_some hf)
-    exact h.step hc (fun w ↦ ((w.setKind k .double).modifyAtom i ({ · with charge := 1 })).modifyAtom
-        ((w₁.bonds[k]! : WBond).other i) ({ · with charge := -1 }))
+    exact h.step hc (fun w ↦ ((w.setKind k .double).modifyAtom i ({ · with charge := 1 }))
+        |>.modifyAtom ((w₁.bonds[k]! : WBond).other i) ({ · with charge := -1 }))
       (((h.rel.setKind k (hc.notD hk) _).modifyAtom _ _).modifyAtom _ _)
-      (local_kcj w₁ (h.wf₁ hwf) hk .double (by decide) _ _ (fun _ ↦ rfl) (fun _ ↦ rfl) (fun _ ↦ by simp))
+      (local_kcj w₁ (h.wf₁ hwf) hk .double (by decide) _ _ (fun _ ↦ rfl) (fun _ ↦ rfl)
+        (fun _ ↦ by simp))
 
 end CleanInv
 
@@ -1399,7 +1426,8 @@ lemma CleanInv.cleanUp {D : ℕ → Bool} {w₀ w₁ w₂ : Work} (h : CleanInv 
 
 lemma freezeHs_atom (w : Work) (i : ℕ) :
     w.freezeHs.atoms[i]! =
-      if i < w.atoms.size then { w.atoms[i]! with frozenHs := some (w.totalHs i) } else w.atoms[i]! := by
+      if i < w.atoms.size then { w.atoms[i]! with frozenHs := some (w.totalHs i) }
+      else w.atoms[i]! := by
   by_cases hi : i < w.atoms.size
   · rw [if_pos hi, getElem!_pos _ i (by simpa [Work.freezeHs, Work.numAtoms] using hi)]
     simp [Work.freezeHs, Work.numAtoms]
@@ -1487,7 +1515,8 @@ lemma NoAromatic.assignRadicals {w : Work} (h : NoAromatic w) : NoAromatic w.ass
   ⟨fun k ↦ by rw [bonds_assignRadicals]; exact h.1 k, fun i ↦ by
     rw [aromatic_assignRadicals]; exact h.2 i⟩
 
-lemma NoAromatic.isAromaticAtom {w : Work} (h : NoAromatic w) (i : ℕ) : w.isAromaticAtom i = false := by
+lemma NoAromatic.isAromaticAtom {w : Work} (h : NoAromatic w) (i : ℕ) :
+    w.isAromaticAtom i = false := by
   simp [Work.isAromaticAtom, h.2 i, h.1]
 
 /-- `freezeHs` leaves what `cleanUp` looks at alone. -/

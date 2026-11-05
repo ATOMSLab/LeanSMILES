@@ -13,7 +13,20 @@ import Mathlib.Tactic.Linarith
 /-!
 # LeanSMILES.Aromaticity.ResonanceProofs
 
-Proofs of the properties of `Molecule.aromatize` stated in `LeanSMILES.Aromaticity.Resonance`.
+Proofs of properties 1 and 2 of `Molecule.aromatize` stated in
+`LeanSMILES.Aromaticity.Resonance`, and the bridge with property 2 discharged.
+
+A Kekulé structure needs no kekulizing (`Work.kekulize_of_noAromatic`), so
+`aromatize` is `freezeHs`, `cleanUp`, `cacheValences`, `assignRadicals`,
+`setAromaticity` and `finalizeHs`. The working copies of two Kekulé partners
+start in lockstep (`relD_ofMolecule`): their half-unit bond-order sums are twice
+the molecules' (`halfSum_ofMolecule`). They stay in lockstep through every pass
+(`pipeline`). Property 1 reads the aromatic bonds off the result
+(`Aromaticity.aromaticBondsKekuleInvariant`). Property 2 compares the results
+bond by bond (`Aromaticity.aromatizeMergesExactlyResonance`).
+
+Property 3 is not proved here; see the status in
+`LeanSMILES.Aromaticity.Resonance`.
 -/
 
 @[expose] public section
@@ -95,7 +108,8 @@ lemma halfSum_ofMolecule (m : Molecule n) (i : Fin n) :
   simp only [Function.comp_apply, toWBond_touches]
   split <;> simp [halfOrder_eq, toWBond]
 
-lemma noAromatic_ofMolecule (m : Molecule n) (hk : m.IsKekule) : NoAromatic (Work.ofMolecule m) := by
+lemma noAromatic_ofMolecule (m : Molecule n) (hk : m.IsKekule) :
+    NoAromatic (Work.ofMolecule m) := by
   refine ⟨fun k ↦ ?_, fun i ↦ ?_⟩
   · by_cases hlt : k < m.bonds.length
     · rw [ofMolecule_bond m hlt]
@@ -201,11 +215,11 @@ lemma isSD_of_forget {a b : BondKind} (h : a.forgetDouble = b.forgetDouble) (hab
 def movedD (m₁ m₂ : Molecule n) (k : ℕ) : Bool :=
   (Work.ofMolecule m₁).bonds[k]!.kind != (Work.ofMolecule m₂).bonds[k]!.kind
 
-lemma movedD_lt {m₁ m₂ : Molecule n} (hp : m₁.KekulePartner m₂) {k : ℕ} (hk : movedD m₁ m₂ k = true) :
-    k < m₁.bonds.length := by
+lemma movedD_lt {m₁ m₂ : Molecule n} (hp : m₁.KekulePartner m₂) {k : ℕ}
+    (hk : movedD m₁ m₂ k = true) : k < m₁.bonds.length := by
   by_contra hlt
-  rw [movedD, ofMolecule_bond_ge m₁ (by omega), ofMolecule_bond_ge m₂ (by rw [← KP.length hp]; omega)]
-    at hk
+  rw [movedD, ofMolecule_bond_ge m₁ (by omega),
+    ofMolecule_bond_ge m₂ (by rw [← KP.length hp]; omega)] at hk
   simp at hk
 
 lemma relD_ofMolecule {m₁ m₂ : Molecule n} (hp : m₁.KekulePartner m₂) :
@@ -236,7 +250,8 @@ lemma relD_ofMolecule {m₁ m₂ : Molecule n} (hp : m₁.KekulePartner m₂) :
 
 /-- The hypothesis on molecules, as the working copies need it. -/
 lemma avoidsCenters {m₁ m₂ : Molecule n} (hk : m₁.IsKekule) (hp : m₁.KekulePartner m₂)
-    (hc : m₁.MovesAvoidCleanUp m₂) : AvoidsCenters (movedD m₁ m₂) (Work.ofMolecule m₁).freezeHs := by
+    (hc : m₁.MovesAvoidCleanUp m₂) :
+    AvoidsCenters (movedD m₁ m₂) (Work.ofMolecule m₁).freezeHs := by
   intro c hcen k hD
   rw [cleanUpCenter_freezeHs] at hcen
   have hlt := movedD_lt hp hD
@@ -261,7 +276,8 @@ def prep (m : Molecule n) : Work := (Work.ofMolecule m).freezeHs.cleanUp.cacheVa
 
 lemma aromatize_eq_of_noAromatic (m : Molecule n) (h : NoAromatic (prep m)) :
     m.aromatize =
-      .ok (writeBack m ((prep m).assignRadicals.setAromaticity (prep m).relevantCycles).finalizeHs) := by
+      .ok (writeBack m
+        ((prep m).assignRadicals.setAromaticity (prep m).relevantCycles).finalizeHs) := by
   unfold Molecule.aromatize
   unfold prep at h
   dsimp only
@@ -314,7 +330,8 @@ lemma length_withKinds (m : Molecule n) (w : Work) : (withKinds m w).length = m.
 lemma getElem_withKinds (m : Molecule n) (w : Work) {k : ℕ} {hk : k < (withKinds m w).length}
     (hw : k < w.bonds.size) :
     (withKinds m w)[k]'hk =
-      { m.bonds[k]'(by simpa [length_withKinds] using hk) with kind := (w.bonds[k]! : WBond).kind } := by
+      { m.bonds[k]'(by simpa [length_withKinds] using hk) with
+        kind := (w.bonds[k]! : WBond).kind } := by
   simp [withKinds, hw]
 
 lemma aromaticBonds_writeBack (m : Molecule n) (w : Work) (hw : w.bonds.size = m.bonds.length) :
@@ -343,7 +360,8 @@ lemma size_final (w : Work) (L : List ℕ) :
 /-- The kind of bond `k` once the bonds of `L` are marked and hydrogens finalized. -/
 lemma kind_final (w : Work) (L : List ℕ) (k : ℕ) (hk : k < w.bonds.size) :
     ((L.foldl markAromatic w).finalizeHs.bonds[k]! : WBond).kind =
-      if k ∈ L ∧ isSD (w.bonds[k]! : WBond).kind then .aromatic else (w.bonds[k]! : WBond).kind := by
+      if k ∈ L ∧ isSD (w.bonds[k]! : WBond).kind then .aromatic
+      else (w.bonds[k]! : WBond).kind := by
   rw [bonds_finalizeHs, kind_foldl_markAromatic w L k hk]
 
 lemma wbond_ext {a b : WBond} (h₁ : a.src = b.src) (h₂ : a.dst = b.dst) (h₃ : a.kind = b.kind) :
@@ -393,13 +411,10 @@ lemma writeBack_partner {m₁ m₂ : Molecule n} (hp : m₁.KekulePartner m₂) 
       rw [getElem_withKinds m₁ w (by omega), getElem_withKinds m₂ w (by omega)]
       exact KP.with_kind hp k hk _
 
-end LeanSMILES.Aromaticity
+/-! ### Properties 1 and 2 -/
 
-namespace LeanSMILES.Aromaticity
-
-open Work
-
-/-- **Property 1**, proved. -/
+/-- **Property 1.** Kekulé partners whose moved bonds avoid the atoms `cleanUp` rewrites get the
+same aromatic bonds. -/
 theorem aromaticBondsKekuleInvariant : AromaticBondsKekuleInvariant := by
   intro n m₁ m₂ hk hp hc
   have P := pipeline hk hp hc
@@ -423,7 +438,8 @@ theorem aromaticBondsKekuleInvariant : AromaticBondsKekuleInvariant := by
   have n₂ := (P.rel.noAromatic P.noArom).1 k
   split <;> simp [n₁, n₂]
 
-/-- **Property 2**, proved. -/
+/-- **Property 2.** Kekulé partners whose moved bonds avoid the atoms `cleanUp` rewrites aromatize
+to one molecule exactly when they differ only on bonds the model makes aromatic. -/
 theorem aromatizeMergesExactlyResonance : AromatizeMergesExactlyResonance := by
   intro n m₁ m₂ a hk hp hc ha
   have P := pipeline hk hp hc
@@ -480,7 +496,8 @@ theorem aromatizeMergesExactlyResonance : AromatizeMergesExactlyResonance := by
     have hkk := congrArg (fun l ↦ (l[k]? ).map Bond.kind) hb
     simp only [List.getElem?_eq_getElem (by simpa [length_withKinds, hlen] using hk' :
         k < (withKinds m₂ F₂).length),
-      List.getElem?_eq_getElem (by simpa [length_withKinds] using hk' : k < (withKinds m₁ F₁).length),
+      List.getElem?_eq_getElem
+        (by simpa [length_withKinds] using hk' : k < (withKinds m₁ F₁).length),
       Option.map_some, Option.some.injEq] at hkk
     rw [getElem_withKinds _ _ (by rw [hF₂]; exact hk'),
       getElem_withKinds _ _ (by rw [hF₁]; exact hk')] at hkk
@@ -508,3 +525,44 @@ theorem aromatizeMergesExactlyResonance : AromatizeMergesExactlyResonance := by
     rw [← hFF, writeBack_partner hp F₁ hF₁]
 
 end LeanSMILES.Aromaticity
+
+namespace LeanSMILES.Molecule
+
+open Aromaticity
+
+variable {n : ℕ}
+
+/-! ### The bridge, with property 2 proved -/
+
+/-- Resonance structures have one aromatic canonical SMILES. -/
+theorem aromaticCanonicalSmiles_eq_of_resonance {m₁ m₂ : Molecule n} (hk : m₁.IsKekule)
+    (hr : m₁.ResonanceStructure m₂) :
+    m₂.aromaticCanonicalSmiles = m₁.aromaticCanonicalSmiles :=
+  aromaticCanonicalSmiles_eq_of_resonanceStructure aromatizeMergesExactlyResonance hk hr
+
+/-- Any two Kekulé structures related by resonance moves, in any order and either direction, have
+one aromatic canonical SMILES. -/
+theorem aromaticCanonicalSmiles_eq_of_eqvGen_resonance {m₁ m₂ : Molecule n} (hk : m₁.IsKekule)
+    (h : Relation.EqvGen ResonanceStructure m₁ m₂) :
+    m₁.aromaticCanonicalSmiles = m₂.aromaticCanonicalSmiles := by
+  suffices H : (m₁.IsKekule ↔ m₂.IsKekule) ∧
+      (m₁.IsKekule → m₁.aromaticCanonicalSmiles = m₂.aromaticCanonicalSmiles) from H.2 hk
+  clear hk
+  induction h with
+  | rel x y hr =>
+    exact ⟨⟨hr.1.isKekule, (kekulePartner_equivalence.symm hr.1).isKekule⟩,
+      fun hx ↦ (aromaticCanonicalSmiles_eq_of_resonance hx hr).symm⟩
+  | refl x => exact ⟨Iff.rfl, fun _ ↦ rfl⟩
+  | symm x y _ ih => exact ⟨ih.1.symm, fun hy ↦ (ih.2 (ih.1.mpr hy)).symm⟩
+  | trans x y z _ _ ih₁ ih₂ =>
+    exact ⟨ih₁.1.trans ih₂.1, fun hx ↦ (ih₁.2 hx).trans (ih₂.2 (ih₁.1.mp hx))⟩
+
+/-- **The bridge**, with property 2 discharged: given property 3, any two Kekulé structures
+related by renumbering and resonance moves have one aromatic canonical SMILES, as long as the atoms
+`cleanUp` rewrites are apart. -/
+theorem aromaticCanonicalSmiles_eq_of_eqvGen' (h₃ : AromatizeRelabelKekule) {m₁ m₂ : Molecule n}
+    (hk : m₁.IsKekule) (ha : m₁.CleanUpTargetsApart) (h : Relation.EqvGen Redraw m₁ m₂) :
+    m₁.aromaticCanonicalSmiles = m₂.aromaticCanonicalSmiles :=
+  aromaticCanonicalSmiles_eq_of_eqvGen aromatizeMergesExactlyResonance h₃ hk ha h
+
+end LeanSMILES.Molecule

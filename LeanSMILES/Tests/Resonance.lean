@@ -17,11 +17,19 @@ For every molecule, take a Kekulé structure and enumerate its Kekulé partners:
 every way to trade single and double ring bonds that keeps each atom's number of
 double bonds (up to `cap` of them). Then check:
 
-1. `AromaticBondsKekuleInvariant`: every partner gets the same aromatic bonds.
+1. `AromaticBondsKekuleInvariant`: every pair of partners gets the same aromatic
+   bonds.
 2. `AromatizeMergesExactlyResonance`: for every pair of partners, they aromatize
    to one molecule exactly when they differ only on aromatic bonds.
 3. `AromatizeRelabelKekule`: renumbering the Kekulé structure and then
    aromatizing gives the aromatized molecule renumbered.
+
+Properties 1 and 2 are proved (`LeanSMILES.Aromaticity.ResonanceProofs`) for pairs
+whose moved bonds avoid the atoms `cleanUp` rewrites (`Molecule.MovesAvoidCleanUp`);
+property 3 is stated for molecules whose `cleanUp` atoms are apart
+(`Molecule.CleanUpTargetsApart`). The report counts the pairs and molecules these
+hypotheses leave out, and checks the statements both with and without them: the
+three counterexamples, parsed as written, fail without them.
 
 `AromatizeRelabel` (property 3 on the input as written, lowercase included) is
 reported for information; it is known to fail.
@@ -123,16 +131,26 @@ structure Tally where
   capped : ℕ := 0
   /-- Enumerated structures that fail `KekulePartner` (a bug in the enumeration). -/
   notPartners : ℕ := 0
-  /-- Molecules where property 1 fails. -/
-  fail1 : ℕ := 0
-  /-- Pairs checked for property 2. -/
+  /-- Pairs of partners checked for properties 1 and 2. -/
   pairs : ℕ := 0
+  /-- Pairs left out by `MovesAvoidCleanUp`. -/
+  pairsOut : ℕ := 0
+  /-- Pairs where property 1 fails. -/
+  fail1 : ℕ := 0
+  /-- Pairs where property 1 fails without its hypothesis. -/
+  fail1all : ℕ := 0
   /-- Pairs where property 2 fails. -/
   fail2 : ℕ := 0
+  /-- Pairs where property 2 fails without its hypothesis. -/
+  fail2all : ℕ := 0
+  /-- Molecules left out of property 3 by `CleanUpTargetsApart`. -/
+  out3 : ℕ := 0
   /-- Molecules where property 3 fails as molecules. -/
   fail3 : ℕ := 0
   /-- Molecules where property 3 fails even for the canonical string. -/
   fail3canon : ℕ := 0
+  /-- Molecules where property 3 fails as molecules without its hypothesis. -/
+  fail3all : ℕ := 0
   /-- Molecules whose partners have more than one canonical SMILES before aromatization. -/
   splitBefore : ℕ := 0
   /-- Molecules whose partners have more than one canonical SMILES after aromatization. -/
@@ -159,18 +177,25 @@ def checkKekule (t : Tally) (label : String) (k : Molecule n) (cap : ℕ) : Tall
   let bad := ps.filter fun p ↦ !decide (k.KekulePartner p)
   if !bad.isEmpty then t := { t with notPartners := t.notPartners + bad.length }
   let as := ps.map fun p ↦ (p, arom p)
-  -- property 1
-  let ab := as.map fun (_, a) ↦ a.map Molecule.aromaticBonds
-  if ab.any (· != ab.headD none) then
-    t := { t with fail1 := t.fail1 + 1 }
-    t := t.note s!"prop1  {label}"
-  -- property 2, every ordered pair
+  -- properties 1 and 2, every ordered pair of partners
+  let mut f1 := 0
   let mut f2 := 0
   for (p, ap) in as do
-    if let some a := ap then
-      for (q, aq) in as do
-        t := { t with pairs := t.pairs + 1 }
-        if (aq == some a) != p.differOnlyOn q a.aromaticBonds then f2 := f2 + 1
+    for (q, aq) in as do
+      let inScope := decide (p.MovesAvoidCleanUp q)
+      t := { t with pairs := t.pairs + 1 }
+      if !inScope then t := { t with pairsOut := t.pairsOut + 1 }
+      let bad1 := ap.map Molecule.aromaticBonds != aq.map Molecule.aromaticBonds
+      if bad1 then
+        t := { t with fail1all := t.fail1all + 1 }
+        if inScope then f1 := f1 + 1
+      if let some a := ap then
+        if (aq == some a) != p.differOnlyOn q a.aromaticBonds then
+          t := { t with fail2all := t.fail2all + 1 }
+          if inScope then f2 := f2 + 1
+  if 0 < f1 then
+    t := { t with fail1 := t.fail1 + f1 }
+    t := t.note s!"prop1  {label}: {f1} pairs"
   if 0 < f2 then
     t := { t with fail2 := t.fail2 + f2 }
     t := t.note s!"prop2  {label}: {f2} pairs"
@@ -179,10 +204,14 @@ def checkKekule (t : Tally) (label : String) (k : Molecule n) (cap : ℕ) : Tall
   let c := k.aromaticCanonicalSmiles
   let molFail := (perms n).any fun σ ↦ arom (k.relabel σ) != a.map (·.relabel σ)
   let canFail := (perms n).any fun σ ↦ (k.relabel σ).aromaticCanonicalSmiles != c
-  if molFail then t := { t with fail3 := t.fail3 + 1 }
-  if canFail then
-    t := { t with fail3canon := t.fail3canon + 1 }
-    t := t.note s!"prop3  {label}"
+  if molFail then t := { t with fail3all := t.fail3all + 1 }
+  if !decide k.CleanUpTargetsApart then
+    t := { t with out3 := t.out3 + 1 }
+  else
+    if molFail then t := { t with fail3 := t.fail3 + 1 }
+    if canFail then
+      t := { t with fail3canon := t.fail3canon + 1 }
+      t := t.note s!"prop3  {label}"
   -- canonical SMILES over the partners, before and after aromatization
   let before := (ps.map Molecule.canonicalSmiles).eraseDups
   let after := (ps.map Molecule.aromaticCanonicalSmiles).eraseDups
@@ -199,11 +228,16 @@ def report (name : String) (t : Tally) : IO Bool := do
   IO.println s!"{name}: {t.molecules} Kekulé structures, {t.withPartners} with more than one \
     partner, {t.capped} capped"
   IO.println s!"  enumeration: structures that are not Kekulé partners {t.notPartners}  [must be 0]"
-  IO.println s!"  1 aromatic bonds the same over the partners: fails on {t.fail1}  [spec]"
-  IO.println s!"  2 same molecule ↔ differ only on aromatic bonds: fails on {t.fail2} of \
-    {t.pairs} pairs  [spec]"
+  IO.println s!"  {t.pairs} pairs of partners, {t.pairsOut} with a moved bond at an atom \
+    cleanUp rewrites (left out of 1 and 2); {t.out3} molecules with cleanUp atoms not apart \
+    (left out of 3)"
+  IO.println s!"  1 aromatic bonds the same over the partners: fails on {t.fail1} pairs  [spec, \
+    proved]; {t.fail1all} without the hypothesis  [info]"
+  IO.println s!"  2 same molecule ↔ differ only on aromatic bonds: fails on {t.fail2} pairs  \
+    [spec, proved]; {t.fail2all} without the hypothesis  [info]"
   IO.println s!"  3 aromatize commutes with renumbering: fails on {t.fail3} as molecules, \
-    {t.fail3canon} as canonical SMILES  [spec]"
+    {t.fail3canon} as canonical SMILES  [spec]; {t.fail3all} as molecules without the \
+    hypothesis  [info]"
   IO.println s!"  partners with more than one canonical SMILES: before aromatize {t.splitBefore}, \
     after {t.splitAfter}  [info]"
   for s in t.notes do
@@ -232,6 +266,11 @@ def handPicked : List String :=
    "c1cc2ccc3cccc4ccc(c1)c2c34", "Cc1ccccccc1C", "c1ccccccc1", "c1ccc2c(c1)-c1ccccc1-2",
    "c1ccc2cccc2cc1", "Cc1cccc2ncc12", "c1ccc2ncncc2c1", "c1ccc2[nH]ccc2c1",
    "c1ccccccccccccccccc1", "Cc1ccc2ccc3cccc4c3c2c1cc4", "O=c1cccccc1", "c1ccc2c(c1)C=Cc1ccccc1-2"]
+
+/-- Kekulé structures that refute the properties without their hypotheses, parsed as written:
+`cleanUp` makes `[P+][O-]` of the first only (property 1 and 2), and its rewrites in the other two
+depend on the atom order (property 3). -/
+def counterexamples : List String := ["O=P1=CC=CC=B1", "CN(C)#N(C)C", "O(=N(=O)C)=N(=O)C"]
 
 /-- The `smiles` column (second) of a CSV file with a header. -/
 def smilesColumn (path : String) : IO (List String) := do
@@ -266,10 +305,15 @@ public def main (_ : List String) : IO UInt32 := do
     if !(← report p t) then ok := false
   let egfr ← smilesColumn "datasets/egfr-classification.csv"
   let sets := [("datasets/egfr-classification.csv (kekulized)", viaKekulizer egfr),
-    ("hand-picked (kekulized)", viaKekulizer handPicked)]
+    ("hand-picked (kekulized)", viaKekulizer handPicked),
+    ("counterexamples (as written)", parsed counterexamples)]
   for (name, ms) in sets do
     let t := ms.foldl (init := {}) fun t (s, M) ↦ checkKekule t s M.mol cap
     if !(← report name t) then ok := false
+    if name.startsWith "counterexamples" && (t.fail1all == 0 || t.fail2all == 0 ||
+        t.fail3all == 0) then
+      IO.println "  the counterexamples no longer refute the unrestricted statements  [must not]"
+      ok := false
   for p in ["datasets/delaney-oracle.csv", "datasets/aromaticity-cases-oracle.csv"] do
     checkAsWritten p ((← readRows p).map (·.smiles))
   checkAsWritten "datasets/egfr-classification.csv" egfr

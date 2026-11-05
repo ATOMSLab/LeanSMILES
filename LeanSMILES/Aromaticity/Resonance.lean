@@ -33,8 +33,7 @@ strings. Whether two such drawings are one molecule is a chemical question:
 
 ## The specification
 
-Three properties of `aromatize`, stated here as `Prop`s and not yet proved.
-`lake exe resonance-test` checks them on the data.
+Three properties of `aromatize`, stated here as `Prop`s:
 
 1. `AromaticBondsKekuleInvariant`: Kekulé partners get the same aromatic bonds.
 2. `AromatizeMergesExactlyResonance`: Kekulé partners aromatize to one molecule
@@ -42,17 +41,57 @@ Three properties of `aromatize`, stated here as `Prop`s and not yet proved.
 3. `AromatizeRelabelKekule`: on Kekulé input, aromatizing commutes with
    relabeling.
 
+As first stated, for every molecule, none of the three holds. Each needs one
+hypothesis about RDKit's `cleanUp`, the first step of `aromatize`, which
+rewrites a few hypervalent atoms into charge-separated form (a neutral N or P
+of valence 5, a neutral Cl, Br or I of valence 3, 5 or 7;
+`Molecule.CleanUpTarget`):
+
+* Properties 1 and 2 need the moved double bonds to stay away from those atoms
+  (`Molecule.MovesAvoidCleanUp`). In `O=P1=CC=CC=B1` the phosphorus has its
+  second double bond to carbon, so `cleanUp` makes it `[P+]-[O-]` and the ring
+  comes out aromatic; in the partner `O=P1C=CC=CB=1` that bond goes to boron,
+  `cleanUp` leaves the phosphorus alone, and the ring does not.
+* Property 3 needs those atoms apart: no two bonded or with a common neighbour
+  (`Molecule.CleanUpTargetsApart`). `cleanUp` visits the atoms in order, and in
+  `CN(C)#N(C)C` whichever nitrogen comes first becomes `[N+]`.
+
+These are chemically exotic inputs, and `ResonanceStructure` includes the
+first hypothesis. `lake exe resonance-test` checks all three properties on the
+data, with and without the hypotheses, and checks that the counterexamples
+still fail without them.
+
+**Status.** Properties 1 and 2, with their hypothesis, are theorems:
+`Aromaticity.aromaticBondsKekuleInvariant` and
+`Aromaticity.aromatizeMergesExactlyResonance`
+(`LeanSMILES.Aromaticity.ResonanceProofs`, on the lockstep simulation of
+`LeanSMILES.Aromaticity.KekuleSim`). Property 3 is not proved, only checked on
+the data. A proof needs `Work.relevantCycles` to give the same rings, in some
+order and drawn from some atom, after renumbering. Its breadth-first search is
+a `while` loop, which Lean cannot unfold. It also needs `setAromaticity` not to
+depend on the order of the rings, and `cleanUp` not to depend on the order of
+the atoms.
+
+The proofs of 1 and 2 use one change to `setAromaticity`, made for them. For
+donor typing, a bond counts as a ring bond when it lies on a cycle
+(`Work.onCycle`), not when it lies on one of the relevant cycles. The relevant
+cycles span the cycle space, so these are the same bonds. That is a theorem
+about `relevantCycles` that is not proved here. The aromaticity and resonance
+tests give the same results before and after the change.
+
 `AromatizeRelabel` is property 3 for every input, lowercase included. It is
-false: `Cc1ccccccc1C` does not say which bond-shift isomer it means, and the
-kekulizer's choice depends on the atom order. RDKit behaves the same way.
+false even with the hypothesis: `Cc1ccccccc1C` does not say which bond-shift
+isomer it means, and the kekulizer's choice depends on the atom order. RDKit
+behaves the same way.
 
 ## What the data say
 
 On 2399 Kekulé structures (Delaney, the aromaticity, isotope and hydrogen
 cases, EGFR and hand-picked cases), 1379 have more than one Kekulé partner and
-properties 1–3 hold on every one, over 25720 pairs. Before aromatization the
-partners of 1047 molecules have more than one canonical SMILES; after it, none
-from the datasets do.
+properties 1–3 hold on every one, over 25720 pairs, with or without their
+hypotheses: the hypotheses leave out none of these pairs and molecules. Before
+aromatization the partners of 1047 molecules have more than one canonical
+SMILES; after it, none from the datasets do.
 
 Three hand-picked cases keep partners apart, and these are where the model,
 not the graph, decides what is one molecule:
@@ -69,7 +108,11 @@ not the graph, decides what is one molecule:
 Properties 2 and 3 are what the canonicity theorem needs. Two Kekulé structures
 related by any chain of renumberings and resonance moves (`Molecule.Redraw`)
 have the same canonical SMILES after aromatization
-(`Molecule.aromaticCanonicalSmiles_eq_of_eqvGen`).
+(`Molecule.aromaticCanonicalSmiles_eq_of_eqvGen`, which takes both as
+hypotheses). With property 2 proved, chains of resonance moves alone need no
+hypothesis (`Molecule.aromaticCanonicalSmiles_eq_of_eqvGen_resonance`), and
+the full bridge needs only property 3
+(`Molecule.aromaticCanonicalSmiles_eq_of_eqvGen'`).
 -/
 
 @[expose] public section
@@ -192,6 +235,64 @@ instance (m₁ m₂ : Molecule n) : Decidable (m₁.MovesAvoidCleanUp m₂) := b
   unfold MovesAvoidCleanUp
   infer_instance
 
+/-- No two atoms `cleanUp` may rewrite are bonded or have a common neighbour. Then its rewrites do
+not touch each other, and the order it visits the atoms in does not matter. -/
+def CleanUpTargetsApart (m : Molecule n) : Prop :=
+  ∀ i j, i ≠ j → m.CleanUpTarget i → m.CleanUpTarget j →
+    ¬ m.graph.Adj i j ∧ ∀ k, ¬ (m.graph.Adj i k ∧ m.graph.Adj j k)
+
+instance (m : Molecule n) : Decidable m.CleanUpTargetsApart := by
+  unfold CleanUpTargetsApart
+  infer_instance
+
+/-- Renumbering keeps each atom's bond-order sum. -/
+lemma bondOrderSum_relabel (m : Molecule n) (σ : Equiv.Perm (Fin n)) (i : Fin n) :
+    (m.relabel σ).bondOrderSum (σ i) = m.bondOrderSum i := by
+  simp [bondOrderSum, bondsAt_relabel, Function.comp_def]
+
+lemma cleanUpTarget_relabel (m : Molecule n) (σ : Equiv.Perm (Fin n)) (i : Fin n) :
+    (m.relabel σ).CleanUpTarget (σ i) ↔ m.CleanUpTarget i := by
+  simp only [CleanUpTarget, atom_relabel, bondOrderSum_relabel]
+
+/-- Renumbering keeps the atoms `cleanUp` rewrites apart, and only renumbers ones that are. -/
+theorem cleanUpTargetsApart_relabel (m : Molecule n) (σ : Equiv.Perm (Fin n)) :
+    (m.relabel σ).CleanUpTargetsApart ↔ m.CleanUpTargetsApart := by
+  constructor
+  · intro h i j hij hi hj
+    have := h (σ i) (σ j) (σ.injective.ne hij) ((cleanUpTarget_relabel m σ i).mpr hi)
+      ((cleanUpTarget_relabel m σ j).mpr hj)
+    refine ⟨fun hadj ↦ this.1 ((m.relabel_adj_iff σ i j).mpr hadj), fun k hk ↦ this.2 (σ k)
+      ⟨(m.relabel_adj_iff σ i k).mpr hk.1, (m.relabel_adj_iff σ j k).mpr hk.2⟩⟩
+  · intro h i j hij hi hj
+    obtain ⟨i, rfl⟩ := σ.surjective i
+    obtain ⟨j, rfl⟩ := σ.surjective j
+    have := h i j (fun e ↦ hij (by rw [e])) ((cleanUpTarget_relabel m σ i).mp hi)
+      ((cleanUpTarget_relabel m σ j).mp hj)
+    refine ⟨fun hadj ↦ this.1 ((m.relabel_adj_iff σ i j).mp hadj), fun k hk ↦ ?_⟩
+    obtain ⟨k, rfl⟩ := σ.surjective k
+    exact this.2 k ⟨(m.relabel_adj_iff σ i k).mp hk.1, (m.relabel_adj_iff σ j k).mp hk.2⟩
+
+/-- Kekulé partners have one molecular graph. -/
+lemma KekulePartner.graph_eq {m₁ m₂ : Molecule n} (h : m₁.KekulePartner m₂) :
+    m₁.graph = m₂.graph := by
+  simp only [KekulePartner, kekuleData, Prod.mk.injEq] at h
+  have he : m₁.edges = m₂.edges := by
+    have := congrArg (List.map Bond.edge) h.2.1
+    simpa [edges, List.map_map, Function.comp_def, Bond.forgetDouble, Bond.edge] using this
+  ext i j
+  simp only [graph, he]
+
+lemma KekulePartner.cleanUpTarget_iff {m₁ m₂ : Molecule n} (h : m₁.KekulePartner m₂) (i : Fin n) :
+    m₁.CleanUpTarget i ↔ m₂.CleanUpTarget i := by
+  simp only [KekulePartner, kekuleData, Prod.mk.injEq] at h
+  have ha : m₁.atom i = m₂.atom i := by simp [atom, h.1]
+  have hs : m₁.bondOrderSum i = m₂.bondOrderSum i := by simpa using congrArg (·[i]) h.2.2
+  simp only [CleanUpTarget, ha, hs]
+
+lemma KekulePartner.cleanUpTargetsApart_iff {m₁ m₂ : Molecule n} (h : m₁.KekulePartner m₂) :
+    m₁.CleanUpTargetsApart ↔ m₂.CleanUpTargetsApart := by
+  simp only [CleanUpTargetsApart, h.graph_eq, h.cleanUpTarget_iff]
+
 /-! ### Resonance structures -/
 
 /-- Which bonds are aromatic, in bond-list order. -/
@@ -238,9 +339,13 @@ def AromatizeMergesExactlyResonance : Prop :=
     m₁.MovesAvoidCleanUp m₂ → m₁.aromatize = .ok a →
     (m₂.aromatize = .ok a ↔ m₁.differOnlyOn m₂ a.aromaticBonds = true)
 
-/-- **Property 3.** On Kekulé input, aromatizing commutes with renumbering the atoms. -/
+/-- **Property 3.** On Kekulé input, aromatizing commutes with renumbering the atoms, as long as
+the atoms `cleanUp` rewrites are apart (`Molecule.CleanUpTargetsApart`). Without that it is false:
+`cleanUp` visits the atoms in order, and in `CN(C)#N(C)C` both nitrogens are neutral and
+5-valent, so whichever comes first becomes `[N+]` and the other `[N-]`. RDKit behaves the same
+way. -/
 def AromatizeRelabelKekule : Prop :=
-  ∀ ⦃n : ℕ⦄ (m : Molecule n) (σ : Equiv.Perm (Fin n)), m.IsKekule →
+  ∀ ⦃n : ℕ⦄ (m : Molecule n) (σ : Equiv.Perm (Fin n)), m.IsKekule → m.CleanUpTargetsApart →
     (m.relabel σ).aromatize = m.aromatize.map (·.relabel σ)
 
 /-- Property 3 for every input, lowercase included. **False**: when a ring written lowercase does
@@ -270,9 +375,9 @@ theorem aromaticCanonicalSmiles_eq_of_resonanceStructure (h : AromatizeMergesExa
 /-- Given property 3, the aromatic canonical SMILES of a Kekulé structure does not depend on how
 its atoms are numbered. -/
 theorem aromaticCanonicalSmiles_relabel (h : AromatizeRelabelKekule) (m : Molecule n)
-    (σ : Equiv.Perm (Fin n)) (hk : m.IsKekule) :
+    (σ : Equiv.Perm (Fin n)) (hk : m.IsKekule) (ha : m.CleanUpTargetsApart) :
     (m.relabel σ).aromaticCanonicalSmiles = m.aromaticCanonicalSmiles := by
-  simp only [aromaticCanonicalSmiles, h m σ hk]
+  simp only [aromaticCanonicalSmiles, h m σ hk ha]
   rcases m.aromatize with e | a
   · rfl
   · exact congrArg some (a.canonicalSmiles_relabel σ)
@@ -292,21 +397,30 @@ lemma Redraw.isKekule_iff {m₁ m₂ : Molecule n} (h : Redraw m₁ m₂) :
   | relabel σ => exact (isKekule_relabel _ σ).symm
   | resonance hr => exact ⟨hr.1.isKekule, (kekulePartner_equivalence.symm hr.1).isKekule⟩
 
+/-- A redrawing step keeps the atoms `cleanUp` rewrites apart, in both directions. -/
+lemma Redraw.cleanUpTargetsApart_iff {m₁ m₂ : Molecule n} (h : Redraw m₁ m₂) :
+    m₁.CleanUpTargetsApart ↔ m₂.CleanUpTargetsApart := by
+  cases h with
+  | relabel σ => exact (cleanUpTargetsApart_relabel _ σ).symm
+  | resonance hr => exact hr.1.cleanUpTargetsApart_iff
+
 /-- **The bridge.** Given properties 2 and 3, any two Kekulé structures related by renumbering
-and resonance moves, in any order and either direction, have one aromatic canonical SMILES. -/
+and resonance moves, in any order and either direction, have one aromatic canonical SMILES, as long
+as the atoms `cleanUp` rewrites are apart. -/
 theorem aromaticCanonicalSmiles_eq_of_eqvGen (h₂ : AromatizeMergesExactlyResonance)
     (h₃ : AromatizeRelabelKekule) {m₁ m₂ : Molecule n} (hk : m₁.IsKekule)
-    (h : Relation.EqvGen Redraw m₁ m₂) :
+    (ha : m₁.CleanUpTargetsApart) (h : Relation.EqvGen Redraw m₁ m₂) :
     m₁.aromaticCanonicalSmiles = m₂.aromaticCanonicalSmiles := by
-  suffices H : (m₁.IsKekule ↔ m₂.IsKekule) ∧
-      (m₁.IsKekule → m₁.aromaticCanonicalSmiles = m₂.aromaticCanonicalSmiles) from H.2 hk
-  clear hk
+  suffices H : (m₁.IsKekule ∧ m₁.CleanUpTargetsApart ↔ m₂.IsKekule ∧ m₂.CleanUpTargetsApart) ∧
+      (m₁.IsKekule ∧ m₁.CleanUpTargetsApart →
+        m₁.aromaticCanonicalSmiles = m₂.aromaticCanonicalSmiles) from H.2 ⟨hk, ha⟩
+  clear hk ha
   induction h with
   | rel x y hxy =>
-    refine ⟨hxy.isKekule_iff, fun hx ↦ ?_⟩
+    refine ⟨and_congr hxy.isKekule_iff hxy.cleanUpTargetsApart_iff, fun hx ↦ ?_⟩
     cases hxy with
-    | relabel σ => exact (aromaticCanonicalSmiles_relabel h₃ x σ hx).symm
-    | resonance hr => exact (aromaticCanonicalSmiles_eq_of_resonanceStructure h₂ hx hr).symm
+    | relabel σ => exact (aromaticCanonicalSmiles_relabel h₃ x σ hx.1 hx.2).symm
+    | resonance hr => exact (aromaticCanonicalSmiles_eq_of_resonanceStructure h₂ hx.1 hr).symm
   | refl x => exact ⟨Iff.rfl, fun _ ↦ rfl⟩
   | symm x y _ ih => exact ⟨ih.1.symm, fun hy ↦ (ih.2 (ih.1.mpr hy)).symm⟩
   | trans x y z _ _ ih₁ ih₂ =>
