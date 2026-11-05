@@ -311,9 +311,9 @@ lemma pipeline {m₁ m₂ : Molecule n} (hk : m₁.IsKekule) (hp : m₁.KekulePa
 lemma length_withKinds (m : Molecule n) (w : Work) : (withKinds m w).length = m.bonds.length := by
   simp [withKinds]
 
-lemma getElem_withKinds (m : Molecule n) (w : Work) (k : ℕ) (hk : k < (withKinds m w).length)
+lemma getElem_withKinds (m : Molecule n) (w : Work) {k : ℕ} {hk : k < (withKinds m w).length}
     (hw : k < w.bonds.size) :
-    (withKinds m w)[k] =
+    (withKinds m w)[k]'hk =
       { m.bonds[k]'(by simpa [length_withKinds] using hk) with kind := (w.bonds[k]! : WBond).kind } := by
   simp [withKinds, hw]
 
@@ -325,7 +325,13 @@ lemma aromaticBonds_writeBack (m : Molecule n) (w : Work) (hw : w.bonds.size = m
   · intro k h₁ h₂
     have hk : k < m.bonds.length := by simpa using h₂
     simp only [Molecule.aromaticBonds, writeBack, List.getElem_map, List.getElem_range]
-    rw [getElem_withKinds m w k (by simpa [length_withKinds] using hk) (by omega)]
+    rw [getElem_withKinds m w (by omega)]
+
+lemma size_foldl_markAromatic (w : Work) (L : List ℕ) :
+    (L.foldl markAromatic w).bonds.size = w.bonds.size := by
+  induction L generalizing w with
+  | nil => rfl
+  | cons b L ih => rw [List.foldl_cons, ih, size_markAromatic]
 
 lemma size_final (w : Work) (L : List ℕ) :
     (L.foldl markAromatic w).finalizeHs.bonds.size = w.bonds.size := by
@@ -339,6 +345,53 @@ lemma kind_final (w : Work) (L : List ℕ) (k : ℕ) (hk : k < w.bonds.size) :
     ((L.foldl markAromatic w).finalizeHs.bonds[k]! : WBond).kind =
       if k ∈ L ∧ isSD (w.bonds[k]! : WBond).kind then .aromatic else (w.bonds[k]! : WBond).kind := by
   rw [bonds_finalizeHs, kind_foldl_markAromatic w L k hk]
+
+lemma wbond_ext {a b : WBond} (h₁ : a.src = b.src) (h₂ : a.dst = b.dst) (h₃ : a.kind = b.kind) :
+    a = b := by
+  cases a
+  cases b
+  simp_all
+
+lemma work_ext {w w' : Work} (ha : w.atoms = w'.atoms) (hs : w.bonds.size = w'.bonds.size)
+    (hb : ∀ k < w.bonds.size, w.bonds[k]! = w'.bonds[k]!) : w = w' := by
+  cases w
+  cases w'
+  simp only [Work.mk.injEq]
+  refine ⟨ha, Array.ext hs fun k h₁ h₂ ↦ ?_⟩
+  have := hb k h₁
+  rwa [getElem!_pos _ k h₁, getElem!_pos _ k h₂] at this
+
+/-- `differOnlyOn`, bond by bond. -/
+lemma differOnlyOn_iff {m₁ m₂ : Molecule n} (mask : List Bool)
+    (hl : m₁.bonds.length = m₂.bonds.length) (hm : mask.length = m₁.bonds.length) :
+    m₁.differOnlyOn m₂ mask = true ↔ ∀ k (h : k < m₁.bonds.length),
+      m₁.bonds[k].kind = (m₂.bonds[k]'(hl ▸ h)).kind ∨ mask[k]'(hm ▸ h) = true := by
+  unfold Molecule.differOnlyOn
+  rw [List.all_eq_true]
+  constructor
+  · intro H k h
+    have hmem : ((m₁.bonds[k], m₂.bonds[k]'(hl ▸ h)), mask[k]'(hm ▸ h)) ∈
+        (m₁.bonds.zip m₂.bonds).zip mask :=
+      List.mem_iff_getElem.mpr ⟨k, by simp [h, ← hl, hm], by simp⟩
+    simpa using H _ hmem
+  · intro H x hx
+    obtain ⟨k, hk, rfl⟩ := List.mem_iff_getElem.mp hx
+    simp only [List.length_zip] at hk
+    have hk₁ : k < m₁.bonds.length := by omega
+    simpa using H k hk₁
+
+/-- Partners write back one working copy to one molecule. -/
+lemma writeBack_partner {m₁ m₂ : Molecule n} (hp : m₁.KekulePartner m₂) (w : Work)
+    (hw : w.bonds.size = m₁.bonds.length) : writeBack m₁ w = writeBack m₂ w := by
+  refine Molecule.ext ?_ ?_
+  · simp only [writeBack, Molecule.atom, KP.atoms hp]
+  · apply List.ext_getElem
+    · simp [writeBack, length_withKinds, KP.length hp]
+    · intro k h₁ h₂
+      have hk : k < m₁.bonds.length := by simpa [writeBack, length_withKinds] using h₁
+      simp only [writeBack]
+      rw [getElem_withKinds m₁ w (by omega), getElem_withKinds m₂ w (by omega)]
+      exact KP.with_kind hp k hk _
 
 end LeanSMILES.Aromaticity
 
@@ -369,5 +422,89 @@ theorem aromaticBondsKekuleInvariant : AromaticBondsKekuleInvariant := by
   have n₁ := P.noArom.1 k
   have n₂ := (P.rel.noAromatic P.noArom).1 k
   split <;> simp [n₁, n₂]
+
+/-- **Property 2**, proved. -/
+theorem aromatizeMergesExactlyResonance : AromatizeMergesExactlyResonance := by
+  intro n m₁ m₂ a hk hp hc ha
+  have P := pipeline hk hp hc
+  set rings := (prep m₁).relevantCycles
+  set w₁ := (prep m₁).assignRadicals
+  set w₂ := (prep m₂).assignRadicals
+  have hL := P.rel.aromaticBondList P.wf rings
+  set L := w₁.aromaticBondList rings
+  have hlen := KP.length hp
+  have hsize₂ : w₂.bonds.size = m₂.bonds.length := by
+    have := P.rel.numBonds
+    simp only [Work.numBonds] at this
+    rw [← this, P.size, hlen]
+  set F₁ := (L.foldl markAromatic w₁).finalizeHs
+  set F₂ := (L.foldl markAromatic w₂).finalizeHs
+  have e₂ : m₂.aromatize = .ok (writeBack m₂ F₂) := by
+    rw [P.arom₂]
+    simp only [Work.setAromaticity, ← hL, F₂]
+  have e₁ : m₁.aromatize = .ok (writeBack m₁ F₁) := P.arom₁
+  rw [e₁] at ha
+  cases ha
+  rw [e₂]
+  have hF₁ : F₁.bonds.size = m₁.bonds.length := by rw [size_final, P.size]
+  have hF₂ : F₂.bonds.size = m₁.bonds.length := by rw [size_final, hsize₂, hlen]
+  -- bond by bond
+  have hK : ∀ k < m₁.bonds.length, ((F₁.bonds[k]! : WBond).kind = (F₂.bonds[k]! : WBond).kind ↔
+      (movedD m₁ m₂ k = true → k ∈ L)) := by
+    intro k hk'
+    rw [kind_final w₁ L k (by rw [P.size]; exact hk'),
+      kind_final w₂ L k (by rw [hsize₂, ← hlen]; exact hk')]
+    cases hD : movedD m₁ m₂ k
+    · rw [P.rel.off k hD]
+      simp
+    · obtain ⟨h₁, h₂, hne⟩ := P.rel.on k hD
+      by_cases hkL : k ∈ L <;> simp [hkL, h₁, h₂, hne]
+  have hmask : ∀ k (h : k < m₁.bonds.length),
+      ((writeBack m₁ F₁).aromaticBonds[k]'(by
+        rw [aromaticBonds_writeBack _ _ hF₁]; simpa using h) = true ↔
+        k ∈ L ∧ isSD (w₁.bonds[k]! : WBond).kind = true) := by
+    intro k hk'
+    simp only [aromaticBonds_writeBack _ _ hF₁, List.getElem_map, List.getElem_range]
+    rw [kind_final w₁ L k (by rw [P.size]; exact hk')]
+    have := P.noArom.1 k
+    split <;> simp_all
+  have hD : ∀ k (h : k < m₁.bonds.length),
+      movedD m₁ m₂ k = true ↔ m₁.bonds[k].kind ≠ (m₂.bonds[k]'(hlen ▸ h)).kind := by
+    intro k hk'
+    simp [movedD, ofMolecule_bond m₁ hk', ofMolecule_bond m₂ (hlen ▸ hk'), toWBond]
+  rw [differOnlyOn_iff _ hlen (by simp [aromaticBonds_writeBack _ _ hF₁])]
+  constructor
+  · intro heq k hk'
+    have hb := congrArg Molecule.bonds (Except.ok.inj heq)
+    simp only [writeBack] at hb
+    have hkk := congrArg (fun l ↦ (l[k]? ).map Bond.kind) hb
+    simp only [List.getElem?_eq_getElem (by simpa [length_withKinds, hlen] using hk' :
+        k < (withKinds m₂ F₂).length),
+      List.getElem?_eq_getElem (by simpa [length_withKinds] using hk' : k < (withKinds m₁ F₁).length),
+      Option.map_some, Option.some.injEq] at hkk
+    rw [getElem_withKinds _ _ (by rw [hF₂]; exact hk'),
+      getElem_withKinds _ _ (by rw [hF₁]; exact hk')] at hkk
+    by_cases hkind : m₁.bonds[k].kind = (m₂.bonds[k]'(hlen ▸ hk')).kind
+    · exact Or.inl hkind
+    · right
+      have hDk := (hD k hk').mpr hkind
+      exact (hmask k hk').mpr ⟨(hK k hk').mp hkk.symm hDk, (P.rel.on k hDk).1⟩
+  · intro H
+    have hFF : F₁ = F₂ := by
+      have hfold : L.foldl markAromatic w₁ = L.foldl markAromatic w₂ := by
+        have hm := P.rel.sim.markRel.foldl_markAromatic L
+        refine work_ext hm.atoms ?_ fun k hk' ↦ wbond_ext (hm.src k) (hm.dst k) ?_
+        · have := hm.numBonds
+          simpa [Work.numBonds] using this
+        · have hk'' : k < m₁.bonds.length := by
+            rw [size_foldl_markAromatic, P.size] at hk'
+            exact hk'
+          have := (hK k hk'').mpr fun hDk ↦ ?_
+          · simpa [F₁, F₂, bonds_finalizeHs] using this
+          · rcases H k hk'' with h | h
+            · exact absurd h ((hD k hk'').mp hDk)
+            · exact ((hmask k hk'').mp h).1
+      simp only [F₁, F₂, hfold]
+    rw [← hFF, writeBack_partner hp F₁ hF₁]
 
 end LeanSMILES.Aromaticity
