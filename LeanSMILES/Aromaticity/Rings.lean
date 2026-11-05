@@ -163,6 +163,23 @@ def components (n : Nat) (nbrs : Array (List Nat)) : List (List Nat) := Id.run d
     comps := comps ++ [comp.mergeSort (· ≤ ·)]
   return comps
 
+/-- One sweep over the bonds other than `skip`: a bond with one endpoint marked marks the other. -/
+def Work.reachSweep (m : Work) (skip : Nat) (seen : Array Bool) : Array Bool :=
+  (List.range m.numBonds).foldl (init := seen) fun seen k ↦
+    if k == skip then seen else
+    let b := m.bonds[k]!
+    if seen[b.src]! && !seen[b.dst]! then seen.set! b.dst true
+    else if seen[b.dst]! && !seen[b.src]! then seen.set! b.src true
+    else seen
+
+/-- Is bond `k` on a cycle: are its endpoints still joined without it? `numAtoms` sweeps from
+one endpoint reach everything reachable. This is RDKit's "is the bond in a ring of the ring set"
+(`numBondRings`): the relevant cycles span the cycle space, so every bond on a cycle lies on a
+relevant cycle. -/
+def Work.onCycle (m : Work) (k : Nat) : Bool :=
+  let b := m.bonds[k]!
+  ((m.reachSweep k)^[m.numAtoms] ((Array.replicate m.numAtoms false).set! b.src true))[b.dst]!
+
 /-- Bond indices around a ring given as atoms, in ring order (`RingUtils::convertToBonds`). -/
 def Work.ringBonds (m : Work) (ring : List Nat) : List Nat :=
   let n := ring.length

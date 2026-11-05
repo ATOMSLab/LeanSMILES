@@ -226,20 +226,25 @@ def cacheValences : Work :=
                          cachedImplicit := m.implicitHs i,
                          adjustHs := m.isAromaticAtom i } }
 
+/-- `adjustHs` at atom `i` (`MolOps.cpp:380-415`): an atom that is or was aromatic and would lose
+implicit hydrogens on the final graph gets them back as written ones. -/
+def adjustHsAt (i : ℕ) : Work :=
+  let a := m.atoms[i]!
+  if a.adjustHs || m.isAromaticAtom i then
+    let new := m.implicitHs i
+    if new < a.cachedImplicit then
+      m.modifyAtom i ({ · with explicitHs := a.explicitHs + (a.cachedImplicit - new) })
+    else m
+  else m
+
 /-- RDKit's final H counts (`adjustHs`, `MolOps.cpp:380-415`, then the last
 `updatePropertyCache`): implicit counts are recomputed on the final graph, and an
 atom that is or was aromatic and would lose implicit hydrogens gets them back as
 written ones (pyrrole's N–H). -/
-def finalizeHs : Work := Id.run do
-  let mut w := m
-  for i in [0:w.numAtoms] do
-    let a := w.atoms[i]!
-    if a.adjustHs || w.isAromaticAtom i then
-      let new := w.implicitHs i
-      if new < a.cachedImplicit then
-        w := w.modifyAtom i ({ · with explicitHs := a.explicitHs + (a.cachedImplicit - new) })
+def finalizeHs : Work :=
+  let w := (List.range m.numAtoms).foldl adjustHsAt m
   let totals := (List.range w.numAtoms).map fun i ↦ w.atoms[i]!.explicitHs + w.implicitHs i
-  return { w with atoms := (List.range w.numAtoms).toArray.map fun i ↦
+  { w with atoms := (List.range w.numAtoms).toArray.map fun i ↦
       { w.atoms[i]! with frozenHs := some totals[i]! } }
 
 /-- Explicit valence on the Kekulé graph: integer bond orders plus written Hs. -/
@@ -252,27 +257,29 @@ def cachedValence (i : ℕ) : ℕ := m.atoms[i]!.cachedValence.getD (m.kekuleVal
 /-- Total hydrogens as aromaticity sees them: written plus cached implicit. -/
 def cachedTotalHs (i : ℕ) : ℕ := m.atoms[i]!.explicitHs + m.atoms[i]!.cachedImplicit
 
+/-- Unpaired electrons of the bracket atom `a` with Kekulé valence `tv`: the octet (duet for H,
+He) minus outer electrons and valence, plus the charge, clipped like RDKit (`MolOps.cpp:437`). -/
+def radicalCount (a : WAtom) (tv : ℤ) : ℕ := Id.run do
+  let z := a.z
+  let no : ℤ := outerElectrons z
+  let base : ℤ := if z == 1 || z == 2 then 2 else 8
+  let mut nr : ℤ := base - no - tv + a.charge
+  if nr < 0 then
+    nr := 0
+    if 1 < (valences z).length then
+      if let some v := ((valences z).map Int.ofNat).find? (fun v ↦ 0 ≤ v - tv + a.charge) then
+        nr := v - tv + a.charge
+  let nr2 := no - tv - a.charge
+  if 0 ≤ nr2 then nr := min nr nr2
+  return nr.toNat
+
 /-- `MolOps::assignRadicals` (`MolOps.cpp:437`), for bracket atoms: unpaired electrons are the
 octet (duet for H, He) minus outer electrons and valence, plus the charge, clipped like RDKit. -/
-def assignRadicals : Work := Id.run do
-  let mut w := m
-  for i in [0:w.numAtoms] do
+def assignRadicals : Work :=
+  (List.range m.numAtoms).foldl (init := m) fun w i ↦
     let a := w.atoms[i]!
-    if !a.noImplicit || a.z == 0 then continue
-    let z := a.z
-    let no : ℤ := outerElectrons z
-    let tv : ℤ := w.kekuleValence i
-    let base : ℤ := if z == 1 || z == 2 then 2 else 8
-    let mut nr : ℤ := base - no - tv + a.charge
-    if nr < 0 then
-      nr := 0
-      if 1 < (valences z).length then
-        if let some v := ((valences z).map Int.ofNat).find? (fun v ↦ 0 ≤ v - tv + a.charge) then
-          nr := v - tv + a.charge
-    let nr2 := no - tv - a.charge
-    if 0 ≤ nr2 then nr := min nr nr2
-    w := w.modifyAtom i ({ · with radicals := nr.toNat })
-  return w
+    if !a.noImplicit || a.z == 0 then w
+    else w.modifyAtom i ({ · with radicals := radicalCount a (w.kekuleValence i) })
 
 /-! ### Cleanup (`MolOps.cpp:51-329`)
 
@@ -286,72 +293,85 @@ into their charge-separated forms, before kekulization:
 * Cl/Br/I bonded only to O, valence 3/5/7: each `=O` → `-[O-]` (perchlorate)
 -/
 
-/-- `MolOps.cpp:51-136`: nitro, N-oxide and azide-like nitrogens. -/
-def nitrogensCleanup : Work := Id.run do
-  let mut w := m
-  let mut consider : List ℕ := []
-  for i in [0:w.numAtoms] do
-    let a := w.atoms[i]!
-    if a.z != 7 || a.charge != 0 || w.explicitValence i != 5 then continue
-    consider := consider ++ [i]
-    -- the first neutral O on a double bond becomes -O⁻
-    let firstO := (w.neighbors i).find? fun (k, j) ↦
-      w.atoms[j]!.z == 8 && w.atoms[j]!.charge == 0 && w.bonds[k]!.kind == .double
-    if let some (k, j) := firstO then
-      w := ((w.setKind k .single).modifyAtom i ({ · with charge := 1 })).modifyAtom j
-        ({ · with charge := -1 })
-  for i in consider do
-    let firstN := (w.neighbors i).find? fun (k, j) ↦
-      w.atoms[j]!.z == 7 && w.atoms[j]!.charge == 0 && w.bonds[k]!.kind == .triple
-    if let some (k, j) := firstN then
-      w := ((w.setKind k .double).modifyAtom i ({ · with charge := 1 })).modifyAtom j
-        ({ · with charge := -1 })
-  return w
+/-- A neutral nitrogen of valence 5: the nitrogens `nitrogensCleanup` rewrites. -/
+def isNitroN (i : ℕ) : Bool :=
+  let a := m.atoms[i]!
+  a.z == 7 && a.charge == 0 && m.explicitValence i == 5
+
+/-- `MolOps.cpp:51-136`, first pass at nitrogen `i`: the first neutral O on a double bond
+becomes -O⁻ and `i` becomes N⁺. -/
+def nitrogenOxideAt (i : ℕ) : Work :=
+  let firstO := (m.neighbors i).find? fun (k, j) ↦
+    m.atoms[j]!.z == 8 && m.atoms[j]!.charge == 0 && m.bonds[k]!.kind == .double
+  match firstO with
+  | some (k, j) =>
+    ((m.setKind k .single).modifyAtom i ({ · with charge := 1 })).modifyAtom j
+      ({ · with charge := -1 })
+  | none => m
+
+/-- `MolOps.cpp:51-136`, second pass at nitrogen `i`: the first neutral N on a triple bond
+becomes =N⁻ and `i` becomes N⁺. -/
+def nitrogenAzideAt (i : ℕ) : Work :=
+  let firstN := (m.neighbors i).find? fun (k, j) ↦
+    m.atoms[j]!.z == 7 && m.atoms[j]!.charge == 0 && m.bonds[k]!.kind == .triple
+  match firstN with
+  | some (k, j) =>
+    ((m.setKind k .double).modifyAtom i ({ · with charge := 1 })).modifyAtom j
+      ({ · with charge := -1 })
+  | none => m
+
+/-- `MolOps.cpp:51-136`: nitro, N-oxide and azide-like nitrogens. The first pass visits the atoms
+in order and remembers the nitrogens it rewrote; the second pass revisits those. -/
+def nitrogensCleanup : Work :=
+  let first := (List.range m.numAtoms).foldl (init := (m, ([] : List ℕ))) fun s i ↦
+    if s.1.isNitroN i then (s.1.nitrogenOxideAt i, s.2 ++ [i]) else s
+  first.2.foldl nitrogenAzideAt first.1
+
+/-- The double bonds of phosphorus `i`: the last neutral O on one, and whether some C or N with
+at least two neighbours is on one (`MolOps.cpp:138-180`). -/
+def phosphorusScan (i : ℕ) : Option (ℕ × ℕ) × Bool :=
+  (m.neighbors i).foldl (init := (none, false)) fun s (k, j) ↦
+    let b := m.atoms[j]!
+    if b.z == 8 && b.charge == 0 && m.bonds[k]!.kind == .double then (some (k, j), s.2)
+    else if (b.z == 6 || b.z == 7) && 2 ≤ m.degree j && m.bonds[k]!.kind == .double then
+      (s.1, true)
+    else s
 
 /-- `MolOps.cpp:138-180`: neutral 5-valent P with three neighbours, `=O` and
 `=C`/`=N` (the C/N having ≥ 2 neighbours). The last such `=O` becomes `-O⁻`. -/
-def phosphorusCleanup (i : ℕ) : Work := Id.run do
+def phosphorusCleanup (i : ℕ) : Work :=
   let a := m.atoms[i]!
-  if a.charge != 0 || m.explicitValence i != 5 || m.degree i != 3 then return m
-  let mut dblO : Option (ℕ × ℕ) := none
-  let mut dblCN := false
-  for (k, j) in m.neighbors i do
-    let b := m.atoms[j]!
-    if b.z == 8 && b.charge == 0 && m.bonds[k]!.kind == .double then
-      dblO := some (k, j)
-    else if (b.z == 6 || b.z == 7) && 2 ≤ m.degree j && m.bonds[k]!.kind == .double then
-      dblCN := true
-  match dblO with
-  | some (k, j) =>
-    if dblCN then
-      return ((m.setKind k .single).modifyAtom j ({ · with charge := -1 })).modifyAtom i
-        ({ · with charge := 1 })
-    else return m
-  | none => return m
+  if a.charge != 0 || m.explicitValence i != 5 || m.degree i != 3 then m else
+  match m.phosphorusScan i with
+  | (some (k, j), true) =>
+    ((m.setKind k .single).modifyAtom j ({ · with charge := -1 })).modifyAtom i
+      ({ · with charge := 1 })
+  | _ => m
 
 /-- `MolOps.cpp:182-215`: neutral Cl/Br/I with valence 3, 5 or 7 bonded only to
 O. Every `=O` becomes `-O⁻`; the halogen's charge is the number changed. -/
-def halogenCleanup (i : ℕ) : Work := Id.run do
+def halogenCleanup (i : ℕ) : Work :=
   let a := m.atoms[i]!
-  if a.charge != 0 || ![3, 5, 7].contains (m.explicitValence i) then return m
+  if a.charge != 0 || ![3, 5, 7].contains (m.explicitValence i) then m else
   let nbrs := m.neighbors i
-  if !nbrs.all (fun (_, j) ↦ m.atoms[j]!.z == 8) then return m
-  let mut w := m
-  let mut fc : ℤ := 0
-  for (k, j) in nbrs do
-    if w.bonds[k]!.kind == .double then
-      w := (w.setKind k .single).modifyAtom j ({ · with charge := -1 })
-      fc := fc + 1
-  return w.modifyAtom i ({ · with charge := fc })
+  if !nbrs.all (fun (_, j) ↦ m.atoms[j]!.z == 8) then m else
+  let r := nbrs.foldl (init := (m, (0 : ℤ))) fun s (k, j) ↦
+    if s.1.bonds[k]!.kind == .double then
+      ((s.1.setKind k .single).modifyAtom j ({ · with charge := -1 }), s.2 + 1)
+    else s
+  r.1.modifyAtom i ({ · with charge := r.2 })
+
+/-- One step of `cleanUp`'s second pass: phosphorus and halogen rewrites at atom `i`. -/
+def cleanUpAt (i : ℕ) : Work :=
+  let z := m.atoms[i]!.z
+  if z == 15 then m.phosphorusCleanup i
+  else if z == 17 || z == 35 || z == 53 then m.halogenCleanup i
+  else m
 
 /-- `MolOps::cleanUp` (`MolOps.cpp:315-329`). -/
-def cleanUp : Work := Id.run do
-  let mut w := m.nitrogensCleanup
-  for i in [0:w.numAtoms] do
-    let z := w.atoms[i]!.z
-    if z == 15 then w := w.phosphorusCleanup i
-    else if z == 17 || z == 35 || z == 53 then w := w.halogenCleanup i
-  return w
+def cleanUp : Work :=
+  let w := m.nitrogensCleanup
+  (List.range w.numAtoms).foldl cleanUpAt w
 
 end Work
 

@@ -65,23 +65,24 @@ def countAtomElec (m : Work) (i : Nat) : Int := Id.run do
   return res
 
 /-- Atom across the first non-ring double/triple bond of atom `i`
-(`incidentNonCyclicMultipleBond`, `Aromaticity.cpp:234`). -/
-def exocyclicMultiple? (m : Work) (ringBonds : List Nat) (i : Nat) : Option Nat :=
-  ((m.neighbors i).find? fun (k, _) ↦ !ringBonds.contains k && isMultiple m.bonds[k]!.kind).map
-    (·.2)
+(`incidentNonCyclicMultipleBond`, `Aromaticity.cpp:234`); `inRing k` says whether bond `k` is in a
+ring. -/
+def exocyclicMultiple? (m : Work) (inRing : Nat → Bool) (i : Nat) : Option Nat :=
+  ((m.neighbors i).find? fun (k, _) ↦ isMultiple m.bonds[k]!.kind && !inRing k).map (·.2)
 
-/-- Donor type of atom `i` (`getAtomDonorTypeArom`, `Aromaticity.cpp:581`). -/
-def donorType (m : Work) (ringBonds : List Nat) (i : Nat) : Donor := Id.run do
+/-- Donor type of atom `i` (`getAtomDonorTypeArom`, `Aromaticity.cpp:581`); `inRing k` says
+whether bond `k` is in a ring. -/
+def donorType (m : Work) (inRing : Nat → Bool) (i : Nat) : Donor := Id.run do
   let a := m.atoms[i]!
   let mut nelec := m.countAtomElec i
-  let who := m.exocyclicMultiple? ringBonds i
+  let who := m.exocyclicMultiple? inRing i
   let pullsElectrons := match who with
     | some j => moreElectronegative m.atoms[j]!.z a.z
     | none => false
   if nelec < 0 then return .none
   if nelec == 0 then
     if who.isSome then return .vacant
-    if (m.bondsOf i).any fun k ↦ ringBonds.contains k && isMultiple m.bonds[k]!.kind then
+    if (m.bondsOf i).any fun k ↦ isMultiple m.bonds[k]!.kind && inRing k then
       return .one
     return .none
   if nelec == 1 then
@@ -137,14 +138,22 @@ def isConnectedSet (rids : List Nat) (nbrs : Array (List Nat)) : Bool := Id.run 
         if rids.contains v && !seen.contains v then seen := seen ++ [v]
   return seen.length == rids.length
 
-/-- Mark the aromatic rings' bonds and atoms (`setAromaticity`, default model: `aromaticityHelper`,
-`Aromaticity.cpp:839`, then `applyHuckelToFused` on each fused system). -/
-def setAromaticity (m : Work) (rings : Array (List Nat)) : Work := Id.run do
-  let ringBondSet := (rings.toList.flatMap m.ringBonds).eraseDups
-  -- 1-2. donor types (first time each atom is seen) and candidate rings
-  let mut seen := Array.replicate m.numAtoms false
-  let mut cand := Array.replicate m.numAtoms false
-  let mut donor := Array.replicate m.numAtoms Donor.none
+/-- Donor type of atom `i` when first seen, in a ring of `ringLen` atoms: `donorType`, then the
+macrocycle rule (`Aromaticity.cpp:871`): an ether-like O/S in a ring of 9 or more gives nothing. -/
+def ringDonor (m : Work) (inRing : Nat → Bool) (ringLen : Nat) (i : Nat) : Donor :=
+  let d := m.donorType inRing i
+  if d == .two && 9 ≤ ringLen && [8, 16].contains m.atoms[i]!.z &&
+      m.degree i == 2 && m.atoms[i]!.charge == 0 &&
+      !(m.bondsOf i).any (isMultiple m.bonds[·]!.kind) then .none
+  else d
+
+/-- Steps 1-2 of `setAromaticity`: each atom's donor type, from the first ring it is seen in
+(`donorOf ringLen i`), and the candidate rings, whose atoms can all be aromatic (`candOf i d`). -/
+def scanRings (numAtoms : Nat) (donorOf : Nat → Nat → Donor) (candOf : Nat → Donor → Bool)
+    (rings : Array (List Nat)) : Array Donor × Array (List Nat) := Id.run do
+  let mut seen := Array.replicate numAtoms false
+  let mut cand := Array.replicate numAtoms false
+  let mut donor := Array.replicate numAtoms Donor.none
   let mut candRings : Array (List Nat) := #[]
   for ring in rings do
     let mut allCand := true
@@ -153,26 +162,32 @@ def setAromaticity (m : Work) (rings : Array (List Nat)) : Work := Id.run do
         if !cand[i]! then allCand := false
         continue
       seen := seen.set! i true
-      let mut d := m.donorType ringBondSet i
-      -- macrocycle rule (Aromaticity.cpp:871): ether-like O/S in a ring of 9 or more
-      if d == .two && 9 ≤ ring.length && [8, 16].contains m.atoms[i]!.z &&
-          m.degree i == 2 && m.atoms[i]!.charge == 0 &&
-          !(m.bondsOf i).any (isMultiple m.bonds[·]!.kind) then
-        d := .none
+      let d := donorOf ring.length i
       donor := donor.set! i d
-      cand := cand.set! i (m.isAromaticCandidate i d)
+      cand := cand.set! i (candOf i d)
       if !cand[i]! then allCand := false
     if allCand then candRings := candRings.push ring
-  -- 3. fused systems: rings sharing exactly one bond, each at most 24 bonds
-  let nr := candRings.size
-  let rbonds := candRings.map m.ringBonds
+  return (donor, candRings)
+
+/-- Fused candidate rings: rings sharing exactly one bond, each at most 24 bonds; `rbonds` are the
+rings' bonds. -/
+def fusedNbrs (rbonds : Array (List Nat)) : Array (List Nat) := Id.run do
+  let nr := rbonds.size
   let mut nbrs : Array (List Nat) := Array.replicate nr []
   for i in [0:nr] do
     for j in [i + 1:nr] do
       if rbonds[i]!.length ≤ 24 && rbonds[j]!.length ≤ 24 &&
           (rbonds[i]!.filter rbonds[j]!.contains).length == 1 then
         nbrs := (nbrs.modify i (· ++ [j])).modify j (· ++ [i])
-  let mut out := m
+  return nbrs
+
+/-- Step 3 of `setAromaticity` (`applyHuckelToFused` on each fused system): the bonds that groups
+passing Hückel's rule make aromatic, in the order they are marked, repeats included. -/
+def huckelBonds (numAtoms : Nat) (candRings rbonds : Array (List Nat)) (donor : Array Donor) :
+    List Nat := Id.run do
+  let nr := candRings.size
+  let nbrs := fusedNbrs rbonds
+  let mut marked : Array Nat := #[]
   for fused in components nr nbrs do
     let nRings := fused.length
     let systemBonds := (fused.flatMap (rbonds[·]!)).eraseDups
@@ -185,19 +200,34 @@ def setAromaticity (m : Work) (rings : Array (List Nat)) : Work := Id.run do
         if !isConnectedSet cur nbrs then continue
         -- atoms in 1 or 2 of the chosen rings (GitHub #2895)
         let counts := cur.foldl (fun acc r ↦ candRings[r]!.foldl
-          (fun acc a ↦ acc.modify a (· + 1)) acc) (Array.replicate m.numAtoms 0)
-        let atoms := (List.range m.numAtoms).filter fun a ↦ counts[a]! == 1 || counts[a]! == 2
+          (fun acc a ↦ acc.modify a (· + 1)) acc) (Array.replicate numAtoms 0)
+        let atoms := (List.range numAtoms).filter fun a ↦ counts[a]! == 1 || counts[a]! == 2
         if huckel atoms donor then
           -- bonds that occur once in the group become aromatic
           let all := cur.flatMap (rbonds[·]!)
           for b in all.eraseDups.mergeSort (· ≤ ·) do
             if all.count b == 1 then
-              let bd := out.bonds[b]!
-              if bd.kind == .single || bd.kind == .double then
-                out := ((out.setKind b .aromatic).modifyAtom bd.src ({ · with aromatic := true }))
-                  |>.modifyAtom bd.dst ({ · with aromatic := true })
+              marked := marked.push b
               if !doneBonds.contains b then doneBonds := doneBonds ++ [b]
-  return out
+  return marked.toList
+
+/-- Make bond `b` aromatic, and its atoms, if it is single or double. -/
+def markAromatic (m : Work) (b : Nat) : Work :=
+  let bd := m.bonds[b]!
+  if bd.kind == .single || bd.kind == .double then
+    ((m.setKind b .aromatic).modifyAtom bd.src ({ · with aromatic := true })).modifyAtom bd.dst
+      ({ · with aromatic := true })
+  else m
+
+/-- The bonds the default model makes aromatic, in the order `setAromaticity` marks them. -/
+def aromaticBondList (m : Work) (rings : Array (List Nat)) : List Nat :=
+  let (donor, candRings) := scanRings m.numAtoms (m.ringDonor m.onCycle) m.isAromaticCandidate rings
+  huckelBonds m.numAtoms candRings (candRings.map m.ringBonds) donor
+
+/-- Mark the aromatic rings' bonds and atoms (`setAromaticity`, default model: `aromaticityHelper`,
+`Aromaticity.cpp:839`, then `applyHuckelToFused` on each fused system). -/
+def setAromaticity (m : Work) (rings : Array (List Nat)) : Work :=
+  (m.aromaticBondList rings).foldl markAromatic m
 
 end Work
 end LeanSMILES.Aromaticity
@@ -219,6 +249,17 @@ lemma map_edge_withKinds {n : ℕ} (m : Molecule n) (w : Work) :
   rw [← List.zipIdx_map_fst 0 m.bonds, List.map_map, withKinds, List.map_map]
   rfl
 
+/-- The molecule `m` with the bonds, aromatic flags, charges and hydrogens of its working copy
+`w`. -/
+def writeBack {n : ℕ} (m : Molecule n) (w : Work) : Molecule n :=
+  let atoms := Vector.ofFn fun i : Fin n ↦
+    let a := m.atom i
+    let wa := w.atoms[i.val]!
+    let total := wa.frozenHs.getD (wa.explicitHs + w.implicitHs i.val)
+    { a with aromatic := w.isAromaticAtom i.val, charge := wa.charge,
+             implicitH := total - a.explicitH.getD 0 }
+  { atoms, bonds := withKinds m w, nodup := map_edge_withKinds m w ▸ m.nodup }
+
 end Aromaticity
 
 open Aromaticity in
@@ -232,14 +273,7 @@ def Molecule.aromatize {n : ℕ} (m : Molecule n) : Except String (Molecule n) :
   let w := (Work.ofMolecule m).freezeHs.cleanUp.cacheValences
   let rings := w.relevantCycles
   let w ← w.kekulize rings
-  let w := (w.assignRadicals.setAromaticity rings).finalizeHs
-  let atoms := Vector.ofFn fun i : Fin n ↦
-    let a := m.atom i
-    let wa := w.atoms[i.val]!
-    let total := wa.frozenHs.getD (wa.explicitHs + w.implicitHs i.val)
-    { a with aromatic := w.isAromaticAtom i.val, charge := wa.charge,
-             implicitH := total - a.explicitH.getD 0 }
-  return { atoms, bonds := withKinds m w, nodup := map_edge_withKinds m w ▸ m.nodup }
+  return writeBack m (w.assignRadicals.setAromaticity rings).finalizeHs
 
 /-- `Molecule.aromatize` on a bundled molecule. -/
 def Mol.aromatize (M : Mol) : Except String Mol := do
