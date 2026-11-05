@@ -603,7 +603,7 @@ export function serializeDrawnGraph(drawnAtoms, drawnBonds) {
 }
 
 // V2000 Molfile serializer using drawn 2D coordinates (fallback when Lean 4 molBlock is not active)
-export function graphToMolfileV2000(drawnAtoms, drawnBonds, title = 'LeanSMILES-ChemDraw') {
+export function graphToMolfileV2000(drawnAtoms, drawnBonds, title = 'LeanSMILES-LeanDraw') {
   const { atoms, bonds } = expandLabelGroups(drawnAtoms, drawnBonds)
   const indexById = new Map(atoms.map((a, i) => [a.id, i + 1]))
   const padNum = (v, w) => String(v).padStart(w, ' ')

@@ -106,7 +106,7 @@ function formatAtomDisplay(atom, state, degree, { showImplicitH, showCarbons }) 
   }
 }
 
-export default function ChemCanvas({
+export default function LeanCanvas({
   atoms,
   bonds,
   verification,
@@ -195,11 +195,15 @@ export default function ChemCanvas({
   }, [atoms, viewSize.w, viewSize.h])
 
   useEffect(() => {
-    if (editingAtom && labelInputRef.current) {
-      labelInputRef.current.focus()
-      labelInputRef.current.select()
-    }
-  }, [editingAtom?.id])
+    if (!editingAtom) return
+    const raf = requestAnimationFrame(() => {
+      if (labelInputRef.current) {
+        labelInputRef.current.focus()
+        labelInputRef.current.select()
+      }
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [editingAtom?.id, editingAtom?.x, editingAtom?.y])
 
   // Spacebar pan mode + keyboard shortcuts while hovering an atom or with selection active
   useEffect(() => {
@@ -358,14 +362,33 @@ export default function ChemCanvas({
     return visited
   }
 
-  const commitInlineLabel = () => {
+  const commitInlineLabel = (overrideValue) => {
     if (!editingAtom) return
-    const raw = editingAtom.value.trim()
+    const target = editingAtom
+    const raw = (typeof overrideValue === 'string' ? overrideValue : target.value).trim()
     setEditingAtom(null)
     if (!raw) return
     const norm = normalizeAtomLabel(raw)
+    if (target.isNew) {
+      const { nextAtomNum } = nextIds(atoms, bonds)
+      const newId = `a${nextAtomNum}`
+      onCommit(
+        [
+          ...atoms,
+          {
+            id: newId,
+            element: norm,
+            formalCharge: 0,
+            x: target.x,
+            y: target.y,
+          },
+        ],
+        bonds
+      )
+      return
+    }
     onCommit(
-      atoms.map((a) => (a.id === editingAtom.id ? { ...a, element: norm } : a)),
+      atoms.map((a) => (a.id === target.id ? { ...a, element: norm } : a)),
       bonds
     )
   }
@@ -495,8 +518,10 @@ export default function ChemCanvas({
     }
 
     if (activeTool === 'text') {
+      e.preventDefault()
       setEditingAtom({
         id: atom.id,
+        isNew: false,
         x: atom.x,
         y: atom.y,
         value: atom.element || 'C',
@@ -694,20 +719,14 @@ export default function ChemCanvas({
     }
 
     if (activeTool === 'text') {
-      const { nextAtomNum } = nextIds(atoms, bonds)
-      const newId = `a${nextAtomNum}`
-      const nextAtoms = [
-        ...atoms,
-        {
-          id: newId,
-          element: 'C',
-          formalCharge: 0,
-          x: pt.x,
-          y: pt.y,
-        },
-      ]
-      onCommit(nextAtoms, bonds)
-      setEditingAtom({ id: newId, x: pt.x, y: pt.y, value: '' })
+      e.preventDefault()
+      setEditingAtom({
+        id: 'new',
+        isNew: true,
+        x: pt.x,
+        y: pt.y,
+        value: '',
+      })
       return
     }
 
@@ -1263,7 +1282,7 @@ export default function ChemCanvas({
         onPointerLeave={() => setCursorPt(null)}
       >
         <defs>
-          <pattern id="cd-page-grid" width="28" height="28" patternUnits="userSpaceOnUse">
+          <pattern id="ld-page-grid" width="28" height="28" patternUnits="userSpaceOnUse">
             <path
               d="M 28 0 L 0 0 0 28"
               fill="none"
@@ -1272,7 +1291,7 @@ export default function ChemCanvas({
             />
           </pattern>
           <marker
-            id="cd-dative-arrow"
+            id="ld-dative-arrow"
             viewBox="0 0 10 10"
             refX="8"
             refY="5"
@@ -1285,9 +1304,9 @@ export default function ChemCanvas({
         </defs>
 
         {/* Page Grid Background */}
-        <rect width={viewSize.w} height={viewSize.h} fill="url(#cd-page-grid)" />
+        <rect width={viewSize.w} height={viewSize.h} fill="url(#ld-page-grid)" />
 
-        {/* ChemDraft Crosshair Coordinate Axes with Tick Marks */}
+        {/* LeanDraw Crosshair Coordinate Axes with Tick Marks */}
         {showCrosshairs && (
           <g className="pointer-events-none" opacity="0.65">
             <line x1={0} y1={axisY} x2={viewSize.w} y2={axisY} stroke="#334155" strokeWidth="1" />
@@ -1331,7 +1350,7 @@ export default function ChemCanvas({
 
         {/* World Pan & Zoom Group */}
         <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}>
-          {/* ChemDraft Green Selection Blob */}
+          {/* LeanDraw Green Selection Blob */}
           {selectedAtomIds.size > 0 && (
             <g className="pointer-events-none" opacity="0.24" color="#1d7f68">
               {bonds
@@ -1752,7 +1771,7 @@ export default function ChemCanvas({
                     stroke={stroke}
                     strokeWidth={sw}
                     strokeDasharray="4 3"
-                    markerEnd="url(#cd-dative-arrow)"
+                    markerEnd="url(#ld-dative-arrow)"
                   />
                 ) : (
                   <line
@@ -1900,7 +1919,7 @@ export default function ChemCanvas({
             />
           )}
 
-          {/* Render Atoms & ChemDraft Validation Badges */}
+          {/* Render Atoms & LeanDraw Validation Badges */}
           {atoms.map((atom) => {
             const state = verification?.atomStateById?.get(atom.id)
             const degree = degreeById.get(atom.id) || 0
@@ -2142,31 +2161,75 @@ export default function ChemCanvas({
         </button>
       </div>
 
+      {/* Active Text Tool Banner */}
+      {activeTool === 'text' && !editingAtom && (
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 pointer-events-none px-3 py-1 rounded-full bg-slate-900/88 text-white text-[11px] font-medium shadow-sm">
+          Click any atom or empty space to type a formula (e.g. OH, NH2, CO2H, CN)
+        </div>
+      )}
+
       {/* Inline Atom / Functional Group Label Editor */}
       {editingAtom && svgRef.current && (() => {
         const rect = svgRef.current.getBoundingClientRect()
         const screenX = editingAtom.x * zoom + pan.x
         const screenY = editingAtom.y * zoom + pan.y
-        const leftPx = (screenX / viewSize.w) * rect.width
-        const topPx = (screenY / viewSize.h) * rect.height
+        const rawLeft = (screenX / viewSize.w) * rect.width
+        const rawTop = (screenY / viewSize.h) * rect.height
+        const leftPx = Math.max(110, Math.min(rect.width - 110, rawLeft))
+        const topPx = Math.max(48, Math.min(rect.height - 64, rawTop))
         return (
           <div
             style={{ left: `${leftPx}px`, top: `${topPx}px` }}
-            className="absolute -translate-x-1/2 -translate-y-1/2 z-30"
+            onPointerDown={(e) => e.stopPropagation()}
+            className="absolute -translate-x-1/2 -translate-y-1/2 z-30 bg-white border-2 border-[#1d7f68] rounded-xl shadow-lg p-2 w-52 space-y-1.5"
           >
-            <input
-              ref={labelInputRef}
-              type="text"
-              value={editingAtom.value}
-              onChange={(e) => setEditingAtom({ ...editingAtom, value: e.target.value })}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') commitInlineLabel()
-                if (e.key === 'Escape') setEditingAtom(null)
-              }}
-              onBlur={commitInlineLabel}
-              placeholder="Atom / group (NH2, OH...)"
-              className="w-28 px-2 py-0.5 text-xs font-mono font-semibold text-center bg-white border-2 border-[#1d7f68] rounded shadow-md focus:outline-none"
-            />
+            <div className="flex items-center gap-1">
+              <input
+                ref={labelInputRef}
+                type="text"
+                value={editingAtom.value}
+                onChange={(e) => setEditingAtom({ ...editingAtom, value: e.target.value })}
+                onKeyDown={(e) => {
+                  e.stopPropagation()
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    commitInlineLabel()
+                  }
+                  if (e.key === 'Escape') {
+                    e.preventDefault()
+                    setEditingAtom(null)
+                  }
+                }}
+                onBlur={() => commitInlineLabel()}
+                placeholder="Formula (OH, CO2H...)"
+                className="flex-1 min-w-0 px-2 py-1 text-xs font-mono font-semibold bg-slate-50 border border-slate-300 rounded-md focus:border-[#1d7f68] focus:bg-white focus:outline-none"
+              />
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  commitInlineLabel()
+                }}
+                className="px-2 py-1 rounded-md bg-[#1d7f68] hover:bg-[#156350] text-white text-[11px] font-semibold cursor-pointer shrink-0"
+              >
+                OK
+              </button>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {['OH', 'NH2', 'CO2H', 'NO2', 'OMe', 'CF3', 'CN', 'Ph'].map((chip) => (
+                <button
+                  key={chip}
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    commitInlineLabel(chip)
+                  }}
+                  className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-teal-50 hover:text-teal-800 border border-slate-200 text-[10px] font-mono font-semibold text-slate-700 cursor-pointer"
+                >
+                  {chip}
+                </button>
+              ))}
+            </div>
           </div>
         )
       })()}
