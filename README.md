@@ -326,6 +326,17 @@ both share are highlighted and the Tanimoto similarity is printed
 `lake exe depict --fingerprint "<smiles>" ["<smiles2>"] out.svg` writes the same
 picture to a file.
 
+`#drawbit` draws the molecule with the atoms and bonds behind one bit
+highlighted: the centre atom of each environment circled, the whole
+environment shaded. The environments are the ones RDKit reports for the bit
+(`bitInfo` and `FindAtomEnvironmentOfRadiusN`).
+
+```lean
+#drawbit "Cn1cnc2c1c(=O)n(C)c(=O)n2C", 1024    -- caffeine: a ring N, radius 2
+```
+
+`lake exe depict --bit "<smiles>" <bit> out.svg` writes it to a file.
+
 The layout is deterministic: classical multidimensional scaling on the graph
 distances (chains zigzag at 120°, rings become regular polygons), refined by
 stress majorisation; a component with three or more rings that cannot lie flat

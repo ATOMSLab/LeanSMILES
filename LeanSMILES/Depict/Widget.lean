@@ -34,6 +34,12 @@ grid and a barcode; with a second SMILES, the bits both share are highlighted:
 #fingerprint "CC(=O)Oc1ccccc1C(=O)O", "Cn1cnc2c1c(=O)n(C)c(=O)n2C"
 ```
 
+`#drawbit` draws the molecule with one bit's atom environments highlighted:
+
+```lean
+#drawbit "Cn1cnc2c1c(=O)n(C)c(=O)n2C", 1024
+```
+
 ProofWidgets comes with Mathlib, so nothing new is required; the picture
 appears when the cursor is on the command.
 -/
@@ -71,6 +77,13 @@ instance : Drawable String := ⟨Mol.ofSmiles!⟩
 meta def html {α : Type} [Drawable α] (x : α) : Html :=
   ((Drawable.toMol x).svg).toHtml
 
+/-- The Infoview picture of a SMILES string with Morgan bit `bit`'s environments
+highlighted. -/
+meta def bitHtml (s : String) (bit : ℕ) : Html :=
+  match smilesBitSvg s bit with
+  | .ok x => x.toHtml
+  | .error e => .text e
+
 /-- The Infoview picture of a SMILES string's Morgan fingerprint, compared with
 `other` if given. -/
 meta def fingerprintHtml (s : String) (other : Option String := none) : Html :=
@@ -91,6 +104,11 @@ SMILES string `s` in the Infoview, as a grid and a barcode.
 `#fingerprint s, t` also highlights the bits `t` shares and gives the Tanimoto
 similarity. -/
 syntax "#fingerprint " term (", " term)? : command
+
+/-- `#drawbit s, b`: draw the SMILES string `s` with the atoms and bonds that set
+Morgan bit `b` (radius 2, 2048 bits) highlighted: centre atoms circled, the
+rest of each environment shaded. -/
+macro "#drawbit " s:term ", " b:term : command => `(#html LeanSMILES.Depict.bitHtml $s $b)
 
 macro_rules
   | `(#fingerprint $s) => `(#html LeanSMILES.Depict.fingerprintHtml $s)

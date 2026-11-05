@@ -158,4 +158,56 @@ def smilesFingerprintSvg (s : String) (other : Option String := none) (radius : 
   | some t => return fingerprintSvg bits s (some (← bitsOf t, t)) fpSize
   | none => return fingerprintSvg bits s none fpSize
 
+/-! ### One bit on the molecule -/
+
+/-- The ring around the centre atom of a highlighted Morgan environment. -/
+def bitCentre : String := "#b07800"
+/-- The background of a highlighted environment: pale, so that element colours
+(red O, blue N) stay readable on it. -/
+def bitEnv : String := "#fbe3a6"
+
+/-- The bonds within `r` bonds of atom `a`, as a bitmask over bond indices: the
+bond set Morgan's `growEnv` builds for an environment of radius `r`. -/
+def envMask {n : ℕ} (adj : Vector (List (ℕ × Fin n)) n) : ℕ → Fin n → ℕ
+  | 0, _ => 0
+  | r + 1, a => adj[a].foldl (fun env (k, o) ↦ env ||| (1 <<< k) ||| envMask adj r o)
+      (envMask adj r a)
+
+/-- The environments that set bit `bit` of the folded fingerprint, as (centre
+atom, radius, bond indices). -/
+def bitEnvironments {n : ℕ} (m : Molecule n) (bit : ℕ) (radius : ℕ := 2) (fpSize : ℕ := 2048) :
+    List (ℕ × ℕ × List ℕ) :=
+  let adj := m.adjacency
+  ((m.morganEnvironments radius).filter fun (id, _, _) ↦ id.toNat % fpSize == bit).map
+    fun (_, a, r) ↦
+      let mask := envMask adj r a
+      (a.val, r, (List.range m.bonds.length).filter fun k ↦ mask &&& (1 <<< k) != 0)
+
+/-- The highlight of some environments: every bond and atom in `bitEnv`, each
+centre atom also circled in `bitCentre`. -/
+def bitHighlight {n : ℕ} (m : Molecule n) (envs : List (ℕ × ℕ × List ℕ)) : Highlight :=
+  let bonds := (envs.flatMap (·.2.2)).eraseDups
+  let ends := bonds.flatMap fun k ↦ match m.bonds[k]? with
+    | some b => [b.src.val, b.dst.val]
+    | none => []
+  let centres := (envs.map (·.1)).eraseDups
+  { bonds := bonds.map (·, bitEnv)
+    atoms := (ends ++ centres).eraseDups.map (·, bitEnv)
+    rings := centres.map (·, bitCentre) }
+
+/-- A SMILES string drawn as written, with the environments that set Morgan bit
+`bit` highlighted. The environments are computed on `SMILES.parseAromatized`
+(RDKit's bits); `aromatize` keeps atom and bond order, so they apply to the
+drawing unchanged. Fails if the bit is not on. -/
+def smilesBitSvg (s : String) (bit : ℕ) (radius : ℕ := 2) (fpSize : ℕ := 2048) :
+    Except String Xml := do
+  let M0 ← (SMILES.parse s).mapError toString
+  let M ← M0.aromatize
+  let envs := bitEnvironments M.mol bit radius fpSize
+  if envs.isEmpty then throw s!"bit {bit} is not on in {s}"
+  let radii := (envs.map (·.2.1)).eraseDups.map toString
+  let times := if envs.length == 1 then "" else s!", set {envs.length} times"
+  return svgOf (Graph.ofMolecule M0.mol) 40 (bitHighlight M.mol envs)
+    s!"Morgan bit {bit} (radius {", ".intercalate radii}{times})"
+
 end LeanSMILES.Depict
