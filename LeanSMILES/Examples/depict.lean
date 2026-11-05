@@ -59,6 +59,16 @@ set_option linter.hashCommand false
 #draw "[13CH3]C(=O)O[2H]"                    -- isotope labels, D for ²H
 #draw "O=[N+]([O-])c1ccccc1"                 -- nitrobenzene
 
+/-! ### Morgan fingerprints: grid and barcode, shared bits highlighted -/
+
+#fingerprint "COc1cc2ncnc(Nc3ccc(F)c(Cl)c3)c2cc1OCCCN1CCOCC1"   -- gefitinib: 60 bits on
+#fingerprint "CC(=O)Oc1ccccc1C(=O)O", "COc1cc2ncnc(Nc3ccc(F)c(Cl)c3)c2cc1OCCCN1CCOCC1"
+
+/-! ### One Morgan bit on the molecule: centre atoms circled, the rest of each environment shaded -/
+
+#drawbit "Cn1cnc2c1c(=O)n(C)c(=O)n2C", 1024   -- caffeine: a ring N and everything within 2 bonds
+#drawbit "Cn1cnc2c1c(=O)n(C)c(=O)n2C", 314    -- caffeine: C=O, set by both carbonyls
+
 /-! ### The text forms -/
 
 #eval (Mol.ofSmiles! "C[C@H](N)C(=O)O").coordinates
