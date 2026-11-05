@@ -77,6 +77,11 @@ root = "Pipelines.Tests.Logistic"
 name = "aromaticity-test"
 root = "LeanSMILES.Tests.Aromaticity"
 
+# The resonance specification (LeanSMILES.Aromaticity.Resonance) checked on the data
+[[lean_exe]]
+name = "resonance-test"
+root = "LeanSMILES.Tests.Resonance"
+
 # Pipelines: ridge regression of Delaney log solubility on Morgan fingerprints vs scikit-learn
 # (tools/sklearn_delaney.py); `--svg PATH` also writes the parity plot
 [[lean_exe]]

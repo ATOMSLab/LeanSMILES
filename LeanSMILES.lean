@@ -24,6 +24,7 @@ public import LeanSMILES.Fingerprint.MorganInvariance
 public import LeanSMILES.Fingerprint.MorganRadius3
 public import LeanSMILES.Fingerprint.Tanimoto
 public import LeanSMILES.Aromaticity.Perceive
+public import LeanSMILES.Aromaticity.Resonance
 public import LeanSMILES.Depict.Graph
 public import LeanSMILES.Depict.Layout
 public import LeanSMILES.Depict.Svg

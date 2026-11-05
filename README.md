@@ -283,6 +283,21 @@ and removal of `[H]` atoms are not included yet.
 lake exe aromaticity-test   # bond types, hydrogens and Morgan bits = RDKit's on every oracle file
 ```
 
+Canonical SMILES is invariant under renumbering by theorem, but not under
+redrawing the double bonds: o-xylene's two Kekulé structures are different graphs.
+`LeanSMILES/Aromaticity/Resonance.lean` states what `aromatize` must do to close
+that gap. Kekulé partners (same skeleton, double bonds moved around alternating
+cycles) must get the same aromatic bonds, must aromatize to one molecule exactly
+when they differ only on aromatic bonds, and aromatizing must commute with
+renumbering. From those three properties it proves that every renumbering and
+resonance move leaves the canonical SMILES of the aromatized molecule unchanged
+(`aromaticCanonicalSmiles_eq_of_eqvGen`). The properties are not proved yet. The
+test enumerates every Kekulé partner of each molecule and checks them:
+
+```bash
+lake exe resonance-test     # properties 1–3 on 2399 Kekulé structures and 25720 pairs of partners
+```
+
 On every oracle file, as written and in Kekulé form (Delaney, 56 hand-picked
 aromaticity cases, isotope cases, hydrogen cases), every molecule without `[H]`
 atoms gets RDKit's bond types, hydrogen counts and Morgan fingerprint:
