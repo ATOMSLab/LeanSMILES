@@ -40,10 +40,13 @@ namespace LeanLearn.Classification
 /-- A scalar with `exp` and `log`, which the logistic function needs and
 `ScalarLike` does not provide. -/
 class ExpLog (K : Type) where
+  /-- The exponential `e^x`. -/
   exp : K → K
+  /-- The natural logarithm `log x`. -/
   log : K → K
 
 instance : ExpLog Float := ⟨Float.exp, Float.log⟩
+
 noncomputable instance : ExpLog ℝ := ⟨Real.exp, Real.log⟩
 
 /-- A sample with 0/1 features, stored as the indices of its 1s (e.g. Morgan on-bits). -/
@@ -54,20 +57,28 @@ variable {K : Type} [ScalarLike K] [ExpLog K]
 /-- The logistic function σ(z) = 1 / (1 + e^(−z)), written so `exp` never overflows. -/
 def sigmoid (z : K) : K :=
   if 0 ≤ z then 1 / (1 + ExpLog.exp (-z))
-  else let e := ExpLog.exp z; e / (1 + e)
+  else
+    let e := ExpLog.exp z
+    e / (1 + e)
 
-/-- log(1 + e^t), written so `exp` never overflows. -/
+/-- The softplus log(1 + e^t), the per-sample loss in `objective`, written so `exp` never
+overflows. -/
 def softplus (t : K) : K :=
   if 0 < t then t + ExpLog.log (1 + ExpLog.exp (-t))
   else ExpLog.log (1 + ExpLog.exp t)
 
+/-- A fitted logistic regression model on sparse `0/1` features: a weight per feature bit and
+the intercept. `LogisticModel.proba` and `LogisticModel.predict` evaluate it on a sample given
+as its list of on-bits. -/
 structure LogisticModel (K : Type) where
+  /-- Weight per feature bit, indexed by bit position; a bit past the end contributes nothing. -/
   weights : Array K
+  /-- The intercept `b`, which the L2 penalty does not touch. -/
   bias : K
 
 namespace LogisticModel
 
-/-- The score w · x + b (the "decision function"). -/
+/-- The score w · x + b (scikit-learn's `decision_function`). -/
 def score (m : LogisticModel K) (x : SparseBits) : K :=
   x.foldl (fun s j ↦ s + m.weights.getD j 0) m.bias
 
@@ -79,14 +90,18 @@ def predict (m : LogisticModel K) (x : SparseBits) : Bool := 0 < m.score x
 
 end LogisticModel
 
+/-- Hyperparameters for `fitLogistic`: the regularization strength and when the solver stops.
+The default `C = 1` is scikit-learn's; `maxIter` and `tol` belong to the solver here. -/
 structure LogisticConfig (K : Type) [ScalarLike K] where
   /-- Inverse regularization strength, as scikit-learn's `C`. -/
   C : K := 1
+  /-- Upper bound on gradient steps; `fitLogistic` reports how many it used. -/
   maxIter : ℕ := 20000
   /-- Stop when every gradient component is below this. -/
   tol : K := 0.000000001
 
-/-- The training objective ½ ‖w‖² + C Σᵢ log(1 + e^(−ỹᵢ scoreᵢ)). -/
+/-- The training objective ½ ‖w‖² + C Σᵢ log(1 + e^(−ỹᵢ scoreᵢ)) that `fitLogistic` minimizes;
+the solver itself only needs `gradient`. -/
 def objective (C : K) (data : Array (SparseBits × Bool)) (m : LogisticModel K) : K :=
   let reg := m.weights.foldl (fun s w ↦ s + w * w) 0 / 2
   reg + C * data.foldl (fun s (x, y) ↦

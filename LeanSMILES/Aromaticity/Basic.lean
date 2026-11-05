@@ -49,7 +49,7 @@ def valences (z : ℕ) : List ℕ := ((elementTable.find? (·.1 == z)).map (·.2
 /-- RDKit's default valence (the first allowed one), `0` if none. -/
 def defaultValence (z : ℕ) : ℕ := (valences z).head?.getD 0
 
-/-- Outer-shell electrons (5 for N, 6 for O). -/
+/-- Outer-shell electrons (5 for N, 6 for O); `0` for elements not in the table. -/
 def outerElectrons (z : ℕ) : ℕ := ((elementTable.find? (·.1 == z)).map (·.2.2)).getD 0
 
 /-- RDKit's `isEarlyAtom` (`Atom.cpp:58`), on the table above: elements left of
@@ -59,7 +59,7 @@ def isEarly (z : ℕ) : Bool := [4, 5, 13, 31, 32, 49, 50, 51].contains z
 /-- RDKit's `moreElectroNegative` (`PeriodicTable.h:304`): more outer electrons,
 or the same number and a smaller atomic number. -/
 def moreElectronegative (z₁ z₂ : ℕ) : Bool :=
-  outerElectrons z₁ > outerElectrons z₂ ||
+  outerElectrons z₂ < outerElectrons z₁ ||
     (outerElectrons z₁ == outerElectrons z₂ && z₁ < z₂)
 
 /-- Bond order in half-units, so aromatic (3/2) stays an integer: RDKit's
@@ -71,7 +71,7 @@ def halfOrder : BondKind → ℕ
   | .quadruple => 8
   | .aromatic => 3
 
-/-- Double or triple. -/
+/-- Double or triple: what aromaticity perception counts as a multiple bond (aromatic is not). -/
 def isMultiple (k : BondKind) : Bool := k == .double || k == .triple
 
 /-! ### The working copy -/
@@ -80,7 +80,9 @@ def isMultiple (k : BondKind) : Bool := k == .double || k == .triple
 structure WAtom where
   /-- Atomic number (`0` for `*`). -/
   z : ℕ
+  /-- Aromatic flag: lowercase in the input, then whatever perception decides. -/
   aromatic : Bool
+  /-- Formal charge as written; `cleanUp` may move it. -/
   charge : ℤ
   /-- Hydrogens written in brackets, plus any `adjustHs` adds back. -/
   explicitHs : ℕ
@@ -100,14 +102,25 @@ structure WAtom where
 
 /-- A bond of the working copy: endpoints as atom numbers, and its kind. -/
 structure WBond where
+  /-- The atom written first. -/
   src : ℕ
+  /-- The atom written second. -/
   dst : ℕ
+  /-- Its kind; kekulization and perception rewrite this. -/
   kind : BondKind
   deriving Inhabited
 
-/-- A molecule's working copy. -/
+/-- Is atom `i` an endpoint of `b`? -/
+def WBond.touches (b : WBond) (i : ℕ) : Bool := b.src == i || b.dst == i
+
+/-- The endpoint of `b` other than `i` (`src` if `i` is neither). -/
+def WBond.other (b : WBond) (i : ℕ) : ℕ := if b.src == i then b.dst else b.src
+
+/-- A molecule's working copy: atoms and bonds by number, carrying RDKit's bookkeeping. -/
 structure Work where
+  /-- Atom `i` is `Fin` atom `i` of the source molecule. -/
   atoms : Array WAtom
+  /-- Bond `k` is the `k`-th bond of `Molecule.bonds`. -/
   bonds : Array WBond
   deriving Inhabited
 
@@ -124,18 +137,19 @@ namespace Work
 
 variable (m : Work)
 
+/-- Number of atoms; atom numbers run from `0` to `numAtoms - 1`. -/
 def numAtoms : ℕ := m.atoms.size
+
+/-- Number of bonds; bond numbers run from `0` to `numBonds - 1`. -/
 def numBonds : ℕ := m.bonds.size
 
-def WBond.touches (b : WBond) (i : ℕ) : Bool := b.src == i || b.dst == i
-def WBond.other (b : WBond) (i : ℕ) : ℕ := if b.src == i then b.dst else b.src
-
 /-- Bond numbers at atom `i`, in bond order. -/
-def bondsOf (i : ℕ) : List ℕ := (List.range m.numBonds).filter fun k ↦ WBond.touches m.bonds[k]! i
+def bondsOf (i : ℕ) : List ℕ := (List.range m.numBonds).filter fun k ↦ m.bonds[k]!.touches i
 
 /-- `(bond, neighbor)` pairs of atom `i`, in bond order (RDKit's adjacency order). -/
-def neighbors (i : ℕ) : List (ℕ × ℕ) := (m.bondsOf i).map fun k ↦ (k, WBond.other m.bonds[k]! i)
+def neighbors (i : ℕ) : List (ℕ × ℕ) := (m.bondsOf i).map fun k ↦ (k, m.bonds[k]!.other i)
 
+/-- RDKit's `getDegree`: bonds at atom `i`, hydrogen counts not included. -/
 def degree (i : ℕ) : ℕ := (m.bondsOf i).length
 
 /-- The bond joining `i` and `j`, if any. -/
@@ -144,9 +158,11 @@ def bondBetween? (i j : ℕ) : Option ℕ :=
     let b := m.bonds[k]!
     (b.src == i && b.dst == j) || (b.src == j && b.dst == i)
 
+/-- Bond `k` with its kind replaced by `o`; an out-of-range `k` changes nothing. -/
 def setKind (k : ℕ) (o : BondKind) : Work :=
   { m with bonds := m.bonds.modify k fun b ↦ { b with kind := o } }
 
+/-- Atom `i` updated by `f`; an out-of-range `i` changes nothing. -/
 def modifyAtom (i : ℕ) (f : WAtom → WAtom) : Work := { m with atoms := m.atoms.modify i f }
 
 /-! ### Valence and hydrogens (`Atom.cpp:350-613`) -/
@@ -158,9 +174,10 @@ def isAromaticAtom (i : ℕ) : Bool :=
 /-- Charged atoms take the valences of the isoelectronic element (N⁺ like C). -/
 def effectiveZ (a : WAtom) : ℕ := (a.z - a.charge).toNat
 
-/-- P, S (and As, Se) with a negative charge keep their own valence list. -/
+/-- P, S (and As, Se) with a negative charge that takes the effective atomic number `eff` to
+the halogen or beyond keep their own valence list instead of the isoelectronic element's. -/
 def canBeHypervalent (a : WAtom) (eff : ℕ) : Bool :=
-  (eff > 16 && (a.z == 15 || a.z == 16)) || (eff > 34 && (a.z == 33 || a.z == 34))
+  (16 < eff && (a.z == 15 || a.z == 16)) || (34 < eff && (a.z == 33 || a.z == 34))
 
 /-- RDKit's explicit valence: bond orders plus written hydrogens, with the
 aromatic snap to an allowed valence and "round x.5 up" (`Atom.cpp:350-415`). -/
@@ -171,7 +188,7 @@ def explicitValence (i : ℕ) : ℕ := Id.run do
     accum := accum + halfOrder m.bonds[k]!.kind
   let valens := valences (effectiveZ a)
   if let some dv := valens.head? then
-    if accum > 2 * dv && m.isAromaticAtom i then
+    if 2 * dv < accum && m.isAromaticAtom i then
       let pval := (valens.filter (2 * · ≤ accum)).getLast?.getD dv
       if accum ≤ 2 * pval + 3 then accum := 2 * pval
   return (accum + 1) / 2
@@ -235,7 +252,8 @@ def cachedValence (i : ℕ) : ℕ := m.atoms[i]!.cachedValence.getD (m.kekuleVal
 /-- Total hydrogens as aromaticity sees them: written plus cached implicit. -/
 def cachedTotalHs (i : ℕ) : ℕ := m.atoms[i]!.explicitHs + m.atoms[i]!.cachedImplicit
 
-/-- `MolOps::assignRadicals` (`MolOps.cpp:437`), for bracket atoms. -/
+/-- `MolOps::assignRadicals` (`MolOps.cpp:437`), for bracket atoms: unpaired electrons are the
+octet (duet for H, He) minus outer electrons and valence, plus the charge, clipped like RDKit. -/
 def assignRadicals : Work := Id.run do
   let mut w := m
   for i in [0:w.numAtoms] do
@@ -248,12 +266,91 @@ def assignRadicals : Work := Id.run do
     let mut nr : ℤ := base - no - tv + a.charge
     if nr < 0 then
       nr := 0
-      if (valences z).length > 1 then
-        if let some v := ((valences z).map Int.ofNat).find? (fun v ↦ v - tv + a.charge ≥ 0) then
+      if 1 < (valences z).length then
+        if let some v := ((valences z).map Int.ofNat).find? (fun v ↦ 0 ≤ v - tv + a.charge) then
           nr := v - tv + a.charge
     let nr2 := no - tv - a.charge
-    if nr2 ≥ 0 then nr := min nr nr2
+    if 0 ≤ nr2 then nr := min nr nr2
     w := w.modifyAtom i ({ · with radicals := nr.toNat })
+  return w
+
+/-! ### Cleanup (`MolOps.cpp:51-329`)
+
+RDKit's `MolOps::cleanUp` rewrites a few "hypervalent" ways of writing groups
+into their charge-separated forms, before kekulization:
+
+* nitro and N-oxide: neutral 5-valent N with `=O`  →  `[N+]-[O-]`
+  (`CN(=O)=O` → `C[N+](=O)[O-]`, `n1=O` → `[n+]1[O-]`)
+* azide-like: such an N with `#N`  →  `[N+]=[N-]`
+* P with `=O` and `=C`/`=N`  →  `[P+]-[O-]`
+* Cl/Br/I bonded only to O, valence 3/5/7: each `=O` → `-[O-]` (perchlorate)
+-/
+
+/-- `MolOps.cpp:51-136`: nitro, N-oxide and azide-like nitrogens. -/
+def nitrogensCleanup : Work := Id.run do
+  let mut w := m
+  let mut consider : List ℕ := []
+  for i in [0:w.numAtoms] do
+    let a := w.atoms[i]!
+    if a.z != 7 || a.charge != 0 || w.explicitValence i != 5 then continue
+    consider := consider ++ [i]
+    -- the first neutral O on a double bond becomes -O⁻
+    let firstO := (w.neighbors i).find? fun (k, j) ↦
+      w.atoms[j]!.z == 8 && w.atoms[j]!.charge == 0 && w.bonds[k]!.kind == .double
+    if let some (k, j) := firstO then
+      w := ((w.setKind k .single).modifyAtom i ({ · with charge := 1 })).modifyAtom j
+        ({ · with charge := -1 })
+  for i in consider do
+    let firstN := (w.neighbors i).find? fun (k, j) ↦
+      w.atoms[j]!.z == 7 && w.atoms[j]!.charge == 0 && w.bonds[k]!.kind == .triple
+    if let some (k, j) := firstN then
+      w := ((w.setKind k .double).modifyAtom i ({ · with charge := 1 })).modifyAtom j
+        ({ · with charge := -1 })
+  return w
+
+/-- `MolOps.cpp:138-180`: neutral 5-valent P with three neighbours, `=O` and
+`=C`/`=N` (the C/N having ≥ 2 neighbours). The last such `=O` becomes `-O⁻`. -/
+def phosphorusCleanup (i : ℕ) : Work := Id.run do
+  let a := m.atoms[i]!
+  if a.charge != 0 || m.explicitValence i != 5 || m.degree i != 3 then return m
+  let mut dblO : Option (ℕ × ℕ) := none
+  let mut dblCN := false
+  for (k, j) in m.neighbors i do
+    let b := m.atoms[j]!
+    if b.z == 8 && b.charge == 0 && m.bonds[k]!.kind == .double then
+      dblO := some (k, j)
+    else if (b.z == 6 || b.z == 7) && 2 ≤ m.degree j && m.bonds[k]!.kind == .double then
+      dblCN := true
+  match dblO with
+  | some (k, j) =>
+    if dblCN then
+      return ((m.setKind k .single).modifyAtom j ({ · with charge := -1 })).modifyAtom i
+        ({ · with charge := 1 })
+    else return m
+  | none => return m
+
+/-- `MolOps.cpp:182-215`: neutral Cl/Br/I with valence 3, 5 or 7 bonded only to
+O. Every `=O` becomes `-O⁻`; the halogen's charge is the number changed. -/
+def halogenCleanup (i : ℕ) : Work := Id.run do
+  let a := m.atoms[i]!
+  if a.charge != 0 || ![3, 5, 7].contains (m.explicitValence i) then return m
+  let nbrs := m.neighbors i
+  if !nbrs.all (fun (_, j) ↦ m.atoms[j]!.z == 8) then return m
+  let mut w := m
+  let mut fc : ℤ := 0
+  for (k, j) in nbrs do
+    if w.bonds[k]!.kind == .double then
+      w := (w.setKind k .single).modifyAtom j ({ · with charge := -1 })
+      fc := fc + 1
+  return w.modifyAtom i ({ · with charge := fc })
+
+/-- `MolOps::cleanUp` (`MolOps.cpp:315-329`). -/
+def cleanUp : Work := Id.run do
+  let mut w := m.nitrogensCleanup
+  for i in [0:w.numAtoms] do
+    let z := w.atoms[i]!.z
+    if z == 15 then w := w.phosphorusCleanup i
+    else if z == 17 || z == 35 || z == 53 then w := w.halogenCleanup i
   return w
 
 end Work

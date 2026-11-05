@@ -1,0 +1,14 @@
+.git
+.lake
+.vscode
+.DS_Store
+node_modules
+client
+server/node_modules
+server/.cache
+docs
+tools
+out
+literature
+*.zip
+*.log

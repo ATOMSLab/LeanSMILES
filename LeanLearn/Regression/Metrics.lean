@@ -23,8 +23,8 @@ namespace LeanLearn.Regression
 
 variable {K : Type} [ScalarLike K]
 
-/-- Coefficient of determination `1 − SS_res / SS_tot` of predictions against
-measured values (scikit-learn's `r2_score`). -/
+/-- Coefficient of determination `1 − SS_res / SS_tot` (scikit-learn's `r2_score`), `SS_tot` about
+the measured mean. A constant or empty target divides by 0: `−inf`/`NaN` at `Float`, `1` at `ℝ`. -/
 def r2 (pairs : Array (K × K)) : K :=
   let count : K := pairs.foldl (fun s _ ↦ s + 1) 0
   let mean := pairs.foldl (fun s (y, _) ↦ s + y) 0 / count
@@ -32,12 +32,14 @@ def r2 (pairs : Array (K × K)) : K :=
   let ssTot := pairs.foldl (fun s (y, _) ↦ s + (y - mean) * (y - mean)) 0
   1 - ssRes / ssTot
 
-/-- Root mean squared error of predictions against measured values. -/
+/-- Root mean squared error `√(Σ (y − p)² / n)` of `n` predictions `p` against measured values `y`;
+with no pairs it is `√(0/0)`: `NaN` at `Float`, `0` at `ℝ`. -/
 def rmse (pairs : Array (K × K)) : K :=
   let count : K := pairs.foldl (fun s _ ↦ s + 1) 0
   ScalarLike.sqrt (pairs.foldl (fun s (y, p) ↦ s + (y - p) * (y - p)) 0 / count)
 
-/-- Mean absolute error of predictions against measured values. -/
+/-- Mean absolute error `Σ |y − p| / n` of `n` predictions `p` against measured values `y`
+(scikit-learn's `mean_absolute_error`); with no pairs it is `0/0`: `NaN` at `Float`, `0` at `ℝ`. -/
 def mae (pairs : Array (K × K)) : K :=
   let count : K := pairs.foldl (fun s _ ↦ s + 1) 0
   pairs.foldl (fun s (y, p) ↦ s + ScalarLike.abs (y - p)) 0 / count

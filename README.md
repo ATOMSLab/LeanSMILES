@@ -19,9 +19,11 @@ LeanSMILES/           the typed SMILES toolkit (imports Mathlib)
 
 LeanLearn/            learning algorithms on tabular data (imports Mathlib only); see its README.md
   Scalar.lean         ScalarLike: the scalar interface, Float to run and ℝ to prove (from LeanCatalyst)
-  Regression/         executable, over any scalar: Problem, Solvers, Certificates (iterative);
+  Regression/         executable, over any scalar: Problem, Solvers, Certificates (a priori witnesses,
+                      and the residual check after training);
                       LinearModel (the objectives on a matrix); OLSFloat, RidgeFloat (QR, Float);
-                      SparseRidge (conjugate gradients, sparse 0/1); Metrics (R², RMSE, MAE)
+                      SparseRidge (conjugate gradients, sparse 0/1); SparseProblem (the residual
+                      certificate from bit lists); Metrics (R², RMSE, MAE)
   Classification/     Logistic, ROC (ROC curve, AUC)
   Plot/               parity plots as SVG
   Proofs/             over ℝ. LeastSquares/: OLS, Ridge, RidgeOLS — the closed form on Mathlib
@@ -33,9 +35,10 @@ LeanLearn/            learning algorithms on tabular data (imports Mathlib only)
 
 Pipelines/            molecules as tabular data (imports both)
   Representation.lean morgan, bondOrders, counts, canonical, clip, ++; morganFeatures (aromatized)
-  Pipeline.lean       LabelledMolecules (from SMILES), Pipeline, model, losses, predictions
-  Data.lean           LabelledMolecules from the CSV tables in datasets/ (via CSVparser)
+  Pipeline.lean       LabeledMolecules (from SMILES), Pipeline, model, losses, predictions
+  Data.lean           LabeledMolecules from the CSV tables in datasets/ (via CSVparser)
   Certificates.lean   the exact checks on a pipeline: checkGD, checkSolver, certifiedSolverExcess
+                      (before training); checkResidual, residualExcess (after it)
   Proofs/             representations (bounds, canonicity), certificate soundness
   Examples/           delaney.lean (certified solubility regression), egfr.lean (classification)
   Tests/              Logistic, Ridge (lake exe logistic-test, ridge-test)
@@ -94,12 +97,11 @@ prediction equals scikit-learn's to within 10⁻⁶; the table is the full Lean 
 |                    | R²    | RMSE | MAE  |
 | ------------------ | ----- | ---- | ---- |
 | Training (n = 901) | 0.959 | 0.42 | 0.26 |
-| Test (n = 226)     | 0.662 | 1.27 | 0.96 |
+| Test (n = 226)     | 0.671 | 1.26 | 0.94 |
 
-scikit-learn's `Ridge` on RDKit's fingerprints gets test R² 0.671, RMSE 1.26 and MAE 0.94,
-which Lean reproduces exactly when given the same bits. The full Lean pipeline is slightly
-lower because its own fingerprints differ from RDKit's on 59 molecules, the ones RDKit's
-nitro-group cleanup rewrites (not yet ported).
+scikit-learn's `Ridge` on RDKit's fingerprints gets the same test R², RMSE and MAE. Lean's
+fingerprints equal RDKit's on all 1 127 molecules; the predictions differ by at most 0.06
+only because chlorothalonil, which the parser rejects, is left out of training.
 
 ![Parity plot: predicted vs measured log solubility, written by Lean](docs/figures/delaney-ridge-parity.svg)
 
@@ -270,8 +272,9 @@ ring set (relevant cycles), kekulization, aromaticity perception (default model:
 donor types, Hückel 4n + 2, fused systems) and final hydrogen counts. So
 `C1=CC=CC=C1` becomes aromatic benzene, the bond between the rings of
 `c1ccccc1c1ccccc1` becomes single, and `c1cccc1` fails as it does in RDKit
-("Can't kekulize mol"). RDKit's `cleanUp` (nitro and similar rewrites), valence
-rejection and removal of `[H]` atoms are not included yet.
+("Can't kekulize mol"). It starts with RDKit's `cleanUp`, so nitro `N(=O)=O` becomes
+`[N+](=O)[O-]` (likewise N-oxides, azides, P=O and halogen oxides). Valence rejection
+and removal of `[H]` atoms are not included yet.
 
 ```lean
 #eval (SMILES.parseAromatized "C1=CC=CC=C1").map (·.morganBits)   -- RDKit's benzene bits
@@ -282,9 +285,9 @@ lake exe aromaticity-test   # bond types, hydrogens and Morgan bits = RDKit's on
 ```
 
 On every oracle file, as written and in Kekulé form (Delaney, 56 hand-picked
-aromaticity cases, isotope cases, hydrogen cases), every molecule that `cleanUp`
-and `[H]` removal do not touch gets RDKit's bond types, hydrogen counts and
-Morgan fingerprint: 3 368 of 3 368 (chlorothalonil, which the parser rejects, is not counted). On 10 000 fuzzed strings it never fails on
+aromaticity cases, isotope cases, hydrogen cases), every molecule without `[H]`
+atoms gets RDKit's bond types, hydrogen counts and Morgan fingerprint:
+3 464 of 3 464 (chlorothalonil, which the parser rejects, is not counted). On 10 000 fuzzed strings it never fails on
 one RDKit accepts. The code is ported from the `canonical-smiles` branch's
 array-based sanitization (commit `5b5fe9e`) and still runs on an index-based
 working copy inside; its interface is `Molecule n → Except String (Molecule n)`.
@@ -420,7 +423,10 @@ Two formulations of the same problem, by two authors, side by side:
   gradient descent, Jacobi and Gauss–Seidel on them, started from `0`; `Algorithm` is the
   solver with its hyperparameters, as data. [`Certificates.lean`](LeanLearn/Regression/Certificates.lean)
   is the exact `ℚ` check (`SolverWitness`: weighted diagonal dominance) that certifies
-  Jacobi and Gauss–Seidel before running them.
+  Jacobi and Gauss–Seidel before running them, `Problem.smoothnessExact`, the exact
+  smoothness `Λ` of a training set that gradient descent's step-size condition `2ηΛ ≤ 1` is
+  about, and `Problem.checkResidual`, the check after running any solver: the residual of the
+  normal equations at the parameters it produced.
   [`Proofs/Regression/MatrixBridge.lean`](LeanLearn/Proofs/Regression/MatrixBridge.lean) proves
   the two formulations are one problem up to the factor `m` — `‖Xθ − y‖² + mλ‖θ‖² = m·L(θ)`,
   `XᵀX + mλI = m·A`, `Xᵀy = m·b` — so for `m > 0` they share normal equations and minimizers,
@@ -471,6 +477,10 @@ above); `Regression/` reads the executable code in `ℝ`:
   point of Jacobi is optimal.
 - **The certificate is sound** (`SolverWitness.check_sound`): a passing exact `ℚ` check
   gives the hypotheses above in `ℝ`.
+- **Any parameters, after the fact** (`Problem.loss_le_add_residual`,
+  `Problem.checkResidual_sound`): for `λ > 0`, `L(θ) ≤ L(u) + ‖Aθ − b‖²/λ` for every `u` —
+  from the quadratic expansion and `C(v) ≥ λ‖v‖²`. So an exact residual check on whatever a
+  solver produced, in whatever arithmetic, bounds its excess loss, with no condition on `A`.
 
 ## Molecules as tabular data: `Pipelines`
 
@@ -479,7 +489,7 @@ above); `Regression/` reads the executable code in `ℝ`:
 Open [`Pipelines/Examples/delaney.lean`](Pipelines/Examples/delaney.lean): like
 `caffeine.lean`, it walks through the pipeline one `#eval` at a time, on the Delaney table.
 
-**1. Data and pipeline.** Molecules come from SMILES (`LabelledMolecules.ofSmiles!`) or from
+**1. Data and pipeline.** Molecules come from SMILES (`LabeledMolecules.ofSmiles!`) or from
 a table in `datasets/` (`ofRecords`, through the toolkit's `CSVparser`), with exact rational
 targets. A pipeline adds a representation (`Mol → ℚᵈ`: Morgan bits, bond-order matrices,
 counts, read through canonical SMILES or not), a ridge penalty `λ` (default `0`) and a
@@ -487,7 +497,7 @@ solver:
 
 ```lean
 def delaney := CSVparser.load "datasets/delaney-processed.csv"
-def train : LabelledMolecules 40 := .ofRecords delaney 0 40
+def train : LabeledMolecules 40 := .ofRecords delaney 0 40
 
 def gd : Pipeline 40 32 :=
   { data := train, representation := .morgan 2 32, algorithm := .gradientDescent (1 / 66) 3000 }
@@ -507,9 +517,8 @@ it holds for every dataset:
 
 theorem gd_certified (u : Vec ℝ 33) (hu : ∑ i : Fin 33, u[i] ^ 2 ≤ 4) :
     gd.trainLoss ℝ ≤ (gd.problem ℝ).loss u + 1 / 20 := by
-  have := gd.checkGD_sound (R2 := (32 : ℕ)) (B := 4) (ε := 1 / 20)
+  simpa using gd.checkGD_sound (R2 := (32 : ℕ)) (B := 4) (ε := 1 / 20)
     (Representation.morgan_bounded 2 32) (by decide +kernel) u (by exact_mod_cast hu)
-  simpa using this
 ```
 
 **3. Jacobi and Gauss–Seidel.** The condition is about the data: the normal equations must
@@ -527,14 +536,76 @@ def gs : Pipeline 40 16 :=
 
 theorem smallJacobi_certified (u : Vec ℝ 10) :           -- within 0.001 of the optimum
     smallJacobi.trainLoss ℝ ≤ (smallJacobi.problem ℝ).loss u + 1 / 1000 := by
-  have := smallJacobi.checkSolver_sound (W := smallJacobi.suggestWitness) (ε := 1 / 1000)
+  simpa using smallJacobi.checkSolver_sound (W := smallJacobi.suggestWitness) (ε := 1 / 1000)
     (by decide +kernel) u
-  simpa using this
 ```
 
 When a condition fails there is no certificate: `checkGD` returns `false` for a step size
 too large for the representation, and `certifiedSolverExcess` is `none` for Jacobi without
 enough ridge penalty — a pipeline that, run on `Float`, diverges.
+
+**4. After training: the residual certificate.** The checks above are a priori: they say
+what a solver *will* do, and only where the normal equations are diagonally dominant, which
+on molecular data means a large `λ`. `checkResidual` is a posteriori: it takes whatever
+parameters a solver produced — the `Float` model, read exactly by `ratOfFloatExact` — and
+tests `‖Aθ − b‖² ≤ ελ` on the exact normal equations. `checkResidual_sound` turns a pass into
+`L(θ) ≤ L(u) + ε` for every `u`, at any `λ > 0`, with no condition on the data and nothing
+assumed about the solver. The pipeline that the witness could not certify at `λ = 1` is
+certified all the same once Gauss–Seidel has converged there, and the Jacobi run that
+diverged is caught by the same check:
+
+```lean
+def weakGS : Pipeline 40 16 := { weak with algorithm := .gaussSeidel 100 }
+def weakGSModel : Vec ℚ 17 := (weakGS.model Float).map ratOfFloatExact
+
+#eval decide (weakGS.residualExcess weakGSModel < 1 / 10 ^ 12)    -- true: ‖Aθ − b‖²/λ, the certified excess
+#eval weakGS.checkResidual weakGSModel (1 / 10 ^ 6)               -- true
+#eval weak.checkResidual ((weak.model Float).map ratOfFloatExact) (1 / 10 ^ 6)   -- false
+```
+
+The theorem behind it is stated once (`Pipeline.checkResidual_sound`); the check itself
+runs compiled, since the kernel cannot evaluate `Float` to read the parameters (give it
+rational literals and `decide +kernel` proves the instance too). The website's Regression
+page shows a different guarantee — gradient descent with its own convergence theorem,
+step 6 below.
+
+**5. The same certificate for ridge on 2048 Morgan bits.** The sparse-ridge model —
+scikit-learn's `Ridge(alpha)` objective on Morgan fingerprints, solved by conjugate gradients
+in `Float` (`SparseRidge`) — is a `Problem` in disguise. Centre every bit column and the
+target on their training means and set `λ = α/m`: at `θ = (w, 0)`, `m · Problem.loss θ` is
+scikit-learn's objective at its optimal intercept, and `0` is the optimal intercept of the
+centred problem itself. So the trained weights, read exactly and padded with a zero bias, are
+checked by the same `checkResidual` — except that `Problem.residualAt` forms the dense
+`2049 × 2049` normal matrix, hundreds of millions of rationals per fit.
+[`SparseProblem`](LeanLearn/Regression/SparseProblem.lean) computes the residual from each
+sample's on-bit list instead, `(1/m) Xcᵀ (Xc θ − y) + λθ` with the centring applied on the
+fly, and [`SparseProblem.residual_eq`](LeanLearn/Proofs/Regression/SparseProblem.lean)
+proves it equal, entry by entry, to `Problem.residualAt` of the dense centred problem, so
+`SparseProblem.checkResidual_sound` is `Problem.checkResidual_sound` verbatim. On the
+Delaney slice the website uses (167 molecules, `α = 1`) the check passes with
+`‖Aθ − b‖²/λ = 1.90 · 10⁻⁸ ≤ 2.28 · 10⁻⁷ = 10⁻⁶ · L(θ)`, on the boiling-point set with
+`1.51 · 10⁻⁴ ≤ 1.43 · 10⁻³`, in about 0.2 s per fit, training included.
+
+**6. The website: gradient descent on 2048 Morgan bits, with the algorithm's own theorem.**
+The Regression page shows one model and one meaning of *verified*: the solver that runs is
+`gradientDescent` — a single definition over the scalar, run at `Float` — and
+`Problem.loss_gradientDescent_le` is about that definition at `ℝ`: from `θ = 0`, `k` steps of
+size `η` with `2ηΛ ≤ 1` end within `‖u‖² / (2ηk)` of every `u`, where
+`Λ = (1/m) Σᵣ ‖xᵣ‖² + λ`. The hypothesis is about the data, so it is decided on the data:
+`Pipeline.smoothnessExact` computes `Λ` exactly for the training set, the worker takes
+`η = 1/(2Λ)` (`maxStepSizeData`), and `Pipeline.checkGDData` decides `λ ≥ 0`, `η > 0`,
+`2ηΛ ≤ 1`, `k > 0`; `checkGDData_sound` then gives the rate for the very fit shown
+(`smoothness_real` bridges the exact `Λ` to the `ℝ` reading). The representation is
+`Representation.morgan 2 2048` as `0/1` features, the target is centred on its training
+mean, and `λ = α/m`, so `α` is scikit-learn's alpha. On the Delaney slice (167 molecules,
+`α = 1`): `Λ = 23.3`, `η = 167/7782`, `k = 800`, so `L(θ) ≤ L(u) + 0.029 ‖u‖²` for every
+`u`, test R² 0.549, about 7 s per fit on the dense `2049 × 2049` normal equations; on the
+boiling-point set `Λ = 14.3`, test R² 0.855. Those seconds are the work of compiling
+`sumFin` as a loop (`sumFin_eq_sumFinLoop`, a `csimp` lemma: the same additions in the
+same order) and `@[specialize]`-ing the solvers at the scalar — before, the same fit took
+minutes. Gauss–Seidel and Jacobi are not shown: their theorems need diagonal dominance,
+which Morgan normal equations lack at any useful `λ`; conjugate gradients (`SparseRidge`)
+has no theorem.
 
 What is proved ([`Pipelines/Proofs/Certificates.lean`](Pipelines/Proofs/Certificates.lean),
 [`Representation.lean`](Pipelines/Proofs/Representation.lean)); `L` is the training loss:
@@ -542,8 +613,11 @@ What is proved ([`Pipelines/Proofs/Certificates.lean`](Pipelines/Proofs/Certific
 | Solver               | Conditions (checked without training)                                                     | Guarantee                                                                                      |
 | -------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | Gradient descent     | `‖φ(M)‖² ≤ R²` for the representation, `λ ≥ 0`, `η > 0`, `2η(R² + 1 + λ) ≤ 1`, `B ≤ 2ηkε` | `L(θ) ≤ L(u) + ε` for every `u` with `‖u‖² ≤ B`, for **every dataset** (`GDCertificate.sound`) |
+| Gradient descent, on the data | `λ ≥ 0`, `η > 0`, `2ηΛ ≤ 1` with `Λ = (1/m) Σᵣ ‖xᵣ‖² + λ` computed exactly from the training set (`checkGDData`), `k > 0` | `L(θ) ≤ L(u) + ‖u‖² / (2ηk)` for **every** `u`: the `O(1/k)` rate, for this run (`checkGDData_sound`) |
 | Jacobi, Gauss–Seidel | the exact `ℚ` check of weighted diagonal dominance (`checkSolver`)                        | `L(θ) ≤ L(u) + ε` for **every** `u`: `θ` is `ε`-optimal (`checkSolver_sound`)                  |
 | Gauss–Seidel         | none (`λ ≥ 0`)                                                                            | the loss never increases with more sweeps (`gaussSeidel_antitone`)                             |
+| Any solver, after training | the exact `ℚ` residual check at the parameters it produced (`checkResidual`), `λ > 0` | `L(θ) ≤ L(u) + ε` for **every** `u`, with no condition on the data (`checkResidual_sound`) |
+| Sparse ridge on 0/1 features | the exact residual check from the bit lists (`SparseProblem.checkResidual`), `λ > 0` | the same `L(θ) ≤ L(u) + ε` for every `u` on the centred problem (`SparseProblem.checkResidual_sound`); `residual_eq` makes it the dense check |
 
 and about representations: `bondOrder_eq_adjMatrix` (the kernel-evaluable bond-order
 features are the toolkit's `adjMatrix`), `canonical_relabel` (a representation read through
@@ -553,15 +627,19 @@ toolkit's `canonicalSmiles_relabel`), and feature bounds for every molecule: Mor
 `++`. Every theorem depends only on Lean's standard axioms; kernel checks use
 `decide +kernel`, never `native_decide`.
 
-**What the guarantees do not cover.** Floating-point rounding (the theorems are about the
-solvers at `ℝ`; the `Float` run is the same code, up to rounding). Kernel-checked data
+**What the guarantees do not cover.** Floating-point rounding, for the a priori
+certificates (their theorems are about the solvers at `ℝ`; the `Float` run is the same code,
+up to rounding) — the residual certificate is the exception, since it reads the `Float`
+parameters exactly and certifies those very numbers. Kernel-checked data
 conditions need a kernel-evaluable representation: `bondOrders` is one, Morgan fingerprints
 are not (their hashing uses `UInt32` and `mergeSort`), so a Jacobi/Gauss–Seidel certificate on
 Morgan features can be computed with `#eval` but not yet proved by `decide +kernel`; the
-gradient-descent certificate needs no evaluation and works for Morgan. Diagonal dominance
+representation-level gradient-descent certificate needs no evaluation and works for Morgan,
+and `checkGDData`, which reads the data, is computed with `#eval` like the solver witnesses.
+Diagonal dominance
 needs ridge: with an intercept, the normal equations of typical molecular data are not
-diagonally dominant unless `λ` is large enough. And generalization: the guarantees bound the
-training loss.
+diagonally dominant unless `λ` is large enough — the residual certificate has no such
+condition. And generalization: the guarantees bound the training loss.
 
 ### Classification with Morgan fingerprints
 
@@ -591,11 +669,10 @@ ridge-test` checks it against scikit-learn's `Ridge` (`tools/sklearn_delaney.py`
 |                                                                 | R²    | RMSE | MAE  |
 | --------------------------------------------------------------- | ----- | ---- | ---- |
 | on RDKit's bits (= scikit-learn, predictions within 10⁻⁶), test | 0.671 | 1.26 | 0.94 |
-| on Lean's own features, test                                    | 0.662 | 1.27 | 0.96 |
+| on Lean's own features, test                                    | 0.671 | 1.26 | 0.94 |
 
-Lean's own features equal RDKit's on 1 068 of the 1 127 molecules the parser accepts
-(chlorothalonil's ring label after a branch is rejected); the rest need RDKit's `cleanUp`,
-which `aromatize` does not do yet. The training fit is much closer (R² 0.96), the usual
+Lean's own features equal RDKit's on all 1 127 molecules the parser accepts
+(chlorothalonil's ring label after a branch is rejected). The training fit is much closer (R² 0.96), the usual
 sign of more features than molecules.
 
 ```bash

@@ -15,5 +15,6 @@ Entry point of `lake exe depict`; everything is in `LeanSMILES.Depict.Cli`.
 
 public section
 
-/-- `lake exe depict`. -/
+/-- Entry point of `lake exe depict` (SVG drawings, mol blocks, gallery pages from SMILES): hands
+the arguments to `LeanSMILES.Depict.main`, whose module `Depict/Cli` documents the flags. -/
 def main (args : List String) : IO UInt32 := LeanSMILES.Depict.main args

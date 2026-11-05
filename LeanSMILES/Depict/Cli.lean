@@ -20,8 +20,8 @@ lake exe depict "C[C@H](N)C(=O)O"            SVG on standard output
 lake exe depict "C[C@H](N)C(=O)O" out.svg    …or into a file
 lake exe depict --mol "F/C=C/F"              MDL mol block (wedge/hash flags)
 lake exe depict --html in.smi out.html       a gallery page, one SMILES per line
-lake exe depict --sdf in.smi out.sdf         mol blocks of every line, SMILES as
-                                             title, for tools/check_depiction.py
+lake exe depict --sdf in.smi out.sdf         per line: the SMILES, then its mol
+                                             block, for tools/check_depiction.py
 lake exe depict --bit <smiles> <bit> out.svg  the molecule with the atoms that set
                                              one Morgan bit highlighted
 lake exe depict --fingerprint <smiles> [<smiles2>] out.svg
@@ -37,7 +37,7 @@ open LeanSMILES LeanSMILES.SMILES
 
 namespace LeanSMILES.Depict
 
-/-- Usage text. -/
+/-- The help text `main` prints, with exit code 1, when the arguments fit none of its modes. -/
 def usage : String :=
   "\n".intercalate [
     "usage:",
@@ -49,8 +49,8 @@ def usage : String :=
     "  lake exe depict --fingerprint <smiles> [<smiles2>] <out.svg>",
     "                                             Morgan fingerprint (grid and barcode)"]
 
-/-- The SMILES on each non-empty, non-comment line of a `.smi` file (the first
-whitespace-separated field). -/
+/-- The SMILES of a `.smi` file: the first space-separated field of each line that is neither
+blank nor a `#` comment, leading whitespace ignored. -/
 def readSmi (path : String) : IO (Array String) := do
   let lines ← IO.FS.lines path
   return lines.filterMap fun l ↦
@@ -58,7 +58,8 @@ def readSmi (path : String) : IO (Array String) := do
     if s.isEmpty || s.startsWith "#" then none
     else (s.splitOn " ").head?.map fun w ↦ w.trimAscii.toString
 
-/-- A gallery page of drawings. -/
+/-- The HTML page of `depict --html`: one card per SMILES, its drawing (or its parse error, in
+red) above the SMILES itself. -/
 def gallery (smiles : Array String) : String :=
   let cards := smiles.toList.map fun s ↦
     let body := match parse s with
@@ -72,21 +73,26 @@ def gallery (smiles : Array String) : String :=
   </title></head><body style=\"font-family:system-ui,sans-serif;background:#f6f8fa;\
   margin:16px\">" ++ String.join cards ++ "</body></html>"
 
-/-- Mol blocks of every SMILES, each preceded by its SMILES on a line of its own
-and followed by `$$$$`; a line `ERROR: …` where the SMILES does not parse. -/
+/-- The file of `depict --sdf`, read by `tools/check_depiction.py`: per SMILES, the SMILES on a
+line of its own, then its mol block (or a line `ERROR: …`), then `$$$$`. -/
 def sdf (smiles : Array String) : String :=
   String.join <| smiles.toList.map fun s ↦
     match parse s with
     | .ok M => s!"{s}\n{M.molBlock}$$$$\n"
     | .error e => s!"{s}\nERROR: {e}\n$$$$\n"
 
-/-- Entry point. -/
+/-- The `depict` command, in the modes of the module docstring: exit code 0 on success, 1 after
+printing the usage text or the parse error of a SMILES given on the command line. -/
 def main (args : List String) : IO UInt32 := do
   match args with
   | ["--mol", s] =>
     match parse s with
-    | .ok M => IO.print M.molBlock; return 0
-    | .error e => IO.eprintln s!"{e}"; return 1
+    | .ok M =>
+      IO.print M.molBlock
+      return 0
+    | .error e =>
+      IO.eprintln s!"{e}"
+      return 1
   | ["--html", inp, out] =>
     IO.FS.writeFile out (gallery (← readSmi inp))
     IO.println s!"wrote {out}"
@@ -107,15 +113,23 @@ def main (args : List String) : IO UInt32 := do
     IO.println s!"wrote {out}"
     return 0
   | [s] | [s, _] =>
-    if s.startsWith "--" then IO.println usage; return 1 else
+    if s.startsWith "--" then
+      IO.println usage
+      return 1
     match parse s with
-    | .error e => IO.eprintln s!"{e}"; return 1
+    | .error e =>
+      IO.eprintln s!"{e}"
+      return 1
     | .ok M =>
       let svg := M.svgString
       match args with
-      | [_, out] => IO.FS.writeFile out svg; IO.println s!"wrote {out}"
+      | [_, out] =>
+        IO.FS.writeFile out svg
+        IO.println s!"wrote {out}"
       | _ => IO.println svg
       return 0
-  | _ => IO.println usage; return 1
+  | _ =>
+    IO.println usage
+    return 1
 
 end LeanSMILES.Depict

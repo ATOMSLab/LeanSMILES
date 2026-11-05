@@ -1,6 +1,10 @@
+/-
+Copyright (c) 2026 Tyler Josephson. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Tyler Josephson
+-/
 module
 
-public import LeanSMILES.main
 public import LeanSMILES.Data.CSVparser
 public import LeanSMILES.Examples.parsercsv
 public import LeanSMILES.Chem.Element
@@ -28,3 +32,14 @@ public import LeanSMILES.Depict.Widget
 public import LeanSMILES.Examples.smiles
 public import LeanSMILES.Examples.caffeine
 public import LeanSMILES.Examples.depict
+
+/-!
+# LeanSMILES
+
+The typed SMILES toolkit: elements, atoms, bonds and the molecular graph `Molecule n`
+(`Chem/`), the SMILES tokenizer, parser, writer and canonical SMILES with its canonicity proof
+(`SMILES/`), RDKit-compatible Morgan fingerprints and Tanimoto similarity (`Fingerprint/`),
+aromaticity perception (`Aromaticity/`), 2D depiction (`Depict/`), the CSV reader for the
+Delaney table (`Data/`) and the worked examples (`Examples/`). Importing this module imports
+all of them.
+-/

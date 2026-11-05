@@ -30,8 +30,20 @@ from `tools/rdkit_reference/aromaticity_ref.py` (`assign_radicals`, `set_aromati
 
 namespace LeanSMILES.Aromaticity
 
+/-- How many π electrons a ring atom can give to an aromatic ring (RDKit's `ElectronDonorType`). -/
 inductive Donor where
-  | vacant | one | two | oneOrTwo | any | none
+  /-- An empty p orbital: no electrons, yet it may be aromatic (the C of a ring C=O). -/
+  | vacant
+  /-- One electron, as a benzene carbon. -/
+  | one
+  /-- A lone pair, as pyrrole NH or furan O. -/
+  | two
+  /-- One or two electrons. -/
+  | oneOrTwo
+  /-- Any count, read as one or two; `huckel` allows at most one such atom in a ring system. -/
+  | any
+  /-- No electrons to give: the atom cannot be aromatic. -/
+  | none
   deriving BEq, Repr, Inhabited
 
 /-- Fewest and most π electrons of each donor type (`getMinMaxAtomElecs`). -/
@@ -46,15 +58,16 @@ def countAtomElec (m : Work) (i : Nat) : Int := Id.run do
   let dv : Int := defaultValence a.z
   if dv ≤ 1 then return -1
   let deg : Int := m.degree i + m.cachedTotalHs i
-  if deg > 3 then return -1
+  if 3 < deg then return -1
   let nlp := max ((outerElectrons a.z : Int) - dv - a.charge) 0
   let res := dv - deg + nlp - a.radicals
-  if res > 1 && (m.cachedValence i : Int) - m.degree i > 1 then return 1
+  if 1 < res && 1 < (m.cachedValence i : Int) - m.degree i then return 1
   return res
 
-/-- Atom across the first non-ring double/triple bond of atom `i`. -/
+/-- Atom across the first non-ring double/triple bond of atom `i`
+(`incidentNonCyclicMultipleBond`, `Aromaticity.cpp:234`). -/
 def exocyclicMultiple? (m : Work) (ringBonds : List Nat) (i : Nat) : Option Nat :=
-  ((m.neighbors i).find? fun (k, _) => !ringBonds.contains k && isMultiple m.bonds[k]!.kind).map
+  ((m.neighbors i).find? fun (k, _) ↦ !ringBonds.contains k && isMultiple m.bonds[k]!.kind).map
     (·.2)
 
 /-- Donor type of atom `i` (`getAtomDonorTypeArom`, `Aromaticity.cpp:581`). -/
@@ -68,7 +81,7 @@ def donorType (m : Work) (ringBonds : List Nat) (i : Nat) : Donor := Id.run do
   if nelec < 0 then return .none
   if nelec == 0 then
     if who.isSome then return .vacant
-    if (m.bondsOf i).any fun k => ringBonds.contains k && isMultiple m.bonds[k]!.kind then
+    if (m.bondsOf i).any fun k ↦ ringBonds.contains k && isMultiple m.bonds[k]!.kind then
       return .one
     return .none
   if nelec == 1 then
@@ -84,35 +97,37 @@ def donorType (m : Work) (ringBonds : List Nat) (i : Nat) : Donor := Id.run do
 def isAromaticCandidate (m : Work) (i : Nat) (d : Donor) : Bool := Id.run do
   let a := m.atoms[i]!
   let z := a.z
-  if z > 18 && z != 34 && z != 52 then return false
+  if 18 < z && z != 34 && z != 52 then return false
   if d == .none then return false
   let impl := a.cachedImplicit
   let ev := m.cachedValence i
-  if defaultValence z > 0 &&
-      ev + impl > defaultValence (((z : Int) - a.charge).toNat) then return false
-  if a.radicals > 0 && (z != 6 || a.charge != 0) then return false
-  if ev > m.degree i + 1 then
-    let nMult := ((m.bondsOf i).filter fun k => isMultiple m.bonds[k]!.kind).length
-    if nMult > 1 then return false
+  if 0 < defaultValence z &&
+      defaultValence (((z : Int) - a.charge).toNat) < ev + impl then return false
+  if 0 < a.radicals && (z != 6 || a.charge != 0) then return false
+  if m.degree i + 1 < ev then
+    let nMult := ((m.bondsOf i).filter fun k ↦ isMultiple m.bonds[k]!.kind).length
+    if 1 < nMult then return false
   return true
 
 /-- Hückel's rule over a set of atoms (`applyHuckel`, `Aromaticity.cpp:278`). -/
 def huckel (atoms : List Nat) (donor : Array Donor) : Bool := Id.run do
-  if (atoms.filter (donor[·]! == .any)).length > 1 then return false
-  let lo := atoms.foldl (fun s a => s + (donor[a]!).range.1) 0
-  let hi := atoms.foldl (fun s a => s + (donor[a]!).range.2) 0
-  if hi ≥ 6 then
-    return (List.range (hi + 1 - lo)).any fun t => (lo + t) % 4 == 2
+  if 1 < (atoms.filter (donor[·]! == .any)).length then return false
+  let lo := atoms.foldl (fun s a ↦ s + (donor[a]!).range.1) 0
+  let hi := atoms.foldl (fun s a ↦ s + (donor[a]!).range.2) 0
+  if 6 ≤ hi then
+    return (List.range (hi + 1 - lo)).any fun t ↦ (lo + t) % 4 == 2
   return hi == 2
 
-/-- All `k`-element subsets of `[0, n)`, in lexicographic order. -/
+/-- All `k`-element subsets of `[0, n)`, in lexicographic order: the order RDKit's
+`nextCombination` steps through. -/
 def combinations (n : Nat) : Nat → List (List Nat)
   | 0 => [[]]
-  | k + 1 => (combinations n k).flatMap fun c =>
+  | k + 1 => (combinations n k).flatMap fun c ↦
       let start := match c.getLast? with | some x => x + 1 | none => 0
-      (List.range (n - start)).map fun d => c ++ [start + d]
+      (List.range (n - start)).map fun d ↦ c ++ [start + d]
 
-/-- Are the rings `rids` connected to each other through `nbrs`? (`checkFused`) -/
+/-- Are the rings `rids` connected to each other through `nbrs`? (`checkFused`,
+`Aromaticity.cpp:97`) -/
 def isConnectedSet (rids : List Nat) (nbrs : Array (List Nat)) : Bool := Id.run do
   let some first := rids.head? | return true
   let mut seen := [first]
@@ -122,7 +137,8 @@ def isConnectedSet (rids : List Nat) (nbrs : Array (List Nat)) : Bool := Id.run 
         if rids.contains v && !seen.contains v then seen := seen ++ [v]
   return seen.length == rids.length
 
-/-- Mark the aromatic rings (`setAromaticity`, default model). -/
+/-- Mark the aromatic rings' bonds and atoms (`setAromaticity`, default model: `aromaticityHelper`,
+`Aromaticity.cpp:839`, then `applyHuckelToFused` on each fused system). -/
 def setAromaticity (m : Work) (rings : Array (List Nat)) : Work := Id.run do
   let ringBondSet := (rings.toList.flatMap m.ringBonds).eraseDups
   -- 1-2. donor types (first time each atom is seen) and candidate rings
@@ -139,7 +155,7 @@ def setAromaticity (m : Work) (rings : Array (List Nat)) : Work := Id.run do
       seen := seen.set! i true
       let mut d := m.donorType ringBondSet i
       -- macrocycle rule (Aromaticity.cpp:871): ether-like O/S in a ring of 9 or more
-      if d == .two && ring.length ≥ 9 && [8, 16].contains m.atoms[i]!.z &&
+      if d == .two && 9 ≤ ring.length && [8, 16].contains m.atoms[i]!.z &&
           m.degree i == 2 && m.atoms[i]!.charge == 0 &&
           !(m.bondsOf i).any (isMultiple m.bonds[·]!.kind) then
         d := .none
@@ -162,15 +178,15 @@ def setAromaticity (m : Work) (rings : Array (List Nat)) : Work := Id.run do
     let systemBonds := (fused.flatMap (rbonds[·]!)).eraseDups
     let mut doneBonds : List Nat := []
     for size in [1:(min nRings 6) + 1] do
-      if size == 3 && nRings > 300 then break
-      if doneBonds.length ≥ systemBonds.length then break
+      if size == 3 && 300 < nRings then break
+      if systemBonds.length ≤ doneBonds.length then break
       for comb in combinations nRings size do
         let cur := comb.map (fused[·]!)
         if !isConnectedSet cur nbrs then continue
         -- atoms in 1 or 2 of the chosen rings (GitHub #2895)
-        let counts := cur.foldl (fun acc r => candRings[r]!.foldl
-          (fun acc a => acc.modify a (· + 1)) acc) (Array.replicate m.numAtoms 0)
-        let atoms := (List.range m.numAtoms).filter fun a => counts[a]! == 1 || counts[a]! == 2
+        let counts := cur.foldl (fun acc r ↦ candRings[r]!.foldl
+          (fun acc a ↦ acc.modify a (· + 1)) acc) (Array.replicate m.numAtoms 0)
+        let atoms := (List.range m.numAtoms).filter fun a ↦ counts[a]! == 1 || counts[a]! == 2
         if huckel atoms donor then
           -- bonds that occur once in the group become aromatic
           let all := cur.flatMap (rbonds[·]!)
@@ -197,25 +213,23 @@ graph stays simple). -/
 def withKinds {n : ℕ} (m : Molecule n) (w : Work) : List (Bond n) :=
   m.bonds.zipIdx.map fun (b, k) ↦ { b with kind := (w.bonds[k]?.map (·.kind)).getD b.kind }
 
+/-- `withKinds` keeps every bond's endpoints, so its edge list is that of `m`. -/
 lemma map_edge_withKinds {n : ℕ} (m : Molecule n) (w : Work) :
     (withKinds m w).map Bond.edge = m.bonds.map Bond.edge := by
-  rw [withKinds, List.map_map]
-  have : (Bond.edge ∘ fun (p : Bond n × ℕ) ↦
-      ({ p.1 with kind := (w.bonds[p.2]?.map (·.kind)).getD p.1.kind } : Bond n))
-      = Bond.edge ∘ Prod.fst := rfl
-  rw [this, ← List.map_map, List.zipIdx_map_fst]
+  rw [← List.zipIdx_map_fst 0 m.bonds, List.map_map, withKinds, List.map_map]
+  rfl
 
 end Aromaticity
 
 open Aromaticity in
-/-- RDKit's view of the molecule's bonds and hydrogens: kekulize, then perceive
-aromaticity with RDKit's default model, then RDKit's final hydrogen counts
-(`MolOps::sanitizeMol` from `updatePropertyCache` to `adjustHs`, without
-`cleanUp`, valence rejection or hydrogen removal). Bond kinds, aromatic flags
-and implicit hydrogens change; atoms, bonds and everything else stay. Fails when
-RDKit's would ("Can't kekulize mol", e.g. `c1cccc1`). -/
+/-- RDKit's view of the molecule's bonds, charges and hydrogens: `cleanUp` (nitro `N(=O)=O` →
+`[N+](=O)[O-]` and the like), kekulize, then perceive aromaticity with RDKit's default model, then
+RDKit's final hydrogen counts (`MolOps::sanitizeMol` from `cleanUp` to `adjustHs`, without valence
+rejection or hydrogen removal). Bond kinds, charges, aromatic flags and implicit hydrogens change;
+atoms, bonds and everything else stay. Fails when RDKit's would ("Can't kekulize mol", e.g.
+`c1cccc1`). -/
 def Molecule.aromatize {n : ℕ} (m : Molecule n) : Except String (Molecule n) := do
-  let w := (Work.ofMolecule m).freezeHs.cacheValences
+  let w := (Work.ofMolecule m).freezeHs.cleanUp.cacheValences
   let rings := w.relevantCycles
   let w ← w.kekulize rings
   let w := (w.assignRadicals.setAromaticity rings).finalizeHs
@@ -223,9 +237,9 @@ def Molecule.aromatize {n : ℕ} (m : Molecule n) : Except String (Molecule n) :
     let a := m.atom i
     let wa := w.atoms[i.val]!
     let total := wa.frozenHs.getD (wa.explicitHs + w.implicitHs i.val)
-    { a with aromatic := w.isAromaticAtom i.val, implicitH := total - a.explicitH.getD 0 }
-  return { atoms, bonds := withKinds m w,
-           nodup := by rw [map_edge_withKinds]; exact m.nodup }
+    { a with aromatic := w.isAromaticAtom i.val, charge := wa.charge,
+             implicitH := total - a.explicitH.getD 0 }
+  return { atoms, bonds := withKinds m w, nodup := map_edge_withKinds m w ▸ m.nodup }
 
 /-- `Molecule.aromatize` on a bundled molecule. -/
 def Mol.aromatize (M : Mol) : Except String Mol := do

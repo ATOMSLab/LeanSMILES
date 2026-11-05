@@ -32,17 +32,19 @@ Ring membership (`Molecule.inRingVector`) does not need this: it only asks
 
 namespace LeanSMILES.Aromaticity
 
-/-- Number of set bits. -/
+/-- Number of set bits of `n`: the size (bond count) of a cycle stored as a bond bitmask. -/
 def popcount (n : Nat) : Nat := (List.range (n.log2 + 1)).countP n.testBit
 
-/-- Lexicographic order on lists of atom indices. -/
+/-- Lexicographic order on lists of atom indices, as a `Bool`; `Work.relevantCycles` uses it to
+order same-size cycles by their sorted atoms. -/
 def listLt : List Nat → List Nat → Bool
   | [], [] => false
   | [], _ :: _ => true
   | _ :: _, [] => false
   | a :: as, b :: bs => a < b || (a == b && listLt as bs)
 
-/-- Breadth-first distances from `r` (`none` = unreachable) and the visiting order. -/
+/-- Breadth-first distances from `r` (`none` = unreachable) and the visiting order, which lists the
+reachable atoms by nondecreasing distance (`_bfs` in `aromaticity_ref.py`). -/
 def Work.bfs (m : Work) (r : Nat) : Array (Option Nat) × Array Nat := Id.run do
   let mut dist : Array (Option Nat) := (Array.replicate m.numAtoms none).set! r (some 0)
   let mut queue := #[r]
@@ -57,30 +59,33 @@ def Work.bfs (m : Work) (r : Nat) : Array (Option Nat) × Array Nat := Id.run do
         queue := queue.push v
   return (dist, queue)
 
-/-- Every shortest path from `r` to each atom, as atom lists starting at `r`. -/
+/-- Every shortest path from `r` to each atom, as atom lists starting at `r`, filled along the BFS
+`order` so each atom's predecessors come first (`_all_shortest_paths` in `aromaticity_ref.py`). -/
 def Work.allShortestPaths (m : Work) (dist : Array (Option Nat)) (order : Array Nat) (r : Nat) :
     Array (List (List Nat)) := Id.run do
   let mut paths : Array (List (List Nat)) := (Array.replicate m.numAtoms []).set! r [[r]]
   for v in order do
     if v == r then continue
     let dv := (dist[v]!).getD 0
-    let preds := (m.neighbors v).filterMap fun (_, u) =>
+    let preds := (m.neighbors v).filterMap fun (_, u) ↦
       if dist[u]! == some (dv - 1) then some u else none
-    paths := paths.set! v (preds.flatMap fun u => paths[u]!.map (· ++ [v]))
+    paths := paths.set! v (preds.flatMap fun u ↦ paths[u]!.map (· ++ [v]))
   return paths
 
-/-- Bond bitmask of a cycle given as a list of atoms. -/
+/-- Bond bitmask of a cycle given as a list of atoms: bit `k` is set iff bond `k` joins two
+consecutive atoms of the cycle (the `mask` of `add` in `relevant_cycles`). -/
 def Work.cycleMask (m : Work) (cyc : List Nat) : Nat :=
   let n := cyc.length
-  (List.range n).foldl (init := 0) fun acc t =>
+  (List.range n).foldl (init := 0) fun acc t ↦
     match m.bondBetween? (cyc[t]!) (cyc[(t + 1) % n]!) with
     | some k => acc ||| (1 <<< k)
     | none => acc
 
-/-- Candidate cycles (bond mask, atoms), first representative of each bond set kept. -/
+/-- Candidate cycles (bond mask, atoms), first representative of each bond set kept: for each root,
+two vertex-disjoint shortest paths closed by a bond or by a shared atom (`relevant_cycles`). -/
 def Work.candidateCycles (m : Work) : Array (Nat × List Nat) := Id.run do
   let mut cands : Array (Nat × List Nat) := #[]
-  let disjointTails (p q : List Nat) := p.tail.all fun a => !q.tail.contains a
+  let disjointTails (p q : List Nat) := p.tail.all fun a ↦ !q.tail.contains a
   for r in [0:m.numAtoms] do
     let (dist, order) := m.bfs r
     let paths := m.allShortestPaths dist order r
@@ -90,13 +95,13 @@ def Work.candidateCycles (m : Work) : Array (Nat × List Nat) := Id.run do
       if dx == 0 then continue
       -- odd cycles: bond x–y with both ends at the same distance
       for (_, y) in m.neighbors x do
-        if y > x && dist[y]! == some dx then
+        if x < y && dist[y]! == some dx then
           for p in paths[x]! do
             for q in paths[y]! do
               if disjointTails p q then found := found ++ [p ++ q.reverse.dropLast]
       -- even cycles: x reached by two different predecessors
-      if dx ≥ 2 then
-        let preds := (m.neighbors x).filterMap fun (_, u) =>
+      if 2 ≤ dx then
+        let preds := (m.neighbors x).filterMap fun (_, u) ↦
           if dist[u]! == some (dx - 1) then some u else none
         for a in [0:preds.length] do
           for b in [a + 1:preds.length] do
@@ -108,15 +113,16 @@ def Work.candidateCycles (m : Work) : Array (Nat × List Nat) := Id.run do
       if !cands.any (·.1 == mask) then cands := cands.push (mask, cyc)
   return cands
 
-/-- Reduce bitmask `v` by a GF(2) basis of (pivot bit, vector), highest pivot first. -/
+/-- Reduce bitmask `v` by a GF(2) echelon basis of (pivot bit, vector) pairs, highest pivot first
+(`reduce` in `relevant_cycles`); `v` reduces to `0` iff it is a sum of basis vectors. -/
 def reduceBy (basis : List (Nat × Nat)) (v : Nat) : Nat :=
-  basis.foldl (init := v) fun v (p, b) => if v.testBit p then v ^^^ b else v
+  basis.foldl (init := v) fun v (p, b) ↦ if v.testBit p then v ^^^ b else v
 
-/-- RDKit's ring set: the relevant cycles, as atom lists, sorted by
-(size, sorted atoms). -/
+/-- RDKit's ring set (`symmetrizeSSSR`, `FindRings.cpp:1085`): the relevant cycles as atom lists,
+sorted by (size, sorted atoms), following `relevant_cycles` in `aromaticity_ref.py`. -/
 def Work.relevantCycles (m : Work) : Array (List Nat) := Id.run do
   let key (c : Nat × List Nat) := (popcount c.1, c.2.mergeSort (· ≤ ·))
-  let sorted := m.candidateCycles.toList.mergeSort fun a b =>
+  let sorted := m.candidateCycles.toList.mergeSort fun a b ↦
     let (la, sa) := key a
     let (lb, sb) := key b
     la < lb || (la == lb && (listLt sa sb || sa == sb))
@@ -126,15 +132,16 @@ def Work.relevantCycles (m : Work) : Array (List Nat) := Id.run do
   for size in sizes do
     let group := sorted.filter (popcount ·.1 == size)
     -- independent of the strictly smaller cycles kept so far?
-    let kept := group.filter fun c => reduceBy basis c.1 != 0
+    let kept := group.filter fun c ↦ reduceBy basis c.1 != 0
     result := result ++ (kept.map (·.2)).toArray
     for c in kept do
       let v := reduceBy basis c.1
       if v != 0 then
-        basis := (basis ++ [(v.log2, v)]).mergeSort fun x y => x.1 ≥ y.1
+        basis := (basis ++ [(v.log2, v)]).mergeSort fun x y ↦ y.1 ≤ x.1
   return result
 
-/-- Connected components of a graph on `[0, n)` given by neighbour lists. -/
+/-- Connected components of a graph on `[0, n)` given by neighbor lists, each sorted increasingly;
+`Kekulize` groups fused ring systems with it (`RingUtils::pickFusedRings`). -/
 def components (n : Nat) (nbrs : Array (List Nat)) : List (List Nat) := Id.run do
   let mut seen := Array.replicate n false
   let mut comps : List (List Nat) := []
@@ -156,9 +163,9 @@ def components (n : Nat) (nbrs : Array (List Nat)) : List (List Nat) := Id.run d
     comps := comps ++ [comp.mergeSort (· ≤ ·)]
   return comps
 
-/-- Bond indices around a ring given as atoms. -/
+/-- Bond indices around a ring given as atoms, in ring order (`RingUtils::convertToBonds`). -/
 def Work.ringBonds (m : Work) (ring : List Nat) : List Nat :=
   let n := ring.length
-  (List.range n).filterMap fun t => m.bondBetween? (ring[t]!) (ring[(t + 1) % n]!)
+  (List.range n).filterMap fun t ↦ m.bondBetween? (ring[t]!) (ring[(t + 1) % n]!)
 
 end LeanSMILES.Aromaticity

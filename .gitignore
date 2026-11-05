@@ -22,3 +22,6 @@ node_modules
 dist
 server/.cache/
 
+
+# The raw PowerPoint behind client/public/leansmiles-scheme.png: kept locally, not in the repo.
+*.pptx

@@ -25,11 +25,14 @@ namespace LeanLearn.Examples.OLSFloat
 
 open LeanLearn.Regression.OLSFloat
 
+-- Unwrap a solver result in `IO`, reporting an `Error` as an `IO.userError`.
 private def getResult {α : Type} (result : Except Error α) : IO α :=
   match result with
   | .ok value => pure value
   | .error e => throw (IO.userError e.toString)
 
+/-- Fit three tiny designs with `fit` and print the results: a line the data lie on exactly, a
+noisy line with coefficients `[5/6, 3/2]`, and a singular design that `fit` rejects. -/
 def run : IO Unit := do
   -- Column 0 is the intercept; column 1 contains x = 0, 1, 2.
   let X : Design := #[#[1.0, 0.0], #[1.0, 1.0], #[1.0, 2.0]]
@@ -39,12 +42,11 @@ def run : IO Unit := do
   IO.println s!"Predictions on the input rows = {← getResult (model.predictAll X)}"
   IO.println s!"Prediction at x = 3 = {← getResult (model.predict #[1.0, 3.0])}"
   IO.println s!"Sum of squared errors = {← getResult (model.sumSquaredError X y)}"
-
+  -- Targets not on one line: the fit minimizes the squared error but cannot zero it.
   let noisyY : Array Float := #[1.0, 2.0, 4.0]
   let noisy ← getResult (fit X noisyY)
   IO.println s!"Noisy line: coefficients = {noisy.coefficients} (expected [5/6, 3/2])"
   IO.println s!"Sum of squared errors = {← getResult (noisy.sumSquaredError X noisyY)}"
-
   -- Repeated columns cannot determine a unique pair of coefficients.
   match fit #[#[1.0, 1.0], #[1.0, 1.0]] #[1.0, 3.0] with
   | .error e => IO.println s!"Singular design: {e}"

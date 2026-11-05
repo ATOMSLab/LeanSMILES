@@ -43,13 +43,20 @@ lake exe morgan-test [datasets/delaney-oracle.csv]
 
 open LeanSMILES LeanSMILES.SMILES LeanSMILES.Tests
 
+/-- The on-bits of `M`'s folded Morgan fingerprint (radius 2, 2048 bits) spelled like RDKit's
+`morgan_bits` column, space-separated, so it compares to `Row.morganBits` as a string. -/
 def bitsString (M : Mol) : String := " ".intercalate (M.morganBits.map toString)
 
-def idsString (M : Mol) : String :=
-  " ".intercalate (M.morganIds.map fun (id, c) ↦ s!"{id}:{c}")
+/-- The unfolded Morgan identifiers of `M` with their counts spelled like RDKit's `morgan_ids`
+column, `id:count` entries space-separated, so it compares to `Row.morganIds` as a string. -/
+def idsString (M : Mol) : String := " ".intercalate (M.morganIds.map fun (id, c) ↦ s!"{id}:{c}")
 
+/-- Ring membership of each atom of `M` in SMILES order, `1` in a ring and `0` otherwise: the
+shape of RDKit's `atom_in_ring` column, so it compares to `Row.inRing` directly. -/
 def inRingList (M : Mol) : List ℕ := M.mol.inRingVector.toList.map fun b ↦ if b then 1 else 0
 
+/-- Run the module docstring's checks over the oracle file named in `args` (Delaney by default);
+exit `0` iff every `[must be …]` line holds and every row parsed or was rejected by the grammar. -/
 public def main (args : List String) : IO UInt32 := do
   let path := args.headD "datasets/delaney-oracle.csv"
   let rows ← readRows path

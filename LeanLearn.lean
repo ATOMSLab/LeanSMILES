@@ -1,9 +1,9 @@
+/-
+Copyright (c) 2026 Tyler Josephson. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Tyler Josephson
+-/
 module
-
--- LeanLearn: learning algorithms on tabular data `(X, y)` and their proofs. Imports Mathlib only.
--- Every executable algorithm is written once over the scalar interface: `Float` is what runs,
--- `ℝ` is what the theorems are about. The executable code is at the top level and exposes its
--- definition bodies; everything under `Proofs/` is over `ℝ`.
 
 -- The scalar interface: `ScalarLike`, its polynomial fragment, and the `Float`-usable sums
 public import LeanLearn.Scalar
@@ -12,6 +12,8 @@ public import LeanLearn.Scalar
 public import LeanLearn.Regression.Problem
 public import LeanLearn.Regression.Solvers
 public import LeanLearn.Regression.Certificates
+-- The residual certificate on sparse 0/1 features (Morgan bits), from the bit lists
+public import LeanLearn.Regression.SparseProblem
 -- The prediction, squared error and ridge objective on a Mathlib matrix, over any scalar
 public import LeanLearn.Regression.LinearModel
 -- Householder-QR solvers on `Float` arrays
@@ -36,6 +38,7 @@ public import LeanLearn.Proofs.Regression.Basic
 public import LeanLearn.Proofs.Regression.GradientDescent
 public import LeanLearn.Proofs.Regression.Iterative
 public import LeanLearn.Proofs.Regression.Certificates
+public import LeanLearn.Proofs.Regression.SparseProblem
 public import LeanLearn.Proofs.Regression.MatrixBridge
 public import LeanLearn.Proofs.Regression.LinearModel
 -- Examples: worked proofs (`ols`, `ridge`) and runs of the `Float` solvers
@@ -43,3 +46,13 @@ public import LeanLearn.Examples.ols
 public import LeanLearn.Examples.ridge
 public import LeanLearn.Examples.olsFloat
 public import LeanLearn.Examples.ridgeFloat
+
+/-!
+# LeanLearn
+
+Learning algorithms on tabular data `(X, y)` and their proofs; imports Mathlib only. Every
+executable algorithm is written once over the scalar interface of `LeanLearn.Scalar`: `Float`
+is what runs, `ℝ` is what the theorems are about. The executable code (`Regression/`,
+`Classification/`, `Plot/`) is at the top level and exposes its definition bodies; everything
+under `Proofs/` is over `ℝ`. Importing this module imports all of them.
+-/

@@ -30,7 +30,7 @@ set_option linter.hashCommand false
 
 /-! ### Flat molecules: rings become regular polygons, chains zigzag -/
 
-#draw "Cn1cnc2c1c(=O)n(C)c(=O)n2C"          -- caffeine
+#draw "Cn1cnc2c1c(=O)n(C)c(=O)n2C"           -- caffeine
 #draw "CC(=O)Oc1ccccc1C(=O)O"                -- aspirin
 #draw "CCCCCCCCCC(=O)O"                      -- decanoic acid
 #draw "c1ccc2c(c1)ccc1ccccc12"               -- phenanthrene

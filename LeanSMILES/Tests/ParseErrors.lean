@@ -22,21 +22,26 @@ with what atom 0 was recorded as.
 
 open LeanSMILES.SMILES
 
+/-- One malformed SMILES string with the `ParseError` that `parseRaw` must return for it and
+that error's exact user-facing message. -/
 structure ErrorCase where
+  /-- A short label for the check, printed on its PASS or FAIL line. -/
   name : String
+  /-- The malformed SMILES string handed to `parseRaw`. -/
   input : String
+  /-- The error `parseRaw` must return, compared with `==`. -/
   expected : ParseError
+  /-- The exact `toString` of `expected`, pinned so that a change of wording is caught. -/
   message : String
 
+/-- The error table: malformed inputs hitting every `ParseError` constructor except `internal`
+(checked on its own in `main`, since no input reaches it), then the README's reject decisions. -/
 def cases : List ErrorCase := [
-  ⟨"unexpected character", "C?", .unexpectedChar 1 '?',
-    "unexpected character '?' at 1"⟩,
+  ⟨"unexpected character", "C?", .unexpectedChar 1 '?', "unexpected character '?' at 1"⟩,
   ⟨"unexpected character in bracket", "[13!C]", .unexpectedChar 3 '!',
     "unexpected character '!' at 3"⟩,
-  ⟨"invalid second ring digit", "C%1x", .unexpectedChar 3 'x',
-    "unexpected character 'x' at 3"⟩,
-  ⟨"invalid first ring digit", "C%x1", .unexpectedChar 2 'x',
-    "unexpected character 'x' at 2"⟩,
+  ⟨"invalid second ring digit", "C%1x", .unexpectedChar 3 'x', "unexpected character 'x' at 3"⟩,
+  ⟨"invalid first ring digit", "C%x1", .unexpectedChar 2 'x', "unexpected character 'x' at 2"⟩,
   ⟨"end before bracket symbol", "[", .unexpectedEnd "an element symbol",
     "unexpected end of input, expected an element symbol"⟩,
   ⟨"end before closing bracket", "[C", .unexpectedEnd "']'",
@@ -45,20 +50,16 @@ def cases : List ErrorCase := [
     "unexpected end of input, expected two digits after '%'"⟩,
   ⟨"end after dot", "C.", .unexpectedEnd "an atom after '.'",
     "unexpected end of input, expected an atom after '.'"⟩,
-  ⟨"unknown element", "[X]", .unknownElement 1 "X",
-    "unknown element symbol 'X' at 1"⟩,
+  ⟨"unknown element", "[X]", .unknownElement 1 "X", "unknown element symbol 'X' at 1"⟩,
   ⟨"unknown element after isotope", "[13X]", .unknownElement 3 "X",
     "unknown element symbol 'X' at 3"⟩,
   ⟨"malformed bracket", "[Cx]", .badBracket 0 "unexpected 'x'",
     "malformed bracket atom at 0: unexpected 'x'"⟩,
   ⟨"nonaromatic element written aromatic", "[f]", .badBracket 0 "'f' may not be written aromatic",
     "malformed bracket atom at 0: 'f' may not be written aromatic"⟩,
-  ⟨"leading bond", "-C", .bondWithoutAtom 0,
-    "bond symbol at 0 cannot connect two atoms"⟩,
-  ⟨"consecutive bonds", "C--C", .bondWithoutAtom 1,
-    "bond symbol at 1 cannot connect two atoms"⟩,
-  ⟨"trailing bond", "C-", .bondWithoutAtom 1,
-    "bond symbol at 1 cannot connect two atoms"⟩,
+  ⟨"leading bond", "-C", .bondWithoutAtom 0, "bond symbol at 0 cannot connect two atoms"⟩,
+  ⟨"consecutive bonds", "C--C", .bondWithoutAtom 1, "bond symbol at 1 cannot connect two atoms"⟩,
+  ⟨"trailing bond", "C-", .bondWithoutAtom 1, "bond symbol at 1 cannot connect two atoms"⟩,
   ⟨"branch before atom", "(C)", .branchWithoutAtom 0,
     "branch opened at 0 without an atom to attach to"⟩,
   ⟨"branch after dot", "C.(O)", .branchWithoutAtom 2,
@@ -69,30 +70,21 @@ def cases : List ErrorCase := [
     "ring-closure label at 0 without an atom to attach to"⟩,
   ⟨"ring after dot", "C.1", .ringWithoutAtom 2,
     "ring-closure label at 2 without an atom to attach to"⟩,
-  ⟨"unmatched branch close", "C)", .unmatchedBranchClose 1,
-    "')' at 1 closes no branch"⟩,
-  ⟨"empty branch", "C()", .emptyBranch 2,
-    "empty branch '()' closed at 2"⟩,
+  ⟨"unmatched branch close", "C)", .unmatchedBranchClose 1, "')' at 1 closes no branch"⟩,
+  ⟨"empty branch", "C()", .emptyBranch 2, "empty branch '()' closed at 2"⟩,
   ⟨"ring directly after branch open", "C(1C)", .ringAfterBranchOpen 2,
     "ring-closure label at 2 directly after '('"⟩,
   ⟨"percent ring directly after branch open", "C(%12C)", .ringAfterBranchOpen 2,
     "ring-closure label at 2 directly after '('"⟩,
-  ⟨"leading dot", ".C", .danglingDot 0,
-    "'.' at 0 is not between two atoms"⟩,
-  ⟨"dot directly after branch open", "C(.O)", .danglingDot 2,
-    "'.' at 2 is not between two atoms"⟩,
-  ⟨"dot before branch close", "C(C.)", .danglingDot 3,
-    "'.' at 3 is not between two atoms"⟩,
-  ⟨"one unclosed branch", "C(C", .unclosedBranch 1,
-    "1 branch was never closed"⟩,
-  ⟨"unclosed branches", "C(C(C", .unclosedBranch 2,
-    "2 branches were never closed"⟩,
-  ⟨"one unclosed ring", "C1", .unclosedRing [1],
-    "ring closure 1 was never closed"⟩,
+  ⟨"leading dot", ".C", .danglingDot 0, "'.' at 0 is not between two atoms"⟩,
+  ⟨"dot directly after branch open", "C(.O)", .danglingDot 2, "'.' at 2 is not between two atoms"⟩,
+  ⟨"dot before branch close", "C(C.)", .danglingDot 3, "'.' at 3 is not between two atoms"⟩,
+  ⟨"one unclosed branch", "C(C", .unclosedBranch 1, "1 branch was never closed"⟩,
+  ⟨"unclosed branches", "C(C(C", .unclosedBranch 2, "2 branches were never closed"⟩,
+  ⟨"one unclosed ring", "C1", .unclosedRing [1], "ring closure 1 was never closed"⟩,
   ⟨"unclosed rings in input order", "C12", .unclosedRing [1, 2],
     "ring closures [1, 2] were never closed"⟩,
-  ⟨"ring self-bond", "C11", .selfBond 2 0,
-    "ring closure at 2 bonds atom 0 to itself"⟩,
+  ⟨"ring self-bond", "C11", .selfBond 2 0, "ring closure at 2 bonds atom 0 to itself"⟩,
   ⟨"duplicate bond", "C1C1", .duplicateBond 3 0 1,
     "bond at 3 duplicates the bond between atoms 0 and 1"⟩,
   ⟨"conflicting ring bond symbols", "C=1CC-1", .conflictingRingBond 6 1,
@@ -117,8 +109,7 @@ def cases : List ErrorCase := [
     "malformed bracket atom at 0: 'te' may not be written aromatic"⟩,
   ⟨"unknown two-letter aromatic symbol", "[xy]", .unknownElement 1 "xy",
     "unknown element symbol 'xy' at 1"⟩,
-  ⟨"one character after '%'", "C%x", .unexpectedChar 2 'x',
-    "unexpected character 'x' at 2"⟩,
+  ⟨"one character after '%'", "C%x", .unexpectedChar 2 'x', "unexpected character 'x' at 2"⟩,
   ⟨"RDKit's long ring labels", "C%(123)CC%(123)", .unexpectedChar 2 '(',
     "unexpected character '(' at 2"⟩
 ]
@@ -126,11 +117,17 @@ def cases : List ErrorCase := [
 /-- A string that must parse, with its atom count and what atom 0 was
 recorded as (its SMILES form, bare or bracketed). -/
 structure AcceptCase where
+  /-- A short label for the check, printed on its PASS or FAIL line. -/
   name : String
+  /-- The SMILES string that must parse. -/
   input : String
+  /-- The number of atoms the parsed molecule must have. -/
   atoms : ℕ
+  /-- What atom 0 must print as: its SMILES form, bare (`C`) or bracketed (`[Fe+3]`). -/
   atom0 : String
 
+/-- The accept table: the strings that "What the parser accepts" in the README says must parse,
+each with its atom count and the recorded form of atom 0. -/
 def accepted : List AcceptCase := [
   ⟨"leading whitespace is skipped", " C", 1, "C"⟩,
   ⟨"whitespace ends the SMILES; the rest is a title", "C C", 1, "C"⟩,
@@ -146,6 +143,8 @@ def accepted : List AcceptCase := [
   ⟨"isotope with a leading zero", "[02H]", 1, "[2H]"⟩
 ]
 
+/-- Runs one `ErrorCase`: `parseRaw c.input` must fail with exactly `c.expected`, whose message
+must be `c.message`. Prints a PASS or FAIL line and returns whether the case passed. -/
 def checkCase (c : ErrorCase) : IO Bool := do
   match parseRaw c.input with
   | .ok _ =>
@@ -161,6 +160,8 @@ def checkCase (c : ErrorCase) : IO Bool := do
       IO.eprintln s!"  got: {repr actual} / {actual}"
       pure false
 
+/-- Runs one `AcceptCase`: `parseRaw c.input` must succeed with `c.atoms` atoms and atom 0
+printing as `c.atom0`. Prints a PASS or FAIL line and returns whether the case passed. -/
 def checkAccept (c : AcceptCase) : IO Bool := do
   match parseRaw c.input with
   | .error e =>
@@ -177,6 +178,8 @@ def checkAccept (c : AcceptCase) : IO Bool := do
       IO.eprintln s!"  got: {M.n} atoms, atom 0 {atom0}"
       pure false
 
+/-- Entry point of `lake exe parse-errors-test`: runs every error and accept case plus the
+`internal` message check, prints the tally, and returns exit code 1 if any check failed. -/
 public def main : IO UInt32 := do
   let results ← cases.mapM checkCase
   let acceptResults ← accepted.mapM checkAccept

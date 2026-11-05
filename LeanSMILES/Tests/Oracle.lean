@@ -38,6 +38,8 @@ lake exe oracle-test [datasets/delaney-oracle.csv]
 
 open LeanSMILES LeanSMILES.SMILES LeanSMILES.Tests
 
+/-- Entry point of `lake exe oracle-test`: runs the checks described above on the CSV named by
+the first argument (default `datasets/delaney-oracle.csv`), exiting `0` iff every "must" holds. -/
 public def main (args : List String) : IO UInt32 := do
   let path := args.headD "datasets/delaney-oracle.csv"
   let rows ← readRows path
