@@ -298,12 +298,18 @@ def isNitroN (i : ℕ) : Bool :=
   let a := m.atoms[i]!
   a.z == 7 && a.charge == 0 && m.explicitValence i == 5
 
+/-- A neutral O across a double bond `(bond, neighbour)`: what `nitrogenOxideAt` rewrites. -/
+def oxideTarget (p : ℕ × ℕ) : Bool :=
+  m.atoms[p.2]!.z == 8 && m.atoms[p.2]!.charge == 0 && m.bonds[p.1]!.kind == .double
+
+/-- A neutral N across a triple bond `(bond, neighbour)`: what `nitrogenAzideAt` rewrites. -/
+def azideTarget (p : ℕ × ℕ) : Bool :=
+  m.atoms[p.2]!.z == 7 && m.atoms[p.2]!.charge == 0 && m.bonds[p.1]!.kind == .triple
+
 /-- `MolOps.cpp:51-136`, first pass at nitrogen `i`: the first neutral O on a double bond
 becomes -O⁻ and `i` becomes N⁺. -/
 def nitrogenOxideAt (i : ℕ) : Work :=
-  let firstO := (m.neighbors i).find? fun (k, j) ↦
-    m.atoms[j]!.z == 8 && m.atoms[j]!.charge == 0 && m.bonds[k]!.kind == .double
-  match firstO with
+  match (m.neighbors i).find? m.oxideTarget with
   | some (k, j) =>
     ((m.setKind k .single).modifyAtom i ({ · with charge := 1 })).modifyAtom j
       ({ · with charge := -1 })
@@ -312,9 +318,7 @@ def nitrogenOxideAt (i : ℕ) : Work :=
 /-- `MolOps.cpp:51-136`, second pass at nitrogen `i`: the first neutral N on a triple bond
 becomes =N⁻ and `i` becomes N⁺. -/
 def nitrogenAzideAt (i : ℕ) : Work :=
-  let firstN := (m.neighbors i).find? fun (k, j) ↦
-    m.atoms[j]!.z == 7 && m.atoms[j]!.charge == 0 && m.bonds[k]!.kind == .triple
-  match firstN with
+  match (m.neighbors i).find? m.azideTarget with
   | some (k, j) =>
     ((m.setKind k .double).modifyAtom i ({ · with charge := 1 })).modifyAtom j
       ({ · with charge := -1 })
@@ -327,15 +331,18 @@ def nitrogensCleanup : Work :=
     if s.1.isNitroN i then (s.1.nitrogenOxideAt i, s.2 ++ [i]) else s
   first.2.foldl nitrogenAzideAt first.1
 
+/-- One neighbour `(bond, atom)` of `phosphorusScan`. -/
+def phosphorusStep (s : Option (ℕ × ℕ) × Bool) (p : ℕ × ℕ) : Option (ℕ × ℕ) × Bool :=
+  let b := m.atoms[p.2]!
+  if b.z == 8 && b.charge == 0 && m.bonds[p.1]!.kind == .double then (some p, s.2)
+  else if (b.z == 6 || b.z == 7) && 2 ≤ m.degree p.2 && m.bonds[p.1]!.kind == .double then
+    (s.1, true)
+  else s
+
 /-- The double bonds of phosphorus `i`: the last neutral O on one, and whether some C or N with
 at least two neighbours is on one (`MolOps.cpp:138-180`). -/
 def phosphorusScan (i : ℕ) : Option (ℕ × ℕ) × Bool :=
-  (m.neighbors i).foldl (init := (none, false)) fun s (k, j) ↦
-    let b := m.atoms[j]!
-    if b.z == 8 && b.charge == 0 && m.bonds[k]!.kind == .double then (some (k, j), s.2)
-    else if (b.z == 6 || b.z == 7) && 2 ≤ m.degree j && m.bonds[k]!.kind == .double then
-      (s.1, true)
-    else s
+  (m.neighbors i).foldl m.phosphorusStep (none, false)
 
 /-- `MolOps.cpp:138-180`: neutral 5-valent P with three neighbours, `=O` and
 `=C`/`=N` (the C/N having ≥ 2 neighbours). The last such `=O` becomes `-O⁻`. -/
@@ -348,6 +355,12 @@ def phosphorusCleanup (i : ℕ) : Work :=
       ({ · with charge := 1 })
   | _ => m
 
+/-- One neighbour `(bond, atom)` of `halogenCleanup`: a double bond becomes `-O⁻`, counted. -/
+def halogenStep (s : Work × ℤ) (p : ℕ × ℕ) : Work × ℤ :=
+  if s.1.bonds[p.1]!.kind == .double then
+    ((s.1.setKind p.1 .single).modifyAtom p.2 ({ · with charge := -1 }), s.2 + 1)
+  else s
+
 /-- `MolOps.cpp:182-215`: neutral Cl/Br/I with valence 3, 5 or 7 bonded only to
 O. Every `=O` becomes `-O⁻`; the halogen's charge is the number changed. -/
 def halogenCleanup (i : ℕ) : Work :=
@@ -355,10 +368,7 @@ def halogenCleanup (i : ℕ) : Work :=
   if a.charge != 0 || ![3, 5, 7].contains (m.explicitValence i) then m else
   let nbrs := m.neighbors i
   if !nbrs.all (fun (_, j) ↦ m.atoms[j]!.z == 8) then m else
-  let r := nbrs.foldl (init := (m, (0 : ℤ))) fun s (k, j) ↦
-    if s.1.bonds[k]!.kind == .double then
-      ((s.1.setKind k .single).modifyAtom j ({ · with charge := -1 }), s.2 + 1)
-    else s
+  let r := nbrs.foldl halogenStep (m, 0)
   r.1.modifyAtom i ({ · with charge := r.2 })
 
 /-- One step of `cleanUp`'s second pass: phosphorus and halogen rewrites at atom `i`. -/

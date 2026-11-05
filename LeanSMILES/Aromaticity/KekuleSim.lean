@@ -373,6 +373,10 @@ lemma kind_setKind (w : Work) (k j : ℕ) (o : BondKind) :
   funext i
   simp [Work.bondsOf, WBond.touches]
 
+@[simp] lemma size_atoms_modifyAtom (w : Work) (i : ℕ) (f : WAtom → WAtom) :
+    (w.modifyAtom i f).atoms.size = w.atoms.size := by
+  simp [Work.modifyAtom]
+
 @[simp] lemma bondsOf_modifyAtom (w : Work) (i : ℕ) (f : WAtom → WAtom) :
     (w.modifyAtom i f).bondsOf = w.bondsOf := rfl
 
@@ -911,6 +915,485 @@ theorem onCycle_of_D (hwf : WF w₁) {k : ℕ} (hk : D k = true) : w₁.onCycle 
   rcases hδ k hk with e | e <;> rw [e] at htotal <;> omega
 
 end RelD
+
+/-! ### `cleanUp` in lockstep
+
+`cleanUp` rewrites bonds at a few hypervalent atoms (`cleanUpCenter`). When no moved bond touches
+one, both sides make the same rewrites, on bonds that are not moved. -/
+
+lemma any_congr {β : Type*} {l : List β} {p q : β → Bool} (h : ∀ x ∈ l, p x = q x) :
+    l.any p = l.any q := by
+  induction l with
+  | nil => rfl
+  | cons x l ih =>
+    simp only [List.any_cons, h x List.mem_cons_self, ih fun y hy ↦ h y (List.mem_cons_of_mem _ hy)]
+
+/-- Atom `i` looks the same in `w` and `w'`: its record, its bonds and their kinds. -/
+structure SameAt (w w' : Work) (i : ℕ) : Prop where
+  atom : w.atoms[i]! = w'.atoms[i]!
+  bondsOf : w.bondsOf i = w'.bondsOf i
+  kind : ∀ k ∈ w.bondsOf i, (w.bonds[k]! : WBond).kind = (w'.bonds[k]! : WBond).kind
+
+lemma SameAt.isAromaticAtom {w w' : Work} {i : ℕ} (h : SameAt w w' i) :
+    w.isAromaticAtom i = w'.isAromaticAtom i := by
+  simp only [Work.isAromaticAtom, h.atom, ← h.bondsOf]
+  congr 1
+  exact any_congr fun k hk ↦ by rw [h.kind k hk]
+
+lemma SameAt.explicitValence {w w' : Work} {i : ℕ} (h : SameAt w w' i) :
+    w.explicitValence i = w'.explicitValence i := by
+  have hs : ((w.bondsOf i).map fun k ↦ halfOrder w.bonds[k]!.kind) =
+      (w'.bondsOf i).map fun k ↦ halfOrder w'.bonds[k]!.kind := by
+    rw [← h.bondsOf]
+    exact List.map_congr_left fun k hk ↦ by rw [h.kind k hk]
+  simp only [Work.explicitValence, Id.run, pure_bind, List.forIn_pure_yield_eq_foldl,
+    foldl_add_eq_sum, hs, h.atom, h.isAromaticAtom]
+
+/-- An atom `cleanUp` may rewrite: a neutral N or P of valence 5, or a neutral Cl, Br or I of
+valence 3, 5 or 7. -/
+def cleanUpCenter (w : Work) (i : ℕ) : Bool :=
+  let a := w.atoms[i]!
+  a.charge == 0 && (((a.z == 7 || a.z == 15) && w.explicitValence i == 5) ||
+    ((a.z == 17 || a.z == 35 || a.z == 53) && [3, 5, 7].contains (w.explicitValence i)))
+
+lemma SameAt.cleanUpCenter {w w' : Work} {i : ℕ} (h : SameAt w w' i) :
+    w.cleanUpCenter i = w'.cleanUpCenter i := by
+  simp only [Work.cleanUpCenter, h.atom, h.explicitValence]
+
+lemma Sim.cleanUpCenter {w₁ w₂ : Work} (h : Sim w₁ w₂) : w₁.cleanUpCenter = w₂.cleanUpCenter := by
+  funext i
+  simp only [Work.cleanUpCenter, h.atoms, h.explicitValence]
+
+/-- No bond of `D` touches atom `c`. -/
+def OffD (D : ℕ → Bool) (w : Work) (c : ℕ) : Prop :=
+  ∀ k : ℕ, D k = true → (w.bonds[k]! : WBond).touches c = false
+
+/-- No bond of `D` touches an atom `cleanUp` may rewrite. -/
+def AvoidsCenters (D : ℕ → Bool) (w : Work) : Prop :=
+  ∀ c : ℕ, w.cleanUpCenter c = true → OffD D w c
+
+lemma OffD.notD {D : ℕ → Bool} {w : Work} {c : ℕ} (h : OffD D w c) {k : ℕ} (hk : k ∈ w.bondsOf c) :
+    D k = false := by
+  by_contra hD
+  have := h k (by simpa using hD)
+  simp [Work.bondsOf, this] at hk
+
+/-- What `cleanUp` keeps along the way: the lockstep, moved bonds away from the atoms it may
+rewrite, no aromaticity, and the skeleton of the start `w₀`. -/
+structure CleanInv (D : ℕ → Bool) (w₀ w₁ w₂ : Work) : Prop where
+  rel : RelD D w₁ w₂
+  avoid : AvoidsCenters D w₁
+  noArom : NoAromatic w₁
+  skel : SameSkel w₀ w₁
+
+lemma touches_other {b : WBond} {c x : ℕ} (hc : b.touches c = true) (hx : b.touches x = true) :
+    x = c ∨ x = b.other c := by
+  simp only [WBond.touches, WBond.other, Bool.or_eq_true, beq_iff_eq] at hc hx ⊢
+  split <;> omega
+
+/-- A rewrite near a rewritable atom `c`: bonds change only between `c` and `j`, atoms only at `c`
+and `j`, `j` ends up charged unless it is `c`, nothing becomes aromatic. -/
+structure Local (w w' : Work) (c j : ℕ) : Prop where
+  skel : SameSkel w w'
+  atom : ∀ i, i ≠ c → i ≠ j → w'.atoms[i]! = w.atoms[i]!
+  charged : j ≠ c → (w'.atoms[j]! : WAtom).charge ≠ 0
+  kind : ∀ k : ℕ, (w'.bonds[k]! : WBond).kind ≠ (w.bonds[k]! : WBond).kind →
+    ∀ i, (w.bonds[k]! : WBond).touches i = true → i = c ∨ i = j
+  arom : ∀ k : ℕ, (w'.bonds[k]! : WBond).kind ≠ (w.bonds[k]! : WBond).kind →
+    (w'.bonds[k]! : WBond).kind ≠ .aromatic
+  atomArom : ∀ i : ℕ, (w'.atoms[i]! : WAtom).aromatic = (w.atoms[i]! : WAtom).aromatic
+
+lemma SameSkel.refl (w : Work) : SameSkel w w := ⟨rfl, rfl, fun _ ↦ rfl, fun _ ↦ rfl⟩
+
+lemma SameSkel.trans {w₁ w₂ w₃ : Work} (h₁ : SameSkel w₁ w₂) (h₂ : SameSkel w₂ w₃) :
+    SameSkel w₁ w₃ :=
+  ⟨h₁.numAtoms.trans h₂.numAtoms, h₁.numBonds.trans h₂.numBonds, fun k ↦ (h₁.src k).trans (h₂.src k),
+    fun k ↦ (h₁.dst k).trans (h₂.dst k)⟩
+
+lemma SameSkel.touches' {w w' : Work} (h : SameSkel w w') (k i : ℕ) :
+    (w.bonds[k]! : WBond).touches i = (w'.bonds[k]! : WBond).touches i := h.touches k i
+
+lemma Local.avoid {D : ℕ → Bool} {w w' : Work} {c j : ℕ} (h : Local w w' c j)
+    (hav : AvoidsCenters D w) (hc : OffD D w c) : AvoidsCenters D w' := by
+  intro x hx k hk
+  rw [← h.skel.touches]
+  by_contra htx
+  simp only [Bool.not_eq_false] at htx
+  by_cases hxc : x = c
+  · subst hxc
+    simp [hc k hk] at htx
+  by_cases hxj : x = j
+  · subst hxj
+    have := h.charged hxc
+    simp [Work.cleanUpCenter, this] at hx
+  -- `x` and its bonds are untouched
+  have hsame : SameAt w w' x := by
+    refine ⟨(h.atom x hxc hxj).symm, by rw [h.skel.bondsOf], fun k' hk' ↦ ?_⟩
+    by_contra hne
+    have htk : (w.bonds[k']! : WBond).touches x = true := by
+      simpa [Work.bondsOf] using (List.mem_filter.mp hk').2
+    rcases h.kind k' (Ne.symm hne) x htk with e | e
+    · exact hxc e
+    · exact hxj e
+  rw [← hsame.cleanUpCenter] at hx
+  have := hav x hx k hk
+  simp [this] at htx
+
+lemma Local.noArom {w w' : Work} {c j : ℕ} (h : Local w w' c j) (hn : NoAromatic w) :
+    NoAromatic w' := by
+  refine ⟨fun k ↦ ?_, fun i ↦ by rw [h.atomArom, hn.2]⟩
+  by_cases hk : (w'.bonds[k]! : WBond).kind = (w.bonds[k]! : WBond).kind
+  · rw [hk]
+    exact hn.1 k
+  · exact h.arom k hk
+
+/-- Rewriting both sides alike near a rewritable atom `c` that no moved bond touches keeps the
+invariant, provided the rewrite is the same composite of `setKind` and `modifyAtom` on both
+sides. -/
+lemma CleanInv.step {D : ℕ → Bool} {w₀ w₁ w₂ : Work} (h : CleanInv D w₀ w₁ w₂) {c j : ℕ}
+    (hc : OffD D w₁ c) (F : Work → Work) (hrel : RelD D (F w₁) (F w₂)) (hloc : Local w₁ (F w₁) c j) :
+    CleanInv D w₀ (F w₁) (F w₂) :=
+  ⟨hrel, hloc.avoid h.avoid hc, hloc.noArom h.noArom, h.skel.trans hloc.skel⟩
+
+lemma SameSkel.wf {w w' : Work} (h : SameSkel w w') (hw : WF w) : WF w' := by
+  intro k hk
+  rw [← h.numBonds] at hk
+  rw [← h.src, ← h.dst, ← h.numAtoms]
+  exact hw k hk
+
+lemma SameSkel.symm {w w' : Work} (h : SameSkel w w') : SameSkel w' w :=
+  ⟨h.numAtoms.symm, h.numBonds.symm, fun k ↦ (h.src k).symm, fun k ↦ (h.dst k).symm⟩
+
+lemma touches_of_mem_bondsOf {w : Work} {c k : ℕ} (hk : k ∈ w.bondsOf c) :
+    (w.bonds[k]! : WBond).touches c = true := (List.mem_filter.mp hk).2
+
+lemma lt_of_mem_bondsOf {w : Work} {c k : ℕ} (hk : k ∈ w.bondsOf c) : k < w.numBonds :=
+  List.mem_range.mp (List.mem_filter.mp hk).1
+
+lemma other_lt {w : Work} (hwf : WF w) {c k : ℕ} (hk : k ∈ w.bondsOf c) :
+    (w.bonds[k]! : WBond).other c < w.atoms.size := by
+  obtain ⟨hs, hd, -⟩ := hwf k (lt_of_mem_bondsOf hk)
+  simp only [WBond.other]
+  split <;> assumption
+
+lemma mem_neighbors {w : Work} {c k j : ℕ} (h : (k, j) ∈ w.neighbors c) :
+    k ∈ w.bondsOf c ∧ j = (w.bonds[k]! : WBond).other c := by
+  obtain ⟨k', hk', e⟩ := List.mem_map.mp h
+  simp only [Prod.mk.injEq] at e
+  exact ⟨e.1 ▸ hk', e.1 ▸ e.2.symm⟩
+
+lemma skel_setKind (w : Work) (k : ℕ) (o : BondKind) : SameSkel w (w.setKind k o) :=
+  ⟨rfl, by simp, fun _ ↦ by simp, fun _ ↦ by simp⟩
+
+lemma skel_modifyAtom (w : Work) (i : ℕ) (f : WAtom → WAtom) : SameSkel w (w.modifyAtom i f) :=
+  ⟨by simp, rfl, fun _ ↦ rfl, fun _ ↦ rfl⟩
+
+/-- `setKind`, then `F` at `c`, then `G` at `j` (the nitrogen rewrites). -/
+lemma local_kcj (w : Work) (hwf : WF w) {c k : ℕ} (hk : k ∈ w.bondsOf c) (o : BondKind)
+    (ho : o ≠ .aromatic) (F G : WAtom → WAtom) (hF : ∀ a, (F a).aromatic = a.aromatic)
+    (hG : ∀ a, (G a).aromatic = a.aromatic) (hGc : ∀ a, (G a).charge ≠ 0) :
+    Local w (((w.setKind k o).modifyAtom c F).modifyAtom ((w.bonds[k]! : WBond).other c) G) c
+      ((w.bonds[k]! : WBond).other c) where
+  skel := ((skel_setKind w k o).trans (skel_modifyAtom _ c F)).trans (skel_modifyAtom _ _ G)
+  atom i hc hj := by simp [atom_modifyAtom, Ne.symm hc, Ne.symm hj]
+  charged _ := by
+    rw [atom_modifyAtom, if_pos ⟨rfl, by simpa using other_lt hwf hk⟩]
+    exact hGc _
+  kind k' hk' i hi := by
+    simp only [bonds_modifyAtom, kind_setKind] at hk'
+    split at hk'
+    · rename_i e
+      obtain ⟨rfl, -⟩ := e
+      exact touches_other (touches_of_mem_bondsOf hk) hi
+    · exact absurd rfl hk'
+  arom k' hk' := by
+    simp only [bonds_modifyAtom, kind_setKind] at hk' ⊢
+    by_cases e : k = k' ∧ k' < w.bonds.size
+    · simpa [e] using ho
+    · simp [e] at hk'
+  atomArom i := by
+    simp only [atom_modifyAtom, atoms_setKind, size_atoms_modifyAtom]
+    split_ifs <;> simp [hF, hG]
+
+/-- `setKind`, then `G` at `j`, then `F` at `c` (the phosphorus rewrite). -/
+lemma local_kjc (w : Work) (hwf : WF w) {c k : ℕ} (hk : k ∈ w.bondsOf c) (o : BondKind)
+    (ho : o ≠ .aromatic) (F G : WAtom → WAtom) (hF : ∀ a, (F a).aromatic = a.aromatic)
+    (hG : ∀ a, (G a).aromatic = a.aromatic) (hGc : ∀ a, (G a).charge ≠ 0) :
+    Local w (((w.setKind k o).modifyAtom ((w.bonds[k]! : WBond).other c) G).modifyAtom c F) c
+      ((w.bonds[k]! : WBond).other c) where
+  skel := ((skel_setKind w k o).trans (skel_modifyAtom _ _ G)).trans (skel_modifyAtom _ c F)
+  atom i hc hj := by simp [atom_modifyAtom, Ne.symm hc, Ne.symm hj]
+  charged hjc := by
+    rw [atom_modifyAtom, if_neg fun e ↦ hjc e.1.symm, atom_modifyAtom,
+      if_pos ⟨rfl, by simpa using other_lt hwf hk⟩]
+    exact hGc _
+  kind k' hk' i hi := by
+    simp only [bonds_modifyAtom, kind_setKind] at hk'
+    split at hk'
+    · rename_i e
+      obtain ⟨rfl, -⟩ := e
+      exact touches_other (touches_of_mem_bondsOf hk) hi
+    · exact absurd rfl hk'
+  arom k' hk' := by
+    simp only [bonds_modifyAtom, kind_setKind] at hk' ⊢
+    by_cases e : k = k' ∧ k' < w.bonds.size
+    · simpa [e] using ho
+    · simp [e] at hk'
+  atomArom i := by
+    simp only [atom_modifyAtom, atoms_setKind, size_atoms_modifyAtom]
+    split_ifs <;> simp [hF, hG]
+
+/-- `setKind`, then `G` at `j` (one step of the halogen rewrite). -/
+lemma local_kj (w : Work) (hwf : WF w) {c k : ℕ} (hk : k ∈ w.bondsOf c) (o : BondKind)
+    (ho : o ≠ .aromatic) (G : WAtom → WAtom) (hG : ∀ a, (G a).aromatic = a.aromatic)
+    (hGc : ∀ a, (G a).charge ≠ 0) :
+    Local w ((w.setKind k o).modifyAtom ((w.bonds[k]! : WBond).other c) G) c
+      ((w.bonds[k]! : WBond).other c) where
+  skel := (skel_setKind w k o).trans (skel_modifyAtom _ _ G)
+  atom i _ hj := by simp [atom_modifyAtom, Ne.symm hj]
+  charged _ := by
+    rw [atom_modifyAtom, if_pos ⟨rfl, by simpa using other_lt hwf hk⟩]
+    exact hGc _
+  kind k' hk' i hi := by
+    simp only [bonds_modifyAtom, kind_setKind] at hk'
+    split at hk'
+    · rename_i e
+      obtain ⟨rfl, -⟩ := e
+      exact touches_other (touches_of_mem_bondsOf hk) hi
+    · exact absurd rfl hk'
+  arom k' hk' := by
+    simp only [bonds_modifyAtom, kind_setKind] at hk' ⊢
+    by_cases e : k = k' ∧ k' < w.bonds.size
+    · simpa [e] using ho
+    · simp [e] at hk'
+  atomArom i := by
+    simp only [atom_modifyAtom, atoms_setKind]
+    split_ifs <;> simp [hG]
+
+/-- `F` at `c` alone (the end of the halogen rewrite). -/
+lemma local_c (w : Work) (c : ℕ) (F : WAtom → WAtom) (hF : ∀ a, (F a).aromatic = a.aromatic) :
+    Local w (w.modifyAtom c F) c c where
+  skel := skel_modifyAtom w c F
+  atom i hc _ := by simp [atom_modifyAtom, Ne.symm hc]
+  charged h := absurd rfl h
+  kind k' hk' := absurd rfl hk'
+  arom k' hk' := absurd rfl hk'
+  atomArom i := by
+    simp only [atom_modifyAtom]
+    split_ifs <;> simp [hF]
+
+namespace CleanInv
+
+variable {D : ℕ → Bool} {w₀ w₁ w₂ : Work} (h : CleanInv D w₀ w₁ w₂) (hwf : WF w₀)
+include h
+
+lemma wf₁ (hwf : WF w₀) : WF w₁ := h.skel.wf hwf
+
+/-- At an atom no moved bond touches, the bonds have the same kinds on both sides. -/
+lemma kind_at {c : ℕ} (hc : OffD D w₁ c) {k : ℕ} (hk : k ∈ w₁.bondsOf c) :
+    (w₁.bonds[k]! : WBond).kind = (w₂.bonds[k]! : WBond).kind :=
+  h.rel.off k (hc.notD hk)
+
+lemma find?_eq {c : ℕ} {p₁ p₂ : Work → ℕ × ℕ → Bool}
+    (hp : ∀ k j, k ∈ w₁.bondsOf c → p₁ w₁ (k, j) = p₂ w₂ (k, j)) :
+    (w₁.neighbors c).find? (p₁ w₁) = (w₂.neighbors c).find? (p₂ w₂) := by
+  rw [← h.rel.neighbors]
+  exact find?_congr fun ⟨k, j⟩ hkj ↦ hp k j (mem_neighbors hkj).1
+
+include hwf in
+lemma nitrogenOxideAt {i : ℕ} (hi : w₁.cleanUpCenter i = true) :
+    CleanInv D w₀ (w₁.nitrogenOxideAt i) (w₂.nitrogenOxideAt i) := by
+  have hc := h.avoid i hi
+  have hfind := h.find?_eq (c := i) (p₁ := oxideTarget) (p₂ := oxideTarget) fun k j hk ↦ by
+    simp only [Work.oxideTarget, h.rel.atoms, h.kind_at hc hk]
+  unfold Work.nitrogenOxideAt
+  rw [← hfind]
+  rcases hf : (w₁.neighbors i).find? w₁.oxideTarget with _ | ⟨k, j⟩
+  · exact h
+  · obtain ⟨hk, rfl⟩ := mem_neighbors (List.mem_of_find?_eq_some hf)
+    exact h.step hc (fun w ↦ ((w.setKind k .single).modifyAtom i ({ · with charge := 1 })).modifyAtom
+        ((w₁.bonds[k]! : WBond).other i) ({ · with charge := -1 }))
+      (((h.rel.setKind k (hc.notD hk) _).modifyAtom _ _).modifyAtom _ _)
+      (local_kcj w₁ (h.wf₁ hwf) hk .single (by decide) _ _ (fun _ ↦ rfl) (fun _ ↦ rfl) (fun _ ↦ by simp))
+
+include hwf in
+lemma nitrogenAzideAt {i : ℕ} (hc : OffD D w₁ i) :
+    CleanInv D w₀ (w₁.nitrogenAzideAt i) (w₂.nitrogenAzideAt i) := by
+  have hfind := h.find?_eq (c := i) (p₁ := azideTarget) (p₂ := azideTarget) fun k j hk ↦ by
+    simp only [Work.azideTarget, h.rel.atoms, h.kind_at hc hk]
+  unfold Work.nitrogenAzideAt
+  rw [← hfind]
+  rcases hf : (w₁.neighbors i).find? w₁.azideTarget with _ | ⟨k, j⟩
+  · exact h
+  · obtain ⟨hk, rfl⟩ := mem_neighbors (List.mem_of_find?_eq_some hf)
+    exact h.step hc (fun w ↦ ((w.setKind k .double).modifyAtom i ({ · with charge := 1 })).modifyAtom
+        ((w₁.bonds[k]! : WBond).other i) ({ · with charge := -1 }))
+      (((h.rel.setKind k (hc.notD hk) _).modifyAtom _ _).modifyAtom _ _)
+      (local_kcj w₁ (h.wf₁ hwf) hk .double (by decide) _ _ (fun _ ↦ rfl) (fun _ ↦ rfl) (fun _ ↦ by simp))
+
+end CleanInv
+
+lemma cleanUpCenter_of_isNitroN {w : Work} {i : ℕ} (h : w.isNitroN i = true) :
+    w.cleanUpCenter i = true := by
+  simp only [Work.isNitroN, Bool.and_eq_true, beq_iff_eq] at h
+  simp [Work.cleanUpCenter, h.1.1, h.1.2, h.2]
+
+lemma CleanInv.nitrogensCleanup {D : ℕ → Bool} {w₀ w₁ w₂ : Work} (h : CleanInv D w₀ w₁ w₂)
+    (hwf : WF w₀) : CleanInv D w₀ w₁.nitrogensCleanup w₂.nitrogensCleanup := by
+  unfold Work.nitrogensCleanup
+  dsimp only
+  rw [← h.rel.numAtoms]
+  -- the first pass: the same rewrites, and the same list of nitrogens, none on a moved bond
+  let R : Work × List ℕ → Work × List ℕ → Prop := fun s t ↦
+    CleanInv D w₀ s.1 t.1 ∧ s.2 = t.2 ∧ ∀ i ∈ s.2, OffD D s.1 i
+  have hfirst : R ((List.range w₁.numAtoms).foldl (init := (w₁, ([] : List ℕ))) fun s i ↦
+        if s.1.isNitroN i then (s.1.nitrogenOxideAt i, s.2 ++ [i]) else s)
+      ((List.range w₁.numAtoms).foldl (init := (w₂, ([] : List ℕ))) fun s i ↦
+        if s.1.isNitroN i then (s.1.nitrogenOxideAt i, s.2 ++ [i]) else s) := by
+    refine foldl_rel _ (fun s t i _ hst ↦ ?_) ⟨h, rfl, by simp⟩
+    obtain ⟨hst, h2, hoff⟩ := hst
+    have hn : s.1.isNitroN i = t.1.isNitroN i := by
+      simp only [Work.isNitroN, hst.rel.atoms, hst.rel.sim.explicitValence]
+    rw [← hn]
+    split
+    · rename_i hi
+      have hc := cleanUpCenter_of_isNitroN hi
+      have hnew := hst.nitrogenOxideAt hwf hc
+      refine ⟨hnew, by rw [h2], fun j hj ↦ ?_⟩
+      have hskel : SameSkel s.1 (s.1.nitrogenOxideAt i) := hst.skel.symm.trans hnew.skel
+      have off : ∀ x, OffD D s.1 x → OffD D (s.1.nitrogenOxideAt i) x := fun x hx k hk ↦ by
+        rw [← hskel.touches]
+        exact hx k hk
+      rcases List.mem_append.mp hj with hj | hj
+      · exact off j (hoff j hj)
+      · simp only [List.mem_singleton] at hj
+        exact off j (hj ▸ hst.avoid i hc)
+    · exact ⟨hst, h2, hoff⟩
+  obtain ⟨hf, h2, hoff⟩ := hfirst
+  rw [← h2]
+  -- the second pass revisits those nitrogens
+  have : ∀ (l : List ℕ) (s t : Work), CleanInv D w₀ s t → (∀ i ∈ l, OffD D s i) →
+      CleanInv D w₀ (l.foldl Work.nitrogenAzideAt s) (l.foldl Work.nitrogenAzideAt t) := by
+    intro l
+    induction l with
+    | nil => intro s t hst _; exact hst
+    | cons i l ih =>
+      intro s t hst hoff
+      have hnew := hst.nitrogenAzideAt hwf (hoff i List.mem_cons_self)
+      refine ih _ _ hnew fun j hj ↦ ?_
+      have hskel : SameSkel s (s.nitrogenAzideAt i) := hst.skel.symm.trans hnew.skel
+      intro k hk
+      rw [← hskel.touches]
+      exact hoff j (List.mem_cons_of_mem _ hj) k hk
+  exact this _ _ _ hf hoff
+
+lemma phosphorusScan_mem (w : Work) (l : List (ℕ × ℕ)) (s : Option (ℕ × ℕ) × Bool) {p : ℕ × ℕ}
+    (h : (l.foldl w.phosphorusStep s).1 = some p) : s.1 = some p ∨ p ∈ l := by
+  induction l generalizing s with
+  | nil => exact Or.inl h
+  | cons q l ih =>
+    rcases ih _ h with e | e
+    · unfold Work.phosphorusStep at e
+      dsimp only at e
+      split at e
+      · simp only [Option.some.injEq] at e
+        exact Or.inr (e ▸ List.mem_cons_self)
+      · split at e <;> exact Or.inl e
+    · exact Or.inr (List.mem_cons_of_mem _ e)
+
+lemma CleanInv.phosphorusCleanup {D : ℕ → Bool} {w₀ w₁ w₂ : Work} (h : CleanInv D w₀ w₁ w₂)
+    (hwf : WF w₀) {i : ℕ} (hz : (w₁.atoms[i]! : WAtom).z = 15) :
+    CleanInv D w₀ (w₁.phosphorusCleanup i) (w₂.phosphorusCleanup i) := by
+  unfold Work.phosphorusCleanup
+  dsimp only
+  rw [← h.rel.atoms, ← h.rel.sim.explicitValence, ← h.rel.degree]
+  split
+  · exact h
+  rename_i hcond
+  simp only [Bool.or_eq_true, bne_iff_ne, ne_eq, not_or, not_not] at hcond
+  have hc : OffD D w₁ i := h.avoid i (by simp [Work.cleanUpCenter, hz, hcond])
+  have hscan : w₂.phosphorusScan i = w₁.phosphorusScan i := by
+    unfold Work.phosphorusScan
+    rw [← h.rel.neighbors]
+    refine List.foldl_ext _ _ _ fun s ⟨k, j⟩ hkj ↦ ?_
+    have hk := (mem_neighbors hkj).1
+    simp only [Work.phosphorusStep, h.rel.atoms, h.rel.degree, h.kind_at hc hk]
+  rw [hscan]
+  rcases hs : w₁.phosphorusScan i with ⟨_ | ⟨k, j⟩, _ | _⟩
+  · exact h
+  · exact h
+  · exact h
+  · have hmem : (k, j) ∈ w₁.neighbors i := by
+      rcases phosphorusScan_mem w₁ _ _ (congrArg Prod.fst hs) with e | e
+      · simp at e
+      · exact e
+    obtain ⟨hk, rfl⟩ := mem_neighbors hmem
+    exact h.step hc (fun w ↦ ((w.setKind k .single).modifyAtom ((w₁.bonds[k]! : WBond).other i)
+        ({ · with charge := -1 })).modifyAtom i ({ · with charge := 1 }))
+      (((h.rel.setKind k (hc.notD hk) _).modifyAtom _ _).modifyAtom _ _)
+      (local_kjc w₁ (h.wf₁ hwf) hk .single (by decide) _ _ (fun _ ↦ rfl) (fun _ ↦ rfl)
+        (fun _ ↦ by simp))
+
+lemma CleanInv.halogenCleanup {D : ℕ → Bool} {w₀ w₁ w₂ : Work} (h : CleanInv D w₀ w₁ w₂)
+    (hwf : WF w₀) {i : ℕ} (hz : (w₁.atoms[i]! : WAtom).z = 17 ∨ (w₁.atoms[i]! : WAtom).z = 35 ∨
+      (w₁.atoms[i]! : WAtom).z = 53) :
+    CleanInv D w₀ (w₁.halogenCleanup i) (w₂.halogenCleanup i) := by
+  unfold Work.halogenCleanup
+  dsimp only
+  rw [← h.rel.atoms, ← h.rel.sim.explicitValence, ← h.rel.neighbors]
+  split
+  · exact h
+  rename_i hcond
+  split
+  · exact h
+  simp only [Bool.or_eq_true, bne_iff_ne, ne_eq, not_or, not_not, Bool.not_eq_true',
+    Bool.not_eq_false] at hcond
+  have hc : OffD D w₁ i := h.avoid i (by
+    rcases hz with hz | hz | hz <;> simp [Work.cleanUpCenter, hcond.1, hz] <;> simpa using hcond.2)
+  -- the halogen's neighbours, rewritten in turn
+  let R : Work × ℤ → Work × ℤ → Prop := fun s t ↦
+    CleanInv D w₀ s.1 t.1 ∧ s.2 = t.2 ∧ SameSkel w₁ s.1
+  have hfold : R ((w₁.neighbors i).foldl halogenStep (w₁, 0))
+      ((w₁.neighbors i).foldl halogenStep (w₂, 0)) := by
+    refine foldl_rel _ (fun s t ⟨k, j⟩ hkj hst ↦ ?_) ⟨h, rfl, SameSkel.refl _⟩
+    obtain ⟨hst, h2, hsk⟩ := hst
+    obtain ⟨hk, rfl⟩ := mem_neighbors hkj
+    have hk' : k ∈ s.1.bondsOf i := by rwa [← hsk.bondsOf]
+    have hc' : OffD D s.1 i := fun k' hk'' ↦ by rw [← hsk.touches]; exact hc k' hk''
+    have hother : (w₁.bonds[k]! : WBond).other i = (s.1.bonds[k]! : WBond).other i := hsk.other k i
+    unfold Work.halogenStep
+    rw [← hst.kind_at hc' hk', h2]
+    split
+    · rw [hother]
+      have hnew := hst.step hc' (fun w ↦ (w.setKind k .single).modifyAtom
+          ((s.1.bonds[k]! : WBond).other i) ({ · with charge := -1 }))
+        ((hst.rel.setKind k (hc'.notD hk') _).modifyAtom _ _)
+        (local_kj s.1 (hst.wf₁ hwf) hk' .single (by decide) _ (fun _ ↦ rfl) (fun _ ↦ by simp))
+      exact ⟨hnew, rfl, hsk.trans (hst.skel.symm.trans hnew.skel)⟩
+    · exact ⟨hst, h2, hsk⟩
+  obtain ⟨hf, h2, hsk⟩ := hfold
+  rw [← h2]
+  have hc' : OffD D ((w₁.neighbors i).foldl halogenStep (w₁, 0)).1 i := fun k' hk'' ↦ by
+    rw [← hsk.touches]; exact hc k' hk''
+  exact hf.step hc' (fun w ↦ w.modifyAtom i _) (hf.rel.modifyAtom _ _) (local_c _ i _ fun _ ↦ rfl)
+
+lemma CleanInv.cleanUp {D : ℕ → Bool} {w₀ w₁ w₂ : Work} (h : CleanInv D w₀ w₁ w₂)
+    (hwf : WF w₀) : CleanInv D w₀ w₁.cleanUp w₂.cleanUp := by
+  have hn := h.nitrogensCleanup hwf
+  unfold Work.cleanUp
+  dsimp only
+  rw [← hn.rel.numAtoms]
+  refine foldl_rel _ (fun s t i _ hst ↦ ?_) hn
+  unfold Work.cleanUpAt
+  dsimp only
+  rw [← hst.rel.atoms]
+  split
+  · rename_i hz
+    exact hst.phosphorusCleanup hwf (by simpa using hz)
+  · split
+    · rename_i _ hz
+      exact hst.halogenCleanup hwf (by simpa [or_assoc] using hz)
+    · exact hst
 
 end Work
 
