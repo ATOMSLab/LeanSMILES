@@ -38,7 +38,9 @@ are ignored, and for each stereo double bond, in the order the string reaches
 them, one single bond at each end gets a direction that makes the parser read
 back the stored arrangement (`cisTransDirs`). Neighboring double bonds of a
 conjugated chain share the single bond between them, so a mark already placed
-is reused.
+is reused, and a mark placed later agrees with the ones already there: no atom
+gets two substituents on the same side, which a reader other than our parser
+would take for a different molecule or for none.
 -/
 
 @[expose] public section
@@ -151,43 +153,85 @@ lemma flagOf_dirFor (pos : Vector ℕ n) (e s : Fin n) (f : Bool) :
   by_cases h : pos[e] < pos[s] <;> cases f <;> simp only [flagOf, dirFor, h, if_true,
     if_false, Bool.false_eq_true] <;> decide
 
+/-- A mark gives the atoms at its two ends opposite flags: seen from `s`, the
+bond's other end `e` has the flag `s` does not have seen from `e`. So when
+`e` and `s` are both ends of stereo double bonds, the single bond between
+them ties the two together whether or not it is the bond that gets marked. -/
+lemma flagOf_swap (pos : Vector ℕ n) {e s : Fin n} (h : pos[e] ≠ pos[s]) (d : BondDir) :
+    flagOf pos s e d = !flagOf pos e s d := by
+  rcases Nat.lt_or_gt_of_ne h with h | h
+  · have h' : ¬ pos[s] < pos[e] := Nat.lt_asymm h
+    cases d <;> simp only [flagOf, h, h', if_true, if_false] <;> decide
+  · have h' : ¬ pos[e] < pos[s] := Nat.lt_asymm h
+    cases d <;> simp only [flagOf, h, h', if_true, if_false] <;> decide
+
 /-- Directions for single bonds around the stereo double bonds such that the
-parser reads back each arrangement: double bonds in the order the string
-reaches them, one marked substituent per end — reusing a mark a neighbor
-already placed, otherwise the end's first substituent — with flags equal
-exactly when the two substituents are cis. -/
+parser reads back each arrangement.
+
+Every substituent of a stereo double bond has a *flag*, the side it lies on:
+the two substituents of one end have opposite flags, and substituents of the
+two ends have equal flags exactly when they are cis. That leaves one free
+choice per double bond. The double bonds are taken in the order the string
+reaches them; the choice is free (the first substituent of the earlier end
+gets `true`) unless a substituent is itself an end of a double bond already
+taken, in which case the single bond between the two fixes it
+(`flagOf_swap`) — and it does so even when that bond carries no mark, which
+is what keeps the two marks leaving a branched atom, as in `C/C=C(/C)\C=C/C`,
+from contradicting each other.
+
+One substituent per end is then marked: nothing if a neighbor already marked
+one, otherwise the end's first. In a chain or a tree of conjugated double
+bonds every one is fixed from at most one side, so the flags agree everywhere.
+In a ring of them the one that closes the ring can be fixed from both sides;
+the first substituent found wins, and the mark avoids a bond whose other end
+disagrees when it can. -/
 def cisTransDirs (m : Molecule n) (pos : Vector ℕ n) : List (Sym2 (Fin n) × BondDir) :=
   let first (b : Bond n) : ℕ := min pos[b.src] pos[b.dst]
   let dbs := (m.bonds.filter fun b ↦
       b.kind == .double && m.stereo[b.src].any Stereo.isPlanar).mergeSort
     fun b c ↦ first b ≤ first c
-  dbs.foldl (init := []) fun dirs b ↦
+  -- the substituents of the end `e` (of a double bond to `o`) a mark can go on: bonds whose
+  -- kind the string leaves implicit (single unless both atoms are aromatic, aromatic if both
+  -- are), so a `/` `\` in place of the symbol reads back as the same kind — an aromatic ring
+  -- bond included, as at the ring end of an exocyclic `c=N`
+  let subs (e o : Fin n) : List (Fin n) :=
+    (((m.bondsAt e).filter fun c ↦
+        c.other e != o && bondSymbol (m.atom e) (m.atom (c.other e)) c.kind == "").map
+      (·.other e)).mergeSort fun a c ↦ pos[a] ≤ pos[c]
+  -- the marks placed, and the flag of every substituent `s` of every end `e` taken: `((e, s), f)`
+  let init : List (Sym2 (Fin n) × BondDir) × List ((Fin n × Fin n) × Bool) := ([], [])
+  (dbs.foldl (init := init) fun acc b ↦
     match m.stereo[b.src] with
     | some (.planar p) =>
       let (x, y) := if pos[b.src] ≤ pos[b.dst] then (b.src, b.dst) else (b.dst, b.src)
-      -- the substituents a mark can go on: bonds whose kind the string leaves implicit (single
-      -- unless both atoms are aromatic, aromatic if both are), so a `/` `\` in place of the
-      -- symbol reads back as the same kind — an aromatic ring bond included, as at the ring end
-      -- of an exocyclic `c=N`
-      let subs (e o : Fin n) : List (Fin n) :=
-        (((m.bondsAt e).filter fun c ↦
-            c.other e != o && bondSymbol (m.atom e) (m.atom (c.other e)) c.kind == "").map
-          (·.other e)).mergeSort fun a c ↦ pos[a] ≤ pos[c]
-      let fixed (e o : Fin n) : Option (Fin n × Bool) :=
-        (subs e o).findSome? fun s ↦ (dirs.lookup s(e, s)).map fun d ↦ (s, flagOf pos e s d)
       match subs x y, subs y x with
-      | sx :: _, sy :: _ =>
-        match fixed x y, fixed y x with
-        | some _, some _ => dirs
-        | some (s, f), none =>
-          (s(y, sy), dirFor pos y sy (if p.cis (some s) (some sy) then f else !f)) :: dirs
-        | none, some (t, g) =>
-          (s(x, sx), dirFor pos x sx (if p.cis (some sx) (some t) then g else !g)) :: dirs
-        | none, none =>
-          (s(x, sx), dirFor pos x sx true) ::
-            (s(y, sy), dirFor pos y sy (p.cis (some sx) (some sy))) :: dirs
-      | _, _ => dirs
-    | _ => dirs
+      | sx :: _, _ :: _ =>
+        let (dirs, flags) := acc
+        -- a substituent `s` of `e` that is an end already taken, with the flag it must have
+        let forced (e o : Fin n) : Option (Fin n × Bool) :=
+          (subs e o).findSome? fun s ↦ (flags.lookup (s, e)).map fun f ↦ (s, !f)
+        -- the substituent whose flag settles the rest, its flag, and whether it is on `x`
+        let (a, fa, atX) : Fin n × Bool × Bool :=
+          match forced x y, forced y x with
+          | some (s, f), _ => (s, f, true)
+          | none, some (t, g) => (t, g, false)
+          | none, none => (sx, true, true)
+        let flagAt (e s : Fin n) : Bool :=
+          if (e == x) == atX then (if s == a then fa else !fa)
+          else if p.cis (some a) (some s) then fa else !fa
+        -- the mark at `e`, unless a neighbor placed one: on the first substituent that is not an
+        -- end already taken with a flag this one contradicts (outside a ring none is)
+        let mark (e o : Fin n) : List (Sym2 (Fin n) × BondDir) :=
+          if (subs e o).any fun t ↦ (dirs.lookup s(e, t)).isSome then [] else
+          let agrees (s : Fin n) : Bool := (flags.lookup (s, e)).all (· != flagAt e s)
+          match (subs e o).find? agrees <|> (subs e o).head? with
+          | some s => [(s(e, s), dirFor pos e s (flagAt e s))]
+          | none => []
+        (mark x y ++ mark y x ++ dirs,
+          (subs x y).map (fun s ↦ ((x, s), flagAt x s)) ++
+            (subs y x).map (fun s ↦ ((y, s), flagAt y s)) ++ flags)
+      | _, _ => acc
+    | _ => acc).1
 
 /-- The symbol for the bond `b` from `a`: its direction mark if it has one,
 otherwise the kind as `bondSymbol` writes it. -/

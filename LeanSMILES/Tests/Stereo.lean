@@ -37,8 +37,11 @@ Pairs on which RDKit and InChI disagree are counted, not judged.  RDKit's
 string itself is never compared with ours.  The first string of every
 stereoisomer must also survive the checks `oracle-test` makes on the Delaney
 set: the canonical SMILES reparses to itself, and relabeling the atoms
-(`finRotate`, `Fin.revPerm`) does not change it.  Progress, and any row that
-takes over two seconds, is printed to stderr.
+(`finRotate`, `Fin.revPerm`) does not change it.  Its `/` `\\` marks must also
+agree with each other (`marksConflict`): our parser reads the first mark at
+each end of a double bond, so a string whose marks contradict each other
+survives our own reparse while RDKit and Open Babel read another molecule.
+Progress, and any row that takes over two seconds, is printed to stderr.
 
 **The parser reads each mark the way RDKit does, which must hold.**  For every
 tetrahedral centre RDKit keeps, the mark the centre would carry with its
@@ -133,6 +136,18 @@ def canonOf (s : String) : Option String :=
   | .ok M => some M.canonicalSmiles
   | .error _ => none
 
+/-- Whether the `/` `\\` marks of a parsed string contradict each other: some end of a stereo
+double bond has both of its substituents marked, on the same side (`C=C(/C)/C` after the `=`).
+No arrangement puts them there, and readers differ on what such a string means. -/
+def marksConflict (M : Mol) : Bool :=
+  M.mol.bonds.any fun b ↦
+    b.kind == .double && M.mol.stereo[b.src].any Stereo.isPlanar &&
+      [b.src, b.dst].any fun e ↦
+        match (M.mol.bondsAt e).filterMap fun c ↦
+            if c.edge == b.edge then none else State.dirFlagAt c e with
+        | [f, g] => f == g
+        | _ => false
+
 /-- The canonical-SMILES checks; `true` when every judged pair and row passes. -/
 def canonTest (path : String) : IO Bool := do
   let raw ← readTsv path
@@ -142,6 +157,7 @@ def canonTest (path : String) : IO Bool := do
   let mut parsed : Tally := {}
   let mut roundTrip : Tally := {}
   let mut relabel : Tally := {}
+  let mut consistent : Tally := {}
   let mut slow : Array (ℕ × String) := #[]
   let start ← IO.monoMsNow
   for fields in raw do
@@ -161,6 +177,8 @@ def canonTest (path : String) : IO Bool := do
       if first then
         roundTrip := roundTrip.add (canonOf c == some c)
           fun _ ↦ s!"{f}: {s} → {c} → {canonOf c}"
+        consistent := consistent.add ((parse c).toOption.all (!marksConflict ·))
+          fun _ ↦ s!"{f}: {s} → {c}"
         let c₁ := (M.relabel (finRotate M.n)).canonicalSmiles
         let c₂ := (M.relabel Fin.revPerm).canonicalSmiles
         relabel := relabel.add (c₁ == c && c₂ == c)
@@ -202,19 +220,21 @@ def canonTest (path : String) : IO Bool := do
   IO.println (parsed.line "parses" "must be all")
   IO.println (roundTrip.line "canonical SMILES survives reparse" "must be all")
   IO.println (relabel.line "canonical SMILES invariant under relabeling" "must be all")
+  IO.println (consistent.line "canonical SMILES has no two marks that contradict each other"
+    "must be all")
   IO.println (same.line "same stereoisomer → same canonical SMILES (pairs)" "must be all")
   for (k, t) in different do
     IO.println
       (t.line s!"different stereoisomers ({k}) → different canonical SMILES (pairs)" "must be all")
   IO.println s!"pairs on which RDKit and InChI disagree, not judged: {disputed.total}"
-  for t in [parsed, roundTrip, relabel, same] ++ different.map (·.2) ++ [disputed] do
+  for t in [parsed, roundTrip, relabel, consistent, same] ++ different.map (·.2) ++ [disputed] do
     for e in t.examples do IO.println s!"  {e}"
   let labelled : List (String × Tally) :=
     ("same", same) :: different.map fun (p : String × Tally) ↦ (s!"different ({p.1})", p.2)
   for (label, t) in labelled do
     unless t.families.isEmpty do
       IO.println s!"families with a failing pair, {label}: {" ".intercalate t.families.toList}"
-  return parsed.passed && roundTrip.passed && relabel.passed && same.passed
+  return parsed.passed && roundTrip.passed && relabel.passed && consistent.passed && same.passed
     && different.all (·.2.passed)
 
 /-- Our mark at atom `i` in the convention of `stereo-parity.tsv`: `true` for
