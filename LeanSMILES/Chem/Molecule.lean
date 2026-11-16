@@ -216,59 +216,98 @@ def implicitHydrogens (a : Atom) (orderSum : ℚ) : ℕ :=
 def assignImplicitH : Molecule n :=
   m.mapAtoms fun i a ↦ { a with implicitH := implicitHydrogens a (m.bondOrderSum i) }
 
-/-! ### Redundant brackets
+/-! ### Bracket normal form
 
-`[n]`, `[CH4]` and `[Cl]` say nothing their bare forms do not: the brackets hold only a
-hydrogen count, and it is the count the default-valence rule gives the bare atom.  Dropping
-such brackets is what makes `[n]1cncc1…` and `n1cncc1…` one canonical SMILES. -/
+A hydrogen count can be written two ways: inside brackets (`[nH]`, `[CH4]`) or, for a bare
+atom, left to the default-valence rule.  An atom that carries nothing else a bracket must hold
+has one normal form: bare when the rule gives it its hydrogens, bracketed with them when it
+does not.  Dropping redundant brackets is what makes `[n]1cncc1…` and `n1cncc1…` one canonical
+SMILES; adding the missing ones is what makes pyrrole parsed as `C1=CNC=C1` and aromatized —
+a bare aromatic nitrogen still holding its hydrogen — one canonical SMILES with `c1cc[nH]c1`,
+and writes it as `[nH]` rather than as a hydrogen-less `n`. -/
 
-/-- The atom without its brackets when they are redundant: it carries no isotope, charge,
-chirality or class, its element may be written bare, and `implicitHydrogens` at bond-order sum
-`orderSum` gives it exactly the hydrogens it has.  Otherwise the atom itself.  `[n]` (two
-aromatic bonds and a methyl) becomes `n`; `[nH]`, `[CH3]` (a radical), `[C]`, `[13CH4]` and
-`[O-]` keep their brackets.  A tetrahedral mark is not on the atom (the parser moves it to
+/-- The atom in bracket normal form at bond-order sum `orderSum`, with the same hydrogen count.
+An atom with no isotope, charge, chirality or class, whose element may be written bare, is
+written bare when `implicitHydrogens` at `orderSum` gives the bare atom exactly its hydrogens,
+and in brackets with all of them otherwise.  Any other atom is itself.  `[n]` (two aromatic
+bonds and a methyl) and `[CH4]` become `n` and `C`; a bare aromatic nitrogen with one hydrogen
+and two aromatic bonds becomes `[nH]`; `[nH]`, `[CH3]` (a radical), `[C]`, `[13CH4]` and `[O-]`
+stay as they are.  A tetrahedral mark is not on the atom (the parser moves it to
 `Molecule.stereo`), so a parsed `[C@H]` counts as carrying none: it is unbracketed here and the
 writer brackets it again with the mark it computes. -/
-def unbracket (a : Atom) (orderSum : ℚ) : Atom :=
+def normalizeBracket (a : Atom) (orderSum : ℚ) : Atom :=
   let b : Atom := { a with explicitH := none, implicitH := 0 }
-  let h := implicitHydrogens b orderSum
-  if a.explicitH.isSome && b.canBeBare && h == a.totalH then { b with implicitH := h } else a
+  if b.canBeBare then
+    if implicitHydrogens b orderSum == a.totalH then { b with implicitH := a.totalH }
+    else { b with explicitH := some a.totalH }
+  else a
 
-/-- Dropping redundant brackets keeps the element. -/
-@[simp] lemma element_unbracket (a : Atom) (s : ℚ) : (unbracket a s).element = a.element := by
-  dsimp only [unbracket]; split <;> rfl
+/-- Bracket normalization keeps the element. -/
+@[simp] lemma element_normalizeBracket (a : Atom) (s : ℚ) :
+    (normalizeBracket a s).element = a.element := by
+  dsimp only [normalizeBracket]; split <;> (try split) <;> rfl
 
-/-- Dropping redundant brackets keeps the formal charge. -/
-@[simp] lemma charge_unbracket (a : Atom) (s : ℚ) : (unbracket a s).charge = a.charge := by
-  dsimp only [unbracket]; split <;> rfl
+/-- Bracket normalization keeps the formal charge. -/
+@[simp] lemma charge_normalizeBracket (a : Atom) (s : ℚ) :
+    (normalizeBracket a s).charge = a.charge := by
+  dsimp only [normalizeBracket]; split <;> (try split) <;> rfl
 
-/-- Dropping redundant brackets keeps the hydrogen count: that is what makes them redundant. -/
-@[simp] lemma totalH_unbracket (a : Atom) (s : ℚ) : (unbracket a s).totalH = a.totalH := by
-  dsimp only [unbracket]
-  split
-  · next h =>
-    simp only [Bool.and_eq_true, beq_iff_eq] at h
-    simpa [Atom.totalH] using h.2
-  · rfl
+/-- Bracket normalization keeps the hydrogen count: it only moves it between the brackets and
+the default-valence rule. -/
+@[simp] lemma totalH_normalizeBracket (a : Atom) (s : ℚ) :
+    (normalizeBracket a s).totalH = a.totalH := by
+  dsimp only [normalizeBracket]; split <;> (try split) <;> simp [Atom.totalH]
 
-/-- Every atom with its redundant brackets dropped (`unbracket`, at the atom's own bond-order
-sum).  The bonds, and every atom's element, charge and hydrogen count, are unchanged.
-Canonicalization starts here. -/
-def dropRedundantBrackets : Molecule n :=
-  m.mapAtoms fun i a ↦ unbracket a (m.bondOrderSum i)
+/-- Bracket normalization is idempotent: an atom in normal form stays as it is. -/
+@[simp] lemma normalizeBracket_normalizeBracket (a : Atom) (s : ℚ) :
+    normalizeBracket (normalizeBracket a s) s = normalizeBracket a s := by
+  unfold normalizeBracket
+  by_cases hb : ({ a with explicitH := none, implicitH := 0 } : Atom).canBeBare <;>
+    by_cases hh : implicitHydrogens { a with explicitH := none, implicitH := 0 } s == a.totalH <;>
+    simp_all [Atom.totalH]
 
-/-- Dropping redundant brackets keeps the bonds, definitionally. -/
-@[simp] lemma bonds_dropRedundantBrackets : m.dropRedundantBrackets.bonds = m.bonds := rfl
+/-- Every atom in bracket normal form (`normalizeBracket`, at the atom's own bond-order sum).
+The bonds, and every atom's element, charge and hydrogen count, are unchanged.
+Canonicalization starts here, and `aromatize` ends here. -/
+def normalizeBrackets : Molecule n :=
+  m.mapAtoms fun i a ↦ normalizeBracket a (m.bondOrderSum i)
 
-/-- Atom `i` with its redundant brackets dropped. -/
-@[simp] lemma atom_dropRedundantBrackets (i : Fin n) :
-    m.dropRedundantBrackets.atom i = unbracket (m.atom i) (m.bondOrderSum i) := by
-  simp [dropRedundantBrackets, mapAtoms, atom]
+/-- Bracket normalization keeps the bonds, definitionally. -/
+@[simp] lemma bonds_normalizeBrackets : m.normalizeBrackets.bonds = m.bonds := rfl
 
-/-- Dropping redundant brackets keeps every atom's hydrogen count. -/
-@[simp] lemma totalH_dropRedundantBrackets (i : Fin n) :
-    (m.dropRedundantBrackets.atom i).totalH = (m.atom i).totalH := by
+/-- Atom `i` in bracket normal form. -/
+@[simp] lemma atom_normalizeBrackets (i : Fin n) :
+    m.normalizeBrackets.atom i = normalizeBracket (m.atom i) (m.bondOrderSum i) := by
+  simp [normalizeBrackets, mapAtoms, atom]
+
+/-- Bracket normalization keeps every atom's hydrogen count. -/
+@[simp] lemma totalH_normalizeBrackets (i : Fin n) :
+    (m.normalizeBrackets.atom i).totalH = (m.atom i).totalH := by
   simp
+
+/-- Bracket normalization keeps every bond-order sum: it does not touch the bonds. -/
+@[simp] lemma bondOrderSum_normalizeBrackets (i : Fin n) :
+    m.normalizeBrackets.bondOrderSum i = m.bondOrderSum i := rfl
+
+/-- Bracket normalization is idempotent. -/
+@[simp] theorem normalizeBrackets_normalizeBrackets :
+    m.normalizeBrackets.normalizeBrackets = m.normalizeBrackets := by
+  refine ext (Vector.ext fun j hj ↦ ?_) rfl rfl
+  change m.normalizeBrackets.normalizeBrackets.atom ⟨j, hj⟩ = m.normalizeBrackets.atom ⟨j, hj⟩
+  simp only [atom_normalizeBrackets, bondOrderSum_normalizeBrackets,
+    normalizeBracket_normalizeBracket]
+
+@[deprecated (since := "2026-11-16")] alias unbracket := normalizeBracket
+@[deprecated (since := "2026-11-16")] alias element_unbracket := element_normalizeBracket
+@[deprecated (since := "2026-11-16")] alias charge_unbracket := charge_normalizeBracket
+@[deprecated (since := "2026-11-16")] alias totalH_unbracket := totalH_normalizeBracket
+@[deprecated (since := "2026-11-16")] alias dropRedundantBrackets := normalizeBrackets
+@[deprecated (since := "2026-11-16")]
+alias bonds_dropRedundantBrackets := bonds_normalizeBrackets
+@[deprecated (since := "2026-11-16")]
+alias atom_dropRedundantBrackets := atom_normalizeBrackets
+@[deprecated (since := "2026-11-16")]
+alias totalH_dropRedundantBrackets := totalH_normalizeBrackets
 
 /-! ### Relabeling -/
 
@@ -329,15 +368,18 @@ theorem relabel_relabel (σ τ : Equiv.Perm (Fin n)) :
     (m.relabel σ).bondOrderSum (σ i) = m.bondOrderSum i := by
   simp [bondOrderSum, bondsAt_relabel, Function.comp_def]
 
-/-- Dropping redundant brackets commutes with relabeling: whether an atom's brackets are
-redundant depends on the atom and its bond-order sum, not on its label. -/
-theorem dropRedundantBrackets_relabel (σ : Equiv.Perm (Fin n)) :
-    (m.relabel σ).dropRedundantBrackets = m.dropRedundantBrackets.relabel σ := by
+/-- Bracket normalization commutes with relabeling: an atom's normal form depends on the atom
+and its bond-order sum, not on its label. -/
+theorem normalizeBrackets_relabel (σ : Equiv.Perm (Fin n)) :
+    (m.relabel σ).normalizeBrackets = m.normalizeBrackets.relabel σ := by
   refine ext (Vector.ext fun j hj ↦ ?_) rfl rfl
   obtain ⟨i, hi⟩ : ∃ i, σ i = ⟨j, hj⟩ := ⟨σ.symm ⟨j, hj⟩, σ.apply_symm_apply _⟩
-  change (m.relabel σ).dropRedundantBrackets.atom ⟨j, hj⟩
-    = (m.dropRedundantBrackets.relabel σ).atom ⟨j, hj⟩
-  simp only [← hi, atom_dropRedundantBrackets, atom_relabel, bondOrderSum_relabel]
+  change (m.relabel σ).normalizeBrackets.atom ⟨j, hj⟩
+    = (m.normalizeBrackets.relabel σ).atom ⟨j, hj⟩
+  simp only [← hi, atom_normalizeBrackets, atom_relabel, bondOrderSum_relabel]
+
+@[deprecated (since := "2026-11-16")]
+alias dropRedundantBrackets_relabel := normalizeBrackets_relabel
 
 /-! ### Printing -/
 

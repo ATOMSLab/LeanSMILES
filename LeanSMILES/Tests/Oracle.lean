@@ -5,6 +5,7 @@ Authors: Tyler Josephson
 -/
 module
 
+public import LeanSMILES.Aromaticity.Perceive
 public import LeanSMILES.Tests.OracleRow
 public import Mathlib.Logic.Equiv.Fin.Basic
 public import Mathlib.Logic.Equiv.Fin.Rotate
@@ -34,7 +35,9 @@ different walk and a different tie-breaking rule.
 **Spellings, which must hold:** a handful of molecules written two ways (`spellings`).  Brackets
 that repeat what the default-valence rule says (`[CH4]`, `[n]`, `[Cl]`, caffeine as
 Sigma-Aldrich writes it) must not change the canonical SMILES; brackets that say something
-(`[CH3]`, `[C]`, `[13CH4]`, `[NH4+]`, `[nH]`) must.
+(`[CH3]`, `[C]`, `[13CH4]`, `[NH4+]`, `[nH]`) must.  Aromatic rings with a pyrrole-type
+nitrogen, written in Kekulé form and in lowercase form with `[nH]` (`aromaticSpellings`), must
+have one canonical SMILES after `parseAromatized`, and it must keep its `[nH]` through a reparse.
 
 ```
 lake exe oracle-test [datasets/delaney-oracle.csv]
@@ -58,6 +61,36 @@ def spellings : List (String × String × Bool) :=
   , ("C", "[13CH4]", false)
   , ("N", "[NH4+]", false)
   , ("c1cc[nH]c1", "c1ccnc1", false) ]
+
+/-- Aromatic rings with a pyrrole-type `[nH]`: a Kekulé spelling and a lowercase one (RDKit's
+canonical SMILES), which must have one canonical SMILES after `parseAromatized`.  Aromatizing
+the Kekulé spelling leaves a bare `n` holding a hydrogen the default-valence rule would not give
+it; bracket normalization must write it `[nH]`. -/
+def aromaticSpellings : List (String × String) :=
+  [ ("C1=CNC=C1", "c1cc[nH]c1")                                   -- pyrrole
+  , ("C1=CC=C2NC=CC2=C1", "c1ccc2[nH]ccc2c1")                     -- indole
+  , ("C1=CNC=N1", "c1c[nH]cn1")                                   -- imidazole
+  , ("C1=NC=C2NC=NC2=N1", "c1ncc2[nH]cnc2n1")                     -- purine
+  , ("C1=CC=C2C(=C1)NC1=CC=CC=C12", "c1ccc2c(c1)[nH]c1ccccc12")   -- carbazole
+  , ("C1=CC2=NC1=CC1=CC=C(N1)C=C1C=CC(=N1)C=C1C=CC(N1)=C2",       -- porphine
+     "C1=Cc2cc3ccc(cc4nc(cc5ccc(cc1n2)[nH]5)C=C4)[nH]3") ]
+
+/-- The `aromaticSpellings` that fail: a pair whose canonical SMILES after `parseAromatized`
+differ, or whose canonical SMILES is not reproduced by `parseAromatized`, or lacks `[nH]`. -/
+def aromaticSpellingFailures : List String :=
+  aromaticSpellings.filterMap fun (k, a) ↦
+    match parseAromatized k, parseAromatized a with
+    | .ok K, .ok A =>
+      let ck := K.canonicalSmiles
+      let ca := A.canonicalSmiles
+      let stable : Bool := match parseAromatized ck with
+        | .ok C => C.canonicalSmiles == ck
+        | .error _ => false
+      if ck != ca then some s!"{k} and {a} must agree after aromatizing: {ck} vs {ca}"
+      else if !stable then some s!"canonical SMILES {ck} of {k} changes on reparse"
+      else if (ck.splitOn "[nH]").length ≤ 1 then some s!"canonical SMILES {ck} lost its [nH]"
+      else none
+    | _, _ => some s!"{k} or {a} does not parse and aromatize"
 
 /-- The `spellings` that fail: a pair that must agree and does not, or must differ and does
 not, or whose canonical SMILES does not survive a reparse. -/
@@ -139,9 +172,12 @@ public def main (args : List String) : IO UInt32 := do
   IO.println (line "canonical string = RDKit's string" sameAsRdkit "info")
   IO.println s!"spellings (redundant brackets dropped, meaningful ones kept): \
     {spellings.length - spellingFailures.length}/{spellings.length}  [must be all]"
-  for f in spellingFailures ++ failures.toList.take 20 do
+  IO.println s!"aromatic [nH] spellings (Kekulé = lowercase after aromatizing): \
+    {aromaticSpellings.length - aromaticSpellingFailures.length}/{aromaticSpellings.length}  \
+    [must be all]"
+  for f in spellingFailures ++ aromaticSpellingFailures ++ failures.toList.take 20 do
     IO.println s!"  {f}"
   let ok := parsed + skipped.size == rows.length && syntaxOk == parsed
     && roundTrip == parsed && invariant == parsed && canonicalizeOk == parsed
-    && hydrogensOk == parsed && spellingFailures.isEmpty
+    && hydrogensOk == parsed && spellingFailures.isEmpty && aromaticSpellingFailures.isEmpty
   return if ok then 0 else 1

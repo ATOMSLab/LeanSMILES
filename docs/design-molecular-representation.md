@@ -170,13 +170,16 @@ rank on atoms; everything it decides, it decides from ranks and bond kinds.
 Canonicalization is **color refinement + exhaustive tie-breaking**, after one
 normalization:
 
-0. Reduce (`Molecule.reduce`), in two steps. Drop redundant brackets
-   (`Molecule.dropRedundantBrackets`): an atom whose brackets hold only a
+0. Reduce (`Molecule.reduce`), in two steps. Put every atom in bracket normal
+   form (`Molecule.normalizeBrackets`): an atom whose brackets hold only a
    hydrogen count, equal to what the default-valence rule gives it bare, is
    written bare — `[CH4]` is `C`, and caffeine's `[n]` (as Sigma-Aldrich
-   writes it) is `n`.  RDKit's writer does the same (`atomNeedsBracket`).
-   Without this step the "bracketed" invariant below gives one molecule two
-   canonical strings.  Brackets that carry anything (`[nH]`, `[CH3]`, `[13C]`,
+   writes it) is `n`.  Conversely a bare atom whose hydrogen count is *not*
+   what the rule gives it — pyrrole's nitrogen after `C1=CNC=C1` is
+   aromatized — is bracketed with its count, `[nH]`.  RDKit's writer does the
+   same (`atomNeedsBracket`).  Without this step the "bracketed" invariant
+   below gives one molecule two canonical strings, and the writer drops the
+   pyrrole hydrogen.  Brackets that carry anything (`[nH]`, `[CH3]`, `[13C]`,
    `[O-]`) stay; a tetrahedral mark lives in `Molecule.stereo`, not on the
    atom, so `[C@H]` is unbracketed here and the writer brackets it again with
    the mark it computes.  Then erase the marks whose mirror image, or flipped

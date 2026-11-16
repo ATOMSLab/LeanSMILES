@@ -53,10 +53,13 @@ Soundness rests on the check alone, never on the heuristic that proposed the
 candidate; `LeanSMILES.SMILES.Canonicity` proves that `search` and
 `leavesAll` have the same minimum, and that the minimum is label-independent.
 
-**Redundant brackets.** Before any of this, brackets that say nothing a bare atom
-would not — `[n]`, `[CH4]`, `[Cl]` — are dropped (`Molecule.dropRedundantBrackets`): the
-search ranks bracketed atoms apart from bare ones, so without this step a source that writes
-caffeine's methylated nitrogen as `[n]` would get a different canonical SMILES.  Brackets
+**Bracket normal form.** Before any of this, every atom is put in bracket normal form
+(`Molecule.normalizeBrackets`): brackets that say nothing a bare atom would not — `[n]`,
+`[CH4]`, `[Cl]` — are dropped, and a bare atom whose hydrogens the default-valence rule would
+not give it — the pyrrole nitrogen of `C1=CNC=C1` once aromatized — is bracketed with them.
+The search ranks bracketed atoms apart from bare ones, so without this step a source that
+writes caffeine's methylated nitrogen as `[n]` would get a different canonical SMILES, and an
+aromatized Kekulé pyrrole would be written `c1ccnc1`, which has lost its hydrogen.  Brackets
 that carry anything (`[nH]`, `[CH3]`, `[13C]`, `[O-]`) stay.  A tetrahedral mark is not
 on the atom but in `Molecule.stereo`, so `[C@H]` loses its brackets here too, and the writer
 puts them back with the mark it computes — unless the mark was meaningless (below), which
@@ -466,33 +469,34 @@ namespace Molecule
 
 variable (m : Molecule n)
 
-/-- The molecule without redundant brackets (`dropRedundantBrackets`) and then without
-meaningless marks (`MolData.dropFake`): what canonicalization writes. -/
+/-- The molecule in bracket normal form (`normalizeBrackets`) and then without meaningless
+marks (`MolData.dropFake`): what canonicalization writes. -/
 def reduce : Molecule n :=
-  { m.dropRedundantBrackets with stereo := m.dropRedundantBrackets.toMolData.keptStereo }
+  { m.normalizeBrackets with stereo := m.normalizeBrackets.toMolData.keptStereo }
 
-/-- The data of the reduced molecule is the data without redundant brackets, its meaningless
-marks erased, definitionally. -/
-lemma toMolData_reduce : m.reduce.toMolData = m.dropRedundantBrackets.toMolData.dropFake := rfl
+/-- The data of the reduced molecule is the data in bracket normal form, its meaningless marks
+erased, definitionally. -/
+lemma toMolData_reduce : m.reduce.toMolData = m.normalizeBrackets.toMolData.dropFake := rfl
 
 /-- The canonical ranks: those of the reduced molecule, so that `[n]` and `n` rank alike and
 a meaningless mark does not count. -/
-def canonicalRanks : Ranks n := m.dropRedundantBrackets.toMolData.dropFakeAndCanonical.2.1
+def canonicalRanks : Ranks n := m.normalizeBrackets.toMolData.dropFakeAndCanonical.2.1
 
-/-- The canonical SMILES string.  Redundant brackets are dropped first: `[CH4]` and `C`, or
-caffeine written with `[n]` and with `n`, have one canonical SMILES; then meaningless marks. -/
-def canonicalSmiles : String := m.dropRedundantBrackets.toMolData.dropFakeAndCanonical.2.2
+/-- The canonical SMILES string.  The atoms are put in bracket normal form first: `[CH4]` and
+`C`, caffeine written with `[n]` and with `n`, or pyrrole written `c1cc[nH]c1` and written
+`C1=CNC=C1` then aromatized, have one canonical SMILES; then meaningless marks are erased. -/
+def canonicalSmiles : String := m.normalizeBrackets.toMolData.dropFakeAndCanonical.2.2
 
 /-- The canonical ranks as a permutation of the atoms. -/
 def canonicalPerm : Equiv.Perm (Fin n) := permOfRanks m.canonicalRanks
 
-/-- The molecule with its redundant brackets and meaningless marks dropped and its atoms in
+/-- The molecule in bracket normal form, its meaningless marks dropped and its atoms in
 canonical order, in normal form. That the graph changes by a relabeling and nothing else is
 `canonicalizeIso`; that the charges and hydrogen counts survive is
-`chargesConsistent_canonicalize` and `totalH_dropRedundantBrackets`; that writing it out
+`chargesConsistent_canonicalize` and `totalH_normalizeBrackets`; that writing it out
 gives the canonical SMILES is `toSmiles_canonicalize`. -/
 def canonicalize : Molecule n :=
-  let rc := m.dropRedundantBrackets.toMolData.dropFakeAndCanonical
+  let rc := m.normalizeBrackets.toMolData.dropFakeAndCanonical
   (rc.1.relabel (permOfRanks rc.2.1)).toMolecule
 
 /-- The canonical molecule is the reduced molecule relabeled into canonical
@@ -506,15 +510,16 @@ theorem canonicalize_eq_normalize_relabel :
 theorem toSmiles_canonicalize : m.canonicalize.toSmiles = m.canonicalSmiles := by
   simp only [canonicalize, canonicalSmiles, MolData.dropFakeAndCanonical_fst,
     MolData.dropFakeAndCanonical_snd]
-  exact m.dropRedundantBrackets.toMolData.dropFake.writeRanked_canonical
+  exact m.normalizeBrackets.toMolData.dropFake.writeRanked_canonical
 
-/-- Canonicalization keeps the bond count: it only drops brackets, relabels and normalizes. -/
+/-- Canonicalization keeps the bond count: it only normalizes brackets, relabels and
+normalizes. -/
 lemma numBonds_canonicalize : m.canonicalize.numBonds = m.numBonds := by
   rw [canonicalize_eq_normalize_relabel, numBonds_normalize, numBonds_relabel]
   rfl
 
 /-- The canonical molecule's graph is that of the molecule relabeled into canonical order;
-dropping brackets and normalization do not touch the graph. -/
+bracket normalization and normalization do not touch the graph. -/
 lemma graph_canonicalize : m.canonicalize.graph = (m.relabel m.canonicalPerm).graph := by
   rw [canonicalize_eq_normalize_relabel, graph_normalize]
   rfl
@@ -528,22 +533,24 @@ def canonicalizeIso : SimpleGraph.Iso m.graph m.canonicalize.graph :=
 
 `chargesConsistent` (`LeanSMILES.Chem.Charge`) is not an invariant of
 `Molecule` and the pipeline carries no chemistry; but it is a property of the
-atoms alone, and canonicalization only permutes them and drops brackets, which keeps every
-element and charge. -/
+atoms alone, and canonicalization only permutes them and normalizes their brackets, which
+keeps every element and charge. -/
 
 /-- Normalization keeps the atoms, so it keeps charge consistency, definitionally. -/
 lemma chargesConsistent_normalize : m.normalize.chargesConsistent ↔ m.chargesConsistent :=
   Iff.rfl
 
-/-- Dropping redundant brackets keeps every element and charge, so it keeps charge
-consistency. -/
-lemma chargesConsistent_dropRedundantBrackets :
-    m.dropRedundantBrackets.chargesConsistent ↔ m.chargesConsistent := by
+/-- Bracket normalization keeps every element and charge, so it keeps charge consistency. -/
+lemma chargesConsistent_normalizeBrackets :
+    m.normalizeBrackets.chargesConsistent ↔ m.chargesConsistent := by
   simp [chargesConsistent, Atom.chargeConsistent, Atom.minCharge, Atom.maxCharge]
+
+@[deprecated (since := "2026-11-16")]
+alias chargesConsistent_dropRedundantBrackets := chargesConsistent_normalizeBrackets
 
 /-- Reducing keeps charge consistency: erasing marks does not touch the atoms. -/
 lemma chargesConsistent_reduce : m.reduce.chargesConsistent ↔ m.chargesConsistent :=
-  m.chargesConsistent_dropRedundantBrackets
+  m.chargesConsistent_normalizeBrackets
 
 /-- Canonicalization neither creates nor removes an inconsistent charge. -/
 theorem chargesConsistent_canonicalize :

@@ -226,8 +226,10 @@ open Aromaticity in
 `[N+](=O)[O-]` and the like), kekulize, then perceive aromaticity with RDKit's default model, then
 RDKit's final hydrogen counts (`MolOps::sanitizeMol` from `cleanUp` to `adjustHs`, without valence
 rejection or hydrogen removal). Bond kinds, charges, aromatic flags and implicit hydrogens change;
-atoms, bonds and everything else stay. Fails when RDKit's would ("Can't kekulize mol", e.g.
-`c1cccc1`). -/
+atoms, bonds and everything else stay. The atoms come back in bracket normal form
+(`Molecule.normalizeBrackets`), so that `toSmiles` writes each hydrogen count the way it parses
+back: pyrrole's nitrogen from `C1=CNC=C1` is `[nH]`, not a hydrogen-less `n`, and a redundant
+`[CH4]` is `C`. Fails when RDKit's would ("Can't kekulize mol", e.g. `c1cccc1`). -/
 def Molecule.aromatize {n : ℕ} (m : Molecule n) : Except String (Molecule n) := do
   let w := (Work.ofMolecule m).freezeHs.cleanUp.cacheValences
   let rings := w.relevantCycles
@@ -239,8 +241,9 @@ def Molecule.aromatize {n : ℕ} (m : Molecule n) : Except String (Molecule n) :
     let total := wa.frozenHs.getD (wa.explicitHs + w.implicitHs i.val)
     { a with aromatic := w.isAromaticAtom i.val, charge := wa.charge,
              implicitH := total - a.explicitH.getD 0 }
-  return { atoms, bonds := withKinds m w, nodup := map_edge_withKinds m w ▸ m.nodup,
-           stereo := m.stereo }
+  return Molecule.normalizeBrackets
+    { atoms, bonds := withKinds m w, nodup := map_edge_withKinds m w ▸ m.nodup,
+      stereo := m.stereo }
 
 /-- `Molecule.aromatize` on a bundled molecule. -/
 def Mol.aromatize (M : Mol) : Except String Mol := do
