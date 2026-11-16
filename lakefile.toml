@@ -103,3 +103,9 @@ root = "Worker"
 [[lean_exe]]
 name = "morgan-dense-test"
 root = "Pipelines.Tests.MorganDense"
+
+# Stereochemistry vs RDKit and InChI: canonical SMILES per stereoisomer, and the
+# parser's reading of @/@@ and / \ (datasets/stereo-*.tsv from tools/rdkit_stereo.py)
+[[lean_exe]]
+name = "stereo-test"
+root = "LeanSMILES.Tests.Stereo"

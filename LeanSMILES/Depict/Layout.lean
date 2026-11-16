@@ -27,10 +27,9 @@ public import LeanSMILES.Depict.Graph
    its short distances by more than 15 % is laid out in three dimensions and
    projected obliquely (`layoutCage`), which is how chemists draw cubane,
    adamantane or norbornane;
-7. **tetrahedral centres**: for every `@`/`@@` atom one bond is drawn as a
-   wedge or a hash, chosen so that the drawn configuration has the written
-   chirality, which `wedges` checks by the signed volume of the neighbors
-   in SMILES order.
+7. **tetrahedral centres**: for every stereocentre one bond is drawn as a
+   wedge or a hash, chosen so that the drawn configuration is the stored one,
+   which `wedges` checks by the signed volume of the neighbors.
 
 Coordinates are in bond lengths, `y` up.
 -/
@@ -212,23 +211,21 @@ def cageLike (D : Array (Array ℕ)) (idx : Array ℕ) (X : Array Pt) (nRings : 
         cnt := cnt + 1
   return 0 < cnt && 0.15 < err / cnt
 
-/-- Enforce the written cis/trans arrangement: when the first marked substituents (`dirSides`) at
-the ends of a non-ring double bond are drawn against their flags (equal flags mean cis), the `dst`
-side (`sideOf`) is reflected across the bond axis; stress alone can trap the wrong isomer. -/
+/-- Enforce the cis/trans arrangement: when the first substituent pair of a non-ring double bond
+(`Edge.sides`) is drawn against its stored arrangement, the `dst` side (`sideOf`) is reflected
+across the bond axis; stress alone can trap the wrong isomer. -/
 def fixDoubleBonds (g : Graph) (pos : Array Pt) : Array Pt := Id.run do
   let mut pos := pos
   for e in g.edges do
     if e.kind != .double || e.ring then continue
-    let du := (g.dirSides e.src).filter (·.1 != e.dst)
-    let dv := (g.dirSides e.dst).filter (·.1 != e.src)
-    match du, dv with
-    | (a, sa) :: _, (c, sc) :: _ =>
+    match e.sides with
+    | (a, c, isCis) :: _ =>
       let (ux, uy) := pos[e.src]!
       let (vx, vy) := pos[e.dst]!
       let (dx, dy) := (vx - ux, vy - uy)
       let side (p : Pt) : Float := dx * (p.2 - uy) - dy * (p.1 - ux)
       let sameSide := 0 < side pos[a]! * side pos[c]!
-      if sameSide != (sa == sc) then
+      if sameSide != isCis then
         let len2 := fmax (dx * dx + dy * dy) 1e-9
         let mask := g.sideOf e.src e.dst e.dst
         for i in [0:g.numAtoms] do
@@ -237,7 +234,7 @@ def fixDoubleBonds (g : Graph) (pos : Array Pt) : Array Pt := Id.run do
             let t := ((px - ux) * dx + (py - uy) * dy) / len2
             let (fx, fy) := (ux + t * dx, uy + t * dy)
             pos := pos.set! i (2 * fx - px, 2 * fy - py)
-    | _, _ => pure ()
+    | [] => pure ()
   return pos
 
 /-- Coordinates for every atom, in bond lengths with `y` up: each component by `layoutComponent`
@@ -281,29 +278,17 @@ def signedVolume (p1 p2 p3 p4 : Float × Float × Float) : Float :=
   let (cx, cy, cz) := sub p4 p1
   ax * (by' * cz - bz * cy) - ay * (bx * cz - bz * cx) + az * (bx * cy - by' * cx)
 
-/-- The tetrahedral reading of a chirality mark: `some true` for anticlockwise (`@`, `@TH1`),
-`some false` for clockwise (`@@`, `@TH2`), `none` for the other classes, which are not drawn. -/
-def tetrahedral : Chirality → Option Bool
-  | .anticlockwise => some true
-  | .clockwise => some false
-  | .th ⟨0, _⟩ => some true
-  | .th ⟨1, _⟩ => some false
-  | _ => none
-
-/-- Wedge or hash bonds for the tetrahedral stereocentres: each `@`/`@@` atom with four
-`stereoNeighbors` gets one neighbor drawn out of the plane (preferably by a single non-ring bond
-that is not yet a stereo bond, to a terminal atom that is not a centre), as a wedge or a hash so
-that the drawing has the written chirality. `@` means that, looking from the first neighbor in
-SMILES order, the other three run anticlockwise: the `signedVolume` of the four neighbors is
-negative when the raised one gets `z = 1` and the implicit hydrogen (or lone pair) `z = −1`. -/
+/-- Wedge or hash bonds for the tetrahedral stereocentres: each centre gets one neighbor drawn out
+of the plane (preferably by a single non-ring bond that is not yet a stereo bond, to a terminal
+atom that is not a centre), as a wedge or a hash so that the drawing has the stored
+configuration. `@` for the listing `sortedLigands` means that, looking from its first entry, the
+other three run anticlockwise: the `signedVolume` of the four is negative when the raised neighbor
+gets `z = 1` and the implicit hydrogen (or lone pair) `z = −1`. -/
 def wedges (g : Graph) (pos : Array Pt) : List StereoBond := Id.run do
   let mut out : List StereoBond := []
   for i in [0:g.numAtoms] do
-    let a := g.atom i
-    let some tag := a.chirality | continue
-    -- only the tetrahedral marks: `@` and `@TH1` anticlockwise, `@@` and `@TH2` clockwise
-    let some anticlockwise := tetrahedral tag | continue
-    let nbrs := g.stereoNeighbors i
+    let some anticlockwise := g.tetraMark i | continue
+    let nbrs := g.sortedLigands i
     if nbrs.length != 4 then continue
     let real := nbrs.filterMap id
     if real.isEmpty then continue
@@ -311,7 +296,7 @@ def wedges (g : Graph) (pos : Array Pt) : List StereoBond := Id.run do
       (s.center == i && s.neighbor == j) || (s.center == j && s.neighbor == i)
     let score (j : ℕ) : ℕ :=
       (if g.kindBetween i j != .single then 100 else 0) + (if used j then 100 else 0) +
-      (if (g.atom j).chirality.isSome then 50 else 0) +
+      (if (g.tetraMark j).isSome then 50 else 0) +
       (if g.inRing i j then 10 else 0) + (if 1 < g.degree j then 1 else 0)
     let j := real.foldl (fun best j ↦ if score j < score best then j else best) real.head!
     let (cx, cy) := pos[i]!

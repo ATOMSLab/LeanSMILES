@@ -18,8 +18,10 @@ library is organized around it:
 RDKit and pysmiles both parse into the middle layer and both have to work to
 reach the third.  The ordered graph remembers the string in two places — the
 atom numbering, and the neighbor order that `@`/`@@` and `/`/`\` refer to —
-which is why `Molecule.relabel` exists as an explicit operation and why
-stereo marks are *recorded* on atoms and bonds but not *interpreted*.
+which is why `Molecule.relabel` exists as an explicit operation.  `@`/`@@`
+and `/` `\` are interpreted by the parser into order-independent
+configurations (`stereo`, below) and recomputed by the writer for the order it
+writes; the `/` `\` also stay recorded on the bonds as written.
 
 ## 2. The typed representation
 
@@ -28,6 +30,7 @@ structure Molecule (n : ℕ) where
   atoms : Vector Atom n
   bonds : List (Bond n)
   nodup : (bonds.map Bond.edge).Nodup          -- no two bonds join the same pair
+  stereo : Vector (Option (Stereo n)) n        -- tetrahedral centres, cis/trans double bonds
 
 structure Bond (n : ℕ) where
   src dst : Fin n                              -- cannot dangle
@@ -64,7 +67,14 @@ Design choices, and the reason for each:
 * **Two hydrogen counts**, as in RDKit: `explicitH` (written in brackets) and
   `implicitH` (inferred).  A bracket atom is "an atom whose `explicitH` is
   `some _`", and the writer brackets exactly those again, so what you wrote is
-  what you get back.
+  what you get back.  (Canonicalization drops brackets that only restate the
+  default hydrogen count: `[CH](C)(C)C` canonicalizes as `CC(C)C`.)
+* **`Tetra n`, a quotient** (`LeanSMILES/Chem/Stereo.lean`): a centre's four
+  ligands, `Fin 4 → Option (Fin n)` with `none` for an implicit hydrogen or
+  lone pair, up to permutations of sign 1 (Mathlib's `Equiv.Perm.sign`).  A
+  `@` mark *is* such a class once the listing is known, so storing the class
+  makes the molecule independent of how the string listed neighbors, and
+  `isAnticlockwise` recovers the mark for any listing a writer chooses.
 
 ## 3. The Mathlib views (`LeanSMILES/Chem/Graph.lean`)
 
@@ -111,7 +121,7 @@ molecule" is in the type.
 | `Molecule.toFlatMatrix`, `flatten_toBondMatrix` | the graph's own 0/1 matrix; flattening the bond matrix gives it |
 | `normalize`, `IsNormal` | forget bond orientation and bond-list order; a fixed point of `normalize` (decidable) |
 | `IsNormal.bond_spec` | in normal form every bond runs `src < dst` with no direction mark |
-| `normalEquiv` | **`{m // m.IsNormal} ≃ Vector Atom n × BondMatrix n`** — nothing is lost |
+| `normalEquiv` | **`{m // m.IsNormal} ≃ Vector Atom n × BondMatrix n × Vector (Option (Tetra n)) n`** — nothing is lost |
 
 The `Equiv` is the honest form of "the matrix stores everything": it does, for
 molecules that have forgotten what a symmetric matrix cannot hold.  For Morgan
@@ -160,15 +170,20 @@ rank on atoms; everything it decides, it decides from ranks and bond kinds.
 Canonicalization is **color refinement + exhaustive tie-breaking**, after one
 normalization:
 
-0. Drop redundant brackets (`Molecule.dropRedundantBrackets`): an atom whose
-   brackets hold only a hydrogen count, equal to what the default-valence rule
-   gives it bare, is written bare — `[CH4]` is `C`, and caffeine's `[n]` (as
-   Sigma-Aldrich writes it) is `n`.  RDKit's writer does the same
-   (`atomNeedsBracket`).  Without this step the "bracketed" invariant below
-   gives one molecule two canonical strings.  Brackets that carry anything
-   (`[nH]`, `[CH3]`, `[13C]`, `[O-]`, `[C@H]`) stay.
+0. Reduce (`Molecule.reduce`), in two steps. Drop redundant brackets
+   (`Molecule.dropRedundantBrackets`): an atom whose brackets hold only a
+   hydrogen count, equal to what the default-valence rule gives it bare, is
+   written bare — `[CH4]` is `C`, and caffeine's `[n]` (as Sigma-Aldrich
+   writes it) is `n`.  RDKit's writer does the same (`atomNeedsBracket`).
+   Without this step the "bracketed" invariant below gives one molecule two
+   canonical strings.  Brackets that carry anything (`[nH]`, `[CH3]`, `[13C]`,
+   `[O-]`) stay; a tetrahedral mark lives in `Molecule.stereo`, not on the
+   atom, so `[C@H]` is unbracketed here and the writer brackets it again with
+   the mark it computes.  Then erase the marks whose mirror image, or flipped
+   double bond, is the same molecule (`MolData.dropFake`, judged by the
+   canonical search itself).
 1. Invariant per atom (degree, Z, H, aromatic, charge, isotope, bracketed,
-   class, chirality mark) → ranks.
+   class, other chirality classes, whether it is a stereocentre) → ranks.
 2. Refine by sorted (neighbor rank, bond kind) until the partition stops
    splitting — Morgan / Weisfeiler–Lehman.
 3. If atoms remain tied: individualize *each* atom of the lowest tied class in
@@ -316,8 +331,8 @@ Compiled code (`lake exe …`) is unaffected either way.
 3. **Degree lemma**: `graph.degree i = degree i` (needs `nodup`).
 4. **Chemistry as passes**: port the branch's sanitization as
    `Molecule n → Molecule n` functions, each with its own tests, each optional.
-5. **Stereo**: interpret `@`/`@@` as a parity over the neighbor order, and
-   write `/` `\` from the walk.
+5. **Stereo**: ~~interpret `@`/`@@` and `/` `\`~~ — done, `Tetra`, `Planar`
+   and `Molecule.stereo`; next, allenes and the other chirality classes.
 6. **Featurization**: ~~Morgan fingerprints~~ — done, `LeanSMILES/Fingerprint/Morgan.lean`
    (§7); next, `Atom → Fin k` one-hots and feeding `morganVector` to the ML
    side once the ML algorithms (`Scalar.lean`'s `ScalarLike`, the branch's

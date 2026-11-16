@@ -239,7 +239,8 @@ def Molecule.aromatize {n : ℕ} (m : Molecule n) : Except String (Molecule n) :
     let total := wa.frozenHs.getD (wa.explicitHs + w.implicitHs i.val)
     { a with aromatic := w.isAromaticAtom i.val, charge := wa.charge,
              implicitH := total - a.explicitH.getD 0 }
-  return { atoms, bonds := withKinds m w, nodup := map_edge_withKinds m w ▸ m.nodup }
+  return { atoms, bonds := withKinds m w, nodup := map_edge_withKinds m w ▸ m.nodup,
+           stereo := m.stereo }
 
 /-- `Molecule.aromatize` on a bundled molecule. -/
 def Mol.aromatize (M : Mol) : Except String Mol := do

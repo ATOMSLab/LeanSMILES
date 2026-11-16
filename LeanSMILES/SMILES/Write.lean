@@ -27,9 +27,20 @@ order. The canonical SMILES (`LeanSMILES.SMILES.Canon`) relabels the atoms by
 writer decides it decides from ranks and bond kinds alone, so when the ranks are
 label-independent, so is the string.
 
-Not written: the `/` `\` direction marks (recorded on bonds, but their meaning
-depends on the walk, so writing them correctly needs the parity bookkeeping
-that is out of scope here).  Chirality marks are written as recorded.
+Tetrahedral marks are not copied from the input but computed: a centre's
+neighbors are listed in the order this walk writes them (`listedLigands`, the
+parser's convention), and the mark is `@` exactly when that listing is the
+stored configuration (`Tetra.isAnticlockwise`).  Other chirality classes are
+written as recorded.
+
+Cis/trans marks are computed the same way: the `/` `\` recorded on the bonds
+are ignored, and for each stereo double bond, in the order the string reaches
+them, one single bond at each end gets a direction that makes the parser read
+back the stored arrangement (`cisTransDirs`). Neighboring double bonds of a
+conjugated chain share the single bond between them, so a mark already placed
+is reused, and a mark placed later agrees with the ones already there: no atom
+gets two substituents on the same side, which a reader other than our parser
+would take for a different molecule or for none.
 -/
 
 @[expose] public section
@@ -92,6 +103,144 @@ def dfs (m : Molecule n) (rank : Fin n → ℕ) : ℕ → Fin n → Walk n → W
           children := w.children.set a.val (w.children[a] ++ [o]) a.isLt }
         dfs m rank fuel o w
 
+/-! ### Tetrahedral marks -/
+
+/-- The ligands of `a` in the order the string lists them: the atom it is
+reached from, its hydrogen (when it has exactly one), its ring-closure partners
+in digit order, its children; a lone pair last when three atoms and no
+hydrogen are listed.  The parser reads `@`/`@@` against this same order
+(`SMILES.State.ligandsOf`). -/
+def listedLigands (m : Molecule n) (a : Fin n) (parent : Option (Fin n))
+    (rings kids : List (Fin n)) : List (Option (Fin n)) :=
+  let h := (m.atom a).totalH
+  let listed := parent.toList.map some ++ (if h = 1 then [none] else []) ++ rings.map some ++
+    kids.map some
+  if listed.length = 3 ∧ h = 0 then listed ++ [none] else listed
+
+/-- Atom `a` carrying the mark of its configuration for the listing `ligands`:
+`@` if the listing is the configuration, `@@` if its mirror image, no mark
+otherwise. -/
+def markedAtom (m : Molecule n) (a : Fin n) (ligands : List (Option (Fin n))) : Atom :=
+  match m.stereo[a], Ligands.ofList? ligands with
+  | some (.tetra t), some o =>
+    if t.isAnticlockwise o then { m.atom a with chirality := some .anticlockwise }
+    else if t.isAnticlockwise (o ∘ Ligands.swapLast) then
+      { m.atom a with chirality := some .clockwise }
+    else m.atom a
+  | _, _ => m.atom a
+
+/-! ### Cis/trans marks -/
+
+/-- The atoms in the order the string writes them: each tree in preorder,
+children in walk order. -/
+def preorder (w : Walk n) : ℕ → List (Fin n) → List (Fin n)
+  | 0, _ => []
+  | _, [] => []
+  | fuel + 1, a :: rest => a :: preorder w fuel (w.children[a] ++ rest)
+
+/-- The flag a direction `d` on the bond between `e` and `s`, written from the
+earlier of the two, gives `s` seen from `e` (`SMILES.dirFlagAt`). -/
+def flagOf (pos : Vector ℕ n) (e s : Fin n) (d : BondDir) : Bool :=
+  if pos[e] < pos[s] then d != .up else d == .up
+
+/-- The direction that gives `s` the flag `f` seen from `e`. -/
+def dirFor (pos : Vector ℕ n) (e s : Fin n) (f : Bool) : BondDir :=
+  if pos[e] < pos[s] then (if f then .down else .up) else (if f then .up else .down)
+
+/-- The direction `dirFor` chooses gives the flag it was asked for. -/
+lemma flagOf_dirFor (pos : Vector ℕ n) (e s : Fin n) (f : Bool) :
+    flagOf pos e s (dirFor pos e s f) = f := by
+  by_cases h : pos[e] < pos[s] <;> cases f <;> simp only [flagOf, dirFor, h, if_true,
+    if_false, Bool.false_eq_true] <;> decide
+
+/-- A mark gives the atoms at its two ends opposite flags: seen from `s`, the
+bond's other end `e` has the flag `s` does not have seen from `e`. So when
+`e` and `s` are both ends of stereo double bonds, the single bond between
+them ties the two together whether or not it is the bond that gets marked. -/
+lemma flagOf_swap (pos : Vector ℕ n) {e s : Fin n} (h : pos[e] ≠ pos[s]) (d : BondDir) :
+    flagOf pos s e d = !flagOf pos e s d := by
+  rcases Nat.lt_or_gt_of_ne h with h | h
+  · have h' : ¬ pos[s] < pos[e] := Nat.lt_asymm h
+    cases d <;> simp only [flagOf, h, h', if_true, if_false] <;> decide
+  · have h' : ¬ pos[e] < pos[s] := Nat.lt_asymm h
+    cases d <;> simp only [flagOf, h, h', if_true, if_false] <;> decide
+
+/-- Directions for single bonds around the stereo double bonds such that the
+parser reads back each arrangement.
+
+Every substituent of a stereo double bond has a *flag*, the side it lies on:
+the two substituents of one end have opposite flags, and substituents of the
+two ends have equal flags exactly when they are cis. That leaves one free
+choice per double bond. The double bonds are taken in the order the string
+reaches them; the choice is free (the first substituent of the earlier end
+gets `true`) unless a substituent is itself an end of a double bond already
+taken, in which case the single bond between the two fixes it
+(`flagOf_swap`) — and it does so even when that bond carries no mark, which
+is what keeps the two marks leaving a branched atom, as in `C/C=C(/C)\C=C/C`,
+from contradicting each other.
+
+One substituent per end is then marked: nothing if a neighbor already marked
+one, otherwise the end's first. In a chain or a tree of conjugated double
+bonds every one is fixed from at most one side, so the flags agree everywhere.
+In a ring of them the one that closes the ring can be fixed from both sides;
+the first substituent found wins, and the mark avoids a bond whose other end
+disagrees when it can. -/
+def cisTransDirs (m : Molecule n) (pos : Vector ℕ n) : List (Sym2 (Fin n) × BondDir) :=
+  let first (b : Bond n) : ℕ := min pos[b.src] pos[b.dst]
+  let dbs := (m.bonds.filter fun b ↦
+      b.kind == .double && m.stereo[b.src].any Stereo.isPlanar).mergeSort
+    fun b c ↦ first b ≤ first c
+  -- the substituents of the end `e` (of a double bond to `o`) a mark can go on: bonds whose
+  -- kind the string leaves implicit (single unless both atoms are aromatic, aromatic if both
+  -- are), so a `/` `\` in place of the symbol reads back as the same kind — an aromatic ring
+  -- bond included, as at the ring end of an exocyclic `c=N`
+  let subs (e o : Fin n) : List (Fin n) :=
+    (((m.bondsAt e).filter fun c ↦
+        c.other e != o && bondSymbol (m.atom e) (m.atom (c.other e)) c.kind == "").map
+      (·.other e)).mergeSort fun a c ↦ pos[a] ≤ pos[c]
+  -- the marks placed, and the flag of every substituent `s` of every end `e` taken: `((e, s), f)`
+  let init : List (Sym2 (Fin n) × BondDir) × List ((Fin n × Fin n) × Bool) := ([], [])
+  (dbs.foldl (init := init) fun acc b ↦
+    match m.stereo[b.src] with
+    | some (.planar p) =>
+      let (x, y) := if pos[b.src] ≤ pos[b.dst] then (b.src, b.dst) else (b.dst, b.src)
+      match subs x y, subs y x with
+      | sx :: _, _ :: _ =>
+        let (dirs, flags) := acc
+        -- a substituent `s` of `e` that is an end already taken, with the flag it must have
+        let forced (e o : Fin n) : Option (Fin n × Bool) :=
+          (subs e o).findSome? fun s ↦ (flags.lookup (s, e)).map fun f ↦ (s, !f)
+        -- the substituent whose flag settles the rest, its flag, and whether it is on `x`
+        let (a, fa, atX) : Fin n × Bool × Bool :=
+          match forced x y, forced y x with
+          | some (s, f), _ => (s, f, true)
+          | none, some (t, g) => (t, g, false)
+          | none, none => (sx, true, true)
+        let flagAt (e s : Fin n) : Bool :=
+          if (e == x) == atX then (if s == a then fa else !fa)
+          else if p.cis (some a) (some s) then fa else !fa
+        -- the mark at `e`, unless a neighbor placed one: on the first substituent that is not an
+        -- end already taken with a flag this one contradicts (outside a ring none is)
+        let mark (e o : Fin n) : List (Sym2 (Fin n) × BondDir) :=
+          if (subs e o).any fun t ↦ (dirs.lookup s(e, t)).isSome then [] else
+          let agrees (s : Fin n) : Bool := (flags.lookup (s, e)).all (· != flagAt e s)
+          match (subs e o).find? agrees <|> (subs e o).head? with
+          | some s => [(s(e, s), dirFor pos e s (flagAt e s))]
+          | none => []
+        (mark x y ++ mark y x ++ dirs,
+          (subs x y).map (fun s ↦ ((x, s), flagAt x s)) ++
+            (subs y x).map (fun s ↦ ((y, s), flagAt y s)) ++ flags)
+      | _, _ => acc
+    | _ => acc).1
+
+/-- The symbol for the bond `b` from `a`: its direction mark if it has one,
+otherwise the kind as `bondSymbol` writes it. -/
+def bondSymbolAt (m : Molecule n) (dirs : List (Sym2 (Fin n) × BondDir)) (a : Fin n)
+    (b : Bond n) : String :=
+  match dirs.lookup b.edge with
+  | some d => d.toChar.toString
+  | none => bondSymbol (m.atom a) (m.atom (b.other a)) b.kind
+
 /-! ### Pass 2: the string -/
 
 /-- The state of the writer. -/
@@ -110,36 +259,40 @@ where
     | fuel + 1, d => if used.contains d then go fuel (d + 1) else d
 
 /-- Write the ring-closure digits at `a`, in the order of `cls`: an open closure is closed and
-its digit freed; a new one is opened with the lowest free digit, after its bond symbol. -/
-def emitClosures (m : Molecule n) (a : Fin n) (cls : List (Bond n)) (e : Emit n) : Emit n :=
+its digit freed; a new one is opened with the lowest free digit, after its bond symbol (the
+`/` `\` mark `dirs` gives the bond, if any). -/
+def emitClosures (m : Molecule n) (dirs : List (Sym2 (Fin n) × BondDir)) (a : Fin n)
+    (cls : List (Bond n)) (e : Emit n) : Emit n :=
   cls.foldl (init := e) fun e c ↦
     match e.opened.lookup c.edge with
     | some d => { out := e.out ++ ringDigit d, opened := e.opened.filter (·.1 != c.edge) }
     | none =>
       let d := freeDigit (e.opened.map (·.2))
-      { out := e.out ++ bondSymbol (m.atom a) (m.atom (c.other a)) c.kind ++ ringDigit d,
+      { out := e.out ++ m.bondSymbolAt dirs a c ++ ringDigit d,
         opened := (c.edge, d) :: e.opened }
 
-/-- Write the subtree at `a`, `fuel` bounding the depth: the atom, its ring closures in rank
-order of the far atom, then the children in visit order after their bond symbols, all but the
-last in parentheses. -/
-def emit (m : Molecule n) (rank : Fin n → ℕ) (w : Walk n) : ℕ → Fin n → Emit n → Emit n
+/-- Write the subtree at `a`, `fuel` bounding the depth: the atom with its tetrahedral mark, its
+ring closures in rank order of the far atom, then the children in visit order after their bond
+symbols (with the `/` `\` marks of `dirs`), all but the last in parentheses. -/
+def emit (m : Molecule n) (rank : Fin n → ℕ) (w : Walk n) (dirs : List (Sym2 (Fin n) × BondDir)) :
+    ℕ → Fin n → Emit n → Emit n
   | 0, _, e => e
   | fuel + 1, a, e =>
-    let e := { e with out := e.out ++ (m.atom a).toSmiles }
     let cls := (w.closures.filter (·.touches a)).mergeSort fun b c ↦
       rankLE rank (b.other a) (c.other a)
-    let e := emitClosures m a cls e
     let kids := w.children[a]
+    let ligands := m.listedLigands a w.parent[a] (cls.map (·.other a)) kids
+    let e := { e with out := e.out ++ (m.markedAtom a ligands).toSmiles }
+    let e := emitClosures m dirs a cls e
     let numKids := kids.length
     kids.zipIdx.foldl (init := e) fun e ⟨o, k⟩ ↦
       let sym := match m.bondBetween a o with
-        | some b => bondSymbol (m.atom a) (m.atom o) b.kind
+        | some b => m.bondSymbolAt dirs a b
         | none => ""
       if k + 1 < numKids then
-        let e' := emit m rank w fuel o { e with out := e.out ++ "(" ++ sym }
+        let e' := emit m rank w dirs fuel o { e with out := e.out ++ "(" ++ sym }
         { e' with out := e'.out ++ ")" }
-      else emit m rank w fuel o { e with out := e.out ++ sym }
+      else emit m rank w dirs fuel o { e with out := e.out ++ sym }
 
 /-- Write the molecule, starting each component at its lowest-ranked atom and
 visiting neighbors in rank order; components are joined by `.` in order of
@@ -149,9 +302,12 @@ def write (m : Molecule n) (rank : Fin n → ℕ) : String :=
   let ⟨w, roots⟩ := order.foldl (init := ((Walk.init : Walk n), ([] : List (Fin n))))
     fun ⟨w, roots⟩ s ↦
       if w.visited[s] then (w, roots) else (dfs m rank (n + 1) s w, roots ++ [s])
+  let pos : Vector ℕ n := (preorder w (n + 1) roots).zipIdx.foldl (init := Vector.replicate n 0)
+    fun v ⟨a, k⟩ ↦ v.set a.val k a.isLt
+  let dirs := m.cisTransDirs pos
   let e := roots.foldl (init := (⟨"", []⟩ : Emit n)) fun e r ↦
     let e := if e.out.isEmpty then e else { e with out := e.out ++ "." }
-    emit m rank w (n + 1) r e
+    emit m rank w dirs (n + 1) r e
   e.out
 
 /-- The molecule written in its stored atom order: `write` with the identity rank. -/

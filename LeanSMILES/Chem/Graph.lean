@@ -31,7 +31,8 @@ and bond kinds are the originals.  **Nothing is lost**: what a symmetric
 matrix cannot hold is the `src → dst` orientation of a bond (the `/` `\`
 marks) and the order of the bond list.  `normalize` forgets exactly those,
 `IsNormal` says a molecule already has, and `normalEquiv` is the theorem:
-normal molecules are *exactly* atoms together with a bond matrix.
+normal molecules are *exactly* atoms, a bond matrix and the tetrahedral
+configurations (which never depended on the bond list).
 
 Relabeling the atoms by a permutation gives an isomorphic graph
 (`relabelIso`) — which is what makes canonicalization (`LeanSMILES.SMILES.Canon`)
@@ -209,19 +210,25 @@ lemma nodup_bondsOfMatrix (A : Matrix (Fin n) (Fin n) ℚ) :
     rintro ⟨i, j⟩ ⟨i', j'⟩ b hp hp'
     grind [Option.mem_def, bondOf_eq_some_iff]
 
-/-- Decode a weighted adjacency matrix into a molecule with the given atoms; entries
-that are zero or not a bond order give no bond. Faithful on `IsBondMatrix` matrices. -/
-def ofAdjMatrix (atoms : Vector Atom n) (A : Matrix (Fin n) (Fin n) ℚ) : Molecule n :=
-  ⟨atoms, bondsOfMatrix A, nodup_bondsOfMatrix A⟩
+/-- Decode a weighted adjacency matrix into a molecule with the given atoms and
+configurations; entries that are zero or not a bond order give no bond. Faithful
+on `IsBondMatrix` matrices. -/
+def ofAdjMatrix (atoms : Vector Atom n) (A : Matrix (Fin n) (Fin n) ℚ)
+    (stereo : Vector (Option (Stereo n)) n) : Molecule n :=
+  ⟨atoms, bondsOfMatrix A, nodup_bondsOfMatrix A, stereo⟩
 
 /-- Decoding keeps the given atoms. -/
-@[simp] lemma atoms_ofAdjMatrix (atoms : Vector Atom n) (A : Matrix (Fin n) (Fin n) ℚ) :
-    (ofAdjMatrix atoms A).atoms = atoms := rfl
+@[simp] lemma atoms_ofAdjMatrix (atoms : Vector Atom n) (A : Matrix (Fin n) (Fin n) ℚ)
+    (stereo : Vector (Option (Stereo n)) n) : (ofAdjMatrix atoms A stereo).atoms = atoms := rfl
+
+/-- Decoding keeps the given stereochemistry. -/
+@[simp] lemma stereo_ofAdjMatrix (atoms : Vector Atom n) (A : Matrix (Fin n) (Fin n) ℚ)
+    (stereo : Vector (Option (Stereo n)) n) : (ofAdjMatrix atoms A stereo).stereo = stereo := rfl
 
 /-- Where a valid matrix is zero, the decoded molecule has no bond. -/
-lemma bondBetween_ofAdjMatrix_eq_none (atoms : Vector Atom n) {A : Matrix (Fin n) (Fin n) ℚ}
-    (hA : IsBondMatrix A) {i j : Fin n} (h0 : A i j = 0) :
-    (ofAdjMatrix atoms A).bondBetween i j = none := by
+lemma bondBetween_ofAdjMatrix_eq_none (atoms : Vector Atom n)
+    (stereo : Vector (Option (Stereo n)) n) {A : Matrix (Fin n) (Fin n) ℚ} (hA : IsBondMatrix A)
+    {i j : Fin n} (h0 : A i j = 0) : (ofAdjMatrix atoms A stereo).bondBetween i j = none := by
   simp only [bondBetween, List.find?_eq_none, decide_eq_true_eq]
   intro b hb he
   obtain ⟨-, hk, -⟩ := mem_bondsOfMatrix.mp hb
@@ -229,8 +236,9 @@ lemma bondBetween_ofAdjMatrix_eq_none (atoms : Vector Atom n) {A : Matrix (Fin n
 
 /-- Where a valid matrix is nonzero, the decoded molecule's matrix agrees with it. -/
 lemma adjMatrix_ofAdjMatrix_apply_of_ne_zero (atoms : Vector Atom n)
+    (stereo : Vector (Option (Stereo n)) n)
     {A : Matrix (Fin n) (Fin n) ℚ} (hA : IsBondMatrix A) {i j : Fin n} (h0 : A i j ≠ 0) :
-    (ofAdjMatrix atoms A).adjMatrix i j = A i j := by
+    (ofAdjMatrix atoms A stereo).adjMatrix i j = A i j := by
   obtain ⟨k, hk⟩ := hA.entry i j h0
   have hne : i ≠ j := fun h ↦ h0 (h ▸ hA.diag i)
   rw [hk, adjMatrix_eq_order_iff]
@@ -240,30 +248,33 @@ lemma adjMatrix_ofAdjMatrix_apply_of_ne_zero (atoms : Vector Atom n)
       Sym2.eq_swap, rfl⟩
 
 /-- Decoding a valid matrix and re-encoding gives the matrix back. -/
-theorem adjMatrix_ofAdjMatrix (atoms : Vector Atom n) {A : Matrix (Fin n) (Fin n) ℚ}
-    (hA : IsBondMatrix A) : (ofAdjMatrix atoms A).adjMatrix = A := by
+theorem adjMatrix_ofAdjMatrix (atoms : Vector Atom n) (stereo : Vector (Option (Stereo n)) n)
+    {A : Matrix (Fin n) (Fin n) ℚ} (hA : IsBondMatrix A) :
+    (ofAdjMatrix atoms A stereo).adjMatrix = A := by
   ext i j
   by_cases h0 : A i j = 0
-  · simp [adjMatrix_apply, bondBetween_ofAdjMatrix_eq_none atoms hA h0, h0]
-  · exact adjMatrix_ofAdjMatrix_apply_of_ne_zero atoms hA h0
+  · simp [adjMatrix_apply, bondBetween_ofAdjMatrix_eq_none atoms stereo hA h0, h0]
+  · exact adjMatrix_ofAdjMatrix_apply_of_ne_zero atoms stereo hA h0
 
 /-- The graph of a decoded valid matrix is the matrix's graph. -/
-lemma graph_ofAdjMatrix (atoms : Vector Atom n) {A : Matrix (Fin n) (Fin n) ℚ}
-    (hA : IsBondMatrix A) : (ofAdjMatrix atoms A).graph = graphOfMatrix A := by
-  rw [← graphOfMatrix_adjMatrix, adjMatrix_ofAdjMatrix atoms hA]
+lemma graph_ofAdjMatrix (atoms : Vector Atom n) (stereo : Vector (Option (Stereo n)) n)
+    {A : Matrix (Fin n) (Fin n) ℚ} (hA : IsBondMatrix A) :
+    (ofAdjMatrix atoms A stereo).graph = graphOfMatrix A := by
+  rw [← graphOfMatrix_adjMatrix, adjMatrix_ofAdjMatrix atoms stereo hA]
 
 /-- Round trip: matrix → molecule → matrix. -/
 theorem adjMatrix_ofAdjMatrix_adjMatrix :
-    (ofAdjMatrix m.atoms m.adjMatrix).adjMatrix = m.adjMatrix :=
-  adjMatrix_ofAdjMatrix m.atoms m.isBondMatrix_adjMatrix
+    (ofAdjMatrix m.atoms m.adjMatrix m.stereo).adjMatrix = m.adjMatrix :=
+  adjMatrix_ofAdjMatrix m.atoms m.stereo m.isBondMatrix_adjMatrix
 
 /-- Round trip: molecule → matrix → molecule has the same graph. -/
-theorem graph_ofAdjMatrix_adjMatrix : (ofAdjMatrix m.atoms m.adjMatrix).graph = m.graph := by
-  rw [graph_ofAdjMatrix m.atoms m.isBondMatrix_adjMatrix, graphOfMatrix_adjMatrix]
+theorem graph_ofAdjMatrix_adjMatrix :
+    (ofAdjMatrix m.atoms m.adjMatrix m.stereo).graph = m.graph := by
+  rw [graph_ofAdjMatrix m.atoms m.stereo m.isBondMatrix_adjMatrix, graphOfMatrix_adjMatrix]
 
 /-- Round trip: molecule → matrix → molecule has the same bond kinds everywhere. -/
 theorem bondKind_ofAdjMatrix_adjMatrix (i j : Fin n) :
-    ((ofAdjMatrix m.atoms m.adjMatrix).bondBetween i j).map (·.kind)
+    ((ofAdjMatrix m.atoms m.adjMatrix m.stereo).bondBetween i j).map (·.kind)
       = (m.bondBetween i j).map (·.kind) := by
   rw [← ofOrder?_adjMatrix, ← ofOrder?_adjMatrix, adjMatrix_ofAdjMatrix_adjMatrix]
 
@@ -282,9 +293,10 @@ def relabelIso (σ : Equiv.Perm (Fin n)) : SimpleGraph.Iso m.graph (m.relabel σ
 
 end Molecule
 
-/-- Decode a bond matrix, given the atoms. -/
-def BondMatrix.toMolecule (B : BondMatrix n) (atoms : Vector Atom n) : Molecule n :=
-  Molecule.ofAdjMatrix atoms B.1
+/-- Decode a bond matrix, given the atoms and configurations. -/
+def BondMatrix.toMolecule (B : BondMatrix n) (atoms : Vector Atom n)
+    (stereo : Vector (Option (Stereo n)) n) : Molecule n :=
+  Molecule.ofAdjMatrix atoms B.1 stereo
 
 namespace Molecule
 
@@ -343,7 +355,7 @@ theorem flatten_toBondMatrix : m.toBondMatrix.flatten = m.toFlatMatrix :=
 
 /-- Forget bond orientation and bond-list order: decode the molecule's own
 matrix. -/
-def normalize : Molecule n := ofAdjMatrix m.atoms m.adjMatrix
+def normalize : Molecule n := ofAdjMatrix m.atoms m.adjMatrix m.stereo
 
 /-- Already in normal form. -/
 def IsNormal : Prop := m.normalize = m
@@ -353,6 +365,9 @@ instance : DecidablePred (IsNormal (n := n)) := fun m ↦
 
 /-- Normalizing keeps the atoms. -/
 @[simp] lemma atoms_normalize : m.normalize.atoms = m.atoms := rfl
+
+/-- Normalizing keeps the stereochemistry. -/
+@[simp] lemma stereo_normalize : m.normalize.stereo = m.stereo := rfl
 
 /-- Normalizing keeps the weighted adjacency matrix. -/
 @[simp] lemma adjMatrix_normalize : m.normalize.adjMatrix = m.adjMatrix :=
@@ -371,9 +386,10 @@ theorem normalize_normalize : m.normalize.normalize = m.normalize := by
 lemma isNormal_normalize : m.normalize.IsNormal := m.normalize_normalize
 
 /-- Decoding a valid matrix gives a molecule in normal form. -/
-lemma isNormal_ofAdjMatrix (atoms : Vector Atom n) {A : Matrix (Fin n) (Fin n) ℚ}
-    (hA : IsBondMatrix A) : (ofAdjMatrix atoms A).IsNormal := by
-  simp [IsNormal, normalize, adjMatrix_ofAdjMatrix atoms hA]
+lemma isNormal_ofAdjMatrix (atoms : Vector Atom n) (stereo : Vector (Option (Stereo n)) n)
+    {A : Matrix (Fin n) (Fin n) ℚ} (hA : IsBondMatrix A) :
+    (ofAdjMatrix atoms A stereo).IsNormal := by
+  simp [IsNormal, normalize, adjMatrix_ofAdjMatrix atoms stereo hA]
 
 /-- In normal form, every bond points from the smaller index to the larger
 and carries no direction mark. -/
@@ -388,21 +404,23 @@ lemma numBonds_normalize : m.normalize.numBonds = m.numBonds := by
     SimpleGraph.edgeFinset_card]
   exact Fintype.card_congr (Equiv.setCongr (congrArg _ m.graph_normalize))
 
-/-- **Nothing is lost**: molecules in normal form are exactly atoms together
-with a bond matrix. -/
-def normalEquiv : {m : Molecule n // m.IsNormal} ≃ Vector Atom n × BondMatrix n where
-  toFun m := (m.1.atoms, m.1.toBondMatrix)
-  invFun p := ⟨p.2.toMolecule p.1, isNormal_ofAdjMatrix p.1 p.2.2⟩
+/-- **Nothing is lost**: molecules in normal form are exactly atoms, a bond
+matrix and the tetrahedral configurations. -/
+def normalEquiv :
+    {m : Molecule n // m.IsNormal} ≃
+      Vector Atom n × BondMatrix n × Vector (Option (Stereo n)) n where
+  toFun m := (m.1.atoms, m.1.toBondMatrix, m.1.stereo)
+  invFun p := ⟨p.2.1.toMolecule p.1 p.2.2, isNormal_ofAdjMatrix p.1 p.2.2 p.2.1.2⟩
   left_inv m := by
     apply Subtype.ext
-    change ofAdjMatrix m.1.atoms m.1.toBondMatrix.1 = m.1
+    change ofAdjMatrix m.1.atoms m.1.toBondMatrix.1 m.1.stereo = m.1
     rw [val_toBondMatrix]
     exact m.2
   right_inv p := by
-    refine Prod.ext rfl (BondMatrix.ext fun i j ↦ ?_)
-    change (p.2.toMolecule p.1).toBondMatrix.1 i j = p.2.1 i j
+    refine Prod.ext rfl (Prod.ext (BondMatrix.ext fun i j ↦ ?_) rfl)
+    change (p.2.1.toMolecule p.1 p.2.2).toBondMatrix.1 i j = p.2.1.1 i j
     rw [val_toBondMatrix]
-    exact congrFun (congrFun (adjMatrix_ofAdjMatrix p.1 p.2.2) i) j
+    exact congrFun (congrFun (adjMatrix_ofAdjMatrix p.1 p.2.2 p.2.1.2) i) j
 
 end Molecule
 
@@ -433,8 +451,9 @@ end Molecule
 
 /-! ### A molecule as atoms and a bond matrix -/
 
-/-- A molecule as the canonical search sees it: its atoms and its bond matrix —
-a molecule up to the order and orientation of its bond list (`normalEquiv`).
+/-- A molecule as the canonical search sees it: its atoms, its bond matrix and
+its tetrahedral configurations — a molecule up to the order and orientation of
+its bond list (`normalEquiv`).
 The matrix is stored as a table, so a lookup is O(1) wherever the value flows
 (a matrix closing over a table is not: the compiler may float the table into
 the closure and rebuild it per call); `bonds` is the same matrix as a
@@ -447,22 +466,25 @@ structure MolData (n : ℕ) where
   table : Vector (Vector ℚ n) n
   /-- The table is a bond matrix. -/
   isBondMatrix : IsBondMatrix (Matrix.of fun i j : Fin n ↦ table[i][j])
+  /-- The tetrahedral configurations. -/
+  stereo : Vector (Option (Stereo n)) n
 
 namespace MolData
 
 variable (d : MolData n)
 
-/-- Two `MolData` with the same atoms and the same table are equal: the proof field carries no
-data. Tagged `@[ext]`, so `ext` reduces an equality of `MolData` to those two components. -/
-@[ext] lemma ext {d d' : MolData n} (ha : d.atoms = d'.atoms) (ht : d.table = d'.table) :
-    d = d' := by
+/-- Two `MolData` with the same atoms, table and stereochemistry are equal: the proof field
+carries no data. Tagged `@[ext]`, so `ext` reduces an equality of `MolData` to those three
+components. -/
+@[ext] lemma ext {d d' : MolData n} (ha : d.atoms = d'.atoms) (ht : d.table = d'.table)
+    (hs : d.stereo = d'.stereo) : d = d' := by
   cases d
   cases d'
   congr
 
 instance : DecidableEq (MolData n) := fun d d' ↦
-  decidable_of_iff (d.atoms = d'.atoms ∧ d.table = d'.table)
-    ⟨fun ⟨h1, h2⟩ ↦ ext h1 h2, fun h ↦ h ▸ ⟨rfl, rfl⟩⟩
+  decidable_of_iff (d.atoms = d'.atoms ∧ d.table = d'.table ∧ d.stereo = d'.stereo)
+    ⟨fun ⟨h1, h2, h3⟩ ↦ ext h1 h2 h3, fun h ↦ h ▸ ⟨rfl, rfl, rfl⟩⟩
 
 /-- The bond matrix. -/
 def bonds : BondMatrix n := ⟨Matrix.of fun i j ↦ d.table[i][j], d.isBondMatrix⟩
@@ -481,10 +503,15 @@ def relabel (σ : Equiv.Perm (Fin n)) : MolData n where
       entry := fun i j h ↦ by
         simp only [Matrix.of_apply, Fin.getElem_fin, Vector.getElem_ofFn, Fin.eta] at h ⊢
         exact d.isBondMatrix.entry _ _ h }
+  stereo := relabelStereo σ d.stereo
 
 /-- Relabeling `MolData` relabels its atoms by `relabelVec`. -/
 @[simp] lemma atoms_relabel (σ : Equiv.Perm (Fin n)) : (d.relabel σ).atoms = relabelVec σ d.atoms :=
   rfl
+
+/-- Relabeling moves the stereochemistry with the atoms (`relabelStereo`). -/
+@[simp] lemma stereo_relabel (σ : Equiv.Perm (Fin n)) :
+    (d.relabel σ).stereo = relabelStereo σ d.stereo := rfl
 
 /-- Entry `(i, j)` of the relabeled table is entry `(σ⁻¹ i, σ⁻¹ j)` of the original. -/
 @[simp] lemma table_relabel (σ : Equiv.Perm (Fin n)) (i j : Fin n) :
@@ -498,11 +525,12 @@ lemma bonds_relabel (σ : Equiv.Perm (Fin n)) : (d.relabel σ).bonds = d.bonds.r
 /-- Two relabelings in a row are one relabeling along the composite: first `σ`, then `τ`. -/
 lemma relabel_relabel (σ τ : Equiv.Perm (Fin n)) :
     (d.relabel σ).relabel τ = d.relabel (σ.trans τ) :=
-  ext (relabelVec_relabelVec σ τ d.atoms) <| Vector.ext fun i hi ↦ Vector.ext fun j hj ↦ by
-    simp [relabel, Vector.getElem_ofFn]
+  ext (relabelVec_relabelVec σ τ d.atoms)
+    (Vector.ext fun i hi ↦ Vector.ext fun j hj ↦ by simp [relabel, Vector.getElem_ofFn])
+    (relabelStereo_relabelStereo σ τ d.stereo)
 
 /-- The molecule, in normal form. -/
-def toMolecule : Molecule n := Molecule.ofAdjMatrix d.atoms d.bonds.1
+def toMolecule : Molecule n := Molecule.ofAdjMatrix d.atoms d.bonds.1 d.stereo
 
 end MolData
 
@@ -512,10 +540,13 @@ variable (m : Molecule n)
 
 /-- The atoms and the bond matrix, as a table with O(1) lookups. -/
 def toMolData : MolData n :=
-  ⟨m.atoms, m.adjTable, m.of_adjTable_eq_adjMatrix ▸ m.isBondMatrix_adjMatrix⟩
+  ⟨m.atoms, m.adjTable, m.of_adjTable_eq_adjMatrix ▸ m.isBondMatrix_adjMatrix, m.stereo⟩
 
 /-- A molecule's data has the molecule's atoms. -/
 @[simp] lemma toMolData_atoms : m.toMolData.atoms = m.atoms := rfl
+
+/-- A molecule's data carries its stereochemistry. -/
+@[simp] lemma toMolData_stereo : m.toMolData.stereo = m.stereo := rfl
 
 /-- The bond matrix of a molecule's data is `toBondMatrix`, definitionally. -/
 lemma toMolData_bonds : m.toMolData.bonds = m.toBondMatrix := rfl
@@ -523,7 +554,7 @@ lemma toMolData_bonds : m.toMolData.bonds = m.toBondMatrix := rfl
 /-- Taking a molecule's data commutes with relabeling. -/
 lemma toMolData_relabel (σ : Equiv.Perm (Fin n)) :
     (m.relabel σ).toMolData = m.toMolData.relabel σ := by
-  refine MolData.ext rfl ?_
+  refine MolData.ext rfl ?_ rfl
   ext i hi j hj
   simpa [toMolData, MolData.relabel, Vector.getElem_ofFn,
     getElem_adjTable (m.relabel σ) ⟨i, hi⟩ ⟨j, hj⟩]
