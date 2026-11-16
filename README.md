@@ -222,8 +222,10 @@ in the same per-atom slot as a tetrahedral centre, so relabeling,
 automorphisms, meaningless-mark erasure (`C/C=C(/C)C` loses its marks) and
 the canonicity theorem cover both at once. The writer places one mark per end,
 reusing the one a neighboring double bond of a conjugated chain already put
-on the shared bond. As in RDKit and InChI, a double bond on a ring of fewer
-than eight atoms gets no arrangement.
+on the shared bond, and a mark placed later agrees with those already there:
+no atom gets both of its substituents on one side, which RDKit and Open Babel
+would read as another molecule. As in RDKit and InChI, a double bond on a
+ring of fewer than eight atoms gets no arrangement.
 
 Because the parser checks syntax only, `[C+123]` parses, round-trips and
 canonicalizes like any other atom (RDKit accepts it too). The chemistry check
@@ -277,7 +279,7 @@ lake exe morgan-test        # Morgan fingerprints: ring membership = RDKit's, bi
 lake exe charge-test        # formal charges: [C+123], [H+++], [C-123] parse but fail checkCharges; [Na+], [O-2], [Fe+3], [NH4+] pass
 lake exe stereo-test        # stereoisomers vs RDKit and InChI (datasets/stereo-*.tsv from tools/rdkit_stereo.py):
                             # one canonical SMILES per stereoisomer, a different one per different isomer,
-                            # @/@@ and / \ read as RDKit reads them
+                            # no two / \ marks that contradict each other, @/@@ and / \ read as RDKit reads them
 ```
 
 ### Morgan fingerprints
