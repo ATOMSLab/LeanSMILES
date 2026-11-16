@@ -1,6 +1,6 @@
 // 2D molecular drawing presets and verification edge-case fixtures
 
-export const CHEMDRAW_PRESETS = [
+export const LEANDRAW_PRESETS = [
   {
     id: 'lipopeptide',
     label: 'Tripeptide (Thr-Dab-Leu)',
@@ -96,7 +96,7 @@ export const CHEMDRAW_PRESETS = [
     id: 'anisole-abbrev',
     label: 'p-Nitroanisole (Superatoms)',
     category: 'valid',
-    description: 'Uses ChemDraft superatom abbreviations (-OMe and -NO2) with automatic expansion',
+    description: 'Uses LeanDraw superatom abbreviations (-OMe and -NO2) with automatic expansion',
     atoms: [
       { id: 'a1', element: 'C', formalCharge: 0, x: 280, y: 148 },
       { id: 'a2', element: 'C', formalCharge: 0, x: 325, y: 174 },

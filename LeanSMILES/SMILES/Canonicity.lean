@@ -43,12 +43,13 @@ writes the same string as some leaf the pruned search keeps
 the full search (`search_subset_leavesAll`); the two minima agree
 (`min?_search_eq`).
 
-Tetrahedral configurations ride along: relabeling moves each one with its
-ligands (`relabelStereo`), an automorphism must preserve them, and the steps
-that first drop redundant brackets and erase meaningless marks are made of
+Configurations ride along: relabeling moves each one with its ligands
+(`relabelStereo`), an automorphism must preserve them, and the steps that
+first drop redundant brackets and erase meaningless marks are made of
 label-independent tests — a bond-order sum, a canonical string, ranks, a
 configuration equal to its own mirror image — so they commute with
-relabeling too (`reduce_relabel`).
+relabeling too (`Molecule.dropRedundantBrackets_relabel`, `dropFake_relabel`;
+together `Molecule.reduce_relabel`).
 -/
 
 public section
@@ -755,36 +756,24 @@ lemma keptStereo_relabel (σ : Equiv.Perm (Fin n)) :
 theorem dropFake_relabel (σ : Equiv.Perm (Fin n)) : (d.relabel σ).dropFake = d.dropFake.relabel σ :=
   ext rfl rfl (d.keptStereo_relabel σ)
 
-/-- An atom's bond-order sum does not depend on labels. -/
-lemma orderSum_relabel (σ : Equiv.Perm (Fin n)) (i : Fin n) :
-    (d.relabel σ).orderSum (σ i) = d.orderSum i := by
-  simp only [orderSum, bonds_relabel, BondMatrix.relabel_apply, Equiv.symm_apply_apply]
-  have h := ((map_finRange_perm σ.symm).map fun j ↦ d.bonds i j).sum_eq
-  rwa [List.map_map] at h
-
-/-- Dropping redundant brackets commutes with relabeling. -/
-lemma normalizeBrackets_relabel (σ : Equiv.Perm (Fin n)) :
-    (d.relabel σ).normalizeBrackets = d.normalizeBrackets.relabel σ := by
-  refine ext (eq_relabelVec_of_apply σ fun i ↦ ?_) rfl rfl
-  simp only [normalizeBrackets, Fin.getElem_fin, Vector.getElem_ofFn, Fin.eta, atoms_relabel,
-    orderSum_relabel]
-  rw [← Fin.getElem_fin, relabelVec_apply]
-  rfl
-
-/-- Reducing — redundant brackets, then meaningless marks — commutes with
-relabeling. -/
-theorem reduce_relabel (σ : Equiv.Perm (Fin n)) : (d.relabel σ).reduce = d.reduce.relabel σ := by
-  unfold reduce
-  rw [normalizeBrackets_relabel, dropFake_relabel]
-
 end MolData
+
+/-- Reducing — redundant brackets, then meaningless marks — commutes with relabeling. -/
+theorem Molecule.reduce_relabel (m : Molecule n) (σ : Equiv.Perm (Fin n)) :
+    (m.relabel σ).reduce = m.reduce.relabel σ := by
+  refine Molecule.ext ?_ rfl ?_
+  · change (m.relabel σ).dropRedundantBrackets.atoms = (m.dropRedundantBrackets.relabel σ).atoms
+    rw [dropRedundantBrackets_relabel]
+  · change (m.relabel σ).dropRedundantBrackets.toMolData.keptStereo
+      = relabelStereo σ m.dropRedundantBrackets.toMolData.keptStereo
+    rw [dropRedundantBrackets_relabel, toMolData_relabel, MolData.keptStereo_relabel]
 
 /-- The canonical SMILES does not depend on how the atoms are numbered: every
 relabeling of the molecule writes the same string. -/
 theorem Molecule.canonicalSmiles_relabel (m : Molecule n) (σ : Equiv.Perm (Fin n)) :
     (m.relabel σ).canonicalSmiles = m.canonicalSmiles := by
-  simp only [canonicalSmiles, MolData.reduceAndCanonical_snd, toMolData_relabel,
-    MolData.reduce_relabel, MolData.canonical_relabel]
+  simp only [canonicalSmiles, MolData.dropFakeAndCanonical_snd, dropRedundantBrackets_relabel,
+    toMolData_relabel, MolData.dropFake_relabel, MolData.canonical_relabel]
 
 /-- The canonical SMILES of a bundled molecule does not depend on its atom order. -/
 theorem Mol.canonicalSmiles_relabel (M : Mol) (σ : Equiv.Perm (Fin M.n)) :

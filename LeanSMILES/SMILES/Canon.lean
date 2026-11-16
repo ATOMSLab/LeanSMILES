@@ -53,6 +53,15 @@ Soundness rests on the check alone, never on the heuristic that proposed the
 candidate; `LeanSMILES.SMILES.Canonicity` proves that `search` and
 `leavesAll` have the same minimum, and that the minimum is label-independent.
 
+**Redundant brackets.** Before any of this, brackets that say nothing a bare atom
+would not — `[n]`, `[CH4]`, `[Cl]` — are dropped (`Molecule.dropRedundantBrackets`): the
+search ranks bracketed atoms apart from bare ones, so without this step a source that writes
+caffeine's methylated nitrogen as `[n]` would get a different canonical SMILES.  Brackets
+that carry anything (`[nH]`, `[CH3]`, `[13C]`, `[O-]`) stay.  A tetrahedral mark is not
+on the atom but in `Molecule.stereo`, so `[C@H]` loses its brackets here too, and the writer
+puts them back with the mark it computes — unless the mark was meaningless (below), which
+is what lets a meaningless `[C@H]` become the plain `C` it stands for.
+
 **Stereochemistry.** The data carries each centre's configuration and each
 stereo double bond's arrangement (at both ends), which a relabeling moves
 along with their atoms, so automorphisms, pruning and the written marks all
@@ -65,24 +74,19 @@ A mark can be meaningless — `C[C@H](C)C`, whose mirror image is the same
 molecule, or `C/C=C(/C)C`, whose flipped double bond is — and must
 canonicalize like no mark.  A double bond's two ends are one unit
 (`sameUnit`): mirrored and erased together.  `dropFake` erases such marks
-first, by asking the canonical search itself: a mark goes when mirroring it
-alone gives the same canonical string, and still does once the other such
-marks are erased (`keptStereo`).  The second condition keeps the marks of
-*cis,trans*-1,3,5-trimethylcyclohexane, where mirroring either of the two
-alike centres alone is invisible but mirroring both is not.  Only centres
-with two neighbors of the same rank can be affected, which the search is
-asked about; the rest cost nothing.  Every step is label-independent, so
-`dropFake` commutes with relabeling and canonicity survives
-(`LeanSMILES.SMILES.Canonicity`).
-
-**Redundant brackets.** `[CH](C)(C)C` is `CC(C)C`: brackets that only state
-the hydrogen count the default-valence rule gives anyway are dropped first
-(`normalizeBrackets`, `Atom.unbracket`) — which is also what lets a
-meaningless `[C@H]` become the plain `C` it stands for.  `reduce` is both
-steps; it is what the search sees.  `reduceAndCanonical` computes it together
-with its canonical form, reusing the search the mark check ran first whenever
-the check erases nothing — the usual case — and is proved to agree with
-`reduce` and `reduce.canonical`.
+after the brackets are dropped, by asking the canonical search itself: a mark
+goes when mirroring it alone gives the same canonical string, and still does
+once the other such marks are erased (`keptStereo`).  The second condition
+keeps the marks of *cis,trans*-1,3,5-trimethylcyclohexane, where mirroring
+either of the two alike centres alone is invisible but mirroring both is not.
+Only centres with two neighbors of the same rank can be affected, which the
+search is asked about; the rest cost nothing.  Every step is
+label-independent, so `dropFake` commutes with relabeling and canonicity
+survives (`LeanSMILES.SMILES.Canonicity`).  `Molecule.reduce` is both steps;
+its data is what the search sees.  `dropFakeAndCanonical` computes that data
+together with its canonical form, reusing the search the mark check ran first
+whenever the check erases nothing — the usual case — and is proved to agree
+with `dropFake` and `dropFake.canonical`.
 
 **Relabeling.** A discrete ranking is a permutation, `permOfRanks`: atom `i`
 goes to its position in rank order.  The string a ranking writes is the data
@@ -103,19 +107,6 @@ variable {n : ℕ}
 
 /-- A rank for each atom; equal ranks mean "not yet distinguished". -/
 abbrev Ranks (n : ℕ) := Vector ℕ n
-
-/-- The atom without redundant brackets: when nothing but its hydrogen count
-needs brackets and that count is what the default-valence rule gives for its
-bond-order sum, the bare atom, the hydrogens implicit. The sum is asked for
-only for a bracket atom (most atoms are not). -/
-def Atom.unbracket (a : Atom) (orderSum : Unit → ℚ) : Atom :=
-  let bare := { a with explicitH := none, implicitH := 0 }
-  match a.explicitH with
-  | some h =>
-    if bare.canBeBare && h == Molecule.implicitHydrogens bare (orderSum ()) then
-      { bare with implicitH := h }
-    else a
-  | none => a
 
 /-! ### Ranks -/
 
@@ -406,27 +397,13 @@ def keptStereo : Vector (Option (Stereo n)) n := (d.eraseStereo d.selfMirror).st
 /-- The data with its meaningless marks erased. -/
 def dropFake : MolData n := { d with stereo := d.keptStereo }
 
-/-! ### Redundant brackets -/
-
-/-- The bond orders at `i`, summed. -/
-def orderSum (i : Fin n) : ℚ := ((List.finRange n).map fun j ↦ d.bonds i j).sum
-
-/-- The data with redundant brackets dropped (`Atom.unbracket`). -/
-def normalizeBrackets : MolData n :=
-  { d with atoms := Vector.ofFn fun i ↦ d.atoms[i].unbracket fun _ ↦ d.orderSum i }
-
-/-- What is canonicalized: the data without redundant brackets, then without
-meaningless marks. -/
-def reduce : MolData n := d.normalizeBrackets.dropFake
-
-/-- `reduce` and its canonical form, sharing work: the meaningless-mark check
+/-- `dropFake` and its canonical form, sharing work: the meaningless-mark check
 canonicalizes the data (marks of their own mirror image erased) before it
-decides anything, and when it then erases nothing, that data is `reduce` and
+decides anything, and when it then erases nothing, that data is `dropFake` and
 its canonical form is reused rather than searched for again
-(`reduceAndCanonical_fst`, `reduceAndCanonical_snd`). -/
-def reduceAndCanonical : MolData n × (Ranks n × String) :=
-  let nb := d.normalizeBrackets
-  let d₀ := nb.eraseStereo nb.selfMirror
+(`dropFakeAndCanonical_fst`, `dropFakeAndCanonical_snd`). -/
+def dropFakeAndCanonical : MolData n × (Ranks n × String) :=
+  let d₀ := d.eraseStereo d.selfMirror
   if (List.finRange n).all fun i ↦ d₀.stereo[i].isNone then (d₀, d₀.canonical) else
   let r := d₀.initialRanks
   if (List.finRange n).any (d₀.candidate r) then
@@ -457,10 +434,10 @@ lemma eraseStereo_of_forall_false {p : Fin n → Bool} (h : ∀ i, p i = false) 
   ext i hi
   simp
 
-/-- The data `reduceAndCanonical` returns is `reduce`. -/
-theorem reduceAndCanonical_fst : d.reduceAndCanonical.1 = d.reduce := by
-  simp only [reduceAndCanonical, reduce, dropFake, keptStereo, stripStereo]
-  set d₀ := d.normalizeBrackets.eraseStereo d.normalizeBrackets.selfMirror
+/-- The data `dropFakeAndCanonical` returns is `dropFake`. -/
+theorem dropFakeAndCanonical_fst : d.dropFakeAndCanonical.1 = d.dropFake := by
+  simp only [dropFakeAndCanonical, dropFake, keptStereo, stripStereo]
+  set d₀ := d.eraseStereo d.selfMirror
   split_ifs with h₁ h₂ h₃
   · rfl
   · have hf : ∀ i, d₀.droppable (d₀.invisible d₀.canonical.2 d₀.initialRanks) i = false := by
@@ -473,14 +450,15 @@ theorem reduceAndCanonical_fst : d.reduceAndCanonical.1 = d.reduce := by
     rfl
   · rfl
 
-/-- The canonical form `reduceAndCanonical` returns is that of its data. -/
-lemma reduceAndCanonical_snd_eq : d.reduceAndCanonical.2 = d.reduceAndCanonical.1.canonical := by
-  simp only [reduceAndCanonical]
+/-- The canonical form `dropFakeAndCanonical` returns is that of its data. -/
+lemma dropFakeAndCanonical_snd_eq :
+    d.dropFakeAndCanonical.2 = d.dropFakeAndCanonical.1.canonical := by
+  simp only [dropFakeAndCanonical]
   split_ifs <;> rfl
 
-/-- The canonical form `reduceAndCanonical` returns is `reduce`'s. -/
-theorem reduceAndCanonical_snd : d.reduceAndCanonical.2 = d.reduce.canonical := by
-  rw [reduceAndCanonical_snd_eq, reduceAndCanonical_fst]
+/-- The canonical form `dropFakeAndCanonical` returns is `dropFake`'s. -/
+theorem dropFakeAndCanonical_snd : d.dropFakeAndCanonical.2 = d.dropFake.canonical := by
+  rw [dropFakeAndCanonical_snd_eq, dropFakeAndCanonical_fst]
 
 end MolData
 
@@ -488,30 +466,33 @@ namespace Molecule
 
 variable (m : Molecule n)
 
-/-- The molecule without redundant brackets and meaningless tetrahedral marks
-(`MolData.reduce`): what canonicalization writes. -/
+/-- The molecule without redundant brackets (`dropRedundantBrackets`) and then without
+meaningless marks (`MolData.dropFake`): what canonicalization writes. -/
 def reduce : Molecule n :=
-  { m with atoms := m.toMolData.normalizeBrackets.atoms
-           stereo := m.toMolData.normalizeBrackets.keptStereo }
+  { m.dropRedundantBrackets with stereo := m.dropRedundantBrackets.toMolData.keptStereo }
 
-/-- The data of the reduced molecule is the reduced data, definitionally. -/
-lemma toMolData_reduce : m.reduce.toMolData = m.toMolData.reduce := rfl
+/-- The data of the reduced molecule is the data without redundant brackets, its meaningless
+marks erased, definitionally. -/
+lemma toMolData_reduce : m.reduce.toMolData = m.dropRedundantBrackets.toMolData.dropFake := rfl
 
-/-- The canonical ranks. -/
-def canonicalRanks : Ranks n := m.toMolData.reduceAndCanonical.2.1
+/-- The canonical ranks: those of the reduced molecule, so that `[n]` and `n` rank alike and
+a meaningless mark does not count. -/
+def canonicalRanks : Ranks n := m.dropRedundantBrackets.toMolData.dropFakeAndCanonical.2.1
 
-/-- The canonical SMILES string. -/
-def canonicalSmiles : String := m.toMolData.reduceAndCanonical.2.2
+/-- The canonical SMILES string.  Redundant brackets are dropped first: `[CH4]` and `C`, or
+caffeine written with `[n]` and with `n`, have one canonical SMILES; then meaningless marks. -/
+def canonicalSmiles : String := m.dropRedundantBrackets.toMolData.dropFakeAndCanonical.2.2
 
 /-- The canonical ranks as a permutation of the atoms. -/
 def canonicalPerm : Equiv.Perm (Fin n) := permOfRanks m.canonicalRanks
 
-/-- The molecule with its atoms in canonical order, in normal form, without
-redundant brackets and meaningless marks. That this changes labels and nothing
-else is `canonicalizeIso`; that writing it out gives the canonical SMILES is
-`toSmiles_canonicalize`. -/
+/-- The molecule with its redundant brackets and meaningless marks dropped and its atoms in
+canonical order, in normal form. That the graph changes by a relabeling and nothing else is
+`canonicalizeIso`; that the charges and hydrogen counts survive is
+`chargesConsistent_canonicalize` and `totalH_dropRedundantBrackets`; that writing it out
+gives the canonical SMILES is `toSmiles_canonicalize`. -/
 def canonicalize : Molecule n :=
-  let rc := m.toMolData.reduceAndCanonical
+  let rc := m.dropRedundantBrackets.toMolData.dropFakeAndCanonical
   (rc.1.relabel (permOfRanks rc.2.1)).toMolecule
 
 /-- The canonical molecule is the reduced molecule relabeled into canonical
@@ -519,26 +500,26 @@ order, normalized. -/
 theorem canonicalize_eq_normalize_relabel :
     m.canonicalize = (m.reduce.relabel m.canonicalPerm).normalize := by
   rw [← toMolecule_toMolData, toMolData_relabel, toMolData_reduce]
-  simp only [canonicalize, canonicalPerm, canonicalRanks, MolData.reduceAndCanonical_fst]
+  simp only [canonicalize, canonicalPerm, canonicalRanks, MolData.dropFakeAndCanonical_fst]
 
 /-- The canonical molecule, written in its atom order, is the canonical SMILES. -/
 theorem toSmiles_canonicalize : m.canonicalize.toSmiles = m.canonicalSmiles := by
-  simp only [canonicalize, canonicalSmiles, MolData.reduceAndCanonical_fst,
-    MolData.reduceAndCanonical_snd]
-  exact m.toMolData.reduce.writeRanked_canonical
+  simp only [canonicalize, canonicalSmiles, MolData.dropFakeAndCanonical_fst,
+    MolData.dropFakeAndCanonical_snd]
+  exact m.dropRedundantBrackets.toMolData.dropFake.writeRanked_canonical
 
-/-- Canonicalization keeps the bond count: it only relabels and normalizes. -/
+/-- Canonicalization keeps the bond count: it only drops brackets, relabels and normalizes. -/
 lemma numBonds_canonicalize : m.canonicalize.numBonds = m.numBonds := by
   rw [canonicalize_eq_normalize_relabel, numBonds_normalize, numBonds_relabel]
   rfl
 
 /-- The canonical molecule's graph is that of the molecule relabeled into canonical order;
-normalization does not touch the graph. -/
+dropping brackets and normalization do not touch the graph. -/
 lemma graph_canonicalize : m.canonicalize.graph = (m.relabel m.canonicalPerm).graph := by
   rw [canonicalize_eq_normalize_relabel, graph_normalize]
   rfl
 
-/-- Canonicalization changes labels and nothing else: the canonical molecule's
+/-- Canonicalization changes the graph's labels and nothing else: the canonical molecule's
 graph is isomorphic to the original's. -/
 def canonicalizeIso : SimpleGraph.Iso m.graph m.canonicalize.graph :=
   m.graph_canonicalize ▸ m.relabelIso m.canonicalPerm
@@ -547,30 +528,22 @@ def canonicalizeIso : SimpleGraph.Iso m.graph m.canonicalize.graph :=
 
 `chargesConsistent` (`LeanSMILES.Chem.Charge`) is not an invariant of
 `Molecule` and the pipeline carries no chemistry; but it is a property of the
-atoms alone, and canonicalization only permutes them. -/
+atoms alone, and canonicalization only permutes them and drops brackets, which keeps every
+element and charge. -/
 
 /-- Normalization keeps the atoms, so it keeps charge consistency, definitionally. -/
 lemma chargesConsistent_normalize : m.normalize.chargesConsistent ↔ m.chargesConsistent :=
   Iff.rfl
 
-/-- Dropping a redundant bracket keeps the charge, which is zero. -/
-lemma _root_.LeanSMILES.Atom.chargeConsistent_unbracket (a : Atom) (q : Unit → ℚ) :
-    (a.unbracket q).chargeConsistent ↔ a.chargeConsistent := by
-  unfold Atom.unbracket
-  split
-  · dsimp only
-    split_ifs with h
-    · have h0 : a.charge = 0 := by simp_all [Atom.canBeBare]
-      exact iff_of_true (Atom.chargeConsistent_of_charge_eq_zero h0)
-        (Atom.chargeConsistent_of_charge_eq_zero h0)
-    · exact Iff.rfl
-  · exact Iff.rfl
+/-- Dropping redundant brackets keeps every element and charge, so it keeps charge
+consistency. -/
+lemma chargesConsistent_dropRedundantBrackets :
+    m.dropRedundantBrackets.chargesConsistent ↔ m.chargesConsistent := by
+  simp [chargesConsistent, Atom.chargeConsistent, Atom.minCharge, Atom.maxCharge]
 
-/-- Reducing keeps charge consistency: it only drops brackets from neutral atoms and marks. -/
-lemma chargesConsistent_reduce : m.reduce.chargesConsistent ↔ m.chargesConsistent := by
-  refine forall_congr' fun i ↦ ?_
-  simp only [reduce, atom, MolData.normalizeBrackets, Fin.getElem_fin, Vector.getElem_ofFn]
-  exact Atom.chargeConsistent_unbracket _ _
+/-- Reducing keeps charge consistency: erasing marks does not touch the atoms. -/
+lemma chargesConsistent_reduce : m.reduce.chargesConsistent ↔ m.chargesConsistent :=
+  m.chargesConsistent_dropRedundantBrackets
 
 /-- Canonicalization neither creates nor removes an inconsistent charge. -/
 theorem chargesConsistent_canonicalize :

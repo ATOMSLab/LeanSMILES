@@ -167,10 +167,21 @@ The writer is Weininger's two-pass DFS (find ring closures, then emit with
 lowest-free-digit allocation and parenthesised branches), parameterised by a
 rank on atoms; everything it decides, it decides from ranks and bond kinds.
 
-Canonicalization is **color refinement + exhaustive tie-breaking**:
+Canonicalization is **color refinement + exhaustive tie-breaking**, after one
+normalization:
 
-0. Reduce: drop redundant brackets, then erase tetrahedral marks whose
-   mirror image is the same molecule (judged by the canonical search itself).
+0. Reduce (`Molecule.reduce`), in two steps. Drop redundant brackets
+   (`Molecule.dropRedundantBrackets`): an atom whose brackets hold only a
+   hydrogen count, equal to what the default-valence rule gives it bare, is
+   written bare — `[CH4]` is `C`, and caffeine's `[n]` (as Sigma-Aldrich
+   writes it) is `n`.  RDKit's writer does the same (`atomNeedsBracket`).
+   Without this step the "bracketed" invariant below gives one molecule two
+   canonical strings.  Brackets that carry anything (`[nH]`, `[CH3]`, `[13C]`,
+   `[O-]`) stay; a tetrahedral mark lives in `Molecule.stereo`, not on the
+   atom, so `[C@H]` is unbracketed here and the writer brackets it again with
+   the mark it computes.  Then erase the marks whose mirror image, or flipped
+   double bond, is the same molecule (`MolData.dropFake`, judged by the
+   canonical search itself).
 1. Invariant per atom (degree, Z, H, aromatic, charge, isotope, bracketed,
    class, other chirality classes, whether it is a stereocentre) → ranks.
 2. Refine by sorted (neighbor rank, bond kind) until the partition stops

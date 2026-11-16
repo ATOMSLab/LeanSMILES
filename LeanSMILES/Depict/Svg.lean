@@ -92,9 +92,22 @@ def labeled (g : Graph) (i : ℕ) : Bool :=
   let a := g.atom i
   a.element != some .C || a.charge != 0 || a.isotope.isSome || g.degree i == 0
 
+/-- Atoms and bonds to draw on a coloured background, as (index, colour); bond indices are
+positions in `Graph.edges` (the order of `Molecule.bonds`). -/
+structure Highlight where
+  /-- Atoms, drawn as discs behind the atom. -/
+  atoms : List (ℕ × String) := []
+  /-- Bonds, drawn as broad strokes behind the bond. -/
+  bonds : List (ℕ × String) := []
+  /-- Atoms circled with a ring, as (index, colour), on top of the discs. -/
+  rings : List (ℕ × String) := []
+  deriving Inhabited
+
 /-- The SVG drawing of a depiction graph from given coordinates (bond lengths, `y` up); `scale` is
-the bond length in pixels. A graph with no atoms gives the bare text `(empty molecule)`. -/
-def svgWith (g : Graph) (pos : Array Pt) (scale : Float := 32) : Xml := Id.run do
+the bond length in pixels. `hl` colours atoms and bonds from behind; a non-empty `caption` is
+written under the drawing. A graph with no atoms gives the bare text `(empty molecule)`. -/
+def svgWith (g : Graph) (pos : Array Pt) (scale : Float := 32) (hl : Highlight := {})
+    (caption : String := "") : Xml := Id.run do
   let n := g.numAtoms
   if n == 0 then return .text "(empty molecule)"
   let minX := pos.foldl (fun s p ↦ fmin s p.1) 1e9
@@ -104,6 +117,7 @@ def svgWith (g : Graph) (pos : Array Pt) (scale : Float := 32) : Xml := Id.run d
   let margin := 22.0
   let W := (maxX - minX) * scale + 2 * margin
   let H := (maxY - minY) * scale + 2 * margin
+  let capH : Float := if caption.isEmpty then 0 else 24
   -- pixel coordinates, `y` down
   let P (i : ℕ) : Pt :=
     let (x, y) := pos[i]!
@@ -141,7 +155,20 @@ def svgWith (g : Graph) (pos : Array Pt) (scale : Float := 32) : Xml := Id.run d
     .elem "line" ([("x1", num a.1), ("y1", num a.2), ("x2", num b.1), ("y2", num b.2),
       ("stroke", "#222"), ("stroke-width", "1.6"), ("stroke-linecap", "round")] ++ extra) []
   let stereo := wedges g pos
-  let mut parts : List Xml := []
+  -- highlights first, so that bonds and labels are drawn over them
+  let mut parts : List Xml :=
+    (hl.bonds.filterMap fun (k, col) ↦ (g.edges[k]?).map fun e ↦
+      .elem "line" [("x1", num (P e.src).1), ("y1", num (P e.src).2), ("x2", num (P e.dst).1),
+        ("y2", num (P e.dst).2), ("stroke", col), ("stroke-width", num (0.32 * scale)),
+        ("stroke-linecap", "round")] []) ++
+    (hl.atoms.filterMap fun (i, col) ↦ if i < n then
+      some (.elem "circle" [("cx", num (P i).1), ("cy", num (P i).2), ("r", num (0.3 * scale)),
+        ("fill", col)] [])
+      else none) ++
+    (hl.rings.filterMap fun (i, col) ↦ if i < n then
+      some (.elem "circle" [("cx", num (P i).1), ("cy", num (P i).2), ("r", num (0.3 * scale)),
+        ("fill", "none"), ("stroke", col), ("stroke-width", "2.5")] [])
+      else none)
   for e in g.edges do
     -- orient stereo bonds from the centre (narrow end) to the neighbor
     let st := stereo.find? fun s ↦
@@ -210,16 +237,27 @@ def svgWith (g : Graph) (pos : Array Pt) (scale : Float := 32) : Xml := Id.run d
       let isoSpan := if iso.isEmpty then [] else
         [Xml.elem "tspan" [("font-size", "9"), ("dy", "-6")] [.text iso],
          Xml.elem "tspan" [("dy", "6")] [.text ""]]
+      -- a white outline keeps the label readable on a highlight disc
+      let outline := if hl.atoms.any (·.1 == i) then
+        [("stroke", "#ffffff"), ("stroke-width", "3"), ("paint-order", "stroke")] else []
       parts := parts ++ [.elem "text"
-        [("x", num x), ("y", num (y + 5)), ("text-anchor", "middle"), ("font-size", "14"),
-         ("font-family", "sans-serif"), ("fill", color a.element), ("font-weight", "600")]
+        ([("x", num x), ("y", num (y + 5)), ("text-anchor", "middle"), ("font-size", "14"),
+         ("font-family", "sans-serif"), ("fill", color a.element), ("font-weight", "600")] ++
+         outline)
         (isoSpan ++ [.text (sym ++ hs),
           .elem "tspan" [("font-size", "10"), ("dy", "-6")] [.text chg]])]
-  return .elem "svg" [("width", num W), ("height", num H), ("viewBox", s!"0 0 {num W} {num H}"),
+  if !caption.isEmpty then
+    parts := parts ++ [.elem "text" [("x", num (W / 2)), ("y", num (H + 14)),
+      ("text-anchor", "middle"), ("font-size", "13"), ("font-family", "sans-serif"),
+      ("fill", "#333")] [.text caption]]
+  let Ht := H + capH
+  return .elem "svg" [("width", num W), ("height", num Ht), ("viewBox", s!"0 0 {num W} {num Ht}"),
     ("xmlns", "http://www.w3.org/2000/svg")] parts
 
 /-- `svgWith` at the coordinates of `layout`; `scale` is the bond length in pixels. -/
-def svgOf (g : Graph) (scale : Float := 32) : Xml := svgWith g (layout g) scale
+def svgOf (g : Graph) (scale : Float := 32) (hl : Highlight := {}) (caption : String := "") :
+    Xml :=
+  svgWith g (layout g) scale hl caption
 
 /-- MDL mol block (V2000) of the drawing from given coordinates, with wedge (`1`) and hash (`6`)
 flags on the stereo bonds and the "either" flag (`3`) on double bonds whose cis/trans arrangement
