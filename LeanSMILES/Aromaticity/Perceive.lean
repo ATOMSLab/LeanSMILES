@@ -146,65 +146,108 @@ def markAromatic (out : Work) (b : Nat) : Work :=
       |>.modifyAtom bd.dst ({ · with aromatic := true })
   else out
 
-/-- The bonds `setAromaticity` makes aromatic, in the order it visits them, repeats included
-(`aromaticityHelper`, `Aromaticity.cpp:839`, then `applyHuckelToFused` on each fused system): every
-bond that occurs once in a group of fused candidate rings passing Hückel's rule. -/
-def aromaticBondList (m : Work) (rings : Array (List Nat)) : List Nat := Id.run do
+/-- Does atom `i` have a double or triple bond? -/
+def hasMultipleBond (m : Work) (i : Nat) : Bool := (m.bondsOf i).any (isMultiple m.bonds[·]!.kind)
+
+/-- The donor type `setAromaticity` gives atom `i` when it first sees it, in a ring of `len` atoms:
+`donorType`, except that an ether-like O or S in a ring of 9 or more gives nothing (the macrocycle
+rule, `Aromaticity.cpp:871`). -/
+def ringDonor (m : Work) (ringBondSet : List Nat) (len : Nat) (i : Nat) : Donor :=
+  let d := m.donorType ringBondSet i
+  if d == .two && 9 ≤ len && [8, 16].contains m.atoms[i]!.z && m.degree i == 2 &&
+      m.atoms[i]!.charge == 0 && !m.hasMultipleBond i then .none
+  else d
+
+/-- The bookkeeping of `setAromaticity`'s first pass: which atoms have been seen, which of them
+can be aromatic, their donor types, and the candidate rings so far. -/
+structure DonorState where
+  /-- Atoms already seen in a ring. -/
+  seen : Array Bool
+  /-- Seen atoms that can be aromatic. -/
+  cand : Array Bool
+  /-- Donor types of the seen atoms. -/
+  donor : Array Donor
+  /-- Rings all of whose atoms can be aromatic, in order. -/
+  candRings : Array (List Nat)
+
+/-- One atom of a ring of `len` atoms in the first pass: the first time it is seen it gets its
+donor type and candidacy; the flag says whether every atom of the ring so far is a candidate. -/
+def donorAtomStep (m : Work) (ringBondSet : List Nat) (len : Nat) (p : DonorState × Bool)
+    (i : Nat) : DonorState × Bool :=
+  let (s, allCand) := p
+  if s.seen[i]! then (s, allCand && s.cand[i]!)
+  else
+    let d := m.ringDonor ringBondSet len i
+    let cand := s.cand.set! i (m.isAromaticCandidate i d)
+    ({ s with seen := s.seen.set! i true, donor := s.donor.set! i d, cand }, allCand && cand[i]!)
+
+/-- One ring of the first pass: its atoms, then the ring itself if all of them are candidates. -/
+def donorRingStep (m : Work) (ringBondSet : List Nat) (s : DonorState) (ring : List Nat) :
+    DonorState :=
+  let (s, allCand) := ring.foldl (m.donorAtomStep ringBondSet ring.length) (s, true)
+  if allCand then { s with candRings := s.candRings.push ring } else s
+
+/-- `setAromaticity`'s first pass (`aromaticityHelper`, `Aromaticity.cpp:839`): donor types (set
+the first time each atom is seen) and candidate rings. -/
+def donorData (m : Work) (rings : Array (List Nat)) : DonorState :=
   let ringBondSet := (rings.toList.flatMap m.ringBonds).eraseDups
-  -- 1-2. donor types (first time each atom is seen) and candidate rings
-  let mut seen := Array.replicate m.numAtoms false
-  let mut cand := Array.replicate m.numAtoms false
-  let mut donor := Array.replicate m.numAtoms Donor.none
-  let mut candRings : Array (List Nat) := #[]
-  for ring in rings do
-    let mut allCand := true
-    for i in ring do
-      if seen[i]! then
-        if !cand[i]! then allCand := false
-        continue
-      seen := seen.set! i true
-      let mut d := m.donorType ringBondSet i
-      -- macrocycle rule (Aromaticity.cpp:871): ether-like O/S in a ring of 9 or more
-      if d == .two && 9 ≤ ring.length && [8, 16].contains m.atoms[i]!.z &&
-          m.degree i == 2 && m.atoms[i]!.charge == 0 &&
-          !(m.bondsOf i).any (isMultiple m.bonds[·]!.kind) then
-        d := .none
-      donor := donor.set! i d
-      cand := cand.set! i (m.isAromaticCandidate i d)
-      if !cand[i]! then allCand := false
-    if allCand then candRings := candRings.push ring
-  -- 3. fused systems: rings sharing exactly one bond, each at most 24 bonds
-  let nr := candRings.size
-  let rbonds := candRings.map m.ringBonds
+  rings.toList.foldl (m.donorRingStep ringBondSet)
+    ⟨Array.replicate m.numAtoms false, Array.replicate m.numAtoms false,
+      Array.replicate m.numAtoms Donor.none, #[]⟩
+
+/-- The bonds a group `cur` of candidate rings makes aromatic, in increasing order: if the group
+is connected and its atoms in one or two of its rings (GitHub #2895) pass Hückel's rule, the bonds
+that occur in exactly one of its rings. `rbonds` are the candidate rings' bonds. -/
+def groupBonds (numAtoms : Nat) (rbonds candRings : Array (List Nat)) (donor : Array Donor)
+    (nbrs : Array (List Nat)) (cur : List Nat) : List Nat :=
+  if !isConnectedSet cur nbrs then [] else
+  let counts := cur.foldl (fun acc r ↦ candRings[r]!.foldl
+    (fun acc a ↦ acc.modify a (· + 1)) acc) (Array.replicate numAtoms 0)
+  let atoms := (List.range numAtoms).filter fun a ↦ counts[a]! == 1 || counts[a]! == 2
+  if huckel atoms donor then
+    let all := cur.flatMap (rbonds[·]!)
+    (all.eraseDups.mergeSort (· ≤ ·)).filter (all.count · == 1)
+  else []
+
+/-- The bonds one fused system `fused` makes aromatic (`applyHuckelToFused`,
+`Aromaticity.cpp:334`): groups of 1 to 6 of its rings, smallest first, stopping once every bond of
+the system is done (or at three rings, for systems of more than 300). -/
+def systemBonds (numAtoms : Nat) (rbonds candRings : Array (List Nat)) (donor : Array Donor)
+    (nbrs : Array (List Nat)) (fused : List Nat) : List Nat :=
+  let nRings := fused.length
+  let allBonds := (fused.flatMap (rbonds[·]!)).eraseDups
+  let step (st : List Nat × List Nat × Bool) (size : Nat) : List Nat × List Nat × Bool :=
+    let (out, doneBonds, stop) := st
+    if stop || (size == 3 && 300 < nRings) || allBonds.length ≤ doneBonds.length then
+      (out, doneBonds, true)
+    else
+      let new := (combinations nRings size).flatMap fun comb ↦
+        groupBonds numAtoms rbonds candRings donor nbrs (comb.map (fused[·]!))
+      (out ++ new, new.foldl (fun d b ↦ if d.contains b then d else d ++ [b]) doneBonds, false)
+  ((List.range' 1 (min nRings 6)).foldl step ([], [], false)).1
+
+/-- Fused systems of candidate rings: rings sharing exactly one bond, each at most 24 bonds. -/
+def fusedNbrs (rbonds : Array (List Nat)) : Array (List Nat) := Id.run do
+  let nr := rbonds.size
   let mut nbrs : Array (List Nat) := Array.replicate nr []
   for i in [0:nr] do
     for j in [i + 1:nr] do
       if rbonds[i]!.length ≤ 24 && rbonds[j]!.length ≤ 24 &&
           (rbonds[i]!.filter rbonds[j]!.contains).length == 1 then
         nbrs := (nbrs.modify i (· ++ [j])).modify j (· ++ [i])
-  let mut out : Array Nat := #[]
-  for fused in components nr nbrs do
-    let nRings := fused.length
-    let systemBonds := (fused.flatMap (rbonds[·]!)).eraseDups
-    let mut doneBonds : List Nat := []
-    for size in [1:(min nRings 6) + 1] do
-      if size == 3 && 300 < nRings then break
-      if systemBonds.length ≤ doneBonds.length then break
-      for comb in combinations nRings size do
-        let cur := comb.map (fused[·]!)
-        if !isConnectedSet cur nbrs then continue
-        -- atoms in 1 or 2 of the chosen rings (GitHub #2895)
-        let counts := cur.foldl (fun acc r ↦ candRings[r]!.foldl
-          (fun acc a ↦ acc.modify a (· + 1)) acc) (Array.replicate m.numAtoms 0)
-        let atoms := (List.range m.numAtoms).filter fun a ↦ counts[a]! == 1 || counts[a]! == 2
-        if huckel atoms donor then
-          -- bonds that occur once in the group become aromatic
-          let all := cur.flatMap (rbonds[·]!)
-          for b in all.eraseDups.mergeSort (· ≤ ·) do
-            if all.count b == 1 then
-              out := out.push b
-              if !doneBonds.contains b then doneBonds := doneBonds ++ [b]
-  return out.toList
+  return nbrs
+
+/-- `setAromaticity`'s second pass: the bonds Hückel's rule makes aromatic, system by system. -/
+def fusedBonds (numAtoms : Nat) (rbonds candRings : Array (List Nat)) (donor : Array Donor) :
+    List Nat :=
+  let nbrs := fusedNbrs rbonds
+  (components candRings.size nbrs).flatMap (systemBonds numAtoms rbonds candRings donor nbrs)
+
+/-- The bonds `setAromaticity` makes aromatic, in the order it visits them, repeats included: every
+bond that occurs once in a group of fused candidate rings passing Hückel's rule. -/
+def aromaticBondList (m : Work) (rings : Array (List Nat)) : List Nat :=
+  let s := m.donorData rings
+  fusedBonds m.numAtoms (s.candRings.map m.ringBonds) s.candRings s.donor
 
 /-- Mark the aromatic rings' bonds and atoms (`setAromaticity`, default model): each bond of
 `aromaticBondList` that is single or double becomes aromatic, with its two atoms. -/

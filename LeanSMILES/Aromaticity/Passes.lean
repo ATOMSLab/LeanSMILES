@@ -368,6 +368,184 @@ theorem cleanUp_eq_self_of_charge (h : ∀ j, w.cleanUp.charge? j = w.charge? j)
 /-- `cleanUp` keeps the atoms but for their charges. -/
 lemma cleanRel_cleanUp : CleanRel w w.cleanUp := w.cleanStep_cleanUp.1
 
+/-! ### When `cleanUp` does nothing -/
+
+lemma Charged.irrefl {o : Work} : ¬ Charged o o := by
+  rintro ⟨j, c, h0, hc, hne⟩
+  rw [h0] at hc
+  cases hc
+  exact hne rfl
+
+/-- A fold of `cleanUp` steps is a sequence of `cleanUp` rewrites. -/
+lemma foldl_cleanStep {α : Type*} (f : Work → α → Work) (l : List α)
+    (hf : ∀ w' a, a ∈ l → w'.atoms.size = w.atoms.size → CleanStep w' (f w' a)) :
+    CleanStep w (l.foldl f w) :=
+  foldl_induction (CleanStep w) f l w (.refl w) fun w' a ha h ↦
+    h.trans (hf w' a ha h.1.atoms_size)
+
+/-- **A fold of `cleanUp` steps that changes nothing changed nothing at any step**: the first
+step that changed something would have charged a neutral atom for good. -/
+lemma foldl_eq_self_of_cleanStep {α : Type*} (f : Work → α → Work) :
+    ∀ (l : List α) (w : Work),
+      (∀ w' a, a ∈ l → w'.atoms.size = w.atoms.size → CleanStep w' (f w' a)) →
+      l.foldl f w = w → ∀ a ∈ l, f w a = w
+  | [], _, _, _ => by simp
+  | a :: l, w, hf, h => by
+    have h1 : CleanStep w (f w a) := hf w a List.mem_cons_self rfl
+    have hrest := foldl_cleanStep (f w a) f l fun w' b hb hs ↦
+      hf w' b (List.mem_cons_of_mem _ hb) (hs.trans h1.1.atoms_size)
+    rw [List.foldl_cons] at h
+    rw [h] at hrest
+    have ha : f w a = w := by
+      rcases h1.2 with e | hc
+      · exact e
+      · rcases hrest.2 with e | hc'
+        · rw [← e] at hc; exact absurd hc Charged.irrefl
+        · exact absurd (Charged.of_cleanRel_left h1.1 hc') Charged.irrefl
+    intro b hb
+    rcases List.mem_cons.mp hb with rfl | hb
+    · exact ha
+    · rw [ha] at h
+      exact foldl_eq_self_of_cleanStep f l w (fun w' b hb' hs ↦
+        hf w' b (List.mem_cons_of_mem _ hb') hs) h b hb
+
+/-- A fold whose every step does nothing does nothing. -/
+lemma foldl_eq_self_of_forall {α β : Type*} (f : β → α → β) (b : β) :
+    ∀ l : List α, (∀ a ∈ l, f b a = b) → l.foldl f b = b
+  | [], _ => rfl
+  | a :: l, h => by
+    rw [List.foldl_cons, h a List.mem_cons_self]
+    exact foldl_eq_self_of_forall f b l fun a' ha' ↦ h a' (List.mem_cons_of_mem _ ha')
+
+/-- Atom `i` is one `nitrogensCleanup` considers: a neutral nitrogen of valence 5. -/
+def nitroCand (i : ℕ) : Bool :=
+  w.atoms[i]!.z == 7 && w.atoms[i]!.charge == 0 && w.explicitValence i == 5
+
+/-- The atoms `nitrogensCleanup` remembers are the `nitroCand` ones. -/
+lemma nitroStep_snd (p : Work × List ℕ) (i : ℕ) :
+    (nitroStep p i).2 = if p.1.nitroCand i then p.2 ++ [i] else p.2 := by
+  obtain ⟨w, c⟩ := p
+  unfold nitroStep nitroCand
+  dsimp only
+  split <;> rename_i h <;> simp only [Bool.or_eq_true, bne_iff_ne, ne_eq] at h
+  · rw [if_neg (by simp only [Bool.and_eq_true, beq_iff_eq]; tauto)]
+  · rw [if_pos (by simp only [Bool.and_eq_true, beq_iff_eq]; tauto)]
+    split <;> rfl
+
+/-- `nitroStep` does not look at the atoms remembered so far. -/
+lemma nitroStep_fst (c c' : List ℕ) (i : ℕ) : (nitroStep (w, c) i).1 = (nitroStep (w, c') i).1 := by
+  unfold nitroStep
+  dsimp only
+  split
+  · rfl
+  · split <;> rfl
+
+/-- When no `nitroStep` changes `w`, the first pass of `nitrogensCleanup` only collects the
+`nitroCand` atoms. -/
+lemma foldl_nitroStep_of_forall : ∀ (l c : List ℕ), (∀ i ∈ l, (nitroStep (w, []) i).1 = w) →
+    l.foldl nitroStep (w, c) = (w, c ++ l.filter w.nitroCand)
+  | [], c, _ => by simp
+  | i :: l, c, h => by
+    have h1 : nitroStep (w, c) i = (w, if w.nitroCand i then c ++ [i] else c) := by
+      ext
+      · rw [nitroStep_fst w c [] i]; exact h i List.mem_cons_self
+      · rw [nitroStep_snd]
+    rw [List.foldl_cons, h1, foldl_nitroStep_of_forall l _ fun j hj ↦
+      h j (List.mem_cons_of_mem _ hj), List.filter_cons]
+    split <;> simp
+
+/-- `cleanUp` does nothing exactly when none of its steps does anything on `w`: no `nitroStep`,
+no `azideStep` on a `nitroCand` atom, no `cleanUpStep`. -/
+def Quiet : Prop :=
+  (∀ i < w.atoms.size, (nitroStep (w, []) i).1 = w) ∧
+  (∀ i < w.atoms.size, w.nitroCand i = true → azideStep w i = w) ∧
+  ∀ i < w.atoms.size, cleanUpStep w i = w
+
+lemma quiet_of_cleanUp_eq (h : w.cleanUp = w) : w.Quiet := by
+  have hN : w.nitrogensCleanup = w := by
+    have h2 := w.cleanStep_cleanUp
+    unfold cleanUp at h h2
+    rcases w.cleanStep_nitrogensCleanup.2 with e | hc
+    · exact e
+    · exfalso
+      have h3 := foldl_cleanStep (w := w.nitrogensCleanup) cleanUpStep
+        (List.range w.nitrogensCleanup.numAtoms) fun w' i hi hs ↦ cleanStep_cleanUpStep w' (by
+          rw [hs]; simpa [numAtoms] using hi)
+      rw [h] at h3
+      rcases h3.2 with e | hc'
+      · rw [← e] at hc; exact Charged.irrefl hc
+      · exact Charged.irrefl (hc.of_cleanRel h3.1)
+  -- the first pass
+  have hfold : ((List.range w.numAtoms).foldl nitroStep (w, [])).1 = w := by
+    have h1 := foldl_induction (fun p : Work × List ℕ ↦ CleanStep w p.1) nitroStep
+      (List.range w.numAtoms) (w, []) (.refl w) fun p i hi hp ↦ hp.trans
+        (cleanStep_nitroStep p i (by rw [hp.1.atoms_size]; simpa [numAtoms] using hi))
+    have h2 := hN
+    unfold nitrogensCleanup at h2
+    generalize hq : (List.range w.numAtoms).foldl nitroStep (w, []) = q at h1 h2
+    obtain ⟨w', consider⟩ := q
+    have h3 := foldl_cleanStep (w := w') azideStep consider fun w'' i _ _ ↦ cleanStep_azideStep w'' i
+    simp only at h1 h2 ⊢
+    rw [h2] at h3
+    rcases h1.2 with e | hc
+    · exact e
+    · rcases h3.2 with e | hc'
+      · rw [← e] at hc; exact absurd hc Charged.irrefl
+      · exact absurd (Charged.of_cleanRel_left h1.1 hc') Charged.irrefl
+  have hnitro : ∀ i < w.atoms.size, (nitroStep (w, []) i).1 = w := by
+    -- a fold over pairs whose first component comes back unchanged
+    have key : ∀ (l c : List ℕ), (∀ i ∈ l, i < w.atoms.size) →
+        (l.foldl nitroStep (w, c)).1 = w → ∀ i ∈ l, (nitroStep (w, []) i).1 = w := by
+      intro l
+      induction l with
+      | nil => simp
+      | cons i l ih =>
+        intro c hl he j hj
+        have hi : CleanStep w (nitroStep (w, c) i).1 := cleanStep_nitroStep (w, c) i
+          (hl i List.mem_cons_self)
+        have hrest := foldl_induction (fun p : Work × List ℕ ↦ CleanStep (nitroStep (w, c) i).1 p.1)
+          nitroStep l (nitroStep (w, c) i) (.refl _) fun p k hk hp ↦ hp.trans
+            (cleanStep_nitroStep p k (by
+              rw [hp.1.atoms_size, hi.1.atoms_size]; exact hl k (List.mem_cons_of_mem _ hk)))
+        rw [List.foldl_cons] at he
+        have hfst : (nitroStep (w, c) i).1 = w := by
+          rcases hi.2 with e | hc
+          · exact e
+          · rw [he] at hrest
+            rcases hrest.2 with e | hc'
+            · rw [← e] at hc; exact absurd hc Charged.irrefl
+            · exact absurd (Charged.of_cleanRel_left hi.1 hc') Charged.irrefl
+        rcases List.mem_cons.mp hj with rfl | hj
+        · rw [nitroStep_fst w [] c]; exact hfst
+        · have e : nitroStep (w, c) i = (w, (nitroStep (w, c) i).2) := Prod.ext hfst rfl
+          rw [e] at he
+          exact ih _ (fun k hk ↦ hl k (List.mem_cons_of_mem _ hk)) he j hj
+    intro i hi
+    exact key _ [] (fun k hk ↦ by simpa [numAtoms] using hk) hfold i (by simpa [numAtoms] using hi)
+  refine ⟨hnitro, fun i hi hc ↦ ?_, fun i hi ↦ ?_⟩
+  · have h2 := hN
+    unfold nitrogensCleanup at h2
+    rw [foldl_nitroStep_of_forall w _ [] fun j hj ↦ hnitro j (by simpa [numAtoms] using hj)] at h2
+    exact foldl_eq_self_of_cleanStep azideStep _ w (fun w' a _ _ ↦ cleanStep_azideStep w' a) h2 i
+      (by simp only [List.nil_append, List.mem_filter, List.mem_range]; exact ⟨hi, hc⟩)
+  · have h2 := h
+    unfold cleanUp at h2
+    rw [hN] at h2
+    exact foldl_eq_self_of_cleanStep cleanUpStep _ w (fun w' a ha hs ↦ cleanStep_cleanUpStep w'
+      (by rw [hs]; simpa [numAtoms] using ha)) h2 i (by simpa [numAtoms] using hi)
+
+lemma cleanUp_eq_of_quiet (h : w.Quiet) : w.cleanUp = w := by
+  obtain ⟨h1, h2, h3⟩ := h
+  have hN : w.nitrogensCleanup = w := by
+    unfold nitrogensCleanup
+    rw [foldl_nitroStep_of_forall w _ [] fun j hj ↦ h1 j (by simpa [numAtoms] using hj)]
+    exact foldl_eq_self_of_forall _ _ _ fun i hi ↦ by
+      simp only [List.nil_append, List.mem_filter, List.mem_range] at hi
+      exact h2 i (by simpa [numAtoms] using hi.1) hi.2
+  unfold cleanUp
+  rw [hN]
+  exact foldl_eq_self_of_forall _ _ _ fun i hi ↦ h3 i (by simpa [numAtoms] using hi)
+
 /-! ### Atoms rebuilt one by one: `freezeHs`, `cacheValences` -/
 
 lemma getElem?_freezeHs_atoms (j : ℕ) :

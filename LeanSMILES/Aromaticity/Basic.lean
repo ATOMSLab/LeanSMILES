@@ -171,6 +171,9 @@ def modifyAtom (i : ℕ) (f : WAtom → WAtom) : Work := { m with atoms := m.ato
 def isAromaticAtom (i : ℕ) : Bool :=
   m.atoms[i]!.aromatic || (m.bondsOf i).any fun k ↦ m.bonds[k]!.kind == .aromatic
 
+/-- Twice the sum of the bond orders at atom `i` (aromatic counting 3/2). -/
+def bondHalfSum (i : ℕ) : ℕ := ((m.bondsOf i).map (halfOrder m.bonds[·]!.kind)).sum
+
 /-- Charged atoms take the valences of the isoelectronic element (N⁺ like C). -/
 def effectiveZ (a : WAtom) : ℕ := (a.z - a.charge).toNat
 
@@ -183,9 +186,7 @@ def canBeHypervalent (a : WAtom) (eff : ℕ) : Bool :=
 aromatic snap to an allowed valence and "round x.5 up" (`Atom.cpp:350-415`). -/
 def explicitValence (i : ℕ) : ℕ := Id.run do
   let a := m.atoms[i]!
-  let mut accum := 2 * a.explicitHs
-  for k in m.bondsOf i do
-    accum := accum + halfOrder m.bonds[k]!.kind
+  let mut accum := 2 * a.explicitHs + m.bondHalfSum i
   let valens := valences (effectiveZ a)
   if let some dv := valens.head? then
     if 2 * dv < accum && m.isAromaticAtom i then
@@ -249,7 +250,7 @@ def finalizeHs : Work :=
 
 /-- Explicit valence on the Kekulé graph: integer bond orders plus written Hs. -/
 def kekuleValence (i : ℕ) : ℕ :=
-  ((m.bondsOf i).foldl (fun s k ↦ s + halfOrder m.bonds[k]!.kind) 0) / 2 + m.atoms[i]!.explicitHs
+  m.bondHalfSum i / 2 + m.atoms[i]!.explicitHs
 
 /-- The explicit valence aromaticity sees (`Atom::getValence`): the cached one. -/
 def cachedValence (i : ℕ) : ℕ := m.atoms[i]!.cachedValence.getD (m.kekuleValence i)
