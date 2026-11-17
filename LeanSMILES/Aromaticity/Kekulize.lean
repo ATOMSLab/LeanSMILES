@@ -66,84 +66,128 @@ def needsDoubleBond (m : Work) (wasAromatic : Nat → Bool) (ev0 : Nat) (i : Nat
   if dv ≤ tdeg + nrad then return false
   return dv == sbo + 1 + nrad || (nrad == 0 && a.noImplicit && dv == sbo + 2)
 
+/-- The state of `kekulizeWorker`'s walk: RDKit's local variables. -/
+structure KekState where
+  /-- The molecule, with the double bonds placed so far. -/
+  m : Work
+  /-- The atoms that still need a double bond. -/
+  cands : Array Bool
+  /-- The atoms visited, in order. -/
+  done : List Nat
+  /-- The bonds the walk has made double. -/
+  adds : Array Bool
+  /-- The atoms to visit next. -/
+  queue : List Nat
+  /-- Atom ↦ the neighbours not yet tried as its double-bond partner. -/
+  options : List (Nat × List Nat)
+  /-- The atom to back-track to. -/
+  lastOpt : Option Nat
+  /-- The atoms with untried options, oldest first. -/
+  btMoves : List Nat
+  /-- Back-tracks so far. -/
+  numBt : Nat
+
+/-- One pass of `kekulizeWorker`'s walk: visit the next atom, give it a double bond if it needs
+one, or back-track. `.inl r` ends the walk with `r`; `.inr s` goes on from `s`. `atoms` are the
+system's atoms and `sorted` the same in increasing order. -/
+def kekulizeStep (wasAromatic : Nat → Bool) (atoms sorted : List Nat) (s : KekState) :
+    Option Work ⊕ KekState := Id.run do
+  let mut m := s.m
+  let mut cands := s.cands
+  let mut done := s.done
+  let mut adds := s.adds
+  let mut queue := s.queue
+  let mut options := s.options
+  let mut lastOpt := s.lastOpt
+  let mut btMoves := s.btMoves
+  let mut numBt := s.numBt
+  -- next atom: from the queue, else the lowest atom not done yet
+  let curr ← match queue with
+    | c :: rest => do
+      queue := rest
+      pure c
+    | [] => match sorted.find? (!done.contains ·) with
+      | some c => pure c
+      | none => return .inl (some m)
+  done := done ++ [curr]
+  let ccand := cands[curr]!
+  let mut opts : List Nat := []
+  match options.lookup curr with
+  | some o => opts := o
+  | none =>
+    let nbrs := ((m.neighbors curr).map (·.2)).filter fun j ↦
+      atoms.contains j && !done.contains j
+    let mut newQueue : List Nat := []
+    for j in nbrs.mergeSort (· ≤ ·) do
+      if !queue.contains j then newQueue := newQueue ++ [j]
+      if let some k := m.bondBetween? curr j then
+        if ccand && cands[j]! && wasAromatic k then opts := opts ++ [j]
+    queue := queue ++ newQueue
+  if !ccand then
+    return .inr ⟨m, cands, done, adds, queue, options, lastOpt, btMoves, numBt⟩
+  match opts with
+  | n :: rest =>
+    -- double bond to the first option
+    let some k := m.bondBetween? curr n | return .inl none
+    m := m.setKind k .double
+    cands := (cands.set! curr false).set! n false
+    adds := adds.set! k true
+    if (options.lookup curr).isSome then
+      if rest.isEmpty then
+        options := options.filter (·.1 != curr)
+        btMoves := btMoves.dropLast
+        lastOpt := btMoves.getLast?
+      else
+        options := options.map fun (a, o) ↦ if a == curr then (a, rest) else (a, o)
+    else if !rest.isEmpty then
+      lastOpt := some curr
+      btMoves := btMoves ++ [curr]
+      options := options ++ [(curr, rest)]
+  | [] =>
+    -- stuck: back to the last atom that still has options (backTrack, Kekulize.cpp:24)
+    match lastOpt with
+    | some lo =>
+      if 100 ≤ numBt then return .inl none
+      numBt := numBt + 1
+      let pos := done.idxOf lo
+      let keep := done.take pos
+      queue := done.drop pos ++ queue
+      for k in [0:m.numBonds] do
+        if adds[k]! then
+          let b := m.bonds[k]!
+          if !keep.contains b.src && !keep.contains b.dst then
+            adds := adds.set! k false
+            m := m.setKind k .single
+            cands := (cands.set! b.src true).set! b.dst true
+      done := keep
+    | none => return .inl none
+  return .inr ⟨m, cands, done, adds, queue, options, lastOpt, btMoves, numBt⟩
+
+/-- `kekulizeWorker`'s walk, at most `fuel` passes: it goes on while some atom of the system is
+not done or the queue is not empty. Out of fuel, it fails. -/
+def kekulizeLoop (wasAromatic : Nat → Bool) (atoms sorted : List Nat) :
+    Nat → KekState → Option Work
+  | 0, _ => none
+  | fuel + 1, s =>
+    if s.done.length < sorted.length || !s.queue.isEmpty then
+      match kekulizeStep wasAromatic atoms sorted s with
+      | .inl r => r
+      | .inr s' => kekulizeLoop wasAromatic atoms sorted fuel s'
+    else some s.m
+
+/-- Passes enough for any walk over `atoms`: a back-track at most doubles the visited atoms and
+the queue, and there are at most 100 back-tracks. (RDKit writes the walk as a `while` loop; the
+bound makes it a structural recursion, so that what it returns can be proved.) -/
+def kekulizeFuel (atoms : List Nat) : Nat := (atoms.length + 1) * 2 ^ 110
+
 /-- RDKit's `kekulizeWorker` for one fused system: `atoms` are its atoms, `cands`
 marks the atoms that need a double bond, `done` starts with its non-aromatic
 atoms. Returns the molecule with double bonds placed, or `none` if impossible. -/
 def kekulizeWorker (m : Work) (wasAromatic : Nat → Bool) (atoms : List Nat) (cands : Array Bool)
-    (done : List Nat) : Option Work := Id.run do
-  let mut m := m
-  let mut cands := cands
-  let mut done := done
-  let mut adds := Array.replicate m.numBonds false
-  let mut localAdded := Array.replicate m.numBonds false
-  let sorted := atoms.mergeSort (· ≤ ·)
-  let mut queue : List Nat := []
-  let mut options : List (Nat × List Nat) := []   -- atom ↦ untried neighbours
-  let mut lastOpt : Option Nat := none
-  let mut btMoves : List Nat := []                 -- atoms with untried options, oldest first
-  let mut numBt := 0
-  while done.length < sorted.length || !queue.isEmpty do
-    -- next atom: from the queue, else the lowest atom not done yet
-    let curr ← match queue with
-      | c :: rest => do
-        queue := rest
-        pure c
-      | [] => match sorted.find? (!done.contains ·) with
-        | some c => pure c
-        | none => return some m
-    done := done ++ [curr]
-    let ccand := cands[curr]!
-    let mut opts : List Nat := []
-    match options.lookup curr with
-    | some o => opts := o
-    | none =>
-      let nbrs := ((m.neighbors curr).map (·.2)).filter fun j ↦
-        atoms.contains j && !done.contains j
-      let mut newQueue : List Nat := []
-      for j in nbrs.mergeSort (· ≤ ·) do
-        if !queue.contains j then newQueue := newQueue ++ [j]
-        if let some k := m.bondBetween? curr j then
-          if ccand && cands[j]! && wasAromatic k then opts := opts ++ [j]
-      queue := queue ++ newQueue
-    if !ccand then continue
-    match opts with
-    | n :: rest =>
-      -- double bond to the first option
-      let some k := m.bondBetween? curr n | return none
-      m := m.setKind k .double
-      cands := (cands.set! curr false).set! n false
-      adds := adds.set! k true
-      localAdded := localAdded.set! k true
-      if (options.lookup curr).isSome then
-        if rest.isEmpty then
-          options := options.filter (·.1 != curr)
-          btMoves := btMoves.dropLast
-          lastOpt := btMoves.getLast?
-        else
-          options := options.map fun (a, o) ↦ if a == curr then (a, rest) else (a, o)
-      else if !rest.isEmpty then
-        lastOpt := some curr
-        btMoves := btMoves ++ [curr]
-        options := options ++ [(curr, rest)]
-    | [] =>
-      -- stuck: back to the last atom that still has options (backTrack, Kekulize.cpp:24)
-      match lastOpt with
-      | some lo =>
-        if 100 ≤ numBt then return none
-        numBt := numBt + 1
-        let pos := done.idxOf lo
-        let keep := done.take pos
-        queue := done.drop pos ++ queue
-        for k in [0:m.numBonds] do
-          if adds[k]! then
-            let b := m.bonds[k]!
-            if !keep.contains b.src && !keep.contains b.dst then
-              adds := adds.set! k false
-              m := m.setKind k .single
-              cands := (cands.set! b.src true).set! b.dst true
-        done := keep
-      | none => return none
-  return some m
+    (done : List Nat) : Option Work :=
+  kekulizeLoop wasAromatic atoms (atoms.mergeSort (· ≤ ·)) (kekulizeFuel atoms)
+    { m, cands, done, adds := Array.replicate m.numBonds false, queue := [], options := [],
+      lastOpt := none, btMoves := [], numBt := 0 }
 
 /-- RDKit's `Kekulize` (`KekulizeFragment` with `canonical = false`) over the fused ring systems
 of `rings`; fails (like RDKit's "Can't kekulize mol") if no valid structure exists. -/
