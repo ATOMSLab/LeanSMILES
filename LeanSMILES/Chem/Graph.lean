@@ -32,7 +32,10 @@ matrix cannot hold is the `src → dst` orientation of a bond (the `/` `\`
 marks) and the order of the bond list.  `normalize` forgets exactly those,
 `IsNormal` says a molecule already has, and `normalEquiv` is the theorem:
 normal molecules are *exactly* atoms, a bond matrix and the tetrahedral
-configurations (which never depended on the bond list).
+configurations (which never depended on the bond list).  `SameBonds` is that
+forgetting as a relation between two molecules — the same bonds, listed in
+another order or the other way round — and it is equality of the matrices
+(`sameBonds_iff_adjMatrix_eq`).
 
 Relabeling the atoms by a permutation gives an isomorphic graph
 (`relabelIso`) — which is what makes canonicalization (`LeanSMILES.SMILES.Canon`)
@@ -568,6 +571,125 @@ end Molecule
 
 /-- Normal form of a bundled molecule. -/
 def Mol.normalize (M : Mol) : Mol := ⟨M.n, M.mol.normalize⟩
+
+/-! ### The same bonds, listed differently
+
+A bond list has an order, and each bond an orientation `src → dst` and
+perhaps a `/` `\` mark.  None of that is the molecule.  `SameBonds` says two
+molecules have the same bonds up to exactly that, and it holds precisely when
+their weighted adjacency matrices agree (`sameBonds_iff_adjMatrix_eq`): so
+`normalize` relists the same bonds (`sameBonds_normalize`), and what is
+computed from the matrix — the search data of `LeanSMILES.SMILES.Canon` — does
+not see the listing (`toMolData_eq_of_sameBonds`).
+
+Stereochemistry is not part of the listing: a molecule's configurations
+(`Molecule.stereo`) name ligand atoms, not bonds, and the `/` `\` marks left
+on the bonds are no longer read once the parser has turned them into
+configurations.  So the statements below ask for the same atoms, the same
+configurations and the same bonds. -/
+
+namespace Molecule
+
+variable {m m' : Molecule n}
+
+/-- The same bonds, up to the order of the bond list and the orientation and `/` `\` mark of
+each bond: the lists of (unordered pair of atoms, bond kind) are permutations of each other. -/
+def SameBonds (m m' : Molecule n) : Prop :=
+  (m.bonds.map fun b ↦ (b.edge, b.kind)).Perm (m'.bonds.map fun b ↦ (b.edge, b.kind))
+
+instance : DecidableRel (SameBonds (n := n)) := fun m m' ↦
+  inferInstanceAs (Decidable ((m.bonds.map fun b ↦ (b.edge, b.kind)).Perm
+    (m'.bonds.map fun b ↦ (b.edge, b.kind))))
+
+/-- Every molecule has the same bonds as itself. -/
+@[refl] lemma SameBonds.refl (m : Molecule n) : m.SameBonds m := List.Perm.refl _
+
+/-- Having the same bonds is symmetric. -/
+@[symm] lemma SameBonds.symm (h : m.SameBonds m') : m'.SameBonds m := List.Perm.symm h
+
+/-- Having the same bonds is transitive. -/
+lemma SameBonds.trans {m'' : Molecule n} (h : m.SameBonds m') (h' : m'.SameBonds m'') :
+    m.SameBonds m'' := List.Perm.trans h h'
+
+/-- No (pair of atoms, kind) occurs twice in a molecule: no pair of atoms does. -/
+lemma nodup_map_edge_kind (m : Molecule n) : (m.bonds.map fun b ↦ (b.edge, b.kind)).Nodup := by
+  have h : (m.bonds.map fun b ↦ (b.edge, b.kind)).map Prod.fst = m.bonds.map Bond.edge := by
+    simp [List.map_map, Function.comp_def]
+  exact List.Nodup.of_map _ (h ▸ m.nodup)
+
+/-- Having the same bonds, bond by bond: each molecule has a bond of kind `k` on the pair `e`
+exactly when the other does. -/
+lemma sameBonds_iff_forall : m.SameBonds m' ↔ ∀ e k,
+    (∃ b ∈ m.bonds, b.edge = e ∧ b.kind = k) ↔ ∃ b ∈ m'.bonds, b.edge = e ∧ b.kind = k := by
+  rw [SameBonds, List.perm_ext_iff_of_nodup m.nodup_map_edge_kind m'.nodup_map_edge_kind]
+  simp [Prod.forall]
+
+/-- **Two molecules have the same bonds exactly when their weighted adjacency matrices
+agree**: the matrix is the bond list without its order, its orientations and its marks. -/
+theorem sameBonds_iff_adjMatrix_eq : m.SameBonds m' ↔ m.adjMatrix = m'.adjMatrix := by
+  rw [sameBonds_iff_forall]
+  refine ⟨fun h ↦ ?_, fun h e k ↦ Sym2.ind (fun i j ↦ ?_) e⟩
+  · ext i j
+    by_cases h0 : m.adjMatrix i j = 0
+    · -- no bond in `m`, so none in `m'`: its entry would be a bond order, and `m` would have it
+      by_contra hne
+      obtain ⟨k, hk⟩ := m'.isBondMatrix_adjMatrix.entry i j fun h' ↦ hne (h0.trans h'.symm)
+      have hm := (m.adjMatrix_eq_order_iff i j k).mpr
+        ((h _ k).mpr ((m'.adjMatrix_eq_order_iff i j k).mp hk))
+      exact k.order_ne_zero (hm.symm.trans h0)
+    · obtain ⟨k, hk⟩ := m.isBondMatrix_adjMatrix.entry i j h0
+      rw [hk, eq_comm, adjMatrix_eq_order_iff]
+      exact (h _ k).mp ((m.adjMatrix_eq_order_iff i j k).mp hk)
+  · rw [← adjMatrix_eq_order_iff, ← adjMatrix_eq_order_iff, h]
+
+/-- Molecules with the same bonds have the same weighted adjacency matrix. -/
+lemma SameBonds.adjMatrix_eq (h : m.SameBonds m') : m.adjMatrix = m'.adjMatrix :=
+  sameBonds_iff_adjMatrix_eq.mp h
+
+/-- `normalize` relists the same bonds: it forgets the order of the list and the orientation
+and mark of each bond, and nothing else. -/
+lemma sameBonds_normalize (m : Molecule n) : m.normalize.SameBonds m :=
+  sameBonds_iff_adjMatrix_eq.mpr m.adjMatrix_normalize
+
+/-- Molecules with the same atoms, configurations and bonds have the same normal form. -/
+lemma normalize_eq_of_sameBonds (ha : m.atoms = m'.atoms) (hs : m.stereo = m'.stereo)
+    (hb : m.SameBonds m') : m.normalize = m'.normalize := by
+  rw [normalize, normalize, ha, hs, hb.adjMatrix_eq]
+
+/-- An atom's bond-order sum does not depend on how the bonds are listed. -/
+lemma SameBonds.bondOrderSum_eq (h : m.SameBonds m') (i : Fin n) :
+    m.bondOrderSum i = m'.bondOrderSum i := by
+  have ht : (fun b : Bond n ↦ b.touches i) = fun b ↦ decide (i ∈ b.edge) :=
+    funext fun b ↦ by simp [← Bond.touches_iff]
+  -- the sum, read off the (pair of atoms, kind) list: the orders of the pairs containing `i`
+  have key (m : Molecule n) : m.bondOrderSum i =
+      (((m.bonds.map fun b ↦ (b.edge, b.kind)).filter fun p ↦ decide (i ∈ p.1)).map
+        fun p ↦ p.2.order).sum := by
+    simp [bondOrderSum, bondsAt, ht, List.filter_map, Function.comp_def]
+  rw [key m, key m']
+  exact ((h.filter _).map _).sum_eq
+
+/-- Normalizing the brackets gives the same atoms however the bonds are listed: whether an
+atom is written bare or in brackets is read off its bond-order sum, not the bond list. -/
+lemma SameBonds.atoms_normalizeBrackets (ha : m.atoms = m'.atoms) (hb : m.SameBonds m') :
+    m.normalizeBrackets.atoms = m'.normalizeBrackets.atoms := by
+  simp only [normalizeBrackets, mapAtoms, ha, hb.bondOrderSum_eq]
+
+/-- Normalizing the brackets keeps the bonds, so it keeps `SameBonds`. -/
+lemma SameBonds.normalizeBrackets (hb : m.SameBonds m') :
+    m.normalizeBrackets.SameBonds m'.normalizeBrackets := hb
+
+/-- **The search data does not see how the bonds are listed**: molecules with the same atoms,
+configurations and bonds have the same data. -/
+theorem toMolData_eq_of_sameBonds (ha : m.atoms = m'.atoms) (hs : m.stereo = m'.stereo)
+    (hb : m.SameBonds m') : m.toMolData = m'.toMolData := by
+  refine MolData.ext ha ?_ hs
+  ext i hi j hj
+  have h := congrFun (congrFun hb.adjMatrix_eq ⟨i, hi⟩) ⟨j, hj⟩
+  simpa [toMolData, getElem_adjTable m ⟨i, hi⟩ ⟨j, hj⟩, getElem_adjTable m' ⟨i, hi⟩ ⟨j, hj⟩]
+    using h
+
+end Molecule
 
 /-- Whether a bundled molecule is in normal form. -/
 def Mol.isNormal (M : Mol) : Bool := decide M.mol.IsNormal

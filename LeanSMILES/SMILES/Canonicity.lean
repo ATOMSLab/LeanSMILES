@@ -14,6 +14,9 @@ The canonical SMILES is canonical: relabeling the atoms of a molecule does
 not change the string (`Molecule.canonicalSmiles_relabel`), with no
 hypothesis.
 
+Nor does relisting its bonds — another order of the bond list, a bond written
+from its other end (`Molecule.canonicalSmiles_eq_of_sameBonds`, last section).
+
 The proof follows the algorithm.  A relabeling `σ` acts on rank vectors by
 `relabelVec σ` and on the search data by `MolData.relabel`, and every stage of
 the search commutes with that action: the atom invariants
@@ -779,5 +782,64 @@ theorem Molecule.canonicalSmiles_relabel (m : Molecule n) (σ : Equiv.Perm (Fin 
 theorem Mol.canonicalSmiles_relabel (M : Mol) (σ : Equiv.Perm (Fin M.n)) :
     (M.relabel σ).canonicalSmiles = M.canonicalSmiles :=
   M.mol.canonicalSmiles_relabel σ
+
+/-! ### The bond list
+
+`canonicalSmiles_relabel` is about the atoms' numbers.  A `Molecule` carries
+one more arbitrary choice: its bonds are a *list*, in some order, each written
+from one of its atoms to the other, perhaps with a `/` `\` mark.  The
+canonical search never sees any of that — it reads the molecule as atoms, a
+bond matrix and configurations (`Molecule.toMolData`), after normalizing the
+brackets, which looks only at each atom's bond-order sum — so
+molecules with the same atoms, the same configurations and the same bonds
+(`Molecule.SameBonds`) get the same string.  Together with relabeling: however
+the atoms are numbered and however the bonds are listed, one molecule has one
+canonical SMILES (`canonicalSmiles_eq_of_sameBonds_relabel`).
+
+The configurations are a hypothesis of their own because they are not in the
+bond list: a centre's or a double bond's `Molecule.stereo` names ligand atoms,
+and the `/` `\` marks on the bonds are only what the parser read them from.
+
+What this does not cover is a different *set* of bonds for the same compound:
+two Kekulé structures of one aromatic ring are different bond matrices. -/
+
+namespace Molecule
+
+variable {m m' : Molecule n}
+
+/-- What the canonical search starts from — the molecule's data once its brackets are
+normalized — does not depend on how the bonds are listed. -/
+lemma toMolData_normalizeBrackets_eq_of_sameBonds (ha : m.atoms = m'.atoms)
+    (hs : m.stereo = m'.stereo) (hb : m.SameBonds m') :
+    m.normalizeBrackets.toMolData = m'.normalizeBrackets.toMolData :=
+  toMolData_eq_of_sameBonds (hb.atoms_normalizeBrackets ha) hs hb.normalizeBrackets
+
+/-- **The canonical SMILES does not depend on how the bonds are listed**: molecules with the
+same atoms, the same configurations and the same bonds — in any order, each in either
+orientation, with or without a `/` `\` mark — write the same string. -/
+theorem canonicalSmiles_eq_of_sameBonds (ha : m.atoms = m'.atoms) (hs : m.stereo = m'.stereo)
+    (hb : m.SameBonds m') : m.canonicalSmiles = m'.canonicalSmiles := by
+  simp only [canonicalSmiles, toMolData_normalizeBrackets_eq_of_sameBonds ha hs hb]
+
+/-- The canonical molecule does not depend on how the bonds are listed either. -/
+theorem canonicalize_eq_of_sameBonds (ha : m.atoms = m'.atoms) (hs : m.stereo = m'.stereo)
+    (hb : m.SameBonds m') : m.canonicalize = m'.canonicalize := by
+  simp only [canonicalize, toMolData_normalizeBrackets_eq_of_sameBonds ha hs hb]
+
+/-- Putting a molecule in normal form — forgetting the order and orientation of its bond
+list — does not change its canonical SMILES. -/
+theorem canonicalSmiles_normalize (m : Molecule n) :
+    m.normalize.canonicalSmiles = m.canonicalSmiles :=
+  canonicalSmiles_eq_of_sameBonds rfl rfl m.sameBonds_normalize
+
+/-- **One molecule, one string**: a molecule whose atoms and configurations are those of `m`
+renumbered by `σ`, and whose bonds are the renumbered bonds listed in any order and
+orientation, has the canonical SMILES of `m`. -/
+theorem canonicalSmiles_eq_of_sameBonds_relabel (σ : Equiv.Perm (Fin n))
+    (ha : m'.atoms = (m.relabel σ).atoms) (hs : m'.stereo = (m.relabel σ).stereo)
+    (hb : m'.SameBonds (m.relabel σ)) : m'.canonicalSmiles = m.canonicalSmiles :=
+  (canonicalSmiles_eq_of_sameBonds ha hs hb).trans (m.canonicalSmiles_relabel σ)
+
+end Molecule
 
 end LeanSMILES

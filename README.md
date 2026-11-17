@@ -184,7 +184,9 @@ proving that nothing but bond orientation is lost. The parser checks syntax, not
 applied is the OpenSMILES implicit-hydrogen rule. Canonical SMILES is
 color refinement plus exhaustive tie-breaking (lexicographically smallest
 string), and it is canonical by theorem (`Molecule.canonicalSmiles_relabel`)
-rather than by matching RDKit.
+rather than by matching RDKit. The order of the bond list and the orientation of
+each bond do not matter either (`Molecule.canonicalSmiles_eq_of_sameBonds`); a
+different Kekulé structure is a different bond matrix, and is not covered.
 
 **Stereocentres.** `@` and `@@` mean nothing on their own: they say which
 way the neighbors turn *in the order the string lists them*, so the same
