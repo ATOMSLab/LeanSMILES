@@ -988,7 +988,175 @@ lemma foldl_undoAdds_cands (keep : List ℕ) : ∀ (l : List ℕ) (w : Work) (A 
           · exact absurd hu hU
           · exact .inr ⟨hx, j, hj', hu, ht⟩
 
+/-- **Backtracking keeps the invariant.** After a fresh scan found no option for `curr`, the
+walk goes back to the latest backtrack point `lo`: the atoms done before it are kept, the double
+bonds with neither end kept are undone, and `lo` with the atoms after it goes back to the head of
+the queue.  The order fact survives because the kept prefix is exactly what was done before `lo`,
+and the earlier backtrack points are all in it. -/
+lemma walkInv_backTrack (hwf : WF m0) {s : KekState} (hi : WalkInv wa atoms m0 cands0 s)
+    {curr : ℕ} {q2 opts : List ℕ} (hp : Popped wa atoms m0 s curr q2 opts false) {lo : ℕ}
+    (hlo : s.lastOpt = some lo) :
+    WalkInv wa atoms m0 cands0
+      ({ s with done := s.done ++ [curr], queue := q2 }.backTrack lo) := by
+  obtain ⟨hcbt, hbts⟩ := hp.freshBt rfl
+  rw [hi.lastOpt, List.getLast?_eq_some_iff] at hlo
+  obtain ⟨bt, hbt⟩ := hlo
+  have hlod : lo ∈ s.done := hbts.subset (by rw [hbt]; simp)
+  have hd1 : (s.done ++ [curr]).Nodup := List.nodup_append.mpr ⟨hi.doneNodup,
+    List.nodup_singleton _, fun a ha b hb ↦ by
+      rw [List.mem_singleton] at hb
+      subst hb
+      exact fun e ↦ hp.currNotDone (e ▸ ha)⟩
+  set done1 := s.done ++ [curr] with hdone1
+  set keep := done1.take (done1.idxOf lo) with hkeep
+  have hkb : keep = before s.done lo := by
+    rw [hkeep, ← before_eq_take, hdone1, before_append_of_mem hlod]
+  have hbtk : bt.Sublist keep := by
+    rw [hkb]
+    exact sublist_before (hbt ▸ hbts) hi.doneNodup
+  have hlok : lo ∉ keep := by
+    rw [hkb]
+    exact not_mem_before _ _
+  have hkd : ∀ x ∈ keep, x ∈ s.done := fun x hx ↦ by
+    rw [hkb] at hx
+    exact before_sub hx
+  -- the undo loop
+  have hnb : (List.range s.m.numBonds).Nodup := List.nodup_range
+  obtain ⟨hsk, hAs, hCs⟩ := foldl_undoAdds_skel keep (List.range s.m.numBonds) s.m s.adds s.cands
+  have hA := foldl_undoAdds_adds keep _ s.m s.adds s.cands hnb
+  have hK := foldl_undoAdds_kind keep _ s.m s.adds s.cands hnb
+  have hC := foldl_undoAdds_cands keep _ s.m s.adds s.cands hnb
+  have hsz : s.m.bonds.size = m0.bonds.size := hi.skel.numBonds.symm
+  have hrange : ∀ k, s.adds[k]! = true → k ∈ List.range s.m.numBonds := fun k hk ↦ by
+    rw [List.mem_range, numBonds, hsz]
+    exact (hi.addsOk k hk).1
+  have hsrc : ∀ k, (s.m.bonds[k]! : WBond).src = (m0.bonds[k]! : WBond).src :=
+    fun k ↦ (hi.skel.src k).symm
+  have hdst : ∀ k, (s.m.bonds[k]! : WBond).dst = (m0.bonds[k]! : WBond).dst :=
+    fun k ↦ (hi.skel.dst k).symm
+  have htch : ∀ k x, (s.m.bonds[k]! : WBond).touches x = (m0.bonds[k]! : WBond).touches x :=
+    fun k x ↦ by unfold WBond.touches; rw [hsrc, hdst]
+  set r := (List.range s.m.numBonds).foldl (undoAdds keep) (s.m, s.adds, s.cands) with hr
+  have e : ({ s with done := done1, queue := q2 } : KekState).backTrack lo =
+      { s with m := r.1, adds := r.2.1, cands := r.2.2, queue := done1.drop (done1.idxOf lo) ++ q2,
+               done := keep, numBt := s.numBt + 1 } := rfl
+  rw [e]
+  have hA' : ∀ k, r.2.1[k]! = true → s.adds[k]! = true := fun k hk ↦ ((hA k).mp hk).1
+  have hkeepsub : ∀ x ∈ keep, x ∈ s.done := hkd
+  have hdk : ∀ x ∈ done1.drop (done1.idxOf lo), x ∉ keep := fun x hx hxk ↦
+    List.disjoint_take_drop hd1 (le_refl _) hxk hx
+  -- an atom some undone bond touches is not kept, and needed a double bond
+  have hund : ∀ j x, j ∈ List.range s.m.numBonds → Undone s.m s.adds keep j →
+      (s.m.bonds[j]! : WBond).touches x = true → x ∉ keep ∧ cands0[x]! = true := by
+    intro j x _ hu ht
+    obtain ⟨-, -, -, h1, h2⟩ := hi.addsOk j hu.1
+    simp only [WBond.touches, Bool.or_eq_true, beq_iff_eq] at ht
+    rcases ht with ht | ht
+    · exact ⟨ht ▸ hu.2.1, by rw [← ht, hsrc]; exact h1⟩
+    · exact ⟨ht ▸ hu.2.2, by rw [← ht, hdst]; exact h2⟩
+  refine ⟨hi.skel.trans hsk, fun k ↦ ?_, by rw [hAs, hi.addsSize], by rw [hCs, hi.candsSize],
+    fun k hk ↦ hi.addsOk k (hA' k hk), fun k₁ k₂ x h₁ h₂ ↦ hi.matching k₁ k₂ x (hA' _ h₁) (hA' _ h₂),
+    fun x ↦ ?_, fun x hx ↦ ?_, fun k hk ↦ ?_, (List.take_sublist _ _).nodup hd1, ?_,
+    fun x hx ↦ ?_, fun x hx ↦ hi.doneSub x (hkd x hx), fun x hx ↦ ?_, fun a o hao ↦ ?_, hi.keys,
+    hi.lastOpt, .inr ⟨lo, bt, hbt, hbtk, ?_, hlok⟩⟩
+  · -- kinds
+    simp only
+    by_cases hk : r.2.1[k]! = true
+    · obtain ⟨ha, hnu⟩ := (hA k).mp hk
+      rw [if_pos hk, (hK k).2 hnu, hi.kinds k, if_pos ha]
+    · rw [if_neg hk]
+      by_cases ha : s.adds[k]! = true
+      · have hu : k ∈ List.range s.m.numBonds ∧ Undone s.m s.adds keep k := by
+          by_contra h
+          exact hk ((hA k).mpr ⟨ha, h⟩)
+        rw [(hK k).1 hu.1 hu.2 (List.mem_range.mp hu.1), (hi.addsOk k ha).2.2.1]
+      · rw [(hK k).2 (fun h ↦ ha h.2.1), hi.kinds k, if_neg ha]
+  · -- candidates
+    simp only
+    rw [hC x]
+    constructor
+    · rintro (h | ⟨hx, j, hj, hu, ht⟩)
+      · obtain ⟨h0, hm⟩ := (hi.cands x).mp h
+        exact ⟨h0, fun ⟨k, hk, ht⟩ ↦ hm ⟨k, hA' k hk, ht⟩⟩
+      · refine ⟨(hund j x hj hu ht).2, fun ⟨k, hk, ht'⟩ ↦ ?_⟩
+        have hkj : k = j := hi.matching k j x (hA' k hk) hu.1 ht' (by rw [Tch, ← htch]; exact ht)
+        subst hkj
+        exact ((hA k).mp hk).2 ⟨hj, hu⟩
+    · rintro ⟨h0, hm⟩
+      by_cases hmx : Matched m0 s x
+      · obtain ⟨k, hk, ht⟩ := hmx
+        have hu : k ∈ List.range s.m.numBonds ∧ Undone s.m s.adds keep k := by
+          by_contra h
+          exact hm ⟨k, (hA k).mpr ⟨hk, h⟩, ht⟩
+        have hxs : x < s.cands.size := by
+          rw [hi.candsSize]
+          have hw := hwf k (by rw [numBonds]; exact (hi.addsOk k hk).1)
+          simp only [Tch, WBond.touches, Bool.or_eq_true, beq_iff_eq] at ht
+          rcases ht with ht | ht
+          · rw [← ht]; exact hw.1
+          · rw [← ht]; exact hw.2.1
+        exact .inr ⟨hxs, k, hu.1, hu.2, by rw [htch]; exact ht⟩
+      · exact .inl ((hi.cands x).mpr ⟨h0, hmx⟩)
+  · -- kept atoms are done with
+    simp only
+    rw [Bool.eq_false_iff]
+    intro h
+    rw [hC x] at h
+    rcases h with h | ⟨-, j, hj, hu, ht⟩
+    · rw [hi.doneNC x (hkd x hx)] at h
+      cases h
+    · exact (hund j x hj hu ht).1 hx
+  · -- placed bonds kept have an end kept
+    obtain ⟨ha, hnu⟩ := (hA k).mp hk
+    simp only
+    by_contra h
+    simp only [not_or] at h
+    exact hnu ⟨hrange k ha, ha, by rw [hsrc]; exact h.1, by rw [hdst]; exact h.2⟩
+  · -- the queue has no repeats
+    refine List.nodup_append.mpr ⟨(List.drop_sublist _ _).nodup hd1, hp.qNodup, ?_⟩
+    intro a ha b hb e
+    subst e
+    obtain ⟨hbd, hbc⟩ := hp.qDisj a hb
+    have := (List.drop_sublist _ _).subset ha
+    rcases List.mem_append.mp this with h | h
+    · exact hbd h
+    · exact hbc (List.mem_singleton.mp h)
+  · -- the queue is not kept
+    rcases List.mem_append.mp hx with hx | hx
+    · exact hdk x hx
+    · exact fun hk ↦ (hp.qDisj x hx).1 (hkd x hk)
+  · -- the queue is in the system
+    rcases List.mem_append.mp hx with hx | hx
+    · have := (List.drop_sublist _ _).subset hx
+      rcases List.mem_append.mp this with h | h
+      · exact hi.doneSub x h
+      · rw [List.mem_singleton] at h
+        exact h ▸ hp.currAtom
+    · exact hp.qSub x hx
+  · -- the order fact
+    have ha : a ∈ s.btMoves := by
+      rw [← hi.keys]
+      exact List.mem_map.mpr ⟨_, hao, rfl⟩
+    have hbef : before keep a = before s.done a := by
+      rw [hbt, List.mem_append, List.mem_singleton] at ha
+      rcases ha with ha | rfl
+      · rw [hkb]
+        exact before_before (hbtk.subset ha |> fun h ↦ by rw [hkb] at h; exact h)
+      · rw [before_of_not_mem hlok, hkb]
+    obtain ⟨hne, hnd, hj⟩ := hi.opt a o hao
+    refine ⟨hne, hnd, fun j hjo ↦ ?_⟩
+    obtain ⟨h1, h2, h3, h4, h5⟩ := hj j hjo
+    refine ⟨h1, h2, h3, h4, fun k hk ht ↦ ?_⟩
+    simp only
+    rw [hbef]
+    exact h5 k (hA' k hk) ht
+  · -- the backtrack point heads the queue
+    simp only
+    rw [List.head?_append, head?_drop_idxOf (List.mem_append_left _ hlod)]
+    rfl
+
 end Walk
+
 
 
 
