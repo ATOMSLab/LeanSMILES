@@ -487,4 +487,89 @@ lemma getElem?_assignRadicals_map {β : Type*} (w : Work) (f : WAtom → β)
   have := congrArg (Option.map f) (getElem?_assignRadicals_atoms w j)
   simpa [Option.map_map, Function.comp_def, hf] using this
 
+/-! ### A copy with nothing aromatic -/
+
+/-- With no aromatic bond, every bond-order sum is whole: twice it is even. -/
+lemma two_dvd_bondHalfSum {w : Work} (h : ∀ b ∈ w.bonds, b.kind ≠ .aromatic) (i : ℕ) :
+    2 ∣ w.bondHalfSum i := by
+  unfold bondHalfSum
+  have key : ∀ l : List ℕ, (∀ k ∈ l, k < w.bonds.size) →
+      2 ∣ (l.map fun k ↦ halfOrder (w.bonds[k]! : WBond).kind).sum := by
+    intro l hl
+    induction l with
+    | nil => simp
+    | cons k l ih =>
+      rw [List.map_cons, List.sum_cons]
+      refine Nat.dvd_add ?_ (ih fun k' hk' ↦ hl k' (List.mem_cons_of_mem _ hk'))
+      have hlt := hl k List.mem_cons_self
+      rw [getElem!_pos _ k hlt]
+      have := h _ (Array.getElem_mem hlt)
+      cases hkind : (w.bonds[k]).kind <;> simp_all [halfOrder]
+  exact key _ fun k hk ↦ Swapped.mem_bondsOf_lt hk
+
+/-- With nothing aromatic, no atom is aromatic. -/
+lemma isAromaticAtom_of_noArom {w : Work} (h : w.NoArom) (i : ℕ) : w.isAromaticAtom i = false := by
+  unfold isAromaticAtom
+  rw [Bool.or_eq_false_iff]
+  refine ⟨?_, ?_⟩
+  · by_cases hi : i < w.atoms.size
+    · rw [getElem!_pos _ i hi]
+      exact h.1 _ (Array.getElem_mem hi)
+    · rw [getElem!_neg _ i hi]
+      rfl
+  · rw [List.any_eq_false]
+    intro k hk hkk
+    have hlt := Swapped.mem_bondsOf_lt hk
+    rw [getElem!_pos _ k hlt] at hkk
+    exact h.2 _ (Array.getElem_mem hlt) (by simpa using hkk)
+
+/-- **With nothing aromatic, the explicit valence is the written hydrogens plus the bond-order
+sum**: RDKit's aromatic rounding does not apply. -/
+lemma explicitValence_of_noArom {w : Work} (h : w.NoArom) (i : ℕ) :
+    w.explicitValence i = (w.atoms[i]! : WAtom).explicitHs + w.bondHalfSum i / 2 := by
+  have hA := isAromaticAtom_of_noArom h i
+  obtain ⟨c, hc⟩ := two_dvd_bondHalfSum h.2 i
+  unfold explicitValence
+  simp only [hA, Bool.and_false]
+  split <;> (try split) <;> simp_all [Id.run_pure] <;> omega
+
+/-- **With nothing aromatic, the cached valence less the written hydrogens is the bond-order
+sum**, after `cacheValences` and radicals. -/
+lemma cachedValence_sub_of_noArom {w : Work} (h : w.NoArom) (i : ℕ) :
+    (w.cacheValences.assignRadicals.cachedValence i : ℤ) -
+        (w.cacheValences.assignRadicals.atoms[i]! : WAtom).explicitHs =
+      ((w.cacheValences.assignRadicals.bondHalfSum i / 2 : ℕ) : ℤ) := by
+  set c := w.cacheValences with hc
+  have hb : c.assignRadicals.bonds = c.bonds := assignRadicals_bonds _
+  have hhs : c.assignRadicals.bondHalfSum = c.bondHalfSum := by
+    funext j
+    simp only [bondHalfSum, bondsOf, numBonds, hb]
+  have heH : (c.assignRadicals.atoms[i]! : WAtom).explicitHs = (c.atoms[i]! : WAtom).explicitHs :=
+    getElem!_eq_of_map (fun x : WAtom ↦ x.explicitHs)
+      (getElem?_assignRadicals_map _ _ (fun _ ↦ rfl) i)
+  have hcv : (c.assignRadicals.atoms[i]! : WAtom).cachedValence =
+      (c.atoms[i]! : WAtom).cachedValence :=
+    getElem!_eq_of_map (fun x : WAtom ↦ x.cachedValence)
+      (getElem?_assignRadicals_map _ _ (fun _ ↦ rfl) i)
+  have hcb : c.bondHalfSum = w.bondHalfSum := by
+    funext j
+    simp only [bondHalfSum, bondsOf, numBonds, hc, cacheValences_bonds]
+  simp only [cachedValence, kekuleValence, hcv, heH, hhs, hcb]
+  by_cases hi : i < w.atoms.size
+  · have hi' : i < c.atoms.size := by simpa [hc] using hi
+    have hget := getElem?_cacheValences_atoms w i
+    rw [← hc, Array.getElem?_eq_getElem hi', Array.getElem?_eq_getElem hi] at hget
+    simp only [Option.map_some, Option.some.injEq] at hget
+    have e1 : (c.atoms[i]! : WAtom).cachedValence = some (w.explicitValence i) := by
+      rw [getElem!_pos _ i hi', hget]
+    have e2 : (c.atoms[i]! : WAtom).explicitHs = (w.atoms[i]! : WAtom).explicitHs := by
+      rw [getElem!_pos _ i hi', hget, getElem!_pos _ i hi]
+    rw [e1, Option.getD_some, explicitValence_of_noArom h i, e2]
+    omega
+  · have hi' : ¬ i < c.atoms.size := by simpa [hc] using hi
+    rw [getElem!_neg _ i hi']
+    have d1 : (default : WAtom).cachedValence = none := rfl
+    have d2 : (default : WAtom).explicitHs = 0 := rfl
+    simp [d1, d2]
+
 end LeanSMILES.Aromaticity.Work

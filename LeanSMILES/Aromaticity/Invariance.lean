@@ -1069,9 +1069,10 @@ theorem kekuleWitness_start_basic {m a : Molecule n} {K : Work}
 
 open Aromaticity in
 /-- **The counting part of the starting relation** (open): after radicals, the two copies have the
-same radicals, cached hydrogen totals and bond parts of their cached valences, the first copy's
-bond part is its Kekulé bond-order sum, ring atoms have the same `countAtomElec`, and at every
-atom of each copy the `adjustHs` step gives back the cached hydrogen total.  Each holds at every
+same radicals and cached hydrogen totals, the first copy's cached valence less its written
+hydrogens is its Kekulé bond-order sum (the witness's is, `Work.cachedValence_sub_of_noArom`),
+ring atoms have the same `countAtomElec`, and at every atom of each copy the `adjustHs` step gives
+back the cached hydrogen total.  Each holds at every
 atom of the 17 425 molecules of the datasets and the fuzz set that satisfy the hypotheses.  What
 it needs: the kekulizer gives every atom that needs a double bond exactly one (so the bond part
 RDKit cached on the aromatic molecule is the Kekulé one), and RDKit's valence, radical and
@@ -1087,9 +1088,6 @@ theorem kekuleWitness_counts {m a : Molecule n} {K : Work}
     (∀ i : ℕ, (P'.assignRadicals.atoms[i]! : WAtom).radicals =
         (K.assignRadicals.atoms[i]! : WAtom).radicals) ∧
       (∀ i : ℕ, P'.assignRadicals.cachedTotalHs i = K.assignRadicals.cachedTotalHs i) ∧
-      (∀ i : ℕ, (P'.assignRadicals.cachedValence i : ℤ) -
-          (P'.assignRadicals.atoms[i]! : WAtom).explicitHs =
-        (K.assignRadicals.cachedValence i : ℤ) - (K.assignRadicals.atoms[i]! : WAtom).explicitHs) ∧
       (∀ i : ℕ, (K.assignRadicals.cachedValence i : ℤ) -
           (K.assignRadicals.atoms[i]! : WAtom).explicitHs =
         ((K.assignRadicals.bondHalfSum i / 2 : ℕ) : ℤ)) ∧
@@ -1119,7 +1117,20 @@ theorem kekuleWitness_start {m a : Molecule n} {K : Work}
         ((Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences.assignRadicals.setAromaticity
           (Work.prepare m).relevantCycles) i := by
   obtain ⟨hb, hs, hz, hc, hm, hna⟩ := kekuleWitness_start_basic hK ha
-  obtain ⟨hrad, htot, hbp, hkek, helec, hr, hr'⟩ := kekuleWitness_counts hK ha hv hw
+  obtain ⟨hrad, htot, hkek, helec, hr, hr'⟩ := kekuleWitness_counts hK ha hv hw
+  -- the witness's copy has nothing aromatic, so its bond part is its Kekulé sum, and the bonds
+  -- are the kekulized copy's
+  have hk := (kekuleWitness_spec hK ha).1
+  have hna' := Work.noArom_freezeHs (Work.noArom_ofMolecule (kekuleWitness a K) hk.1 hk.2)
+  have hbp : ∀ i : ℕ,
+      ((Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences.assignRadicals.cachedValence i
+          : ℤ) -
+        ((Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences.assignRadicals.atoms[i]! :
+          WAtom).explicitHs =
+      (K.assignRadicals.cachedValence i : ℤ) - (K.assignRadicals.atoms[i]! : WAtom).explicitHs := by
+    intro i
+    rw [Work.cachedValence_sub_of_noArom hna' i, hkek i]
+    simp only [Work.bondHalfSum, Work.bondsOf, Work.numBonds, hb]
   exact ⟨⟨hb, hs, hz, hc, hrad, htot, hbp, hkek, hna, helec⟩, hm, hr, hr'⟩
 
 open Aromaticity in
