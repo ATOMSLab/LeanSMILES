@@ -213,33 +213,143 @@ instance (k a : Molecule n) : Decidable (k.IsKekuleStructureOf a) :=
 
 /-! ### What `aromatize` keeps -/
 
+open Aromaticity in
+/-- The working copy of a Kekulé structure has nothing aromatic, all the way to kekulization. -/
+lemma IsKekule.noArom_prepare {m : Molecule n} (hk : m.IsKekule) : (Work.prepare m).NoArom :=
+  Work.noArom_cacheValences ((Work.cleanRel_cleanUp _).noArom
+    (Work.noArom_freezeHs (Work.noArom_ofMolecule m hk.1 hk.2)))
+
+open Aromaticity in
+/-- A Kekulé structure is kekulized to itself. -/
+lemma IsKekule.kekulize_prepare {m : Molecule n} (hk : m.IsKekule) :
+    (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok (Work.prepare m) :=
+  Work.kekulize_of_noArom hk.noArom_prepare _
+
+open Aromaticity in
+/-- The output's charges are those `cleanUp` left. -/
+lemma charge?_finish_prepare (m : Molecule n) (k : Work) (hk : Work.AfterRel (Work.prepare m) k)
+    (rings : Array (List ℕ)) (i : Fin n) :
+    some ((m.aromatizeOutput (k.finish rings)).atom i).charge =
+      (Work.ofMolecule m).freezeHs.cleanUp.charge? i := by
+  have h1 := (hk.trans (k.afterRel_finish rings))
+  have hsize : i.val < (k.finish rings).atoms.size := by
+    rw [h1.atoms_size]
+    simp [Work.prepare, (Work.cleanRel_cleanUp _).atoms_size]
+  rw [charge_aromatizeOutput, ← Work.charge?_eq_of_lt _ hsize, h1.charge]
+  simp [Work.prepare]
+
+open Aromaticity in
+/-- **When the charges are kept, `cleanUp` did nothing**: the working copy kekulized is the input's,
+with its hydrogens frozen and valences cached. -/
+lemma ChargesKept.prepare_eq {m a : Molecule n} (k : Work) (hk : Work.AfterRel (Work.prepare m) k)
+    (rings : Array (List ℕ)) (ha : m.aromatizeOutput (k.finish rings) = a) (hc : m.ChargesKept a) :
+    Work.prepare m = (Work.ofMolecule m).freezeHs.cacheValences := by
+  have : (Work.ofMolecule m).freezeHs.cleanUp = (Work.ofMolecule m).freezeHs := by
+    apply Work.cleanUp_eq_self_of_charge
+    intro j
+    by_cases hj : j < n
+    · have h1 := charge?_finish_prepare m k hk rings ⟨j, hj⟩
+      rw [ha, hc ⟨j, hj⟩] at h1
+      rw [← h1, Work.charge?_freezeHs, Work.charge?_ofMolecule m ⟨j, hj⟩]
+    · have h2 : ¬ j < (Work.ofMolecule m).freezeHs.cleanUp.atoms.size := by
+        simpa [(Work.cleanRel_cleanUp _).atoms_size] using hj
+      have h3 : ¬ j < (Work.ofMolecule m).freezeHs.atoms.size := by simpa using hj
+      rw [← Work.charge?_isSome_iff, Bool.not_eq_true, Option.isSome_eq_false_iff,
+        Option.isNone_iff_eq_none] at h2 h3
+      rw [h2, h3]
+  simp only [Work.prepare, this]
+
 /-- `aromatize` changes bond kinds and nothing else about the bond list: its order, and every
 bond's two atoms, orientation and `/` `\` mark, are the input's. -/
 theorem sameSkeleton_aromatize {m a : Molecule n} (h : m.aromatize = .ok a) :
     m.SameSkeleton a := by
-  sorry
+  obtain ⟨k, -, rfl⟩ := aromatize_eq_ok.mp h
+  exact Aromaticity.forall₂_map_zipIdx _ _ m.bonds 0 fun _ _ _ ↦ ⟨rfl, rfl, rfl⟩
 
 /-- `aromatize` keeps the configurations. -/
 theorem stereo_aromatize {m a : Molecule n} (h : m.aromatize = .ok a) : a.stereo = m.stereo := by
-  sorry
+  obtain ⟨k, -, rfl⟩ := aromatize_eq_ok.mp h
+  rfl
 
 /-- A Kekulé structure always aromatizes: the only step that can fail is kekulization, which has
 nothing to do. -/
 theorem IsKekule.exists_aromatize {m : Molecule n} (hk : m.IsKekule) :
     ∃ a, m.aromatize = .ok a := by
-  sorry
+  exact ⟨_, aromatize_eq_ok.mpr ⟨_, hk.kekulize_prepare, rfl⟩⟩
 
 /-- A Kekulé structure keeps every aromatic bond written in it: there is none. -/
 theorem IsKekule.aromaticKept {m a : Molecule n} (hk : m.IsKekule) (h : m.aromatize = .ok a) :
     m.AromaticKept a := by
-  sorry
+  obtain ⟨k, -, rfl⟩ := aromatize_eq_ok.mp h
+  refine Aromaticity.forall₂_map_zipIdx _ _ m.bonds 0 fun b k hb hb' ↦ ?_
+  exact absurd hb' (hk.2 b (List.mem_of_getElem? (List.mk_mem_zipIdx_iff_getElem?.mp hb)))
 
 /-- **Rings that stay non-aromatic keep their double bonds.**  For a Kekulé input whose charges
 are kept, each bond of the output is either aromatic or has the kind it was written with. -/
 theorem kind_aromatize {m a : Molecule n} (hk : m.IsKekule) (h : m.aromatize = .ok a)
     (hc : m.ChargesKept a) :
     List.Forall₂ (fun b b' ↦ b'.kind = .aromatic ∨ b'.kind = b.kind) m.bonds a.bonds := by
-  sorry
+  obtain ⟨k, hkek, rfl⟩ := aromatize_eq_ok.mp h
+  rw [hk.kekulize_prepare] at hkek
+  cases hkek
+  have hp := hc.prepare_eq _ (.refl _) _ rfl
+  have hr :=
+    (Aromaticity.Work.prepare m).afterRel_finish (Aromaticity.Work.prepare m).relevantCycles
+  refine Aromaticity.forall₂_map_zipIdx _ _ m.bonds 0 fun b k hb ↦ ?_
+  have hb := List.mk_mem_zipIdx_iff_getElem?.mp hb
+  have hkind : (Aromaticity.Work.prepare m).kind? k = some b.kind := by
+    rw [hp]
+    simp [Aromaticity.Work.kind?, Aromaticity.Work.getElem?_ofMolecule_bonds, hb]
+  change (((Aromaticity.Work.prepare m).finish _).kind? k).getD b.kind = .aromatic ∨
+    (((Aromaticity.Work.prepare m).finish _).kind? k).getD b.kind = b.kind
+  rcases hr.kind k with h1 | h1 <;> rw [h1]
+  · exact .inr (by rw [hkind]; rfl)
+  · exact .inl rfl
+
+/-- Relabeling a Kekulé structure gives a Kekulé structure. -/
+lemma IsKekule.relabel {m : Molecule n} (hk : m.IsKekule) (σ : Equiv.Perm (Fin n)) :
+    (m.relabel σ).IsKekule := by
+  refine ⟨fun i ↦ ?_, fun b hb ↦ ?_⟩
+  · obtain ⟨j, rfl⟩ := σ.surjective i
+    rw [atom_relabel]
+    exact hk.1 j
+  · rw [bonds_relabel, List.mem_map] at hb
+    obtain ⟨b₀, hb₀, rfl⟩ := hb
+    exact hk.2 b₀ hb₀
+
+/-- Relabeling both molecules keeps `ChargesKept`. -/
+lemma ChargesKept.relabel {m a : Molecule n} (hc : m.ChargesKept a) (σ : Equiv.Perm (Fin n)) :
+    (m.relabel σ).ChargesKept (a.relabel σ) := fun i ↦ by
+  obtain ⟨j, rfl⟩ := σ.surjective i
+  rw [atom_relabel, atom_relabel, hc j]
+
+/-- An element of the right list of a `Forall₂` is related to one of the left list. -/
+lemma _root_.List.Forall₂.exists_mem_left {α β : Type*} {R : α → β → Prop} {l₁ : List α}
+    {l₂ : List β} (h : List.Forall₂ R l₁ l₂) {b : β} (hb : b ∈ l₂) : ∃ a ∈ l₁, R a b := by
+  induction h with
+  | nil => simp at hb
+  | cons hr _ ih =>
+    rcases List.mem_cons.mp hb with rfl | hb
+    · exact ⟨_, List.mem_cons_self, hr⟩
+    · obtain ⟨a, ha, h⟩ := ih hb
+      exact ⟨a, List.mem_cons_of_mem _ ha, h⟩
+
+/-- Another Kekulé structure of a Kekulé structure is one. -/
+lemma KekuleVariant.isKekule {a m m' : Molecule n} (hv : KekuleVariant a m m') (hk : m.IsKekule) :
+    m'.IsKekule := by
+  refine ⟨fun i ↦ ?_, fun b' hb' ↦ ?_⟩
+  · simpa [atom, hv.atoms] using hk.1 i
+  · obtain ⟨b, hb, -, -, -, h⟩ := hv.bonds.exists_mem_left hb'
+    split at h
+    · rcases h.2 with h | h <;> rw [h] <;> decide
+    · rw [h]
+      exact hk.2 b hb
+
+/-- Another Kekulé structure keeps the charges kept. -/
+lemma KekuleVariant.chargesKept {a m m' : Molecule n} (hv : KekuleVariant a m m')
+    (hc : m.ChargesKept a) : m'.ChargesKept a := fun i ↦ by
+  rw [hc i]
+  simp [atom, hv.atoms]
 
 /-! ### 1. The numbering of the atoms -/
 
@@ -258,7 +368,8 @@ the relabeled output.  From `aromatize_relabel`, `IsKekule.exists_aromatize` and
 theorem IsKekule.aromatize_relabel {m a : Molecule n} (hk : m.IsKekule)
     (h : m.aromatize = .ok a) (hc : m.ChargesKept a) (σ : Equiv.Perm (Fin n)) :
     (m.relabel σ).aromatize = .ok (a.relabel σ) := by
-  sorry
+  obtain ⟨a', h'⟩ := (hk.relabel σ).exists_aromatize
+  rw [h', Molecule.aromatize_relabel h hc (hk.aromaticKept h) σ h']
 
 /-! ### 2. The listing of the bonds -/
 
@@ -282,6 +393,22 @@ Kekulé structure `m` aromatizes to `a`, so does every `m'` that differs from `m
 aromatic in `a`, with each atom keeping its bond-order sum. -/
 theorem aromatize_of_kekuleVariant {m m' a : Molecule n} (hk : m.IsKekule)
     (h : m.aromatize = .ok a) (hv : KekuleVariant a m m') : m'.aromatize = .ok a := by
+  -- FALSE as stated, so left open.  `m` = `O=P1[SiH]=CC=CC=1` (P=O outside the ring, P–Si
+  -- and P=C in it) aromatizes to `a` = `[O-][p+]1[siH]cccc1`: `cleanUp`'s phosphorus rule fires,
+  -- because P has `=O` and a double bond to a carbon.  `m'` = `O=P1=[SiH]C=CC=C1` is a
+  -- `KekuleVariant a m m'` (the ring bonds flipped, every bond-order sum kept), but there P's
+  -- ring double bond goes to silicon, the rule does not fire, P stays neutral and five-valent,
+  -- is no aromatic candidate, and `m'` aromatizes to itself, not to `a`.  `ChargesKept m a`
+  -- fails here; `aromatize_of_kekuleVariant_of_chargesKept` adds it.  RDKit 2025.09 agrees.
+  sorry
+
+/-- **Every Kekulé structure of an aromatic system aromatizes to the same molecule**, when the
+charges are kept.  `aromatize_of_kekuleVariant` with `ChargesKept`, the hypothesis the headline
+`canonicalSmiles_aromatize_eq` has anyway: without it the statement is false
+(`aromatize_of_kekuleVariant`). -/
+theorem aromatize_of_kekuleVariant_of_chargesKept {m m' a : Molecule n} (hk : m.IsKekule)
+    (h : m.aromatize = .ok a) (hc : m.ChargesKept a) (hv : KekuleVariant a m m') :
+    m'.aromatize = .ok a := by
   sorry
 
 /-- **`aromatize` is idempotent**: an output that aromatizes again aromatizes to itself.  This
@@ -304,7 +431,7 @@ From `aromatize_relabel` and `canonicalSmiles_relabel`. -/
 theorem canonicalSmiles_aromatize_relabel {m a a' : Molecule n} (h : m.aromatize = .ok a)
     (hc : m.ChargesKept a) (hk : m.AromaticKept a) (σ : Equiv.Perm (Fin n))
     (h' : (m.relabel σ).aromatize = .ok a') : a'.canonicalSmiles = a.canonicalSmiles := by
-  sorry
+  rw [aromatize_relabel h hc hk σ h', canonicalSmiles_relabel]
 
 /-- Relisting the bonds does not change the canonical SMILES of the aromatized molecule.  From
 `aromatize_of_sameBonds` and `canonicalSmiles_eq_of_sameBonds`. -/
@@ -312,13 +439,14 @@ theorem canonicalSmiles_aromatize_of_sameBonds {m m' a : Molecule n} (h : m.arom
     (hc : m.ChargesKept a) (hat : m'.atoms = m.atoms) (hst : m'.stereo = m.stereo)
     (hb : m'.SameBonds m) :
     ∃ a', m'.aromatize = .ok a' ∧ a'.canonicalSmiles = a.canonicalSmiles := by
-  sorry
+  obtain ⟨a', h', ha, hs, hb'⟩ := aromatize_of_sameBonds h hc hat hst hb
+  exact ⟨a', h', canonicalSmiles_eq_of_sameBonds ha hs hb'⟩
 
 /-- Aromatizing an output again does not change its canonical SMILES.  From
 `aromatize_aromatize`. -/
 theorem canonicalSmiles_aromatize_aromatize {m a a' : Molecule n} (h : m.aromatize = .ok a)
     (h' : a.aromatize = .ok a') : a'.canonicalSmiles = a.canonicalSmiles := by
-  sorry
+  rw [aromatize_aromatize h h']
 
 /-- **One molecule, one aromatic canonical SMILES.**  Let the Kekulé structure `m` aromatize to
 `a`, keeping its charges.  Take any other Kekulé structure `m₁` of it over the aromatic bonds,
@@ -331,7 +459,11 @@ theorem canonicalSmiles_aromatize_eq {m m₁ m₂ a : Molecule n} (hk : m.IsKeku
     (σ : Equiv.Perm (Fin n)) (hat : m₂.atoms = (m₁.relabel σ).atoms)
     (hst : m₂.stereo = (m₁.relabel σ).stereo) (hb : m₂.SameBonds (m₁.relabel σ)) :
     ∃ a₂, m₂.aromatize = .ok a₂ ∧ a₂.canonicalSmiles = a.canonicalSmiles := by
-  sorry
+  have h₁ := aromatize_of_kekuleVariant_of_chargesKept hk h hc hv
+  have h₂ := (hv.isKekule hk).aromatize_relabel h₁ (hv.chargesKept hc) σ
+  obtain ⟨a₂, h₂', ha, hs, hb'⟩ :=
+    aromatize_of_sameBonds h₂ ((hv.chargesKept hc).relabel σ) hat hst hb
+  exact ⟨a₂, h₂', canonicalSmiles_eq_of_sameBonds_relabel σ ha hs hb'⟩
 
 /-! ### 5. A lowercase molecule and a Kekulé spelling of it
 
@@ -467,7 +599,11 @@ theorem canonicalSmiles_aromatize_of_isKekuleSpellingOf {m k k₂ a a' : Molecul
     (σ : Equiv.Perm (Fin n)) (hat : k₂.atoms = (k.relabel σ).atoms)
     (hst : k₂.stereo = (k.relabel σ).stereo) (hb : k₂.SameBonds (k.relabel σ)) :
     ∃ a₂, k₂.aromatize = .ok a₂ ∧ a₂.canonicalSmiles = a.canonicalSmiles := by
-  sorry
+  have h₂ := hs.kekule.aromatize_relabel h' hc' σ
+  obtain ⟨a₂, h₂', ha, hst', hb'⟩ := aromatize_of_sameBonds h₂ (hc'.relabel σ) hat hst hb
+  refine ⟨a₂, h₂', ?_⟩
+  rw [canonicalSmiles_eq_of_sameBonds_relabel σ ha hst' hb',
+    aromatize_of_isKekuleSpellingOf h hc hk hs h' hc']
 
 end Molecule
 

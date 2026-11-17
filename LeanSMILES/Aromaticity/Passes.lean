@@ -109,7 +109,8 @@ structure CleanRel (o w : Work) : Prop where
   /-- Every charge is `o`'s, or nonzero. -/
   charge : ∀ (j : ℕ) (c : ℤ), w.charge? j = some c → c ≠ 0 ∨ o.charge? j = some c
   /-- Every kind is `o`'s, or single, or double. -/
-  kind : ∀ (k : ℕ) (t : BondKind), w.kind? k = some t → t = .single ∨ t = .double ∨ o.kind? k = some t
+  kind : ∀ (k : ℕ) (t : BondKind), w.kind? k = some t →
+    t = .single ∨ t = .double ∨ o.kind? k = some t
 
 /-- Some atom neutral in `o` is charged in `w`. -/
 def Charged (o w : Work) : Prop := ∃ j c, o.charge? j = some 0 ∧ w.charge? j = some c ∧ c ≠ 0
@@ -367,6 +368,270 @@ theorem cleanUp_eq_self_of_charge (h : ∀ j, w.cleanUp.charge? j = w.charge? j)
 /-- `cleanUp` keeps the atoms but for their charges. -/
 lemma cleanRel_cleanUp : CleanRel w w.cleanUp := w.cleanStep_cleanUp.1
 
+/-! ### Atoms rebuilt one by one: `freezeHs`, `cacheValences` -/
+
+lemma getElem?_freezeHs_atoms (j : ℕ) :
+    w.freezeHs.atoms[j]? = w.atoms[j]?.map fun a ↦ { a with frozenHs := some (w.totalHs j) } := by
+  unfold freezeHs numAtoms
+  by_cases hj : j < w.atoms.size
+  · simp [hj, getElem!_def]
+  · simp [hj]
+
+lemma getElem?_cacheValences_atoms (j : ℕ) :
+    w.cacheValences.atoms[j]? = w.atoms[j]?.map fun a ↦
+      { a with cachedValence := some (w.explicitValence j), cachedImplicit := w.implicitHs j,
+               adjustHs := w.isAromaticAtom j } := by
+  unfold cacheValences numAtoms
+  by_cases hj : j < w.atoms.size
+  · simp [hj, getElem!_def]
+  · simp [hj]
+
+@[simp] lemma freezeHs_bonds : w.freezeHs.bonds = w.bonds := rfl
+
+@[simp] lemma cacheValences_bonds : w.cacheValences.bonds = w.bonds := rfl
+
+@[simp] lemma charge?_freezeHs : w.freezeHs.charge? = w.charge? := by
+  funext j; simp [charge?, getElem?_freezeHs_atoms, Option.map_map, Function.comp_def]
+
+@[simp] lemma charge?_cacheValences : w.cacheValences.charge? = w.charge? := by
+  funext j; simp [charge?, getElem?_cacheValences_atoms, Option.map_map, Function.comp_def]
+
+@[simp] lemma size_freezeHs_atoms : w.freezeHs.atoms.size = w.atoms.size := by
+  simp [freezeHs, numAtoms]
+
+@[simp] lemma size_cacheValences_atoms : w.cacheValences.atoms.size = w.atoms.size := by
+  simp [cacheValences, numAtoms]
+
+/-! ### Nothing aromatic -/
+
+/-- Nothing in the working copy is aromatic: no atom flagged, no bond of kind aromatic. -/
+def NoArom : Prop := (∀ a ∈ w.atoms, a.aromatic = false) ∧ ∀ b ∈ w.bonds, b.kind ≠ .aromatic
+
+lemma noArom_iff : w.NoArom ↔ (∀ (j : ℕ) (a : WAtom), w.atoms[j]? = some a → a.aromatic = false) ∧
+    ∀ (k : ℕ) (b : WBond), w.bonds[k]? = some b → b.kind ≠ .aromatic := by
+  simp only [NoArom, Array.mem_iff_getElem?]
+  constructor
+  · rintro ⟨h1, h2⟩
+    exact ⟨fun j a h ↦ h1 a ⟨j, h⟩, fun k b h ↦ h2 b ⟨k, h⟩⟩
+  · rintro ⟨h1, h2⟩
+    exact ⟨fun a ⟨j, h⟩ ↦ h1 j a h, fun b ⟨k, h⟩ ↦ h2 k b h⟩
+
+/-- **Kekulization of a molecule with nothing aromatic returns it unchanged.** -/
+lemma kekulize_of_noArom {w : Work} (h : w.NoArom) (rings : Array (List ℕ)) :
+    w.kekulize rings = .ok w := by
+  have h1 : ((List.range w.numBonds).filter (w.bonds[·]!.kind == .aromatic)).isEmpty = true := by
+    rw [List.isEmpty_iff, List.filter_eq_nil_iff]
+    intro k hk
+    simp only [List.mem_range, numBonds] at hk
+    have := h.2 _ (Array.getElem_mem hk)
+    simpa [getElem!_def, Array.getElem?_eq_getElem hk] using this
+  have h2 : w.atoms.any (·.aromatic) = false := by
+    rw [Bool.eq_false_iff]
+    intro hh
+    obtain ⟨i, hi, hp⟩ := Array.any_eq_true.mp hh
+    simp [h.1 _ (Array.getElem_mem hi)] at hp
+  simp only [kekulize, h1, h2]
+  rfl
+
+lemma noArom_freezeHs {w : Work} (h : w.NoArom) : w.freezeHs.NoArom := by
+  rw [noArom_iff] at h ⊢
+  refine ⟨fun j a ha ↦ ?_, h.2⟩
+  rw [getElem?_freezeHs_atoms, Option.map_eq_some_iff] at ha
+  obtain ⟨a, ha, rfl⟩ := ha
+  exact h.1 j a ha
+
+lemma noArom_cacheValences {w : Work} (h : w.NoArom) : w.cacheValences.NoArom := by
+  rw [noArom_iff] at h ⊢
+  refine ⟨fun j a ha ↦ ?_, h.2⟩
+  rw [getElem?_cacheValences_atoms, Option.map_eq_some_iff] at ha
+  obtain ⟨a, ha, rfl⟩ := ha
+  exact h.1 j a ha
+
+lemma CleanRel.noArom {o w : Work} (hr : CleanRel o w) (h : o.NoArom) : w.NoArom := by
+  rw [noArom_iff] at h ⊢
+  refine ⟨fun j a ha ↦ ?_, fun k b hb ↦ ?_⟩
+  · have := hr.atoms j
+    rw [ha] at this
+    obtain ⟨a', ha', he⟩ := Option.map_eq_some_iff.mp this.symm
+    have := congrArg WAtom.aromatic he
+    simp only at this
+    rw [← this]
+    exact h.1 j a' ha'
+  · have hk := hr.kind k b.kind (by simp [kind?, hb])
+    rcases hk with hk | hk | hk
+    · rw [hk]; decide
+    · rw [hk]; decide
+    · obtain ⟨b', hb', he⟩ := Option.map_eq_some_iff.mp hk
+      rw [← he]
+      exact h.2 k b' hb'
+
+/-! ### After kekulization: `assignRadicals`, `setAromaticity`, `finalizeHs` -/
+
+/-- How the passes after kekulization may change `o` into `w`: the same atoms but for their
+bookkeeping, with the same charges; the same bonds but for their kinds, each kind either `o`'s or
+aromatic. -/
+structure AfterRel (o w : Work) : Prop where
+  /-- As many atoms. -/
+  atoms_size : w.atoms.size = o.atoms.size
+  /-- As many bonds. -/
+  bonds_size : w.bonds.size = o.bonds.size
+  /-- The same charges. -/
+  charge : w.charge? = o.charge?
+  /-- The bonds but for their kinds. -/
+  bonds : ∀ k : ℕ, w.bonds[k]?.map (fun b : WBond ↦ { b with kind := .single }) =
+    o.bonds[k]?.map (fun b : WBond ↦ { b with kind := .single })
+  /-- Every kind is `o`'s, or aromatic. -/
+  kind : ∀ k : ℕ, w.kind? k = o.kind? k ∨ w.kind? k = some .aromatic
+
+lemma AfterRel.refl (o : Work) : AfterRel o o :=
+  ⟨rfl, rfl, rfl, fun _ ↦ rfl, fun _ ↦ .inl rfl⟩
+
+lemma AfterRel.trans {o w w' : Work} (h : AfterRel o w) (h' : AfterRel w w') : AfterRel o w' where
+  atoms_size := h'.atoms_size.trans h.atoms_size
+  bonds_size := h'.bonds_size.trans h.bonds_size
+  charge := h'.charge.trans h.charge
+  bonds k := (h'.bonds k).trans (h.bonds k)
+  kind k := (h'.kind k).elim (fun e ↦ e ▸ h.kind k) .inr
+
+lemma afterRel_modifyAtom (i : ℕ) (f : WAtom → WAtom) (hf : ∀ a, (f a).charge = a.charge) :
+    AfterRel w (w.modifyAtom i f) where
+  atoms_size := by simp
+  bonds_size := rfl
+  charge := by
+    funext j
+    simp only [charge?, getElem?_modifyAtom_atoms]
+    split <;> simp [Option.map_map, Function.comp_def, hf]
+  bonds _ := rfl
+  kind _ := .inl rfl
+
+lemma afterRel_setKind_aromatic (k : ℕ) : AfterRel w (w.setKind k .aromatic) where
+  atoms_size := rfl
+  bonds_size := by simp
+  charge := rfl
+  bonds j := by rw [getElem?_setKind_bonds]; split <;> simp [Option.map_map, Function.comp_def]
+  kind j := by
+    simp only [kind?, getElem?_setKind_bonds]
+    split
+    · cases w.bonds[j]? <;> simp
+    · exact .inl rfl
+
+lemma afterRel_assignRadicals : AfterRel w w.assignRadicals := by
+  unfold assignRadicals
+  refine foldl_rel AfterRel AfterRel.refl (fun _ _ _ ↦ AfterRel.trans) _ _ _ fun w' i _ _ ↦ ?_
+  unfold radicalStep
+  dsimp only
+  split
+  · exact .refl w'
+  · exact w'.afterRel_modifyAtom i _ fun _ ↦ rfl
+
+lemma afterRel_markAromatic (b : ℕ) : AfterRel w (w.markAromatic b) := by
+  unfold markAromatic
+  dsimp only
+  split
+  · exact ((w.afterRel_setKind_aromatic b).trans
+      (afterRel_modifyAtom _ _ ({ · with aromatic := true }) fun _ ↦ rfl)).trans
+      (afterRel_modifyAtom _ _ ({ · with aromatic := true }) fun _ ↦ rfl)
+  · exact .refl w
+
+lemma afterRel_setAromaticity (rings : Array (List ℕ)) : AfterRel w (w.setAromaticity rings) :=
+  foldl_rel AfterRel AfterRel.refl (fun _ _ _ ↦ AfterRel.trans) _ _ _ fun w' b _ _ ↦
+    w'.afterRel_markAromatic b
+
+lemma afterRel_finalizeHs : AfterRel w w.finalizeHs := by
+  have h1 : AfterRel w ((List.range w.numAtoms).foldl adjustHsStep w) := by
+    refine foldl_rel AfterRel AfterRel.refl (fun _ _ _ ↦ AfterRel.trans) _ _ _ fun w' i _ _ ↦ ?_
+    unfold adjustHsStep
+    dsimp only
+    split
+    · split
+      · exact w'.afterRel_modifyAtom i _ fun _ ↦ rfl
+      · exact .refl w'
+    · exact .refl w'
+  unfold finalizeHs
+  generalize (List.range w.numAtoms).foldl adjustHsStep w = w' at h1
+  refine h1.trans ⟨by simp [numAtoms], rfl, ?_, fun _ ↦ rfl, fun _ ↦ .inl rfl⟩
+  funext j
+  simp only [charge?, numAtoms]
+  by_cases hj : j < w'.atoms.size
+  · simp [hj, getElem!_def]
+  · simp [hj]
+
+lemma afterRel_finish (rings : Array (List ℕ)) : AfterRel w (w.finish rings) :=
+  ((w.afterRel_assignRadicals).trans (afterRel_setAromaticity _ rings)).trans
+    (afterRel_finalizeHs _)
+
+/-! ### The working copy of a molecule -/
+
+section OfMolecule
+
+variable {n : ℕ} (m : Molecule n)
+
+@[simp] lemma size_ofMolecule_atoms : (ofMolecule m).atoms.size = n := by simp [ofMolecule]
+
+lemma getElem?_ofMolecule_bonds (k : ℕ) : (ofMolecule m).bonds[k]? = m.bonds[k]?.map fun b ↦
+    ({ src := b.src.val, dst := b.dst.val, kind := b.kind } : WBond) := by
+  simp [ofMolecule]
+
+lemma kind?_ofMolecule (k : ℕ) : (ofMolecule m).kind? k = m.bonds[k]?.map (·.kind) := by
+  simp [kind?, getElem?_ofMolecule_bonds, Option.map_map, Function.comp_def]
+
+lemma charge?_ofMolecule (i : Fin n) : (ofMolecule m).charge? i = some (m.atom i).charge := by
+  simp [charge?, ofMolecule, Molecule.atom]
+
+lemma noArom_ofMolecule (ha : ∀ i, (m.atom i).aromatic = false)
+    (hb : ∀ b ∈ m.bonds, b.kind ≠ .aromatic) : (ofMolecule m).NoArom := by
+  refine ⟨fun a h ↦ ?_, fun b h ↦ ?_⟩
+  · simp only [ofMolecule, Array.mem_map] at h
+    obtain ⟨i, -, rfl⟩ := h
+    exact ha i
+  · simp only [ofMolecule, Array.mem_map, List.mem_toArray] at h
+    obtain ⟨b', hb', rfl⟩ := h
+    exact hb b' hb'
+
+end OfMolecule
+
 end Work
 
+/-- A relation between each element of a list and its image, given with its position, holds
+element for element. -/
+theorem forall₂_map_zipIdx {α β : Type*} (R : α → β → Prop) (f : α × ℕ → β) :
+    ∀ (l : List α) (s : ℕ), (∀ a k, (a, k) ∈ l.zipIdx s → R a (f (a, k))) →
+      List.Forall₂ R l ((l.zipIdx s).map f)
+  | [], _, _ => .nil
+  | a :: l, s, h => by
+    simp only [List.zipIdx_cons, List.map_cons]
+    exact .cons (h a s (by simp [List.zipIdx_cons]))
+      (forall₂_map_zipIdx R f l (s + 1) fun b k hb ↦ h b k (by simp [List.zipIdx_cons, hb]))
+
 end LeanSMILES.Aromaticity
+
+/-! ### `aromatize`, unfolded -/
+
+namespace LeanSMILES.Molecule
+
+open Aromaticity
+
+variable {n : ℕ}
+
+/-- `aromatize` succeeds exactly when kekulization does, and returns the output of the finished
+working copy. -/
+theorem aromatize_eq_ok {m : Molecule n} {a : Molecule n} : m.aromatize = .ok a ↔
+    ∃ k, (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok k ∧
+      m.aromatizeOutput (k.finish (Work.prepare m).relevantCycles) = a := by
+  unfold aromatize
+  cases h : (Work.prepare m).kekulize (Work.prepare m).relevantCycles <;>
+    simp [h, bind, Except.bind, pure, Except.pure]
+
+@[simp] lemma aromatizeOutput_bonds (m : Molecule n) (w : Work) :
+    (m.aromatizeOutput w).bonds = withKinds m w := rfl
+
+@[simp] lemma aromatizeOutput_stereo (m : Molecule n) (w : Work) :
+    (m.aromatizeOutput w).stereo = m.stereo := rfl
+
+lemma charge_aromatizeOutput (m : Molecule n) (w : Work) (i : Fin n) :
+    ((m.aromatizeOutput w).atom i).charge = w.atoms[i.val]!.charge := by
+  unfold aromatizeOutput
+  rw [Molecule.atom_normalizeBrackets, charge_normalizeBracket]
+  simp [Molecule.atom]
+
+end LeanSMILES.Molecule

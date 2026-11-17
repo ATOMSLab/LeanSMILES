@@ -199,8 +199,11 @@ structure Tally where
   listing : Count := (0, 0)
   /-- Generated variants that satisfy `KekuleVariant` as written. -/
   variantHyp : Count := (0, 0)
-  /-- `aromatize_of_kekuleVariant`. -/
+  /-- `aromatize_of_kekuleVariant_of_chargesKept`. -/
   variant : Count := (0, 0)
+  /-- `aromatize_of_kekuleVariant` as stated, without `ChargesKept`: false
+  (`O=P1[SiH]=CC=CC=1`), so counted for information only. -/
+  variantAny : Count := (0, 0)
   /-- `aromatize_aromatize`. -/
   idempotent : Count := (0, 0)
   /-- `exists_kekule_aromatize`, with `kekuleWitness`. -/
@@ -344,8 +347,10 @@ def testOne (s : String) (t : Tally) : Tally := Id.run do
       t := { t with variantHyp := t.variantHyp.add hyp }
       if !hyp then continue
       let ok : Bool := decide (arom v = some a)
-      t := ({ t with variant := t.variant.add ok }).miss ok
-        fun _ ↦ s!"aromatize_of_kekuleVariant: {s}: {v.toSmiles}"
+      t := { t with variantAny := t.variantAny.add ok }
+      if chg then
+        t := ({ t with variant := t.variant.add ok }).miss ok
+          fun _ ↦ s!"aromatize_of_kekuleVariant_of_chargesKept: {s}: {v.toSmiles}"
       -- another Kekulé structure, renumbered and relisted: one canonical SMILES
       if chg && j ≤ 3 then
         let v' := v.relabel (randPerm nn (10 + j))
@@ -421,7 +426,7 @@ def report (t : Tally) : IO Bool := do
     ("aromatize_relabel", t.relabel),
     ("IsKekule.aromatize_relabel", t.relabelKekule),
     ("aromatize_of_sameBonds", t.listing),
-    ("aromatize_of_kekuleVariant", t.variant),
+    ("aromatize_of_kekuleVariant_of_chargesKept", t.variant),
     ("aromatize_aromatize", t.idempotent),
     ("exists_kekule_aromatize (the pipeline's Kekulé structure as witness)", t.witness),
     ("canonicalSmiles_aromatize_eq", t.canonical),
@@ -439,6 +444,7 @@ def report (t : Tally) : IO Bool := do
     t.spellingAny)
   IO.println (info "without hypotheses: the two strings of a pair give one canonical SMILES"
     t.pairCanonicalAny)
+  IO.println (info "aromatize_of_kekuleVariant as stated, no ChargesKept (false)" t.variantAny)
   IO.println (info "without hypotheses: relabeling commutes" t.relabelAny)
   IO.println (info "without hypotheses: relabeled molecule aromatizes iff the molecule does"
     t.relabelSuccess)
