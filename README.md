@@ -349,7 +349,9 @@ working copy inside; its interface is `Molecule n → Except String (Molecule n)
 states what `aromatize` does not depend on: the numbering of the atoms
 (`aromatize_relabel`), the listing of the bonds (`aromatize_of_sameBonds`) and
 which Kekulé structure was written (`aromatize_of_kekuleVariant_of_chargesKept`,
-`aromatize_aromatize`, `exists_kekule_aromatize`), with the corollary that every
+`aromatize_aromatize`, `exists_kekule_aromatize`; the last two assume the second
+run's `cleanUp` rewrites nothing, since `O=p1ccccc1` → `O=P1=CC=CC=C1` →
+`[O-][p+]1ccccc1`, in RDKit too), with the corollary that every
 Kekulé structure of a molecule, renumbered and relisted any way, aromatizes to
 one canonical SMILES (`canonicalSmiles_aromatize_eq`), and that a lowercase
 string and a Kekulé string of the same molecule do too, `c1cc[nH]c1` and

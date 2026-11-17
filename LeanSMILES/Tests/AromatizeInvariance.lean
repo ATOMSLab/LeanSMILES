@@ -208,6 +208,9 @@ structure Tally where
   variantAny : Count := (0, 0)
   /-- `aromatize_aromatize`. -/
   idempotent : Count := (0, 0)
+  /-- `aromatize_aromatize` without `ChargesKept` for the second run: false
+  (`O=p1ccccc1`), so counted for information only. -/
+  idempotentAny : Count := (0, 0)
   /-- `exists_kekule_aromatize`, with `kekuleWitness`. -/
   witness : Count := (0, 0)
   /-- `canonicalSmiles_aromatize_eq`. -/
@@ -309,13 +312,18 @@ def testOne (s : String) (t : Tally) : Tally := Id.run do
   match arom a with
   | some a' =>
     let ok : Bool := decide (a' = a)
-    t := ({ t with idempotent := t.idempotent.add ok,
-                   outputAromatizes := t.outputAromatizes.add true }).miss ok
-      fun _ ↦ s!"aromatize_aromatize: {s}: {a.toSmiles} then {a'.toSmiles}"
+    t := { t with idempotentAny := t.idempotentAny.add ok,
+                  outputAromatizes := t.outputAromatizes.add true }
+    -- the statement assumes the second run's `cleanUp` rewrote nothing (`O=p1ccccc1`)
+    if decide (a.ChargesKept a') then
+      t := ({ t with idempotent := t.idempotent.add ok }).miss ok
+        fun _ ↦ s!"aromatize_aromatize: {s}: {a.toSmiles} then {a'.toSmiles}"
   | none => t := { t with outputAromatizes := t.outputAromatizes.add false }
   let okW := match kekuleWitness m a with
     | some k => decide k.IsKekule && decide (k.IsKekuleStructureOf a) &&
-        decide (arom k = some a)
+        match arom k with
+        | some a' => !decide (k.ChargesKept a') || decide (a' = a)
+        | none => false
     | none => false
   t := ({ t with witness := t.witness.add okW }).miss okW
     fun _ ↦ s!"exists_kekule_aromatize: {s}: {a.toSmiles}"
@@ -455,6 +463,7 @@ def report (t : Tally) : IO Bool := do
   IO.println (info "without hypotheses: relisting gives the same canonical SMILES"
     t.listingCanonical)
   IO.println (info "without hypotheses: the output aromatizes again" t.outputAromatizes)
+  IO.println (info "aromatize_aromatize without ChargesKept (false: O=p1ccccc1)" t.idempotentAny)
   for l in t.misses do IO.println s!"  FAILED {l}"
   return theorems.all (fun p ↦ p.2.1 == p.2.2) && t.variantHyp.1 == t.variantHyp.2
 

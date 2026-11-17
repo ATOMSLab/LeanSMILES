@@ -93,7 +93,11 @@ assume both runs succeed rather than assert it.
 
 A lowercase molecule is related to its Kekulé structures through the output.
 The output is a fixed point (`aromatize_aromatize`), and it is the image of a
-Kekulé structure of itself (`exists_kekule_aromatize`): its own atoms with the
+Kekulé structure of itself (`exists_kekule_aromatize`), both provided `cleanUp`
+rewrites nothing on the second run: `O=p1ccccc1` aromatizes to
+`O=P1=CC=CC=C1`, which `cleanUp` then rewrites to `[O-][p+]1ccccc1`, in RDKit
+too, because the first run's `cleanUp` came before kekulization made the
+`P=C`.  The Kekulé structure is its own atoms with the
 aromatic flags cleared and each aromatic bond single or double.  Every other
 Kekulé structure with the same bond-order sums then has the same image
 (`aromatize_of_kekuleVariant_of_chargesKept`).
@@ -124,7 +128,7 @@ cases are in the repository; the test takes other files as arguments.
 | `aromatize_relabel` | 100 290 | 0 |
 | `IsKekule.aromatize_relabel` | 81 140 | 0 |
 | `aromatize_of_sameBonds` | 100 690 | 0 |
-| the Kekulé statement without `ChargesKept` (none of the inputs was a counterexample) | 77 310 | 0 |
+| Kekulé statement, no `ChargesKept` (no input was a counterexample) | 77 310 | 0 |
 | `aromatize_aromatize` | 20 216 | 0 |
 | `exists_kekule_aromatize` (the witness below) | 20 216 | 0 |
 | `canonicalSmiles_aromatize_eq` | 37 950 | 0 |
@@ -612,17 +616,24 @@ theorem aromatize_of_kekuleVariant_of_chargesKept {m m' a : Molecule n} (hk : m.
     Work.assignRadicals_bonds, hP]
   simp [hF0, Work.ofMolecule]
 
-/-- **`aromatize` is idempotent**: an output that aromatizes again aromatizes to itself.  This
-is the lowercase form of a molecule as an input: a fixed point. -/
+/-- **`aromatize` is idempotent** when the second run's `cleanUp` rewrites nothing: an output
+that aromatizes again, keeping its charges, aromatizes to itself.  This is the lowercase form of
+a molecule as an input: a fixed point.  `ChargesKept` is needed: `O=p1ccccc1` aromatizes to
+`O=P1=CC=CC=C1` (its ring is not aromatic, so it keeps the double bonds kekulization placed), and
+that, now with `P(=O)=C`, to `[O-][p+]1ccccc1`.  RDKit 2026.09 does the same: `cleanUp` runs
+before kekulization, so it does not see what kekulization makes. -/
 theorem aromatize_aromatize {m a a' : Molecule n} (h : m.aromatize = .ok a)
-    (h' : a.aromatize = .ok a') : a' = a := by
+    (h' : a.aromatize = .ok a') (hc' : a.ChargesKept a') : a' = a := by
   sorry
 
-/-- **Every output is the image of a Kekulé structure of itself.**  A witness is the structure
-the pipeline computes on the way: the output's atoms with the aromatic flags cleared, and each
-aromatic bond with the kind `Work.kekulize` gave it. -/
+/-- **Every output is the image of a Kekulé structure of itself**, unless `cleanUp` rewrites
+that structure.  A witness is the structure the pipeline computes on the way: the output's atoms
+with the aromatic flags cleared, and each aromatic bond with the kind `Work.kekulize` gave it;
+if it aromatizes keeping its charges, it aromatizes to `a`.  The proviso is needed: for
+`O=p1ccccc1` the witness is `O=P1=CC=CC=C1`, which `cleanUp` rewrites (`aromatize_aromatize`). -/
 theorem exists_kekule_aromatize {m a : Molecule n} (h : m.aromatize = .ok a) :
-    ∃ k : Molecule n, k.IsKekule ∧ k.IsKekuleStructureOf a ∧ k.aromatize = .ok a := by
+    ∃ k : Molecule n, k.IsKekule ∧ k.IsKekuleStructureOf a ∧
+      ∀ a', k.aromatize = .ok a' → k.ChargesKept a' → a' = a := by
   sorry
 
 /-! ### 4. The canonical string -/
@@ -643,11 +654,12 @@ theorem canonicalSmiles_aromatize_of_sameBonds {m m' a : Molecule n} (h : m.arom
   obtain ⟨a', h', ha, hs, hb'⟩ := aromatize_of_sameBonds h hc hat hst hb
   exact ⟨a', h', canonicalSmiles_eq_of_sameBonds ha hs hb'⟩
 
-/-- Aromatizing an output again does not change its canonical SMILES.  From
-`aromatize_aromatize`. -/
+/-- Aromatizing an output again, keeping its charges, does not change its canonical SMILES.
+From `aromatize_aromatize`. -/
 theorem canonicalSmiles_aromatize_aromatize {m a a' : Molecule n} (h : m.aromatize = .ok a)
-    (h' : a.aromatize = .ok a') : a'.canonicalSmiles = a.canonicalSmiles := by
-  rw [aromatize_aromatize h h']
+    (h' : a.aromatize = .ok a') (hc' : a.ChargesKept a') :
+    a'.canonicalSmiles = a.canonicalSmiles := by
+  rw [aromatize_aromatize h h' hc']
 
 /-- **One molecule, one aromatic canonical SMILES.**  Let the Kekulé structure `m` aromatize to
 `a`, keeping its charges.  Take any other Kekulé structure `m₁` of it over the aromatic bonds,
