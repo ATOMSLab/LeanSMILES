@@ -6,7 +6,7 @@ Authors: Tyler Josephson
 module
 
 public import LeanSMILES.Aromaticity.Perceive
-public import LeanSMILES.SMILES.Canonicity
+public import LeanSMILES.SMILES.KekuleClass
 
 /-!
 # LeanSMILES.Aromaticity.Resonance
@@ -25,7 +25,9 @@ strings. Whether two such drawings are one molecule is a chemical question:
   keeps its bond-order sum: the double bonds have moved around closed
   alternating paths. This is graph theory, and it relates too much. The two
   bond-shift isomers of 1,2-dimethylcyclooctatetraene are Kekulé partners and
-  different compounds.
+  different compounds. Kekulé partners are defined in
+  `LeanSMILES.SMILES.KekuleClass`, whose canonical form merges every pair of
+  them with no model of aromaticity, and which is meant to replace this file.
 * **Resonance structures** (`Molecule.ResonanceStructure`) are Kekulé partners
   that differ only on bonds the aromaticity model marks aromatic: the π
   electrons that moved are delocalized, so both drawings describe one
@@ -119,86 +121,9 @@ the full bridge needs only property 3
 
 namespace LeanSMILES
 
-/-- The kind with `double` read as `single`. A Kekulé partner may change a
-bond between those two kinds and no other. -/
-def BondKind.forgetDouble : BondKind → BondKind
-  | .double => .single
-  | k => k
-
-/-- Only the aromatic kind forgets to aromatic. -/
-@[simp] lemma BondKind.forgetDouble_eq_aromatic {k : BondKind} :
-    k.forgetDouble = .aromatic ↔ k = .aromatic := by
-  cases k <;> simp [BondKind.forgetDouble]
-
-/-- The bond with `double` read as `single`. The endpoints and the `/` `\` mark are kept. -/
-def Bond.forgetDouble {n : ℕ} (b : Bond n) : Bond n := { b with kind := b.kind.forgetDouble }
-
 namespace Molecule
 
 variable {n : ℕ}
-
-/-- Replace the kind of bond number `k` by `f k` of its kind. The endpoints are kept, so the
-graph stays simple. -/
-def setKinds (m : Molecule n) (f : ℕ → BondKind → BondKind) : Molecule n where
-  atoms := m.atoms
-  bonds := m.bonds.zipIdx.map fun p ↦ { p.1 with kind := f p.2 p.1.kind }
-  nodup := by
-    have h : (m.bonds.zipIdx.map fun p ↦ { p.1 with kind := f p.2 p.1.kind }).map Bond.edge
-        = m.bonds.map Bond.edge := by
-      rw [List.map_map, show (Bond.edge ∘ fun p : Bond n × ℕ ↦ { p.1 with kind := f p.2 p.1.kind })
-          = Bond.edge ∘ Prod.fst from rfl, ← List.map_map, List.zipIdx_map_fst]
-    exact h ▸ m.nodup
-
-/-! ### Kekulé partners -/
-
-/-- A Kekulé structure: no atom is written aromatic and no bond is aromatic. -/
-def IsKekule (m : Molecule n) : Prop :=
-  (∀ i, (m.atom i).aromatic = false) ∧ ∀ b ∈ m.bonds, b.kind ≠ .aromatic
-
-instance (m : Molecule n) : Decidable m.IsKekule := by
-  unfold IsKekule
-  infer_instance
-
-/-- Renumbering keeps a Kekulé structure Kekulé, and only a Kekulé structure renumbers to one. -/
-theorem isKekule_relabel (m : Molecule n) (σ : Equiv.Perm (Fin n)) :
-    (m.relabel σ).IsKekule ↔ m.IsKekule := by
-  simp only [IsKekule, bonds_relabel, List.forall_mem_map, Bond.kind_map]
-  refine and_congr_left' ⟨fun h i ↦ by simpa using h (σ i), fun h i ↦ ?_⟩
-  rw [← Equiv.apply_symm_apply σ i, atom_relabel]
-  exact h _
-
-/-- What all Kekulé partners of `m` share: the atoms, the bonds with `double` read as `single`,
-and each atom's bond-order sum. -/
-def kekuleData (m : Molecule n) : Vector Atom n × List (Bond n) × Vector ℚ n :=
-  (m.atoms, m.bonds.map Bond.forgetDouble, Vector.ofFn m.bondOrderSum)
-
-/-- `m₁` and `m₂` are Kekulé partners: one skeleton with its double bonds moved around closed
-alternating paths. The atoms and the bond list are the same, position by position, except that a
-bond may change between single and double; every atom keeps its bond-order sum, and so its
-number of double bonds. -/
-def KekulePartner (m₁ m₂ : Molecule n) : Prop := m₁.kekuleData = m₂.kekuleData
-
-instance (m₁ m₂ : Molecule n) : Decidable (m₁.KekulePartner m₂) := by
-  unfold KekulePartner
-  infer_instance
-
-/-- Being Kekulé partners is an equivalence relation. -/
-theorem kekulePartner_equivalence : Equivalence (KekulePartner (n := n)) :=
-  ⟨fun _ ↦ rfl, Eq.symm, Eq.trans⟩
-
-/-- A Kekulé partner of a Kekulé structure is a Kekulé structure. -/
-theorem KekulePartner.isKekule {m₁ m₂ : Molecule n} (h : m₁.KekulePartner m₂)
-    (hk : m₁.IsKekule) : m₂.IsKekule := by
-  simp only [KekulePartner, kekuleData, Prod.mk.injEq] at h
-  obtain ⟨ha, hb, -⟩ := h
-  refine ⟨fun i ↦ by simpa [atom, ← ha] using hk.1 i, fun b hb₂ hba ↦ ?_⟩
-  have hmem : b.forgetDouble ∈ m₁.bonds.map Bond.forgetDouble := by
-    rw [hb]
-    exact List.mem_map_of_mem hb₂
-  obtain ⟨b', hb', he⟩ := List.mem_map.mp hmem
-  have hk' : b'.kind.forgetDouble = b.kind.forgetDouble := congrArg Bond.kind he
-  rw [hba] at hk'
-  exact hk.2 b' hb' (BondKind.forgetDouble_eq_aromatic.mp hk')
 
 /-! ### The hypervalent atoms `cleanUp` rewrites
 
@@ -244,11 +169,6 @@ def CleanUpTargetsApart (m : Molecule n) : Prop :=
 instance (m : Molecule n) : Decidable m.CleanUpTargetsApart := by
   unfold CleanUpTargetsApart
   infer_instance
-
-/-- Renumbering keeps each atom's bond-order sum. -/
-lemma bondOrderSum_relabel (m : Molecule n) (σ : Equiv.Perm (Fin n)) (i : Fin n) :
-    (m.relabel σ).bondOrderSum (σ i) = m.bondOrderSum i := by
-  simp [bondOrderSum, bondsAt_relabel, Function.comp_def]
 
 lemma cleanUpTarget_relabel (m : Molecule n) (σ : Equiv.Perm (Fin n)) (i : Fin n) :
     (m.relabel σ).CleanUpTarget (σ i) ↔ m.CleanUpTarget i := by

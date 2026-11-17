@@ -19,6 +19,7 @@ public import LeanSMILES.SMILES.Parse
 public import LeanSMILES.SMILES.Write
 public import LeanSMILES.SMILES.Canon
 public import LeanSMILES.SMILES.Canonicity
+public import LeanSMILES.SMILES.KekuleClass
 public import LeanSMILES.Fingerprint.Morgan
 public import LeanSMILES.Fingerprint.MorganInvariance
 public import LeanSMILES.Fingerprint.MorganRadius3

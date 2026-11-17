@@ -291,11 +291,28 @@ cycles) must get the same aromatic bonds, must aromatize to one molecule exactly
 when they differ only on aromatic bonds, and aromatizing must commute with
 renumbering. From those three properties it proves that every renumbering and
 resonance move leaves the canonical SMILES of the aromatized molecule unchanged
-(`aromaticCanonicalSmiles_eq_of_eqvGen`). The properties are not proved yet. The
-test enumerates every Kekulé partner of each molecule and checks them:
+(`aromaticCanonicalSmiles_eq_of_eqvGen`). Properties 1 and 2 are proved, each
+with a hypothesis that keeps the moved bonds away from the atoms RDKit's
+`cleanUp` rewrites; property 3 is checked on data only. The test enumerates
+every Kekulé partner of each molecule and checks them:
 
 ```bash
 lake exe resonance-test     # properties 1–3 on 2399 Kekulé structures and 25720 pairs of partners
+```
+
+`LeanSMILES/SMILES/KekuleClass.lean` is the simpler alternative, meant to replace
+it. A bond is *movable* when the Kekulé structures disagree about it (double in
+one, single in another); writing the movable bonds aromatic turns every Kekulé
+structure into the same molecule, and its canonical SMILES is the canonical form.
+Every renumbering and every Kekulé move leaves it unchanged
+(`kekuleCanonicalSmiles_eq_of_eqvGen`), with no hypotheses and no model of
+aromaticity. It merges more than RDKit does: biphenylene's five Kekulé structures
+become one molecule, and so do the two bond-shift isomers of
+1,2-dimethylcyclooctatetraene. It costs one canonical SMILES however many Kekulé
+structures there are:
+
+```bash
+lake exe kekule-bench       # worst cases up to C70, and the Delaney and EGFR sets
 ```
 
 On every oracle file, as written and in Kekulé form (Delaney, 56 hand-picked
