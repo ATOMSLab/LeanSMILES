@@ -24,8 +24,9 @@ start in lockstep (`relD_ofMolecule`): their half-unit bond-order sums are twice
 the molecules' (`Work.bondHalfSum_ofMolecule`). They stay in lockstep through
 every pass up to perception (`pipeline`). Perception sees them alike when every
 moved bond is a bond of one of the rings (`Work.RelD.aromaticBondList`).
-Property 1 assumes that (`Molecule.MovesOnRings`) and reads the aromatic bonds
-off the result (`Aromaticity.aromaticBondsKekuleInvariant`). Property 2
+Property 1 gets that from `Molecule.RingsCoverCycles`, since a moved bond lies on
+a cycle (`Work.RelD.onCycle_of_D`), and reads the aromatic bonds off the result
+(`Aromaticity.aromaticBondsKekuleInvariant`). Property 2
 compares the results bond by bond, and gets it from the bonds that come out
 aromatic (`Aromaticity.aromatizeMergesExactlyResonance`).
 
@@ -390,20 +391,24 @@ lemma movedD_iff {m₁ m₂ : Molecule n} (hl : m₁.bonds.length = m₂.bonds.l
     movedD m₁ m₂ k = true ↔ m₁.bonds[k].kind ≠ (m₂.bonds[k]'(hl ▸ h)).kind := by
   simp [movedD, ofMolecule_bond m₁ h, ofMolecule_bond m₂ (hl ▸ h), toWBond]
 
-/-- `MovesOnRings`, as the working copies need it. -/
+/-- A bond Kekulé partners differ on lies on a cycle, so it is a bond of one of the rings when
+ring perception misses none. -/
 lemma mem_ringBondNumbers_of_movedD {m₁ m₂ : Molecule n} (hp : m₁.KekulePartner m₂)
-    (hr : m₁.MovesOnRings m₂) {k : ℕ} (hD : movedD m₁ m₂ k = true) :
-    k ∈ m₁.ringBondNumbers := by
-  have hlt := movedD_lt hp hD
-  have hlt₂ : k < m₂.bonds.length := KP.length hp ▸ hlt
-  refine hr ((m₁.bonds[k], m₂.bonds[k]), k) ?_ ((movedD_iff (KP.length hp) hlt).mp hD)
-  rw [List.mk_mem_zipIdx_iff_getElem?]
-  simp [hlt, hlt₂]
+    (hr : m₁.RingsCoverCycles) {k : ℕ} (hD : movedD m₁ m₂ k = true) :
+    k ∈ m₁.ringBondNumbers :=
+  hr k (movedD_lt hp hD) ((relD_ofMolecule hp).onCycle_of_D (ofMolecule_wf m₁) hD)
+
+/-- Kekulé partners have `RingsCoverCycles` together: it reads only which atoms the bonds join. -/
+lemma ringsCoverCycles_iff_of_kekulePartner {m₁ m₂ : Molecule n} (hp : m₁.KekulePartner m₂) :
+    m₁.RingsCoverCycles ↔ m₂.RingsCoverCycles := by
+  have hs := (relD_ofMolecule hp).toSameSkel
+  simp only [Molecule.RingsCoverCycles, Molecule.ringBondNumbers, hs.onCycle, hs.relevantCycles,
+    hs.ringBonds, KP.length hp]
 
 /-! ### Properties 1 and 2 -/
 
-/-- **Property 1.** Kekulé partners whose moved bonds avoid the atoms `cleanUp` rewrites, and lie
-on the rings perception looks at, get the same aromatic bonds. -/
+/-- **Property 1.** Kekulé partners whose moved bonds avoid the atoms `cleanUp` rewrites get the
+same aromatic bonds, when ring perception misses no ring bond. -/
 theorem aromaticBondsKekuleInvariant : AromaticBondsKekuleInvariant := by
   intro n m₁ m₂ hk hp hc hr
   have P := pipeline hk hp hc
@@ -418,7 +423,7 @@ theorem aromaticBondsKekuleInvariant : AromaticBondsKekuleInvariant := by
     simp only [Work.numBonds] at this
     rw [← this, P.size, KP.length hp]
   rw [P.arom₁, P.arom₂]
-  simp only [Except.map, Except.toOption, Option.some.injEq, Work.setAromaticity, ← hL]
+  simp only [Except.map, Except.ok.injEq, Work.setAromaticity, ← hL]
   rw [aromaticBonds_aromatizeOutput _ _ (by rw [size_final, P.size]),
     aromaticBonds_aromatizeOutput _ _ (by rw [size_final, hsize₂]), ← KP.length hp]
   refine List.map_congr_left fun k hk' ↦ ?_

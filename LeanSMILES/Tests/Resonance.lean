@@ -26,13 +26,13 @@ double bonds (up to `cap` of them). Then check:
 
 Properties 1 and 2 are proved (`LeanSMILES.Aromaticity.ResonanceProofs`) for pairs
 whose moved bonds avoid the atoms `cleanUp` rewrites (`Molecule.MovesAvoidCleanUp`);
-property 1 also needs the moved bonds to be bonds of the rings perception looks at
-(`Molecule.MovesOnRings`), which should hold for every pair of partners but is not
+property 1 also needs ring perception to miss no ring bond of the molecule
+(`Molecule.RingsCoverCycles`), which should hold of every molecule but is not
 proved. Property 3 is stated for molecules whose `cleanUp` atoms are apart
 (`Molecule.CleanUpTargetsApart`). The report counts the pairs and molecules these
 hypotheses leave out, and checks the statements both with and without them: the
-three counterexamples, parsed as written, fail without them. A pair left out by
-`MovesOnRings` would be a bond on a cycle that `Work.relevantCycles` misses, so
+three counterexamples, parsed as written, fail without them. A molecule that fails
+`RingsCoverCycles` has a bond on a cycle that `Work.relevantCycles` misses, so
 that count must be 0.
 
 `AromatizeRelabel` (property 3 on the input as written, lowercase included) is
@@ -140,8 +140,8 @@ structure Tally where
   pairs : ℕ := 0
   /-- Pairs left out by `MovesAvoidCleanUp`. -/
   pairsOut : ℕ := 0
-  /-- Pairs left out of property 1 by `MovesOnRings`: a moved bond that is on no perceived ring. -/
-  pairsOffRings : ℕ := 0
+  /-- Structures that fail `RingsCoverCycles`: a bond on a cycle that is on no perceived ring. -/
+  ringsMiss : ℕ := 0
   /-- Pairs where property 1 fails. -/
   fail1 : ℕ := 0
   /-- Pairs where property 1 fails without its hypothesis. -/
@@ -183,21 +183,20 @@ def checkKekule (t : Tally) (label : String) (k : Molecule n) (cap : ℕ) : Tall
   if cap ≤ ps.length then t := { t with capped := t.capped + 1 }
   let bad := ps.filter fun p ↦ !decide (k.KekulePartner p)
   if !bad.isEmpty then t := { t with notPartners := t.notPartners + bad.length }
-  let as := ps.map fun p ↦ (p, arom p)
+  let as := ps.map fun p ↦ (p, arom p, decide p.RingsCoverCycles)
+  t := { t with ringsMiss := t.ringsMiss + (as.filter (!·.2.2)).length }
   -- properties 1 and 2, every ordered pair of partners
   let mut f1 := 0
   let mut f2 := 0
-  for (p, ap) in as do
-    for (q, aq) in as do
+  for (p, ap, covers) in as do
+    for (q, aq, _) in as do
       let inScope := decide (p.MovesAvoidCleanUp q)
-      let onRings := decide (p.MovesOnRings q)
       t := { t with pairs := t.pairs + 1 }
       if !inScope then t := { t with pairsOut := t.pairsOut + 1 }
-      if !onRings then t := { t with pairsOffRings := t.pairsOffRings + 1 }
       let bad1 := ap.map Molecule.aromaticBonds != aq.map Molecule.aromaticBonds
       if bad1 then
         t := { t with fail1all := t.fail1all + 1 }
-        if inScope && onRings then f1 := f1 + 1
+        if inScope && covers then f1 := f1 + 1
       if let some a := ap then
         if (aq == some a) != p.differOnlyOn q a.aromaticBonds then
           t := { t with fail2all := t.fail2all + 1 }
@@ -240,8 +239,8 @@ def report (name : String) (t : Tally) : IO Bool := do
   IO.println s!"  {t.pairs} pairs of partners, {t.pairsOut} with a moved bond at an atom \
     cleanUp rewrites (left out of 1 and 2); {t.out3} molecules with cleanUp atoms not apart \
     (left out of 3)"
-  IO.println s!"  pairs with a moved bond on none of the perceived rings (left out of 1): \
-    {t.pairsOffRings}  [must be 0]"
+  IO.println s!"  structures with a bond on a cycle and on none of the perceived rings (left \
+    out of 1): {t.ringsMiss}  [must be 0]"
   IO.println s!"  1 aromatic bonds the same over the partners: fails on {t.fail1} pairs  [spec, \
     proved]; {t.fail1all} without the hypotheses  [info]"
   IO.println s!"  2 same molecule ↔ differ only on aromatic bonds: fails on {t.fail2} pairs  \
@@ -253,7 +252,7 @@ def report (name : String) (t : Tally) : IO Bool := do
     after {t.splitAfter}  [info]"
   for s in t.notes do
     IO.println s!"    {s}"
-  return t.notPartners == 0 && t.pairsOffRings == 0 && t.fail1 == 0 && t.fail2 == 0 &&
+  return t.notPartners == 0 && t.ringsMiss == 0 && t.fail1 == 0 && t.fail2 == 0 &&
     t.fail3canon == 0
 
 /-- `AromatizeRelabel` on molecules as written: count those whose aromatic canonical SMILES

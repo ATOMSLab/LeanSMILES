@@ -30,7 +30,8 @@ half of the proofs in `LeanSMILES.Aromaticity.ResonanceProofs`.
 * **Moved bonds lie on cycles** (`Work.RelD.onCycle_of_D`). `onCycle` sweeps
   out from one end of a bond to a closed set; if the other end is outside it,
   a parity count of the moved bonds at the atoms of the set fails. That a bond
-  on a cycle is a bond of one of the `relevantCycles` is not proved.
+  on a cycle is a bond of one of the `relevantCycles` is not proved; property 1
+  assumes it (`Molecule.RingsCoverCycles`).
 * After `markAromatic`, a bond is aromatic exactly when it is in the list and
   was single or double (`Work.kind_foldl_markAromatic`).
 

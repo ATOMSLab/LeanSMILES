@@ -409,10 +409,10 @@ aromatized molecule unchanged (`aromaticCanonicalSmiles_eq_of_eqvGen`).
 Property 2 is proved (`aromatizeMergesExactlyResonance`), so chains of
 resonance moves alone need no further assumption
 (`aromaticCanonicalSmiles_eq_of_eqvGen_resonance`). Property 1 is proved with
-one more hypothesis, `MovesOnRings`: the moved bonds are bonds of the rings
-perception looks at. A moved bond lies on a cycle (`Work.RelD.onCycle_of_D`),
-but that `relevantCycles` reaches every bond on a cycle is not proved; no pair
-in the test fails it. Property 3 is checked on data only. Its hypothesis and
+one more hypothesis, `RingsCoverCycles`, about the molecule and not the pair:
+ring perception misses no bond on a cycle. A moved bond lies on a cycle
+(`Work.RelD.onCycle_of_D`), but nothing is proved about what `relevantCycles`
+returns; no molecule in the test fails it. Property 3 is checked on data only. Its hypothesis and
 `Invariance.lean`'s differ: `ChargesKept` says `cleanUp` rewrote nothing,
 `MovesAvoidCleanUp` lets it rewrite away from the moved bonds (a nitro group
 written `N(=O)=O` on a benzene ring is covered by the second, not the first).
