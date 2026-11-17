@@ -224,6 +224,159 @@ structure WalkInv (s : KekState) : Prop where
   order : s.btMoves.Sublist s.done ∨ ∃ lo bt, s.btMoves = bt ++ [lo] ∧ bt.Sublist s.done ∧
     s.queue.head? = some lo ∧ lo ∉ s.done
 
+/-- With no self-bond, a bond's other end is not the atom itself. -/
+lemma other_ne_of_mem_bondsOf {w : Work} (hwf : WF w) {c k : ℕ} (hk : k ∈ w.bondsOf c) :
+    (w.bonds[k]! : WBond).other c ≠ c := by
+  obtain ⟨-, -, hne⟩ := hwf k (lt_of_mem_bondsOf hk)
+  have ht := touches_of_mem_bondsOf hk
+  simp only [WBond.touches, Bool.or_eq_true, beq_iff_eq] at ht
+  simp only [WBond.other]
+  split
+  · rename_i h
+    simp only [beq_iff_eq] at h
+    rw [← h]
+    exact Ne.symm hne
+  · rename_i h
+    simp only [beq_iff_eq] at h
+    rcases ht with ht | ht
+    · exact absurd ht h
+    · rw [← ht]
+      exact hne
+
+/-- What is known once the next atom `curr` is taken, with queue `q2` after the scan and options
+`opts`; `stored` says whether they were kept from an earlier visit. -/
+structure Popped (s : KekState) (curr : ℕ) (q2 opts : List ℕ) (stored : Bool) : Prop where
+  currNotDone : curr ∉ s.done
+  currAtom : curr ∈ atoms
+  qNodup : q2.Nodup
+  qDisj : ∀ x ∈ q2, x ∉ s.done ∧ x ≠ curr
+  qSub : ∀ x ∈ q2, x ∈ atoms
+  optsNodup : opts.Nodup
+  optsOk : ∀ j ∈ opts, j ≠ curr ∧ j ∈ atoms ∧ s.cands[j]! = true ∧
+    ∃ k, m0.bondBetween? curr j = some k ∧ wa k = true
+  storedBt : stored = true → (curr, opts) ∈ s.options ∧ ∃ bt, s.btMoves = bt ++ [curr] ∧
+    bt.Sublist s.done
+  freshBt : stored = false → curr ∉ s.btMoves ∧ s.btMoves.Sublist s.done
+
+variable {wa atoms m0 cands0}
+
+/-- The queue after taking the next atom. -/
+lemma popped_queue {s : KekState} (hi : WalkInv wa atoms m0 cands0 s) {sorted : List ℕ}
+    (hsorted : ∀ x ∈ sorted, x ∈ atoms) {curr : ℕ} {q1 : List ℕ}
+    (h : s.nextAtom sorted = some (curr, q1)) :
+    curr ∉ s.done ∧ curr ∈ atoms ∧ q1.Nodup ∧ (∀ x ∈ q1, x ∉ s.done ∧ x ≠ curr) ∧
+      (∀ x ∈ q1, x ∈ atoms) ∧ (s.queue ≠ [] → s.queue = curr :: q1) := by
+  rcases nextAtom_eq_some h with hq | ⟨hq, rfl, hmem, hnd⟩
+  · have hn := hi.queueNodup
+    rw [hq, List.nodup_cons] at hn
+    refine ⟨hi.disjoint _ (by rw [hq]; exact List.mem_cons_self),
+      hi.queueSub _ (by rw [hq]; exact List.mem_cons_self), hn.2, fun x hx ↦
+      ⟨hi.disjoint _ (by rw [hq]; exact List.mem_cons_of_mem _ hx), fun e ↦ hn.1 (e ▸ hx)⟩,
+      fun x hx ↦ hi.queueSub _ (by rw [hq]; exact List.mem_cons_of_mem _ hx), fun _ ↦ hq⟩
+  · exact ⟨hnd, hsorted _ hmem, List.nodup_nil, by simp, by simp, fun h' ↦ absurd hq h'⟩
+
+/-- **Options kept from an earlier visit**: the atom is the latest backtrack point, and each
+kept option still needs a double bond, by the order fact. -/
+lemma popped_stored {s : KekState} (hi : WalkInv wa atoms m0 cands0 s) {sorted : List ℕ}
+    (hsorted : ∀ x ∈ sorted, x ∈ atoms) {curr : ℕ} {q1 o : List ℕ}
+    (h : s.nextAtom sorted = some (curr, q1)) (ho : s.options.lookup curr = some o) :
+    Popped wa atoms m0 s curr q1 o true := by
+  obtain ⟨hcd, hca, hq1, hqd, hqs, -⟩ := popped_queue hi hsorted h
+  have hmem := mem_of_lookup ho
+  obtain ⟨-, hond, hoj⟩ := hi.opt curr o hmem
+  have hkey : curr ∈ s.btMoves := by
+    rw [← hi.keys]
+    exact List.mem_map.mpr ⟨_, hmem, rfl⟩
+  refine ⟨hcd, hca, hq1, hqd, hqs, hond, fun j hj ↦ ?_, fun _ ↦ ⟨hmem, ?_⟩, fun h ↦ by cases h⟩
+  · obtain ⟨hjc, hj0, hja, hjk, hjadds⟩ := hoj j hj
+    refine ⟨hjc, hja, (hi.cands j).mpr ⟨hj0, ?_⟩, hjk⟩
+    rintro ⟨k, hk, ht⟩
+    obtain ⟨hs, hd⟩ := hjadds k hk ht
+    rw [before_of_not_mem hcd] at hs hd
+    rcases hi.addsDone k hk with h' | h'
+    · exact hs h'
+    · exact hd h'
+  · rcases hi.order with hs | ⟨lo, bt, hbt, hbts, -, hlo⟩
+    · exact absurd (hs.subset hkey) hcd
+    · rw [hbt, List.mem_append, List.mem_singleton] at hkey
+      rcases hkey with hk | rfl
+      · exact absurd (hbts.subset hk) hcd
+      · exact ⟨bt, hbt, hbts⟩
+
+/-- **Options from a fresh scan**: the queued neighbours are new, and each option is a distinct
+neighbour that still needs a double bond across a bond written aromatic. -/
+lemma popped_fresh {s : KekState} (hi : WalkInv wa atoms m0 cands0 s) {sorted : List ℕ}
+    (hsorted : ∀ x ∈ sorted, x ∈ atoms) (hnd : m0.NbrsDistinct) (hwf : WF m0) {curr : ℕ}
+    {q1 : List ℕ} (h : s.nextAtom sorted = some (curr, q1))
+    (ho : s.options.lookup curr = none) :
+    let L := (((s.m.neighbors curr).map (·.2)).filter
+      (fun j ↦ atoms.contains j && !(s.done ++ [curr]).contains j)).mergeSort (· ≤ ·)
+    Popped wa atoms m0 s curr (q1 ++ L.filter (fun j ↦ !q1.contains j))
+      (L.filter (scanTakes s.m wa s.cands curr s.cands[curr]!)) false := by
+  intro L
+  obtain ⟨hcd, hca, hq1, hqd, hqs, hqh⟩ := popped_queue hi hsorted h
+  have hnb : s.m.neighbors = m0.neighbors := hi.skel.neighbors.symm
+  have hbb : s.m.bondBetween? = m0.bondBetween? := hi.skel.bondBetween?.symm
+  have hL : L.Nodup := by
+    have := (nodup_neighbors hnd curr).filter
+      (fun j ↦ atoms.contains j && !(s.done ++ [curr]).contains j)
+    rw [← hnb] at this
+    exact (List.mergeSort_perm _ _).nodup_iff.mpr this
+  have hmemL : ∀ j ∈ L, j ∈ atoms ∧ j ∉ s.done ∧ j ≠ curr := by
+    intro j hj
+    rw [List.mem_mergeSort, List.mem_filter, hnb] at hj
+    obtain ⟨hjn, hjc⟩ := hj
+    simp only [Bool.and_eq_true, Bool.not_eq_true'] at hjc
+    have h1 : j ∈ atoms := List.contains_iff_mem.mp hjc.1
+    have h2 : j ∉ s.done := fun hm ↦ by
+      rw [List.contains_iff_mem.mpr (List.mem_append_left _ hm)] at hjc
+      cases hjc.2
+    obtain ⟨⟨k, j'⟩, hk, he⟩ := List.mem_map.mp hjn
+    simp only at he
+    subst he
+    obtain ⟨hkb, hjo⟩ := mem_neighbors hk
+    refine ⟨h1, h2, ?_⟩
+    rw [hjo]
+    exact other_ne_of_mem_bondsOf hwf hkb
+  have hfresh : s.btMoves.Sublist s.done ∧ curr ∉ s.btMoves := by
+    have hnk : curr ∉ s.btMoves := by
+      intro hk
+      rw [← hi.keys] at hk
+      have := lookup_isSome_of_mem hk
+      rw [ho] at this
+      cases this
+    refine ⟨?_, hnk⟩
+    rcases hi.order with hs | ⟨lo, bt, hbt, -, hhead, -⟩
+    · exact hs
+    · have hne : s.queue ≠ [] := by
+        intro e
+        rw [e] at hhead
+        cases hhead
+      rw [hqh hne] at hhead
+      simp only [List.head?_cons, Option.some.injEq] at hhead
+      subst hhead
+      exact absurd (by rw [hbt]; simp) hnk
+  refine ⟨hcd, hca, ?_, fun x hx ↦ ?_, fun x hx ↦ ?_, hL.filter _, fun j hj ↦ ?_,
+    (fun h ↦ by cases h), fun _ ↦ ⟨hfresh.2, hfresh.1⟩⟩
+  · refine List.nodup_append.mpr ⟨hq1, hL.filter _, fun a ha b hb ↦ ?_⟩
+    rintro rfl
+    rw [List.mem_filter, Bool.not_eq_true'] at hb
+    rw [List.contains_iff_mem.mpr ha] at hb
+    cases hb.2
+  · rcases List.mem_append.mp hx with hx | hx
+    · exact hqd x hx
+    · obtain ⟨-, hd, hc⟩ := hmemL x (List.mem_of_mem_filter hx)
+      exact ⟨hd, hc⟩
+  · rcases List.mem_append.mp hx with hx | hx
+    · exact hqs x hx
+    · exact (hmemL x (List.mem_of_mem_filter hx)).1
+  · rw [List.mem_filter] at hj
+    obtain ⟨ha, hd, hc⟩ := hmemL j hj.1
+    obtain ⟨-, hcj, k, hk, hwk⟩ := scanTakes_spec hj.2
+    exact ⟨hc, ha, hcj, k, by rw [← hbb]; exact hk, hwk⟩
+
 end Walk
+
+
 
 end LeanSMILES.Aromaticity.Work
