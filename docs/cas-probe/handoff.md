@@ -6,7 +6,8 @@ Written 2026-11-17. Covers the session of 2026-11-16 and 17 on branch
 ## State
 
 - **Nothing is committed.** `docs/cas-probe/` and `docs/scope-componentwise-canonical.md`
-  are untracked. No Lean source was changed.
+  are untracked. No Lean source was changed. (Since committed as `4b79de7` and merged
+  into PR #38; see the update under "Three LeanSMILES gaps".)
 - Every LeanSMILES number here comes from the `worker` binary built 2026-10-28 in the main
   checkout (`/Users/tylerjosephson/Documents/LeanSMILES/.lake/build/bin/worker`). It has
   the automorphism pruning from `4bff8ea`. Source at `4cf7a72` is a week newer and was
@@ -103,6 +104,21 @@ before any "ours is better" claim.
 3. **Aromatized output loses the H on an unbracketed N.** `C1=CNC=C1` becomes `c1ccnc1`
    (`Perceive.lean:239–241`).
 
+**Update, 2026-11-17, at the merge of this probe into the aromatization branch
+(PR #38).** The three gaps were checked on the library at that head (in Lean, with
+`SMILES.parseAromatized` and `canonicalSmiles`; the worker was not rebuilt and the
+`.out` files here were not rerun). All three are closed by work that reached `main`
+after the probe's worker was built:
+
+1. L-alanine written `N[C@@H](C)C(=O)O`, `C[C@H](N)C(=O)O` and `OC(=O)[C@@H](N)C`
+   gives `C[C@H](N)C(=O)O` each time, and D-alanine gives `C[C@@H](N)C(=O)O` (#32).
+2. Maleic acid gives `O=C(O)/C=C\C(=O)O` and fumaric acid `O=C(O)/C=C/C(=O)O` (#32).
+3. `C1=CNC=C1` and `c1cc[nH]c1` both give `c1cc[nH]c1` (#37).
+
+So the failure counts in the tables above that come from these gaps (the 5 failures
+with stereo as given) describe the 2026-10-28 worker, not the library now. They have
+not been recounted.
+
 ## Where the strategy landed
 
 - Tyler's position: LeanSMILES cannot "specify" InChI alone, but could with IUPAC. He
@@ -130,9 +146,10 @@ before any "ours is better" claim.
 ## Suggested next steps
 
 1. Rebuild the worker at HEAD and rerun `lean_check.py stable` and
-   `inchi_known_issues.py` to confirm the three gaps.
-2. Stereo: re-derive tetrahedral marks from neighbour order, write `/` and `\`.
-3. Fix the aromatized N–H.
+   `inchi_known_issues.py` to confirm the three gaps. (The gaps are closed, see the
+   update above; the rerun, to recount the tables, is still to do.)
+2. Stereo: re-derive tetrahedral marks from neighbour order, write `/` and `\`. (Done, #32.)
+3. Fix the aromatized N–H. (Done, #37.)
 4. Component-wise canonicalization, steps 1 to 5 of the scope note (about 400 to 450
    lines of proof).
 5. Orbit accumulation in `search`, for single large components.

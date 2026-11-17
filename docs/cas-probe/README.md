@@ -89,6 +89,10 @@ Three things LeanSMILES does today that would sink a "ours is better" pitch:
    `c1cc[nH]c1`. Same molecule, two "canonical" strings, and the first is one RDKit
    cannot read. `Perceive.lean:239–241` keeps that H implicit, so I expect it at HEAD too.
 
+All three are closed at the head this probe was merged into (2026-11-17, PR #38): see
+the update in [handoff.md](handoff.md). The table above is the 2026-10-28 worker's and
+has not been rerun.
+
 Where LeanSMILES is ahead of CAS's strings on this panel: isotopes are kept, and the
 constitution result is a theorem rather than an observation.
 
