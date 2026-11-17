@@ -1362,6 +1362,20 @@ lemma wf_nbrsDistinct_prepare {n : ℕ} (m : Molecule n) :
 
 /-! ### One fused system -/
 
+/-- `eraseDups` leaves no repeats. -/
+theorem nodup_eraseDups' : ∀ (l : List ℕ), l.eraseDups.Nodup
+  | [] => List.nodup_nil
+  | a :: as => by
+    rw [List.eraseDups_cons, List.nodup_cons]
+    refine ⟨fun h ↦ ?_, ?_⟩
+    · rw [List.mem_eraseDups, List.mem_filter] at h
+      simp at h
+    · exact nodup_eraseDups' _
+  termination_by l => l.length
+  decreasing_by
+    simp only [List.length_cons]
+    exact Nat.lt_succ_of_le (List.length_filter_le _ _)
+
 /-- The candidate array `kekulizeSystem` builds: an atom of `l` that `p` accepts, in range. -/
 lemma foldl_cands (p : ℕ → Bool) : ∀ (l : List ℕ) (c : Array Bool),
     (l.foldl (fun c i ↦ if p i then c.set! i true else c) c).size = c.size ∧
@@ -1451,5 +1465,157 @@ lemma singleAromaticBonds_kind (wa : ℕ → Bool) (out : Work) (i k : ℕ) :
     · rw [if_neg (fun h ↦ hk ⟨h.1, h.2.1⟩), if_neg (fun h ↦ hk h.2)]
   · rename_i ha
     exact ⟨⟨rfl, rfl, fun _ ↦ rfl, fun _ ↦ rfl⟩, by rw [if_neg (fun h ↦ ha h.1)]⟩
+
+/-- Making bonds single does not touch the atoms. -/
+lemma singleAromaticBonds_atoms (wa : ℕ → Bool) (out : Work) (i : ℕ) :
+    (singleAromaticBonds wa out i).atoms = out.atoms := by
+  unfold singleAromaticBonds
+  split
+  · have key : ∀ (l : List ℕ) (o : Work),
+        (l.foldl (fun o k ↦ if wa k then o.setKind k .single else o) o).atoms = o.atoms := by
+      intro l
+      induction l with
+      | nil => intro o; rfl
+      | cons k l ih =>
+        intro o
+        rw [List.foldl_cons, ih]
+        split <;> rfl
+    exact key _ _
+  · rfl
+
+/-- Making single the aromatic bonds of the system's aromatic atoms: a bond written aromatic at
+one of them becomes single; nothing else changes. -/
+lemma foldl_singleAromaticBonds_kind (wa : ℕ → Bool) : ∀ (l : List ℕ) (out : Work),
+    SameSkel out (l.foldl (singleAromaticBonds wa) out) ∧
+    (l.foldl (singleAromaticBonds wa) out).atoms = out.atoms ∧
+    ∀ k, ((l.foldl (singleAromaticBonds wa) out).bonds[k]! : WBond).kind =
+      if ∃ x ∈ l, (out.atoms[x]! : WAtom).aromatic = true ∧ k ∈ out.bondsOf x ∧ wa k = true
+      then .single else (out.bonds[k]! : WBond).kind
+  | [], out => ⟨⟨rfl, rfl, fun _ ↦ rfl, fun _ ↦ rfl⟩, rfl, by simp⟩
+  | i :: l, out => by
+    rw [List.foldl_cons]
+    have hs := fun k ↦ singleAromaticBonds_kind wa out i k
+    have hsk : SameSkel out (singleAromaticBonds wa out i) := (hs 0).1
+    have hat := singleAromaticBonds_atoms wa out i
+    obtain ⟨h1, h2, h3⟩ := foldl_singleAromaticBonds_kind wa l (singleAromaticBonds wa out i)
+    refine ⟨hsk.trans h1, h2.trans hat, fun k ↦ ?_⟩
+    rw [h3 k, (hs k).2, hat, ← hsk.bondsOf]
+    by_cases hl : ∃ x ∈ l, (out.atoms[x]! : WAtom).aromatic = true ∧ k ∈ out.bondsOf x ∧
+        wa k = true
+    · rw [if_pos hl, if_pos (by obtain ⟨x, hx, h⟩ := hl; exact ⟨x, List.mem_cons_of_mem _ hx, h⟩)]
+    · rw [if_neg hl]
+      congr 1
+      apply propext
+      constructor
+      · intro h
+        exact ⟨i, List.mem_cons_self, h⟩
+      · rintro ⟨x, hx, h⟩
+        rcases List.mem_cons.mp hx with rfl | hx
+        · exact h
+        · exact absurd ⟨x, hx, h⟩ hl
+
+/-- **One fused system is kekulized correctly.**  With `atoms` its atoms and `cand x` "aromatic
+and needing a double bond": the result has the input's atoms and bond ends; a bond is double
+where a set `D` says, else single if it is written aromatic at an aromatic atom of the system,
+else as it was; `D` is a matching of candidates of the system across bonds written aromatic; and
+every candidate of the system is matched. -/
+theorem kekulizeSystem_correct {wa : ℕ → Bool} {ev0 : List ℕ} {rings : Array (List ℕ)}
+    {out w : Work} {system : List ℕ} (hwf : WF out) (hnd : out.NbrsDistinct)
+    (hw : kekulizeSystem wa ev0 rings out system = .ok w) :
+    let atoms := (system.flatMap (rings[·]!)).eraseDups
+    let cand := fun x ↦ (out.atoms[x]! : WAtom).aromatic && out.needsDoubleBond wa ev0[x]! x
+    w.atoms = out.atoms ∧ SameSkel out w ∧ ∃ D : Array Bool,
+      (∀ k : ℕ, (w.bonds[k]! : WBond).kind = if D[k]! = true then .double else
+        if ∃ x ∈ atoms, (out.atoms[x]! : WAtom).aromatic = true ∧ k ∈ out.bondsOf x ∧ wa k = true
+        then .single else (out.bonds[k]! : WBond).kind) ∧
+      (∀ k : ℕ, D[k]! = true → k < out.bonds.size ∧ wa k = true ∧
+        ∀ x, (out.bonds[k]! : WBond).touches x = true → x ∈ atoms ∧ cand x = true) ∧
+      (∀ k₁ k₂ x : ℕ, D[k₁]! = true → D[k₂]! = true → (out.bonds[k₁]! : WBond).touches x = true →
+        (out.bonds[k₂]! : WBond).touches x = true → k₁ = k₂) ∧
+      ∀ x ∈ atoms, cand x = true → x < out.atoms.size →
+        ∃ k : ℕ, D[k]! = true ∧ (out.bonds[k]! : WBond).touches x = true := by
+  intro atoms cand
+  unfold kekulizeSystem at hw
+  dsimp only at hw
+  split at hw
+  · -- nothing aromatic in the system: unchanged
+    rename_i hna
+    cases hw
+    have hnone : ∀ x ∈ atoms, (out.atoms[x]! : WAtom).aromatic = false := by
+      intro x hx
+      simp only [Bool.not_eq_true', List.any_eq_false] at hna
+      simpa using hna x hx
+    refine ⟨rfl, ⟨rfl, rfl, fun _ ↦ rfl, fun _ ↦ rfl⟩, #[], fun k ↦ ?_, fun k h ↦ ?_,
+      fun k₁ _ _ h ↦ ?_, fun x hx hc _ ↦ ?_⟩
+    · rw [if_neg (by simp), if_neg]
+      rintro ⟨x, hx, h, -⟩
+      rw [hnone x hx] at h
+      cases h
+    · simp at h
+    · simp at h
+    · simp only [cand, hnone x hx, Bool.false_and] at hc
+      cases hc
+  · split at hw
+    · rename_i m' hm'
+      have hw' : m' = w := by cases hw; rfl
+      subst hw'
+      set m0 := atoms.foldl (singleAromaticBonds wa) out with hm0
+      obtain ⟨hsk0, hat0, hkind0⟩ := foldl_singleAromaticBonds_kind wa atoms out
+      have hcf := foldl_cands cand atoms (Array.replicate out.numAtoms false)
+      set cands0 := atoms.foldl (fun c i ↦ if cand i then c.set! i true else c)
+        (Array.replicate out.numAtoms false) with hc0
+      have hcand : ∀ x, cands0[x]! = true ↔ x ∈ atoms ∧ cand x = true ∧ x < out.atoms.size := by
+        intro x
+        rw [hcf.2 x]
+        simp [getElem!_replicate_false, numAtoms, Array.size_replicate]
+      have htch : ∀ k x, Tch m0 k x ↔ (out.bonds[k]! : WBond).touches x = true := by
+        intro k x
+        simp only [Tch, WBond.touches]
+        rw [← hsk0.src k, ← hsk0.dst k]
+      have hsingle : ∀ k, wa k = true → ∀ x, cands0[x]! = true → Tch m0 k x →
+          (m0.bonds[k]! : WBond).kind = .single := by
+        intro k hk x hx ht
+        obtain ⟨hxa, hxc, -⟩ := (hcand x).mp hx
+        have harom : (out.atoms[x]! : WAtom).aromatic = true := by
+          simp only [cand, Bool.and_eq_true] at hxc
+          exact hxc.1
+        by_cases hlt : k < out.bonds.size
+        · have hmem : k ∈ out.bondsOf x :=
+            List.mem_filter.mpr ⟨List.mem_range.mpr hlt, (htch k x).mp ht⟩
+          rw [hkind0 k, if_pos ⟨x, hxa, harom, hmem, hk⟩]
+        · have hsz0 : m0.bonds.size = out.bonds.size := hsk0.numBonds.symm
+          rw [getElem!_neg _ k (by rw [hsz0]; exact hlt)]
+          rfl
+      have hdone : ∀ x ∈ atoms.filter (fun x ↦ !(out.atoms[x]! : WAtom).aromatic),
+          cands0[x]! = false := by
+        intro x hx
+        rw [Bool.eq_false_iff]
+        intro h
+        obtain ⟨-, hxc, -⟩ := (hcand x).mp h
+        simp only [List.mem_filter, Bool.not_eq_true'] at hx
+        simp [cand, hx.2] at hxc
+      obtain ⟨hskw, D, hDk, hDok, hDm, hDcov⟩ := kekulizeWorker_correct
+        (hsk0.wf hwf) (hsk0.nbrsDistinct hnd) hsingle (nodup_eraseDups' _)
+        (by rw [hcf.1, hat0]; simp [numAtoms]) ((nodup_eraseDups' _).filter _)
+        (fun x hx ↦ List.mem_of_mem_filter hx) hdone hm'
+      have hatw : m'.atoms = out.atoms := by
+        have := kekulizeWorker_m (Q := fun w ↦ w.atoms = m0.atoms) (fun _ _ _ h ↦ h) rfl hm'
+        rw [this, hat0]
+      refine ⟨hatw, hsk0.trans hskw, D, fun k ↦ ?_, fun k hk ↦ ?_, fun k₁ k₂ x h₁ h₂ t₁ t₂ ↦ ?_,
+        fun x hx hc hlt ↦ ?_⟩
+      · rw [hDk k, hkind0 k]
+      · obtain ⟨hlt, hwk, -, hs, hd⟩ := hDok k hk
+        have hsz0 : m0.bonds.size = out.bonds.size := hsk0.numBonds.symm
+        refine ⟨hsz0 ▸ hlt, hwk, fun x ht ↦ ?_⟩
+        simp only [WBond.touches, Bool.or_eq_true, beq_iff_eq] at ht
+        rcases ht with ht | ht
+        · obtain ⟨h1, h2, -⟩ := (hcand x).mp (by rw [← ht, hsk0.src]; exact hs)
+          exact ⟨h1, h2⟩
+        · obtain ⟨h1, h2, -⟩ := (hcand x).mp (by rw [← ht, hsk0.dst]; exact hd)
+          exact ⟨h1, h2⟩
+      · exact hDm k₁ k₂ x h₁ h₂ ((htch _ _).mpr t₁) ((htch _ _).mpr t₂)
+      · obtain ⟨k, hk, ht⟩ := hDcov x hx ((hcand x).mpr ⟨hx, hc, hlt⟩)
+        exact ⟨k, hk, (htch k x).mp ht⟩
+    · cases hw
 
 end LeanSMILES.Aromaticity.Work
