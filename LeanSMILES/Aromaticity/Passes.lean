@@ -1004,6 +1004,12 @@ lemma charge_aromatizeOutput (m : Molecule n) (w : Work) (i : Fin n) :
     ((m.aromatizeOutput w).atom i).charge = w.atoms[i.val]!.charge := by
   unfold aromatizeOutput
   rw [Molecule.atom_normalizeBrackets, charge_normalizeBracket]
-  simp [Molecule.atom]
+  simp [Molecule.atom, Molecule.outAtom]
+
+/-- An output atom depends on the input only through its atoms. -/
+lemma outAtom_congr {m m' : Molecule n} (h : m'.atoms = m.atoms) (w : Work) :
+    m'.outAtom w = m.outAtom w := by
+  funext i
+  simp only [Molecule.outAtom, Molecule.atom, h]
 
 end LeanSMILES.Molecule

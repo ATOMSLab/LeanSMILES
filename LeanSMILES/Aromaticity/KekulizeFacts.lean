@@ -5,7 +5,7 @@ Authors: Samiha Sharlin
 -/
 module
 
-public import LeanSMILES.Aromaticity.Passes
+public import LeanSMILES.Aromaticity.Congruence
 
 /-!
 # LeanSMILES.Aromaticity.KekulizeFacts
@@ -263,6 +263,43 @@ theorem kekulize_kindsRel {m w : Work} {rings : Array (List ℕ)}
     (hw : m.kekulize rings = .ok w) : KindsRel m w :=
   kekulize_m (Q := KindsRel m) (fun _ k t h ↦ h.setKind k t)
     (fun _ i f hf h ↦ h.modifyAtom i f hf) (.refl m) hw
+
+/-- Bonds that agree but for their kinds join the same atoms. -/
+lemma ends_of_single {x y : Option WBond}
+    (h : x.map (fun b : WBond ↦ { b with kind := .single }) =
+      y.map (fun b : WBond ↦ { b with kind := .single })) :
+    x.map (fun b : WBond ↦ (b.src, b.dst)) = y.map (fun b : WBond ↦ (b.src, b.dst)) := by
+  have := congrArg (Option.map fun b : WBond ↦ (b.src, b.dst)) h
+  simpa [Option.map_map, Function.comp_def] using this
+
+/-- `KindsRel` keeps which atoms each bond joins. -/
+lemma KindsRel.ends {o w : Work} (h : KindsRel o w) (k : ℕ) :
+    w.bonds[k]?.map (fun b : WBond ↦ (b.src, b.dst)) =
+      o.bonds[k]?.map (fun b : WBond ↦ (b.src, b.dst)) :=
+  ends_of_single (h.bonds k)
+
+/-- **Ring perception reads only how many atoms there are and which atoms the bonds join.** -/
+lemma relevantCycles_eq_of_ends {w w' : Work} (hn : w'.atoms.size = w.atoms.size)
+    (hs : w'.bonds.size = w.bonds.size)
+    (he : ∀ k : ℕ, w'.bonds[k]?.map (fun b : WBond ↦ (b.src, b.dst)) =
+      w.bonds[k]?.map (fun b : WBond ↦ (b.src, b.dst))) :
+    w'.relevantCycles = w.relevantCycles := by
+  have hsrc : ∀ k, (w'.bonds[k]! : WBond).src = (w.bonds[k]! : WBond).src :=
+    fun k ↦ (ends_getElem! hs he k).1
+  have hdst : ∀ k, (w'.bonds[k]! : WBond).dst = (w.bonds[k]! : WBond).dst :=
+    fun k ↦ (ends_getElem! hs he k).2
+  have hN : w'.numAtoms = w.numAtoms := hn
+  have hB : w'.numBonds = w.numBonds := hs
+  have hbo : w'.bondsOf = w.bondsOf := by
+    funext i
+    simp only [bondsOf, hB, WBond.touches, hsrc, hdst]
+  have hnb : w'.neighbors = w.neighbors := by
+    funext i
+    simp only [neighbors, hbo, WBond.other, hsrc, hdst]
+  have hbb : w'.bondBetween? = w.bondBetween? := by
+    funext i j
+    simp only [bondBetween?, hB, hsrc, hdst]
+  simp only [relevantCycles, candidateCycles, bfs, allShortestPaths, cycleMask, hnb, hbb, hN]
 
 /-! ### Nothing aromatic comes out -/
 

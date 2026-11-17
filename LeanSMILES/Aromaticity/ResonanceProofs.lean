@@ -377,7 +377,7 @@ lemma aromatizeOutput_partner {m₁ m₂ : Molecule n} (hp : m₁.KekulePartner 
   unfold Molecule.aromatizeOutput
   have hs : m₁.stereo = m₂.stereo := KP.stereo hp
   refine congrArg Molecule.normalizeBrackets (Molecule.ext ?_ ?_ hs)
-  · simp only [Molecule.atom, KP.atoms hp]
+  · rw [Molecule.outAtom_congr (KP.atoms hp).symm]
   · apply List.ext_getElem
     · simp [length_withKinds, KP.length hp]
     · intro k h₁ h₂

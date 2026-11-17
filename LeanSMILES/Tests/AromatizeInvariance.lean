@@ -315,14 +315,14 @@ def testOne (s : String) (t : Tally) : Tally := Id.run do
     t := { t with idempotentAny := t.idempotentAny.add ok,
                   outputAromatizes := t.outputAromatizes.add true }
     -- the statement assumes the second run's `cleanUp` rewrote nothing (`O=p1ccccc1`)
-    if decide (a.ChargesKept a') then
+    if decide (a.ChargesKept a') && decide a.ValenceOk then
       t := ({ t with idempotent := t.idempotent.add ok }).miss ok
         fun _ ↦ s!"aromatize_aromatize: {s}: {a.toSmiles} then {a'.toSmiles}"
   | none => t := { t with outputAromatizes := t.outputAromatizes.add false }
   let okW := match kekuleWitness m a with
     | some k => decide k.IsKekule && decide (k.IsKekuleStructureOf a) &&
         match arom k with
-        | some a' => !decide (k.ChargesKept a') || decide (a' = a)
+        | some a' => !decide (k.ChargesKept a') || !decide k.ValenceOk || decide (a' = a)
         | none => false
     | none => false
   t := ({ t with witness := t.witness.add okW }).miss okW
@@ -337,7 +337,7 @@ def testOne (s : String) (t : Tally) : Tally := Id.run do
     let some a' := arom k | continue
     let ok : Bool := decide (a' = a)
     t := { t with spellingAny := t.spellingAny.add ok }
-    if !(chg && kept && decide (k.ChargesKept a')) then continue
+    if !(chg && kept && decide (k.ChargesKept a') && decide m.ValenceOk) then continue
     t := ({ t with spelling := t.spelling.add ok }).miss ok
       fun _ ↦ s!"aromatize_of_isKekuleSpellingOf: {s}: {k.toSmiles}"
     if q % 4 == 1 then
@@ -387,7 +387,8 @@ def testPair (sl sk : String) (t : Tally) : Tally := Id.run do
     t := { t with pairHyp := t.pairHyp.add hyp }
     if !hyp then return t
     let some a' := arom k | return t
-    if !(decide (m.ChargesKept a) && decide (m.AromaticKept a) && decide (k.ChargesKept a')) then
+    if !(decide (m.ChargesKept a) && decide (m.AromaticKept a) && decide (k.ChargesKept a') &&
+        decide m.ValenceOk) then
       return t
     let ok : Bool := decide (a' = a)
     t := ({ t with pair := t.pair.add ok }).miss ok

@@ -179,6 +179,16 @@ def ChargesKept (m a : Molecule n) : Prop := ∀ i, (a.atom i).charge = (m.atom 
 instance (m a : Molecule n) : Decidable (m.ChargesKept a) :=
   inferInstanceAs (Decidable (∀ i, (a.atom i).charge = (m.atom i).charge))
 
+/-- Every atom of `m` is within the valences its element allows, as RDKit's sanitization checks
+them after `cleanUp` (`Work.firstBadValence`; "Explicit valence for atom # 1 C, 5, is greater
+than permitted" for `CC(C)(C)(C)(C)C`).  `aromatize` does not check this; RDKit rejects the
+molecule when it fails. -/
+def ValenceOk (m : Molecule n) : Prop :=
+  (Aromaticity.Work.ofMolecule m).freezeHs.cleanUp.firstBadValence = none
+
+instance (m : Molecule n) : Decidable m.ValenceOk :=
+  inferInstanceAs (Decidable (_ = none))
+
 /-- Every bond of `m` written aromatic is aromatic in `a`, bond for bond.  For `a` the output of
 `aromatize m`, this says that every lowercase ring of the input was perceived aromatic, so the
 double bonds kekulization placed in it do not show. -/
@@ -498,7 +508,7 @@ lemma aromatizeOutput_eq_of_forall₂ {m m' : Molecule n} (W : Aromaticity.Work)
       simp only at hxy
       obtain ⟨rfl, rfl, rfl⟩ := hxy
       rfl
-  simp only [aromatizeOutput, atom, hat, hk, hst]
+  simp only [aromatizeOutput, outAtom_congr hat, hk, hst]
 
 /-- **Every Kekulé structure of an aromatic system aromatizes to the same molecule**, when the
 charges are kept: if the Kekulé structure `m` aromatizes to `a`, so does every `m'` that differs
@@ -626,16 +636,23 @@ that aromatizes again, keeping its charges, aromatizes to itself.  This is the l
 a molecule as an input: a fixed point.  `ChargesKept` is needed: `O=p1ccccc1` aromatizes to
 `O=P1=CC=CC=C1` (its ring is not aromatic, so it keeps the double bonds kekulization placed), and
 that, now with `P(=O)=C`, to `[O-][p+]1ccccc1`.  RDKit 2026.09 does the same: `cleanUp` runs
-before kekulization, so it does not see what kekulization makes. -/
+before kekulization, so it does not see what kekulization makes.  `ValenceOk` is needed too:
+`CC1=C[N](C)C=C1.Cl[I]Cl`, whose `[N]` RDKit rejects as four-valent, aromatizes to an output
+whose iodine gains a hydrogen the second time. -/
 theorem aromatize_aromatize {m a a' : Molecule n} (h : m.aromatize = .ok a)
-    (h' : a.aromatize = .ok a') (hc' : a.ChargesKept a') : a' = a := by
+    (h' : a.aromatize = .ok a') (hc' : a.ChargesKept a') (hv : a.ValenceOk) : a' = a := by
   sorry
+
+/-- The kind the witness gives bond `k` of kind `t` in the output: its kind in `K` if `t` is
+aromatic, `t` otherwise. -/
+def witnessKind (K : Aromaticity.Work) (k : ℕ) (t : BondKind) : BondKind :=
+  if t = .aromatic then (K.bonds[k]?.map (·.kind)).getD t else t
 
 /-- The Kekulé structure of an output `a` that a kekulized working copy `K` gives: `a`'s atoms
 with the aromatic flags cleared, and each aromatic bond of `a` with the kind it has in `K`. -/
 def kekuleWitness (a : Molecule n) (K : Aromaticity.Work) : Molecule n :=
   ({ a with atoms := a.atoms.map fun x ↦ { x with aromatic := false } } : Molecule n).setKinds
-    fun k t ↦ if t = .aromatic then (K.bonds[k]?.map (·.kind)).getD t else t
+    (witnessKind K)
 
 open Aromaticity in
 /-- A bond that comes out of `aromatize` aromatic was single or double after kekulization. -/
@@ -689,9 +706,9 @@ theorem kekuleWitness_spec {m a : Molecule n} {K : Work}
     · rename_i harom
       obtain ⟨bk, hbk, hsd⟩ := kind_kekulize_of_aromatic hK ha
         (List.mk_mem_zipIdx_iff_getElem?.mp hb) harom
-      simpa [harom, hbk] using hsd
+      simpa [witnessKind, harom, hbk] using hsd
     · rename_i harom
-      simp [harom]
+      simp [witnessKind, harom]
   refine ⟨⟨fun i ↦ ?_, fun b hb ↦ ?_⟩, ⟨fun i ↦ ?_, rfl, hbonds⟩⟩
   · simp [kekuleWitness, setKinds, atom]
   · obtain ⟨b', -, -, -, -, h⟩ := hbonds.flip.exists_mem_left hb
@@ -703,26 +720,245 @@ theorem kekuleWitness_spec {m a : Molecule n} {K : Work}
   · simp [kekuleWitness, setKinds, atom]
 
 open Aromaticity in
-/-- **The witness aromatizes back to the output**, unless `cleanUp` rewrites it. -/
+/-- The kekulized working copy has as many bonds as `m`. -/
+lemma size_kekulized {m : Molecule n} {K : Work}
+    (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K) :
+    K.bonds.size = m.bonds.length := by
+  rw [(Work.kekulize_kindsRel hK).bonds_size]
+  simp [Work.prepare, (Work.cleanRel_cleanUp _).bonds_size, Work.ofMolecule]
+
+open Aromaticity in
+/-- The kekulized working copy joins the atoms `m`'s bonds join. -/
+lemma ends_kekulized {m : Molecule n} {K : Work}
+    (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K) (j : ℕ) :
+    K.bonds[j]?.map (fun b : WBond ↦ (b.src, b.dst)) =
+      m.bonds[j]?.map (fun b ↦ (b.src.val, b.dst.val)) := by
+  rw [(Work.kekulize_kindsRel hK).ends j, Work.prepare, Work.cacheValences_bonds,
+    Work.ends_of_single ((Work.cleanRel_cleanUp _).bonds j), Work.freezeHs_bonds,
+    Work.getElem?_ofMolecule_bonds, Option.map_map]
+  rfl
+
+/-- The witness's bonds, position by position: the output's, each aromatic one with its kind in
+`K`. -/
+lemma getElem?_kekuleWitness_bonds (a : Molecule n) (K : Aromaticity.Work) (j : ℕ) :
+    (kekuleWitness a K).bonds[j]? =
+      a.bonds[j]?.map fun b ↦ { b with kind := witnessKind K j b.kind } := by
+  simp only [kekuleWitness, setKinds, List.getElem?_map, List.getElem?_zipIdx]
+  cases a.bonds[j]? <;> simp
+
+open Aromaticity in
+/-- **The witness's working copy has the kekulized copy's bonds**, kinds included: a bond the
+output has aromatic takes its kind in `K`, and any other kept its kind in `K` through perception. -/
+lemma bonds_ofMolecule_kekuleWitness {m a : Molecule n} {K : Work}
+    (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K)
+    (ha : m.aromatizeOutput (K.finish (Work.prepare m).relevantCycles) = a) :
+    (Work.ofMolecule (kekuleWitness a K)).bonds = K.bonds := by
+  apply Array.ext_getElem?
+  intro j
+  have hAR := K.afterRel_finish (Work.prepare m).relevantCycles
+  rw [Work.getElem?_ofMolecule_bonds, getElem?_kekuleWitness_bonds, ← ha, aromatizeOutput_bonds,
+    getElem?_withKinds]
+  have he := ends_kekulized hK j
+  cases hmb : m.bonds[j]? with
+  | none =>
+    rw [hmb, Option.map_none, Option.map_eq_none_iff] at he
+    simp [he]
+  | some mb =>
+    rw [hmb] at he
+    obtain ⟨bk, hbk, hbke⟩ := Option.map_eq_some_iff.mp he
+    have hjK : j < K.bonds.size := (Array.getElem?_eq_some_iff.mp hbk).1
+    have hFs : j < (K.finish (Work.prepare m).relevantCycles).bonds.size := hAR.bonds_size ▸ hjK
+    have hnoA := (Work.kekulize_noArom hK).2 bk (Array.mem_of_getElem? hbk)
+    have hFk := hAR.kind j
+    simp only [Work.kind?, Array.getElem?_eq_getElem hFs, hbk, Option.map_some,
+      Option.some.injEq] at hFk
+    simp only [Option.map_some, Array.getElem?_eq_getElem hFs, Option.getD_some, hbk,
+      Option.some.injEq]
+    obtain ⟨bs, bd, bkk⟩ := bk
+    simp only [Prod.mk.injEq] at hbke
+    obtain ⟨rfl, rfl⟩ := hbke
+    rcases hFk with h | h
+    · rw [h]
+      simp only at hnoA
+      simp [witnessKind, hnoA]
+    · rw [h]
+      simp [witnessKind, hbk]
+
+/-- Bracket normalization keeps the aromatic flag. -/
+@[simp] lemma aromatic_normalizeBracket (x : Atom) (s : ℚ) :
+    (normalizeBracket x s).aromatic = x.aromatic := by
+  dsimp only [normalizeBracket]; split <;> (try split) <;> rfl
+
+/-- Splitting an atom's hydrogens as `aromatizeOutput` does, at the atom's own count, changes
+nothing. -/
+lemma resplitH (x : Atom) :
+    ({ x with
+        explicitH := x.explicitH.map fun e ↦ min e x.totalH
+        implicitH := x.totalH - (x.explicitH.map fun e ↦ min e x.totalH).getD 0 } : Atom) = x := by
+  cases x with
+  | mk el ar iso ch eh ih chi cl =>
+    cases eh <;> simp [Atom.totalH]
+
+open Aromaticity in
+/-- An atom of the output: the output atom of the final working copy, bracket-normalized. -/
+lemma atom_aromatizeOutput (m : Molecule n) (w : Work) (i : Fin n) :
+    (m.aromatizeOutput w).atom i =
+      normalizeBracket (m.outAtom w i) ((m.aromatizeOutput w).bondOrderSum i) := by
+  unfold aromatizeOutput
+  rw [atom_normalizeBrackets, bondOrderSum_normalizeBrackets]
+  simp [atom]
+
+open Aromaticity in
+/-- An output atom carries the working copy's hydrogen count. -/
+lemma totalH_outAtom (m : Molecule n) (w : Work) (i : Fin n) :
+    (m.outAtom w i).totalH =
+      w.atoms[i.val]!.frozenHs.getD (w.atoms[i.val]!.explicitHs + w.implicitHs i) := by
+  simp only [outAtom, Atom.totalH]
+  cases (m.atom i).explicitH <;> simp
+
+open Aromaticity in
+/-- Two final working copies that `aromatizeOutput` reads alike, on `n` atoms: the same bonds,
+and on each atom the same aromaticity, charge and hydrogen count. -/
+structure OutAgree (n : ℕ) (W W' : Work) : Prop where
+  /-- The same bonds. -/
+  bonds : W'.bonds = W.bonds
+  /-- The same aromatic atoms. -/
+  aromatic : ∀ i : Fin n, W'.isAromaticAtom i = W.isAromaticAtom i
+  /-- The same charges. -/
+  charge : ∀ i : Fin n, W'.atoms[i.val]!.charge = W.atoms[i.val]!.charge
+  /-- The same hydrogen counts. -/
+  hs : ∀ i : Fin n,
+    W'.atoms[i.val]!.frozenHs.getD (W'.atoms[i.val]!.explicitHs + W'.implicitHs i) =
+      W.atoms[i.val]!.frozenHs.getD (W.atoms[i.val]!.explicitHs + W.implicitHs i)
+
+open Aromaticity in
+/-- **A working copy read like the first run's final one gives the output back from the
+witness**: the witness's atoms are the output's, which bracket normalization leaves alone. -/
+theorem aromatizeOutput_kekuleWitness_of_agree {m a : Molecule n} {K W' : Work}
+    (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K)
+    (ha : m.aromatizeOutput (K.finish (Work.prepare m).relevantCycles) = a)
+    (hW : OutAgree n (K.finish (Work.prepare m).relevantCycles) W') :
+    (kekuleWitness a K).aromatizeOutput W' = a := by
+  subst ha
+  set F := K.finish (Work.prepare m).relevantCycles with hF
+  have hFs : F.bonds.size = m.bonds.length := by
+    rw [hF, Work.finish, Work.finalizeHs_bonds, (Work.afterRel_setAromaticity _ _).bonds_size,
+      Work.assignRadicals_bonds, size_kekulized hK]
+  have hbonds : withKinds (kekuleWitness (m.aromatizeOutput F) K) W' = withKinds m F := by
+    apply List.ext_getElem?
+    intro j
+    rw [getElem?_withKinds, getElem?_withKinds, getElem?_kekuleWitness_bonds,
+      aromatizeOutput_bonds, getElem?_withKinds, hW.bonds]
+    cases hmb : m.bonds[j]? with
+    | none => simp
+    | some mb =>
+      have hj : j < F.bonds.size := hFs ▸ (List.getElem?_eq_some_iff.mp hmb).1
+      simp [Array.getElem?_eq_getElem hj]
+  have hk := (kekuleWitness_spec hK rfl).2
+  refine Molecule.ext (Vector.ext fun j hj ↦ ?_) (by simp [hbonds])
+    (by simp [kekuleWitness, setKinds])
+  change ((kekuleWitness _ K).aromatizeOutput W').atom ⟨j, hj⟩ =
+    (m.aromatizeOutput F).atom ⟨j, hj⟩
+  set i : Fin n := ⟨j, hj⟩
+  have hsum : ((kekuleWitness (m.aromatizeOutput F) K).aromatizeOutput W').bondOrderSum i =
+      (m.aromatizeOutput F).bondOrderSum i := by
+    simp only [bondOrderSum, bondsAt, aromatizeOutput_bonds, hbonds]
+  rw [atom_aromatizeOutput, hsum]
+  set N := (m.aromatizeOutput F).atom i with hN
+  have hNa : N.aromatic = F.isAromaticAtom i := by
+    rw [hN, atom_aromatizeOutput, aromatic_normalizeBracket]; rfl
+  have hNc : N.charge = F.atoms[i.val]!.charge := by
+    rw [hN, atom_aromatizeOutput, charge_normalizeBracket]; rfl
+  have hNh : N.totalH =
+      F.atoms[i.val]!.frozenHs.getD (F.atoms[i.val]!.explicitHs + F.implicitHs i) := by
+    rw [hN, atom_aromatizeOutput, totalH_normalizeBracket, totalH_outAtom]
+  have hout : (kekuleWitness (m.aromatizeOutput F) K).outAtom W' i = N := by
+    have hka : ((m.aromatizeOutput F).kekuleWitness K).atom i = { N with aromatic := false } :=
+      hk.atoms i
+    rw [← resplitH N]
+    simp only [outAtom, hka, hW.aromatic i, hW.charge i, hW.hs i, hNa, hNc, hNh]
+  rw [hout, hN, atom_aromatizeOutput, normalizeBracket_normalizeBracket]
+
+open Aromaticity in
+/-- **The core**: perception and the final hydrogen counts see the same on the witness's working
+copy as on the kekulized one.  The two copies have the same bonds
+(`bonds_ofMolecule_kekuleWitness`) and the same ring set, and differ only in the atoms'
+bookkeeping: hydrogens written in brackets or implied, and the valences cached before
+kekulization (aromatic, rounded the RDKit way) or after (Kekulé).  What this needs is that the
+kekulizer gives every atom that needs a double bond exactly one, so that each atom's Kekulé
+valence is the aromatic one RDKit cached. -/
+theorem finish_kekuleWitness_agree {m a : Molecule n} {K : Work}
+    (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K)
+    (ha : m.aromatizeOutput (K.finish (Work.prepare m).relevantCycles) = a)
+    (hv : (Work.ofMolecule (kekuleWitness a K)).freezeHs.firstBadValence = none) :
+    OutAgree n (K.finish (Work.prepare m).relevantCycles)
+      ((Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences.finish
+        (Work.prepare m).relevantCycles) := by
+  sorry
+
+open Aromaticity in
+/-- The witness, its valences allowed, gives the output back from its working copy: from
+`finish_kekuleWitness_agree` and `aromatizeOutput_kekuleWitness_of_agree`. -/
+theorem aromatizeOutput_kekuleWitness {m a : Molecule n} {K : Work}
+    (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K)
+    (ha : m.aromatizeOutput (K.finish (Work.prepare m).relevantCycles) = a)
+    (hv : (Work.ofMolecule (kekuleWitness a K)).freezeHs.firstBadValence = none) :
+    (kekuleWitness a K).aromatizeOutput
+      ((Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences.finish
+        (Work.prepare m).relevantCycles) = a :=
+  aromatizeOutput_kekuleWitness_of_agree hK ha (finish_kekuleWitness_agree hK ha hv)
+
+open Aromaticity in
+/-- The working copy `aromatize` starts from has an atom for each atom of `m`. -/
+lemma size_prepare_atoms (m : Molecule n) : (Work.prepare m).atoms.size = n := by
+  simp [Work.prepare, (Work.cleanRel_cleanUp _).atoms_size, Work.ofMolecule]
+
+open Aromaticity in
+/-- **The witness aromatizes back to the output**, unless `cleanUp` rewrites it or its valences
+are not allowed.  From `aromatizeOutput_kekuleWitness`: the witness is Kekulé, so kekulization
+does nothing; with its charges kept, `cleanUp` did nothing; and its ring set is the first run's,
+since the bonds join the same atoms. -/
 theorem kekuleWitness_aromatize {m a a' : Molecule n} {K : Work}
     (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K)
     (ha : m.aromatizeOutput (K.finish (Work.prepare m).relevantCycles) = a)
-    (h' : (kekuleWitness a K).aromatize = .ok a') (hc' : (kekuleWitness a K).ChargesKept a') :
-    a' = a := by
-  sorry
+    (h' : (kekuleWitness a K).aromatize = .ok a') (hc' : (kekuleWitness a K).ChargesKept a')
+    (hv : (kekuleWitness a K).ValenceOk) : a' = a := by
+  obtain ⟨hkk, -⟩ := kekuleWitness_spec hK ha
+  obtain ⟨K', hK', ha'⟩ := aromatize_eq_ok.mp h'
+  rw [hkk.kekulize_prepare] at hK'
+  cases hK'
+  have hcl := hc'.cleanUp_eq _ (.refl _) _ ha'
+  have hP' : Work.prepare (kekuleWitness a K) =
+      (Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences := by
+    simp only [Work.prepare, hcl]
+  have hb : (Work.prepare (kekuleWitness a K)).bonds = K.bonds := by
+    rw [hP', Work.cacheValences_bonds, Work.freezeHs_bonds, bonds_ofMolecule_kekuleWitness hK ha]
+  have hKP := Work.kekulize_kindsRel hK
+  have hR : (Work.prepare (kekuleWitness a K)).relevantCycles =
+      (Work.prepare m).relevantCycles := by
+    rw [Work.relevantCycles_eq_of_ends (w := K) ?_ (by rw [hb]) (fun j ↦ by rw [hb]),
+      Work.relevantCycles_eq_of_ends hKP.atoms_size hKP.bonds_size hKP.ends]
+    rw [hKP.atoms_size, size_prepare_atoms, size_prepare_atoms]
+  rw [hR, hP'] at ha'
+  rw [← ha']
+  refine aromatizeOutput_kekuleWitness hK ha ?_
+  unfold ValenceOk at hv
+  rwa [hcl] at hv
 
 /-- **Every output is the image of a Kekulé structure of itself**, unless `cleanUp` rewrites
 that structure.  A witness is the structure the pipeline computes on the way: the output's atoms
 with the aromatic flags cleared, and each aromatic bond with the kind `Work.kekulize` gave it
-(`kekuleWitness`); if it aromatizes keeping its charges, it aromatizes to `a`.  The proviso is
-needed: for `O=p1ccccc1` the witness is `O=P1=CC=CC=C1`, which `cleanUp` rewrites
-(`aromatize_aromatize`). -/
+(`kekuleWitness`); if it aromatizes keeping its charges, and its valences are allowed, it
+aromatizes to `a`.  Both provisos are needed: for `O=p1ccccc1` the witness is `O=P1=CC=CC=C1`,
+which `cleanUp` rewrites (`aromatize_aromatize`); for `Oc#1ccccc1` the kekulizer gives the carbon
+next to the triple bond a single ring bond, so the witness `OC#1C=CC=CC1` has a five-valent
+carbon (RDKit would reject it), and aromatizes to itself. -/
 theorem exists_kekule_aromatize {m a : Molecule n} (h : m.aromatize = .ok a) :
     ∃ k : Molecule n, k.IsKekule ∧ k.IsKekuleStructureOf a ∧
-      ∀ a', k.aromatize = .ok a' → k.ChargesKept a' → a' = a := by
+      ∀ a', k.aromatize = .ok a' → k.ChargesKept a' → k.ValenceOk → a' = a := by
   obtain ⟨K, hK, ha⟩ := aromatize_eq_ok.mp h
   obtain ⟨hk, hs⟩ := kekuleWitness_spec hK ha
-  exact ⟨_, hk, hs, fun _ h' hc' ↦ kekuleWitness_aromatize hK ha h' hc'⟩
+  exact ⟨_, hk, hs, fun _ h' hc' hv ↦ kekuleWitness_aromatize hK ha h' hc' hv⟩
 
 /-! ### 4. The canonical string -/
 
@@ -745,9 +981,9 @@ theorem canonicalSmiles_aromatize_of_sameBonds {m m' a : Molecule n} (h : m.arom
 /-- Aromatizing an output again, keeping its charges, does not change its canonical SMILES.
 From `aromatize_aromatize`. -/
 theorem canonicalSmiles_aromatize_aromatize {m a a' : Molecule n} (h : m.aromatize = .ok a)
-    (h' : a.aromatize = .ok a') (hc' : a.ChargesKept a') :
+    (h' : a.aromatize = .ok a') (hc' : a.ChargesKept a') (hv : a.ValenceOk) :
     a'.canonicalSmiles = a.canonicalSmiles := by
-  rw [aromatize_aromatize h h' hc']
+  rw [aromatize_aromatize h h' hc' hv]
 
 /-- **One molecule, one aromatic canonical SMILES.**  Let the Kekulé structure `m` aromatize to
 `a`, keeping its charges.  Take any other Kekulé structure `m₁` of it over the aromatic bonds,
@@ -883,11 +1119,13 @@ instance (k m : Molecule n) : Decidable (k.IsKekuleSpellingOf m) :=
 
 /-- **A Kekulé spelling of a molecule aromatizes to what the molecule does.**  If `m`
 aromatizes to `a` keeping its charges and every bond written aromatic, and a Kekulé spelling `k`
-of `m` aromatizes keeping its charges, the two outputs are equal.  This is `c1cc[nH]c1` against
-`C1=CNC=C1`. -/
+of `m` aromatizes keeping its charges, and `m`'s valences are allowed, the two outputs are
+equal.  This is `c1cc[nH]c1` against `C1=CNC=C1`.  `ValenceOk` is needed: for the five-valent
+`CC1=CC=C[nH](=C1)C=O`, which RDKit rejects, RDKit's GitHub #141 step drops the bracket hydrogen
+of the lowercase `[nH]` and not that of its Kekulé spelling `[NH]`. -/
 theorem aromatize_of_isKekuleSpellingOf {m k a a' : Molecule n} (h : m.aromatize = .ok a)
     (hc : m.ChargesKept a) (hk : m.AromaticKept a) (hs : k.IsKekuleSpellingOf m)
-    (h' : k.aromatize = .ok a') (hc' : k.ChargesKept a') : a' = a := by
+    (h' : k.aromatize = .ok a') (hc' : k.ChargesKept a') (hvm : m.ValenceOk) : a' = a := by
   sorry
 
 /-- **A lowercase molecule and its Kekulé spellings have one canonical SMILES.**  With `m`, `k`
@@ -898,6 +1136,7 @@ SMILES of `a`.  From `aromatize_of_isKekuleSpellingOf`, `IsKekule.aromatize_rela
 theorem canonicalSmiles_aromatize_of_isKekuleSpellingOf {m k k₂ a a' : Molecule n}
     (h : m.aromatize = .ok a) (hc : m.ChargesKept a) (hk : m.AromaticKept a)
     (hs : k.IsKekuleSpellingOf m) (h' : k.aromatize = .ok a') (hc' : k.ChargesKept a')
+    (hvm : m.ValenceOk)
     (σ : Equiv.Perm (Fin n)) (hat : k₂.atoms = (k.relabel σ).atoms)
     (hst : k₂.stereo = (k.relabel σ).stereo) (hb : k₂.SameBonds (k.relabel σ)) :
     ∃ a₂, k₂.aromatize = .ok a₂ ∧ a₂.canonicalSmiles = a.canonicalSmiles := by
@@ -905,7 +1144,7 @@ theorem canonicalSmiles_aromatize_of_isKekuleSpellingOf {m k k₂ a a' : Molecul
   obtain ⟨a₂, h₂', ha, hst', hb'⟩ := aromatize_of_sameBonds h₂ (hc'.relabel σ) hat hst hb
   refine ⟨a₂, h₂', ?_⟩
   rw [canonicalSmiles_eq_of_sameBonds_relabel σ ha hst' hb',
-    aromatize_of_isKekuleSpellingOf h hc hk hs h' hc']
+    aromatize_of_isKekuleSpellingOf h hc hk hs h' hc' hvm]
 
 end Molecule
 

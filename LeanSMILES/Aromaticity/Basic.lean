@@ -211,6 +211,33 @@ def implicitHs (i : ℕ) : ℕ := Id.run do
   | some v => return (v - ev).toNat
   | none => return 0
 
+/-- RDKit's metals (`QueryOps::isMetal`, Marvin's `M`): every element except `*`, H, the noble
+gases, B, C, N, O, F, Si, P, S, Cl, As, Se, Br, Te, I and At. -/
+def isMetal (z : ℕ) : Bool :=
+  !([0, 1, 2, 5, 6, 7, 8, 9, 10, 14, 15, 16, 17, 18, 33, 34, 35, 36, 52, 53, 54, 85, 86] :
+    List ℕ).contains z
+
+/-- RDKit's strict valence check (`updatePropertyCache(true)`, `Atom.cpp`): the first atom whose
+explicit valence is above every valence its element allows, with that valence. Allowed valences
+are read as `implicitHs` reads them (charged atoms like the isoelectronic element, hypervalent P
+and S with their own list); an element without a list is not checked. RDKit's error for
+`CC(C)(C)(C)(C)C`: "Explicit valence for atom # 1 C, 5, is greater than permitted".
+
+An atom with a single bond to a metal is not checked either: RDKit's `cleanUpOrganometallics`
+turns such bonds of an over-valent atom into dative ones, which do not count toward its valence
+(ferrocene written with single C–Fe bonds). Not ported, so the check errs towards accepting. -/
+def firstBadValence : Option (ℕ × ℕ) :=
+  (List.range m.numAtoms).findSome? fun i ↦
+    let a := m.atoms[i]!
+    let ev := m.explicitValence i
+    let eff := effectiveZ a
+    let (eff, evc) : ℕ × ℤ := if canBeHypervalent a eff then (a.z, ev - a.charge) else (eff, ev)
+    let valens := valences eff
+    let toMetal := (m.bondsOf i).any fun k ↦
+      let b := m.bonds[k]!
+      b.kind == .single && isMetal m.atoms[if b.src == i then b.dst else b.src]!.z
+    if valens.isEmpty || valens.any (fun v ↦ evc ≤ v) || toMetal then none else some (i, ev)
+
 /-- Total hydrogens: frozen if set, else written plus implicit. -/
 def totalHs (i : ℕ) : ℕ := m.atoms[i]!.frozenHs.getD (m.atoms[i]!.explicitHs + m.implicitHs i)
 

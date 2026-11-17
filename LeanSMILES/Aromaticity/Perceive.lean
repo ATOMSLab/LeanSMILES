@@ -287,22 +287,26 @@ def Work.finish (w : Work) (rings : Array (List Nat)) : Work :=
 end Aromaticity
 
 open Aromaticity in
+/-- Atom `i` of the output from the final working copy `w`, before bracket normalization: `m`'s
+atom with `w`'s aromaticity, charge and hydrogen count. The written hydrogens are kept, but never
+more than the pipeline left (RDKit drops the one of `C1=[nH]C=CC=C1`, GitHub #141), so the atom
+carries exactly `w`'s count. -/
+def Molecule.outAtom {n : ℕ} (m : Molecule n) (w : Work) (i : Fin n) : Atom :=
+  let a := m.atom i
+  let wa := w.atoms[i.val]!
+  let total := wa.frozenHs.getD (wa.explicitHs + w.implicitHs i.val)
+  let written := a.explicitH.map (min · total)
+  { a with aromatic := w.isAromaticAtom i.val, charge := wa.charge, explicitH := written,
+           implicitH := total - written.getD 0 }
+
+open Aromaticity in
 /-- The molecule `aromatize` returns from the final working copy `w` of `m`: `m`'s atoms with
-`w`'s aromatic flags, charges and hydrogen counts, `m`'s bonds with `w`'s kinds, in bracket normal
-form. -/
+`w`'s aromatic flags, charges and hydrogen counts (`Molecule.outAtom`), `m`'s bonds with `w`'s
+kinds, in bracket normal form. -/
 def Molecule.aromatizeOutput {n : ℕ} (m : Molecule n) (w : Work) : Molecule n :=
-  let atoms := Vector.ofFn fun i : Fin n ↦
-    let a := m.atom i
-    let wa := w.atoms[i.val]!
-    let total := wa.frozenHs.getD (wa.explicitHs + w.implicitHs i.val)
-    -- the written hydrogens, but never more than the pipeline left (RDKit drops the one of
-    -- `C1=[nH]C=CC=C1`, GitHub #141): the atom carries exactly `total`
-    let written := a.explicitH.map (min · total)
-    { a with aromatic := w.isAromaticAtom i.val, charge := wa.charge, explicitH := written,
-             implicitH := total - written.getD 0 }
   Molecule.normalizeBrackets
-    { atoms, bonds := withKinds m w, nodup := map_edge_withKinds m w ▸ m.nodup,
-      stereo := m.stereo }
+    { atoms := Vector.ofFn (m.outAtom w), bonds := withKinds m w,
+      nodup := map_edge_withKinds m w ▸ m.nodup, stereo := m.stereo }
 
 open Aromaticity in
 /-- RDKit's view of the molecule's bonds, charges and hydrogens: `cleanUp` (nitro `N(=O)=O` →
