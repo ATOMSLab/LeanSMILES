@@ -1,0 +1,76 @@
+molecule                       atoms orderings distinct  distinct (aromatized)
+cubane                                      25        1                      1
+adamantane                                  25        1                      1
+triphenylene                                25        1                      1
+paracyclophane                              25        1                      1
+18-crown-6                                  25        1                      1
+triptycene                                  25        1                      1
+bullvalene                                  25        1                      1
+twistane                                    25        1                      1
+S8                                          25        1                      1
+P4                                          25        1                      1
+hexamethylbenzene                           25        1                      1
+azulene                                     25        1                      1
+2-pyridone                                  25        1                      1
+tropone                                     25        1                      1
+tropolone                                   25        1                      1
+pyridine N-oxide                            25        1                      1
+nitrobenzene                                25        1                      1
+phenyl azide                                25        1                      1
+diazomethane                                25        1                      1
+3-phenylsydnone                             25        1                      1
+DMSO                                        25        1                      1
+trimethylamine N-oxide                      25        1                      1
+ozone                                       25        1                      1
+carbon monoxide                             25        1                      1
+nitrous oxide                               25        1                      1
+borazine                                    25        1                      1
+squaric acid                                25        1                      1
+cyclooctatetraene                           25        1                      1
+[18]annulene                                25        1                      1
+fulvene                                     25        1                      1
+methylene blue                              25        1                      1
+indigo                                      25        1                      1
+guanine                                     25        1                      1
+allopurinol                                 25        1                      1
+acetylacetone                               25        1                      1
+glycine                                     25        1                      1
+betaine                                     25        1                      1
+tropylium BF4                               25        1                      1
+sodium cyclopentadienide                    25        1                      1
+ferrocene                                   25        1                      1
+cisplatin                                   25        1                      1
+transplatin                                 25        1                      1
+nickel carbonyl                             25        1                      1
+methylmagnesium bromide                     25        1                      1
+sodium acetate                              25        1                      1
+(R)-BINOL                                   25        1                      1
+(S)-BINOL                                   25        1                      1
+rac-BINOL                                   25        1                      1
+myo-inositol                                25        9                      9
+scyllo-inositol                             25        8                      8
+L-alanine                                   25        2                      2
+D-alanine                                   25        2                      2
+DL-alanine                                  25        1                      1
+cis-1,4-dimethylcyclohexane                 25        2                      2
+trans-1,4-dimethylcyclohexane               25        2                      2
+trans-cyclooctene                           25        1                      1
+cis-cyclooctene                             25        1                      1
+maleic acid                                 25        1                      1
+fumaric acid                                25        1                      1
+L-tartaric acid                             25        3                      3
+meso-tartaric acid                          25        3                      3
+hexahelicene                                25        1                      1
+(E)-azobenzene                              25        1                      1
+(Z)-azobenzene                              25        1                      1
+omeprazole                                  25        1                      1
+esomeprazole                                25        2                      2
+deuterium oxide                             25        1                      1
+benzene-d6                                  25        1                      1
+TEMPO                                       25        1                      1
+nitric oxide                                25        1                      1
+oxygen                                      25        1                      1
+$PY docs/cas-probe/lean_check.py stable $W $S/work.json 25  2>&1  84.82s user 1.06s system 98% cpu 1:26.77 total
+tail -80  0.00s user 0.00s system 0% cpu 1:26.77 total
+
+[exited with code 0]

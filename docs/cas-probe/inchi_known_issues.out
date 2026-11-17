@@ -1,0 +1,49 @@
+InChI 1.07.3, 40 renumberings each
+       CID atoms charge stereo  InChIs layer that varies   Lean  Lean, no stereo  SMILES
+   5150642    46     +0      0       2 /h                     1                1  C1=CC2=C(C=CC(=C2[O-])[N+]#N)C(=C1)S(=O)(=O)NC3=CC=C(C=C3)C4 
+   6337844    17     +1      2       2 /b                     2                1  CCO/C(=C(\C(=O)N[C@@H](CS)C(=O)O)/[N+]#N)/O 
+  10771998    62     +2      0       1                        1                1  CN1C(=O)[C]([N]C1=O)[N][C]2[N]C(=CN2CC3=CC=C(C=C3)O)CC4=CC=C 
+  10899850    15     +1      0       1                        1                1  C[N+](C)(C)C.C1=N[C]2[C](N1)[C]([N][CH][N]2)[O] 
+  10953242    70     +0      0       1                        1                1  [C-]#[O+].[C-]#[O+].[C-]#[O+].[C-]#[O+].C1=CC=C(C=C1)[C]2[C] 
+  10985980    70     +2      0       1                        1                1  [C-]#[O+].[C-]#[O+].[C-]#[O+].[C-]#[O+].C1=CC=C(C=C1)[C]2[C] 
+  11378274    74     +2      0       1                        1                1  [C-]#[O+].[C-]#[O+].[C-]#[O+].[C-]#[O+].C1=CC=C(C=C1)[C]2[C] 
+  11521032    86     +2      0       1                        1                1  COC1=CC=C(C=C1)[C]2[C]([C]([C]([C]2C3=CC=C(C=C3)OC)O)C4=CC=C 
+  16007017    59     +4      0       1                        1                1  CC(C)[O-].CC(C)[O-].C1=CC=C(C=C1)P(C2=CC=CC=C2)[C]3[CH][CH][ 
+  16153846   148     +1     19       2 /b,/h              timeout          timeout  C[C@H]1[C@H]([C@@](C[C@@H](O1)O[C@@H]2[C@H]([C@@H]([C@H](O[C 
+  16720756    98     +0      0       1                        1                1  C[N+]1=CC=C(C=C1)C(=O)N2CCC(=O)NC3=CC=CC=C3C4=C5C=CC(=C6C7=N 
+  18711062    46     +2      0       2 /h                     1                1  CCCCNC1=CC=C(C=C1)[N+](=C2C=CC(=[N+](C3=CC=C(C=C3)NC)C4=CC=C 
+  20615544    34     -4      0       2 /h                     1                1  C1=CC(=[N+](CO[O-])CO[O-])C=CC1=C2C(=C(C2=O)C3=CC=C(C=C3)N(C 
+  20764540   102     +2      0       2 /h                     1                1  C1CN(CCN1CCN[N+]2=C[N+](=C[NH+]=C2)NC3=CC(=C(C=C3)N=NC4=CC5= 
+  20829425    71     +1      0       2 /h                     1                1  C1COCCN1C2=NC(=NC(=N2)[N+]3=CC=CC(=C3)C(=O)N)NC4=CC5=C(C(=C( 
+  21024640    69     +1      0       2 /h                     1                1  CC(=O)NC1=C(C=CC(=C1)NC2=NC(=NC(=N2)NC3=CC=C(C=C3)N=NC4=CC=C 
+  21028630    67     +0      0       2 /h                     1                1  C1=CC(=C(C=C1NC2=NC(=NC(=N2)F)[N+]3=CC=C(C=C3)C(=O)[O-])N=NC 
+  21044212    51     +1      0       2 /h                     1                1  C1=CC(=CC(=C1)SOC(=O)CSOOO)N=NC2=CC(=C(C(=C2N)N=NC3=CC=C(C=C 
+  21361215    45     +1      0       2 /h                     1                1  CC1=CC(=C(C=C1S(=O)(=O)C=C)C)N=NC2=C(C=C(C(=C2)SOO[O-])N)NC3 
+  22835673   184     +0      0       2 /h,/p,/q           timeout          timeout  CC(C)(C)C1=CC(=C2C3=CC=C(N3)C(=C4C=C(C(=O)C(=C4)C(C)(C)C)C(C 
+  22979380    18     +1      0       2 /h                     1                1  CCC(=O)N(CCS)C[N+](=O)C1=CC=CC=C1S 
+  23382747    68     -2      0       2 /h                     1                1  C1=CC(=[N+](C2=CC=C(C=C2)NCCCCS(=O)(=O)[O-])C3=CC=C(C=C3)NCC 
+  23596680    66     +1      0       2 /h                     1                1  CCCC[N+](=C1C=CC(=C2C(=C(C2=O)C3=CC=C(C=C3)N(CCSOOO)CCSOOO)N 
+  25014394    63     +0      0       1                        1                1  [C-]#[O+].C1=CC=C(C=C1)[C]2[C]([C]([C]([C]2C3=CC=CC=C3)[O-]) 
+  25035003    61     +0      0       2 /h                     1                1  C1=CC(=CC(=C1)S(=O)(=O)CCOSOO[O-])NC(=O)C2=CC=C(C=C2)N=NC3=C 
+  25045269    72     +1      0       2 /h                     1                1  C1=CC(=C[N+](=C1)C2=NC(=NC(=N2)NC3=CC(=C(C=C3)S(=O)(=O)[O-]) 
+  44147122    32     +1      0       2 /h,/p,/q               1                1  CN=[N+](CCS(=O)(=O)[O-])NC1=C(C=C(C=C1)C2=CC(=C(C=C2)N=NNC#N 
+  53290019    29     +0      0       2 /h,/p,/q               1                1  CC(=O)NC1=CC=C(C=C1)NC(=O)CC2C(=O)N(CCO2)CC3=C(ON=[N+]3C)[O- 
+  53878088    74     +2      0       2 /h                     1                1  C1=CC=C2C(=C1)N=C(S2)[N+](C3=CC(=C(C=C3)C=CC4=C(C=C(C=C4)[N+ 
+  54721371    31     +1      1       2 /b,/h                  1                1  CC[N+](CC)(CC)C1CC(=O)N1/C(=C(\CCS)/O)/C(=O)OCC2=CC=C(C=C2)[ 
+  57082975    38     +1      2       2 /h                     1                1  CC1C[C@@H](C[N@+]1(C(=O)C(C)CS)C(=O)O)OC2=CC=C(C=C2)C3NC4=CC 
+  57225931    38     +1      2       2 /h                     3                1  CC1C[C@@H](C[N@+]1(C(=O)C(C)CS)C(=O)O)OC2=CC=CC(=C2)C3NC4=CC 
+  58594422    52     +1      0       2 /h                     1                1  CC1(C2=C(C=CC(=C2)SOOO)N(C1=CC3=C(C(=CC4=[N+](C5=C(C4(C)C)C= 
+  59106996    32     +0      3       1                        2                1  [3H]O[CH][CH][CH][C@H]1C[C@@H](C(=O)[C@H]1OC2=NC(=NC(=C2[N+] 
+  60015145    56     -3      0       2 /h                     1                1  CC12CCC(C1=[N+](C3=C2C=C(C=C3)SOO[O-])CC(CS(=O)(=O)[O-])O)C4 
+  67011034    39     -2      0       2 /h                     1                1  CC(C)CNN1C2=CC=CC=C2C(=C(C1=O)C3=NS(C4=C(N3)C=CC5=C4N=C(O5)C 
+  71475856    70     +2      0       1                        1                1  [C-]#[O+].[C-]#[O+].[C-]#[O+].[C-]#[O+].C1=CC=C(C=C1)[C]2[C] 
+  72370542    74     +1      0       2 /h                     1                1  CCN1C2=C(C=C(C=C2)SOOO)C(C1=CC=CC=CC3=[N+](C4=C(C3(C)C)C=CC= 
+  76184772    31     +1      0       2 /h                     1                1  CC[N+](CC)(CC)C1CC(=O)N1C(=C(CCS)O)C(=O)OCC2=CC=C(C=C2)[N+]( 
+  88370203    13     +2      0       2 /h                     1                1  CC(=[N+](C(=N)N)N)C=[N+](C(=N)N)N 
+  89291042    87     +1      0       2 /h                     1                1  CC1=C(C=CC(=C1)N=NC2=CC=C(C=C2)NC3=NC(=NC(=N3)[N+]4=CC=C(C=C 
+  90268683    57     +1      1       2 /b,/h                  1                1  CC1(C2=C(C=CC(=C2)F)[N+](=C1/C=C\3/C(=C(C3=O)C4=CC=C(C=C4)OC 
+  91287324   129     +1      0       2 /h                     1                1  CCC(C(=O)[N+](=O)CCNC(=O)CCCC1(C2=C(C=CC(=C2)S)N(C1=CC=CCC=C 
+ 100918399    45     +0      2       2 /h                     3                1  CN(CC1=CC=CC=C1)C(=O)[C@H](CC2=CC3=CC=CC=C3C=C2)NC(=O)[C@@H] 
+ 101455837   196     +6      0       4 /h                 timeout          timeout  CN1C=C(C=C1C(=[NH+]CCC[N+](C)(C)CC2=CC=C(C=C2)C3=C4C=CC(=N4) 
+  92178689    32     +0      2       1                        2                1  C[C@@H]1CN([C@H](CN1C=C2C(=O)C3=CC=CC=C3C2=O)C)C=C4C(=O)C5=C CANON_ERR case
+{'inchi_unstable': 34, 'lean_unstable': 8, 'lean_flat_unstable': 3, 'n': 46}
