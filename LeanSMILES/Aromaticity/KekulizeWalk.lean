@@ -1155,14 +1155,163 @@ lemma walkInv_backTrack (hwf : WF m0) {s : KekState} (hi : WalkInv wa atoms m0 c
     rw [List.head?_append, head?_drop_idxOf (List.mem_append_left _ hlod)]
     rfl
 
+/-- What a step's result says: it ends with the molecule only once every atom is done; it goes
+on from a state that keeps the invariant. -/
+def StepW (wa : ℕ → Bool) (atoms sorted : List ℕ) (m0 : Work) (cands0 : Array Bool)
+    (s : KekState) : Option Work ⊕ KekState → Prop
+  | .inl (some w) => w = s.m ∧ ∀ x ∈ sorted, x ∈ s.done
+  | .inl none => True
+  | .inr s' => WalkInv wa atoms m0 cands0 s'
+
+/-- **One step of the walk keeps the invariant.** -/
+theorem kekulizeStep_walkInv (hwf : WF m0) (hnd : m0.NbrsDistinct)
+    (hsingle : ∀ k, wa k = true → ∀ x, cands0[x]! = true → Tch m0 k x →
+      (m0.bonds[k]! : WBond).kind = .single)
+    {sorted : List ℕ} (hsorted : ∀ x ∈ sorted, x ∈ atoms) {s : KekState}
+    (hi : WalkInv wa atoms m0 cands0 s) :
+    StepW wa atoms sorted m0 cands0 s (kekulizeStep wa atoms sorted s) := by
+  have hbb : s.m.bondBetween? = m0.bondBetween? := hi.skel.bondBetween?.symm
+  unfold kekulizeStep
+  split
+  · rename_i hnone
+    exact ⟨rfl, (nextAtom_eq_none hnone).2⟩
+  · rename_i curr q1 hnext
+    split
+    · -- options kept from an earlier visit
+      rename_i o ho
+      have hp := popped_stored hi hsorted hnext ho
+      have hlook : (s.options.lookup curr).isSome = true := by rw [ho]; rfl
+      dsimp only
+      split
+      · rename_i hc
+        exact walkInv_continue hi hp (by simpa using hc)
+      · rename_i hc
+        have hcc : s.cands[curr]! = true := by simpa using hc
+        split
+        · rename_i n rest
+          split
+          · rename_i k hk
+            exact walkInv_placeDouble hsingle hi hp hlook hcc rfl (by rw [← hbb]; exact hk)
+          · trivial
+        · exact absurd rfl (hi.opt curr _ (mem_of_lookup ho)).1
+    · -- a fresh scan
+      rename_i ho
+      have hp := popped_fresh hi hsorted hnd hwf hnext ho
+      have hlook : (s.options.lookup curr).isSome = false := by rw [ho]; rfl
+      dsimp only
+      rw [foldl_scanStep]
+      simp only [List.nil_append]
+      split
+      · rename_i hc
+        exact walkInv_continue hi hp (by simpa using hc)
+      · rename_i hc
+        have hcc : s.cands[curr]! = true := by simpa using hc
+        split
+        · rename_i n rest hnr
+          split
+          · rename_i k hk
+            exact walkInv_placeDouble hsingle hi hp hlook hcc hnr (by rw [← hbb]; exact hk)
+          · trivial
+        · split
+          · rename_i lo hlo
+            split
+            · trivial
+            · exact walkInv_backTrack hwf hi hp hlo
+          · trivial
+
+/-- **The walk ends with every atom done**, in a state that keeps the invariant. -/
+theorem kekulizeLoop_walkInv (hwf : WF m0) (hnd : m0.NbrsDistinct)
+    (hsingle : ∀ k, wa k = true → ∀ x, cands0[x]! = true → Tch m0 k x →
+      (m0.bonds[k]! : WBond).kind = .single)
+    {sorted : List ℕ} (hperm : sorted.Perm atoms) (hatoms : atoms.Nodup) :
+    ∀ (fuel : ℕ) (s : KekState), WalkInv wa atoms m0 cands0 s → ∀ w,
+      kekulizeLoop wa atoms sorted fuel s = some w →
+        ∃ sf, WalkInv wa atoms m0 cands0 sf ∧ w = sf.m ∧ ∀ x ∈ atoms, x ∈ sf.done
+  | 0, _, _, _, hw => by simp [kekulizeLoop] at hw
+  | fuel + 1, s, hi, w, hw => by
+    have hsorted : ∀ x ∈ sorted, x ∈ atoms := fun x hx ↦ hperm.subset hx
+    unfold kekulizeLoop at hw
+    split at hw
+    · have hst := kekulizeStep_walkInv hwf hnd hsingle hsorted hi
+      split at hw
+      · rename_i r hr
+        rw [hr] at hst
+        subst hw
+        obtain ⟨rfl, hall⟩ := hst
+        exact ⟨s, hi, rfl, fun x hx ↦ hall x (hperm.symm.subset hx)⟩
+      · rename_i s' hs'
+        rw [hs'] at hst
+        exact kekulizeLoop_walkInv hwf hnd hsingle hperm hatoms fuel s' hst w hw
+    · rename_i hc
+      cases hw
+      simp only [Bool.or_eq_true, decide_eq_true_eq, Bool.not_eq_true', not_or, not_lt] at hc
+      -- the done list has no repeats, is in the system and is at least as long: it is all of it
+      have hsub : s.done ⊆ atoms := fun x hx ↦ hi.doneSub x hx
+      have hp := (List.subperm_of_subset hi.doneNodup hsub).perm_of_length_le
+        (by rw [← hperm.length_eq]; exact hc.1)
+      exact ⟨s, hi, rfl, fun x hx ↦ hp.symm.subset hx⟩
+
+/-- The walk's starting state keeps the invariant. -/
+lemma walkInv_start {done : List ℕ} (hcs : cands0.size = m0.atoms.size) (hd : done.Nodup)
+    (hds : ∀ x ∈ done, x ∈ atoms) (hdc : ∀ x ∈ done, cands0[x]! = false) :
+    WalkInv wa atoms m0 cands0
+      { m := m0, cands := cands0, done, adds := Array.replicate m0.numBonds false, queue := [],
+        options := [], lastOpt := none, btMoves := [], numBt := 0 } where
+  skel := ⟨rfl, rfl, fun _ ↦ rfl, fun _ ↦ rfl⟩
+  kinds k := by simp [getElem!_replicate_false]
+  addsSize := by simp [numBonds]
+  candsSize := hcs
+  addsOk k h := by simp [getElem!_replicate_false] at h
+  matching k₁ _ _ h := by simp [getElem!_replicate_false] at h
+  cands x := by simp [Matched, getElem!_replicate_false]
+  doneNC := hdc
+  addsDone k h := by simp [getElem!_replicate_false] at h
+  doneNodup := hd
+  queueNodup := List.nodup_nil
+  disjoint := by simp
+  doneSub := hds
+  queueSub := by simp
+  opt := by simp
+  keys := rfl
+  lastOpt := rfl
+  order := .inl (List.nil_sublist _)
+
+/-- **The kekulization walk is correct.**  When it succeeds on a fused system, its result is the
+starting copy with a set `D` of bonds made double: each a single bond written aromatic between
+two atoms that needed a double bond, no atom with two, and every atom of the system that needed a
+double bond with one. -/
+theorem kekulizeWorker_correct (hwf : WF m0) (hnd : m0.NbrsDistinct)
+    (hsingle : ∀ k, wa k = true → ∀ x, cands0[x]! = true → Tch m0 k x →
+      (m0.bonds[k]! : WBond).kind = .single)
+    (hatoms : atoms.Nodup) (hcs : cands0.size = m0.atoms.size) {done : List ℕ}
+    (hd : done.Nodup) (hds : ∀ x ∈ done, x ∈ atoms) (hdc : ∀ x ∈ done, cands0[x]! = false)
+    {w : Work} (hw : m0.kekulizeWorker wa atoms cands0 done = some w) :
+    SameSkel m0 w ∧ ∃ D : Array Bool,
+      (∀ k : ℕ, (w.bonds[k]! : WBond).kind =
+        if D[k]! = true then .double else (m0.bonds[k]! : WBond).kind) ∧
+      (∀ k : ℕ, D[k]! = true → k < m0.bonds.size ∧ wa k = true ∧
+        (m0.bonds[k]! : WBond).kind = .single ∧ cands0[(m0.bonds[k]! : WBond).src]! = true ∧
+        cands0[(m0.bonds[k]! : WBond).dst]! = true) ∧
+      (∀ k₁ k₂ x : ℕ, D[k₁]! = true → D[k₂]! = true → Tch m0 k₁ x → Tch m0 k₂ x → k₁ = k₂) ∧
+      ∀ x ∈ atoms, cands0[x]! = true → ∃ k : ℕ, D[k]! = true ∧ Tch m0 k x := by
+  obtain ⟨sf, hi, rfl, hall⟩ := kekulizeLoop_walkInv hwf hnd hsingle (List.mergeSort_perm _ _)
+    hatoms _ _ (walkInv_start hcs hd hds hdc) w hw
+  refine ⟨hi.skel, sf.adds, hi.kinds, hi.addsOk, hi.matching, fun x hx hc ↦ ?_⟩
+  by_contra h
+  have := (hi.cands x).mpr ⟨hc, fun ⟨k, hk, ht⟩ ↦ h ⟨k, hk, ht⟩⟩
+  rw [hi.doneNC x (hall x hx)] at this
+  cases this
+
+
+
+
+
+
+
+
+
+
+
 end Walk
-
-
-
-
-
-
-
-
 
 end LeanSMILES.Aromaticity.Work
