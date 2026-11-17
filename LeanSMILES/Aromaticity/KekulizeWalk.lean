@@ -835,7 +835,161 @@ lemma sublist_before : ∀ {bt l : List ℕ} {lo : ℕ}, (bt ++ [lo]).Sublist l 
         simp only [before, List.takeWhile_cons, hxl', ↓reduceIte]
         exact (sublist_before hrl hnd.2).cons₂ b
 
+/-- Bond `j` is undone by backtracking to `keep`: the walk placed it, and neither end is kept. -/
+@[reducible] def Undone (w : Work) (A : Array Bool) (keep : List ℕ) (j : ℕ) : Prop :=
+  A[j]! = true ∧ (w.bonds[j]! : WBond).src ∉ keep ∧ (w.bonds[j]! : WBond).dst ∉ keep
+
+lemma undoAdds_eq (keep : List ℕ) (w : Work) (A C : Array Bool) (j : ℕ) :
+    undoAdds keep (w, A, C) j = if Undone w A keep j then
+      (w.setKind j .single, A.set! j false,
+        (C.set! (w.bonds[j]! : WBond).src true).set! (w.bonds[j]! : WBond).dst true)
+    else (w, A, C) := by
+  unfold undoAdds
+  dsimp only
+  by_cases hA : A[j]! = true
+  · rw [if_pos hA]
+    by_cases hs : (w.bonds[j]! : WBond).src ∈ keep
+    · rw [if_neg (by simp [List.contains_iff_mem, hs]), if_neg (by simp [hs])]
+    · by_cases hd : (w.bonds[j]! : WBond).dst ∈ keep
+      · rw [if_neg (by simp [List.contains_iff_mem, hd]), if_neg (by simp [hd])]
+      · rw [if_pos (by simp [List.contains_iff_mem, hs, hd]), if_pos ⟨hA, hs, hd⟩]
+  · rw [if_neg hA, if_neg (fun h ↦ hA h.1)]
+
+/-- The undo loop keeps which atoms each bond joins and the sizes of the flag arrays. -/
+lemma foldl_undoAdds_skel (keep : List ℕ) : ∀ (l : List ℕ) (w : Work) (A C : Array Bool),
+    let r := l.foldl (undoAdds keep) (w, A, C)
+    SameSkel w r.1 ∧ r.2.1.size = A.size ∧ r.2.2.size = C.size
+  | [], w, A, C => ⟨⟨rfl, rfl, fun _ ↦ rfl, fun _ ↦ rfl⟩, rfl, rfl⟩
+  | j :: l, w, A, C => by
+    simp only [List.foldl_cons, undoAdds_eq]
+    split
+    · obtain ⟨h1, h2, h3⟩ := foldl_undoAdds_skel keep l _ _ _
+      exact ⟨(skel_setKind _ _ _).trans h1, by rw [h2]; simp, by rw [h3]; simp⟩
+    · exact foldl_undoAdds_skel keep l _ _ _
+
+/-- What the undo loop leaves of the placed flags: those not undone. -/
+lemma foldl_undoAdds_adds (keep : List ℕ) : ∀ (l : List ℕ) (w : Work) (A C : Array Bool),
+    l.Nodup → ∀ j, ((l.foldl (undoAdds keep) (w, A, C)).2.1[j]! = true ↔
+      A[j]! = true ∧ ¬ (j ∈ l ∧ Undone w A keep j))
+  | [], w, A, C, _, j => by simp
+  | i :: l, w, A, C, hnd, j => by
+    rw [List.nodup_cons] at hnd
+    simp only [List.foldl_cons, undoAdds_eq]
+    by_cases hU : Undone w A keep i
+    · rw [if_pos hU, foldl_undoAdds_adds keep l _ _ _ hnd.2 j]
+      have hsk := skel_setKind w i .single
+      have hlt := lt_size_of_getElem!_bool hU.1
+      by_cases hji : j = i
+      · subst hji
+        simp [getElem!_set!_bool, hlt, hnd.1, hU]
+      · simp only [Undone, getElem!_set!_bool, Ne.symm hji, false_and, ↓reduceIte,
+          ← hsk.src, ← hsk.dst, List.mem_cons, hji, false_or]
+    · rw [if_neg hU, foldl_undoAdds_adds keep l _ _ _ hnd.2 j]
+      by_cases hji : j = i
+      · subst hji
+        simp [hU, hnd.1]
+      · simp [hji]
+
+/-- What the undo loop does to the kinds: an undone bond is single, any other is as it was. -/
+lemma foldl_undoAdds_kind (keep : List ℕ) : ∀ (l : List ℕ) (w : Work) (A C : Array Bool),
+    l.Nodup → ∀ j,
+      (j ∈ l → Undone w A keep j → j < w.bonds.size →
+        ((l.foldl (undoAdds keep) (w, A, C)).1.bonds[j]! : WBond).kind = .single) ∧
+      (¬ (j ∈ l ∧ Undone w A keep j) →
+        ((l.foldl (undoAdds keep) (w, A, C)).1.bonds[j]! : WBond).kind =
+          (w.bonds[j]! : WBond).kind)
+  | [], w, A, C, _, j => ⟨by simp, fun _ ↦ rfl⟩
+  | i :: l, w, A, C, hnd, j => by
+    rw [List.nodup_cons] at hnd
+    simp only [List.foldl_cons, undoAdds_eq]
+    by_cases hU : Undone w A keep i
+    · rw [if_pos hU]
+      have hsk := skel_setKind w i .single
+      obtain ⟨ih1, ih2⟩ := foldl_undoAdds_kind keep l (w.setKind i .single) (A.set! i false)
+        ((C.set! (w.bonds[i]! : WBond).src true).set! (w.bonds[i]! : WBond).dst true) hnd.2 j
+      have hU' : j ≠ i → (Undone (w.setKind i .single) (A.set! i false) keep j ↔
+          Undone w A keep j) := fun hji ↦ by
+        simp only [Undone, getElem!_set!_bool, Ne.symm hji, false_and, ↓reduceIte,
+          ← hsk.src, ← hsk.dst]
+      by_cases hji : j = i
+      · subst hji
+        have hnu : ¬ (j ∈ l ∧ Undone (w.setKind j .single) (A.set! j false) keep j) :=
+          fun h ↦ hnd.1 h.1
+        refine ⟨fun _ _ hlt ↦ ?_, fun h ↦ absurd ⟨List.mem_cons_self, hU⟩ h⟩
+        rw [ih2 hnu, kind_setKind, if_pos ⟨rfl, hlt⟩]
+      · refine ⟨fun hj hu hlt ↦ ?_, fun h ↦ ?_⟩
+        · have hj' : j ∈ l := (List.mem_cons.mp hj).resolve_left hji
+          exact ih1 hj' ((hU' hji).mpr hu) (by simpa [setKind] using hlt)
+        · rw [ih2 (fun h' ↦ h ⟨List.mem_cons_of_mem _ h'.1, (hU' hji).mp h'.2⟩), kind_setKind,
+            if_neg (fun h' ↦ hji h'.1.symm)]
+    · rw [if_neg hU]
+      obtain ⟨ih1, ih2⟩ := foldl_undoAdds_kind keep l w A C hnd.2 j
+      refine ⟨fun hj hu hlt ↦ ?_, fun h ↦ ih2 (fun h' ↦ h ⟨List.mem_cons_of_mem _ h'.1, h'.2⟩)⟩
+      rcases List.mem_cons.mp hj with rfl | hj'
+      · exact absurd hu hU
+      · exact ih1 hj' hu hlt
+
+/-- What the undo loop does to the candidates: the ends of undone bonds need one again. -/
+lemma foldl_undoAdds_cands (keep : List ℕ) : ∀ (l : List ℕ) (w : Work) (A C : Array Bool),
+    l.Nodup → ∀ x, ((l.foldl (undoAdds keep) (w, A, C)).2.2[x]! = true ↔
+      C[x]! = true ∨ (x < C.size ∧ ∃ j ∈ l, Undone w A keep j ∧
+        (w.bonds[j]! : WBond).touches x = true))
+  | [], w, A, C, _, x => by simp
+  | i :: l, w, A, C, hnd, x => by
+    rw [List.nodup_cons] at hnd
+    simp only [List.foldl_cons, undoAdds_eq]
+    by_cases hU : Undone w A keep i
+    · rw [if_pos hU, foldl_undoAdds_cands keep l _ _ _ hnd.2 x]
+      have hsk := skel_setKind w i .single
+      have hU' : ∀ j ∈ l, (Undone (w.setKind i .single) (A.set! i false) keep j ↔
+          Undone w A keep j) := fun j hj ↦ by
+        have hji : j ≠ i := fun e ↦ hnd.1 (e ▸ hj)
+        simp only [Undone, getElem!_set!_bool, Ne.symm hji, false_and, ↓reduceIte,
+          ← hsk.src, ← hsk.dst]
+      have htc : ∀ j, ((w.setKind i .single).bonds[j]! : WBond).touches x =
+          (w.bonds[j]! : WBond).touches x := fun j ↦ by
+        simp only [WBond.touches]
+        rw [← hsk.src j, ← hsk.dst j]
+      have hs' : (C.set! (w.bonds[i]! : WBond).src true).size = C.size := by simp
+      rw [getElem!_set!_bool, getElem!_set!_bool, hs']
+      simp only [Array.size_setIfInBounds, Array.set!]
+      constructor
+      · rintro (h | ⟨hx, j, hj, hu, ht⟩)
+        · split at h
+          · rename_i h'
+            exact .inr ⟨h'.2, i, List.mem_cons_self, hU, by simp [WBond.touches, h'.1]⟩
+          · split at h
+            · rename_i h'
+              exact .inr ⟨h'.2, i, List.mem_cons_self, hU, by simp [WBond.touches, h'.1]⟩
+            · exact .inl h
+        · exact .inr ⟨by simpa using hx, j, List.mem_cons_of_mem _ hj, (hU' j hj).mp hu,
+            by rw [← htc]; exact ht⟩
+      · rintro (h | ⟨hx, j, hj, hu, ht⟩)
+        · left
+          split_ifs <;> simp_all
+        · rcases List.mem_cons.mp hj with rfl | hj'
+          · left
+            simp only [WBond.touches, Bool.or_eq_true, beq_iff_eq] at ht
+            rcases ht with ht | ht
+            · by_cases hd : (w.bonds[j]! : WBond).dst = x
+              · simp [hd, hx]
+              · simp [hd, ht, hx]
+            · simp [ht, hx]
+          · right
+            exact ⟨by simpa using hx, j, hj', (hU' j hj').mpr hu, by rw [htc]; exact ht⟩
+    · rw [if_neg hU, foldl_undoAdds_cands keep l _ _ _ hnd.2 x]
+      constructor
+      · rintro (h | ⟨hx, j, hj, hu, ht⟩)
+        · exact .inl h
+        · exact .inr ⟨hx, j, List.mem_cons_of_mem _ hj, hu, ht⟩
+      · rintro (h | ⟨hx, j, hj, hu, ht⟩)
+        · exact .inl h
+        · rcases List.mem_cons.mp hj with rfl | hj'
+          · exact absurd hu hU
+          · exact .inr ⟨hx, j, hj', hu, ht⟩
+
 end Walk
+
 
 
 
