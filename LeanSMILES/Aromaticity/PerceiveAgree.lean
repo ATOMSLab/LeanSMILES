@@ -455,4 +455,36 @@ lemma frozenHs_finalizeHs_of_restored (w : Work) {i : ℕ} (hi : i < w.atoms.siz
     ((w.finalizeHs.atoms[i]! : WAtom)).frozenHs = some (w.cachedTotalHs i) := by
   rw [frozenHs_finalizeHs w hi, h]
 
+/-! ### Reading atom fields -/
+
+/-- Two arrays whose entries agree under `f` at `j` agree under `f` read with `!`. -/
+lemma getElem!_eq_of_map {α β : Type*} [Inhabited α] {a b : Array α} (f : α → β) {j : ℕ}
+    (h : b[j]?.map f = a[j]?.map f) : f b[j]! = f a[j]! := by
+  simp only [getElem!_def]
+  cases ha : a[j]? <;> cases hb : b[j]? <;> simp_all
+
+/-- Assigning radicals changes nothing about the atoms but their radicals. -/
+lemma getElem?_assignRadicals_atoms (w : Work) (j : ℕ) :
+    w.assignRadicals.atoms[j]?.map (fun a : WAtom ↦ { a with radicals := 0 }) =
+      w.atoms[j]?.map (fun a : WAtom ↦ { a with radicals := 0 }) := by
+  unfold assignRadicals
+  generalize List.range w.numAtoms = l
+  induction l generalizing w with
+  | nil => rfl
+  | cons i l ih =>
+    rw [List.foldl_cons, ih]
+    unfold radicalStep
+    dsimp only
+    split
+    · rfl
+    · rw [getElem?_modifyAtom_atoms]
+      split <;> simp [Option.map_map, Function.comp_def]
+
+/-- A field other than the radicals, read through `assignRadicals`. -/
+lemma getElem?_assignRadicals_map {β : Type*} (w : Work) (f : WAtom → β)
+    (hf : ∀ a : WAtom, f { a with radicals := 0 } = f a) (j : ℕ) :
+    w.assignRadicals.atoms[j]?.map f = w.atoms[j]?.map f := by
+  have := congrArg (Option.map f) (getElem?_assignRadicals_atoms w j)
+  simpa [Option.map_map, Function.comp_def, hf] using this
+
 end LeanSMILES.Aromaticity.Work
