@@ -189,6 +189,20 @@ def ValenceOk (m : Molecule n) : Prop :=
 instance (m : Molecule n) : Decidable m.ValenceOk :=
   inferInstanceAs (Decidable (_ = none))
 
+/-- Every atom written lowercase has a bond written aromatic, and at most three bonds.  RDKit
+rounds the valence of an aromatic atom as if its bonds were aromatic; at a lowercase atom with no
+aromatic bond (`N[se]=CC`, `Cp1=CC=CC=C1`, `C[se]1(C)CC1` with three single bonds) or with four
+(`c2\3c4c56`) the rounded valence is not the one any Kekulé structure gives it.  None of the
+12 027 dataset molecules fails this; malformed strings like `C1CCCCn1` do. -/
+def AromaticWritten (m : Molecule n) : Prop :=
+  ∀ i, (m.atom i).aromatic = true →
+    (∃ b ∈ m.bonds, b.touches i = true ∧ b.kind = .aromatic) ∧
+      (m.bonds.filter (·.touches i)).length ≤ 3
+
+instance (m : Molecule n) : Decidable m.AromaticWritten := by
+  unfold AromaticWritten
+  infer_instance
+
 /-- Every bond of `m` written aromatic is aromatic in `a`, bond for bond.  For `a` the output of
 `aromatize m`, this says that every lowercase ring of the input was perceived aromatic, so the
 double bonds kekulization placed in it do not show. -/
@@ -890,7 +904,8 @@ valence is the aromatic one RDKit cached. -/
 theorem finish_kekuleWitness_agree {m a : Molecule n} {K : Work}
     (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K)
     (ha : m.aromatizeOutput (K.finish (Work.prepare m).relevantCycles) = a)
-    (hv : (Work.ofMolecule (kekuleWitness a K)).freezeHs.firstBadValence = none) :
+    (hv : (Work.ofMolecule (kekuleWitness a K)).freezeHs.firstBadValence = none)
+    (hw : m.AromaticWritten) :
     OutAgree n (K.finish (Work.prepare m).relevantCycles)
       ((Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences.finish
         (Work.prepare m).relevantCycles) := by
@@ -902,11 +917,12 @@ open Aromaticity in
 theorem aromatizeOutput_kekuleWitness {m a : Molecule n} {K : Work}
     (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K)
     (ha : m.aromatizeOutput (K.finish (Work.prepare m).relevantCycles) = a)
-    (hv : (Work.ofMolecule (kekuleWitness a K)).freezeHs.firstBadValence = none) :
+    (hv : (Work.ofMolecule (kekuleWitness a K)).freezeHs.firstBadValence = none)
+    (hw : m.AromaticWritten) :
     (kekuleWitness a K).aromatizeOutput
       ((Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences.finish
         (Work.prepare m).relevantCycles) = a :=
-  aromatizeOutput_kekuleWitness_of_agree hK ha (finish_kekuleWitness_agree hK ha hv)
+  aromatizeOutput_kekuleWitness_of_agree hK ha (finish_kekuleWitness_agree hK ha hv hw)
 
 open Aromaticity in
 /-- The working copy `aromatize` starts from has an atom for each atom of `m`. -/
@@ -922,7 +938,7 @@ theorem kekuleWitness_aromatize {m a a' : Molecule n} {K : Work}
     (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K)
     (ha : m.aromatizeOutput (K.finish (Work.prepare m).relevantCycles) = a)
     (h' : (kekuleWitness a K).aromatize = .ok a') (hc' : (kekuleWitness a K).ChargesKept a')
-    (hv : (kekuleWitness a K).ValenceOk) : a' = a := by
+    (hv : (kekuleWitness a K).ValenceOk) (hw : m.AromaticWritten) : a' = a := by
   obtain ⟨hkk, -⟩ := kekuleWitness_spec hK ha
   obtain ⟨K', hK', ha'⟩ := aromatize_eq_ok.mp h'
   rw [hkk.kekulize_prepare] at hK'
@@ -941,7 +957,7 @@ theorem kekuleWitness_aromatize {m a a' : Molecule n} {K : Work}
     rw [hKP.atoms_size, size_prepare_atoms, size_prepare_atoms]
   rw [hR, hP'] at ha'
   rw [← ha']
-  refine aromatizeOutput_kekuleWitness hK ha ?_
+  refine aromatizeOutput_kekuleWitness hK ha ?_ hw
   unfold ValenceOk at hv
   rwa [hcl] at hv
 
@@ -952,13 +968,15 @@ with the aromatic flags cleared, and each aromatic bond with the kind `Work.keku
 aromatizes to `a`.  Both provisos are needed: for `O=p1ccccc1` the witness is `O=P1=CC=CC=C1`,
 which `cleanUp` rewrites (`aromatize_aromatize`); for `Oc#1ccccc1` the kekulizer gives the carbon
 next to the triple bond a single ring bond, so the witness `OC#1C=CC=CC1` has a five-valent
-carbon (RDKit would reject it), and aromatizes to itself. -/
-theorem exists_kekule_aromatize {m a : Molecule n} (h : m.aromatize = .ok a) :
+carbon (RDKit would reject it), and aromatizes to itself.  `m.AromaticWritten` excludes
+lowercase atoms RDKit's valence rounding misreads (`N[se]=CC`). -/
+theorem exists_kekule_aromatize {m a : Molecule n} (h : m.aromatize = .ok a)
+    (hw : m.AromaticWritten) :
     ∃ k : Molecule n, k.IsKekule ∧ k.IsKekuleStructureOf a ∧
       ∀ a', k.aromatize = .ok a' → k.ChargesKept a' → k.ValenceOk → a' = a := by
   obtain ⟨K, hK, ha⟩ := aromatize_eq_ok.mp h
   obtain ⟨hk, hs⟩ := kekuleWitness_spec hK ha
-  exact ⟨_, hk, hs, fun _ h' hc' hv ↦ kekuleWitness_aromatize hK ha h' hc' hv⟩
+  exact ⟨_, hk, hs, fun _ h' hc' hv ↦ kekuleWitness_aromatize hK ha h' hc' hv hw⟩
 
 /-! ### 4. The canonical string -/
 
