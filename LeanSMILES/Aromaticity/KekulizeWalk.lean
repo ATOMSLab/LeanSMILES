@@ -187,6 +187,8 @@ structure WalkInv (s : KekState) : Prop where
     if s.adds[k]! then .double else (m0.bonds[k]! : WBond).kind
   /-- One flag per bond. -/
   addsSize : s.adds.size = m0.bonds.size
+  /-- One flag per atom. -/
+  candsSize : s.cands.size = m0.atoms.size
   /-- A placed double bond was a single bond written aromatic between two candidates. -/
   addsOk : ∀ k : ℕ, s.adds[k]! = true → k < m0.bonds.size ∧ wa k = true ∧
     (m0.bonds[k]! : WBond).kind = .single ∧ cands0[(m0.bonds[k]! : WBond).src]! = true ∧
@@ -417,6 +419,7 @@ lemma walkInv_continue {s : KekState} (hi : WalkInv wa atoms m0 cands0 s) {curr 
   skel := hi.skel
   kinds := hi.kinds
   addsSize := hi.addsSize
+  candsSize := hi.candsSize
   addsOk := hi.addsOk
   matching := hi.matching
   cands := hi.cands
@@ -540,7 +543,8 @@ lemma walkInv_place_core
     (hkt x).mp (by simp [WBond.touches, hx])
   have hdst : ∀ x, (m0.bonds[k]! : WBond).dst = x → x = curr ∨ x = n := fun x hx ↦
     (hkt x).mp (by simp [WBond.touches, hx])
-  refine ⟨hi.skel.trans (skel_setKind _ _ _), fun k₁ ↦ ?_, by simp [hi.addsSize], fun k₁ hk₁ ↦ ?_,
+  refine ⟨hi.skel.trans (skel_setKind _ _ _), fun k₁ ↦ ?_, by simp [hi.addsSize],
+    by simp [hi.candsSize], fun k₁ hk₁ ↦ ?_,
     fun k₁ k₂ x h₁ h₂ t₁ t₂ ↦ ?_, fun x ↦ ?_, fun x hx ↦ ?_, fun k₁ hk₁ ↦ ?_, ?_, hp.qNodup,
     fun x hx ↦ ?_, fun x hx ↦ ?_, hp.qSub, fun a o hao ↦ ?_, hkeys', hlast', .inl hbt'⟩
   · -- kinds
@@ -657,7 +661,183 @@ lemma walkInv_place_core
         · exact hjn h
       · exact hjm ⟨k₁, hk₁, ht⟩
 
+/-- The keys left after dropping one. -/
+lemma map_fst_filter {β : Type*} (c : ℕ) :
+    ∀ l : List (ℕ × β), (l.filter (·.1 != c)).map (·.1) = (l.map (·.1)).filter (· != c)
+  | [] => rfl
+  | p :: l => by
+    simp only [List.filter_cons, List.map_cons]
+    split <;> simp_all [map_fst_filter c l]
+
+/-- **Placing a double bond keeps the invariant**, whichever way `placeDouble` updates the kept
+options: dropping the atom's entry when it has no options left, replacing it with the rest,
+adding one for a new branch point, or leaving them. -/
+lemma walkInv_placeDouble
+    (hsingle : ∀ k, wa k = true → ∀ x, cands0[x]! = true → Tch m0 k x →
+      (m0.bonds[k]! : WBond).kind = .single)
+    {s : KekState} (hi : WalkInv wa atoms m0 cands0 s) {curr : ℕ} {q2 opts : List ℕ}
+    {stored : Bool} (hp : Popped wa atoms m0 s curr q2 opts stored)
+    (hlook : (s.options.lookup curr).isSome = stored) (hcc : s.cands[curr]! = true)
+    {n : ℕ} {rest : List ℕ} (hopts : opts = n :: rest) {k : ℕ}
+    (hk : m0.bondBetween? curr n = some k) :
+    WalkInv wa atoms m0 cands0
+      ({ s with done := s.done ++ [curr], queue := q2 }.placeDouble curr n k rest) := by
+  unfold KekState.placeDouble
+  dsimp only
+  split
+  · rename_i hsome
+    rw [hlook] at hsome
+    subst hsome
+    obtain ⟨-, bt, hbt, hbts⟩ := hp.storedBt rfl
+    have hcbt : curr ∉ bt := fun h ↦ hp.currNotDone (hbts.subset h)
+    split
+    · -- no options left: drop the entry
+      refine walkInv_place_core hsingle hi hp hcc hopts hk _ _ _
+        (fun a o h ↦ .inl (List.mem_of_mem_filter h)) ?_ rfl ?_
+      · rw [map_fst_filter, hi.keys, hbt, List.dropLast_concat, List.filter_append]
+        simp only [List.filter_cons, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte,
+          List.filter_nil, List.append_nil]
+        rw [List.filter_eq_self]
+        intro a ha
+        simp only [bne_iff_ne, ne_eq]
+        rintro rfl
+        exact hcbt ha
+      · rw [hbt, List.dropLast_concat]
+        exact hbts.trans (List.sublist_append_left _ _)
+    · -- options left: keep the rest
+      rename_i hne
+      refine walkInv_place_core hsingle hi hp hcc hopts hk _ _ _ (fun a o h ↦ ?_) ?_ hi.lastOpt
+        hp.btMoves_sublist
+      · obtain ⟨q, hm, he⟩ := List.mem_map.mp h
+        obtain ⟨a', o'⟩ := q
+        simp only at he
+        split at he
+        · rename_i ha'
+          cases he
+          rw [beq_iff_eq] at ha'
+          exact .inr ⟨ha', rfl, by simpa using hne⟩
+        · cases he
+          exact .inl hm
+      · rw [List.map_map, ← hi.keys]
+        congr 1
+        funext q
+        obtain ⟨a', o'⟩ := q
+        simp only [Function.comp_apply]
+        split <;> rfl
+  · rename_i hsome
+    have hstored : stored = false := by
+      cases stored
+      · rfl
+      · exact absurd hlook hsome
+    subst hstored
+    obtain ⟨hcbt, hbts⟩ := hp.freshBt rfl
+    split
+    · -- a new branch point
+      rename_i hne
+      refine walkInv_place_core hsingle hi hp hcc hopts hk _ _ _ (fun a o h ↦ ?_) ?_ ?_ ?_
+      · rcases List.mem_append.mp h with h | h
+        · exact .inl h
+        · rw [List.mem_singleton, Prod.mk.injEq] at h
+          exact .inr ⟨h.1, h.2, by simpa using hne⟩
+      · rw [List.map_append, hi.keys]
+        rfl
+      · simp
+      · exact hbts.append (List.Sublist.refl _)
+    · exact walkInv_place_core hsingle hi hp hcc hopts hk _ _ _ (fun a o h ↦ .inl h) hi.keys
+        hi.lastOpt hp.btMoves_sublist
+
+/-! ### Backtracking -/
+
+/-- What comes before `a` is the list up to `a`'s index. -/
+lemma before_eq_take : ∀ (l : List ℕ) (a : ℕ), before l a = l.take (l.idxOf a)
+  | [], _ => rfl
+  | x :: l, a => by
+    by_cases hx : x = a
+    · subst hx
+      simp [before, List.takeWhile_cons]
+    · have hx' : (x != a) = true := by simpa using hx
+      have hx'' : (x == a) = false := by simpa using hx
+      simp only [before, List.takeWhile_cons, hx', ↓reduceIte, List.idxOf_cons, hx'',
+        cond_false, List.take_succ_cons]
+      rw [← before, before_eq_take l a]
+
+lemma not_mem_before : ∀ (l : List ℕ) (a : ℕ), a ∉ before l a
+  | [], _ => by simp [before]
+  | x :: l, a => by
+    by_cases hx : x = a
+    · subst hx
+      simp [before]
+    · have hx' : (x != a) = true := by simpa using hx
+      simp only [before, List.takeWhile_cons, hx', ↓reduceIte, List.mem_cons, not_or]
+      exact ⟨Ne.symm hx, not_mem_before l a⟩
+
+/-- The rest of a list from `a` on starts with `a`. -/
+lemma head?_drop_idxOf : ∀ {l : List ℕ} {a : ℕ}, a ∈ l → (l.drop (l.idxOf a)).head? = some a
+  | [], _, h => by simp at h
+  | x :: l, a, h => by
+    by_cases hx : x = a
+    · subst hx
+      simp
+    · have hx'' : (x == a) = false := by simpa using hx
+      rcases List.mem_cons.mp h with h | h
+      · exact absurd h.symm hx
+      · simp only [List.idxOf_cons, hx'', cond_false, List.drop_succ_cons]
+        exact head?_drop_idxOf h
+
+/-- Before an element that is itself before `lo`: the same as in the whole list. -/
+lemma before_before : ∀ {l : List ℕ} {lo a : ℕ}, a ∈ before l lo → before (before l lo) a = before l a
+  | [], _, _, h => by simp [before] at h
+  | x :: l, lo, a, h => by
+    by_cases hxl : x = lo
+    · subst hxl
+      simp [before, List.takeWhile_cons] at h
+    · have hxl' : (x != lo) = true := by simpa using hxl
+      have e : before (x :: l) lo = x :: before l lo := by
+        simp [before, List.takeWhile_cons, hxl']
+      rw [e] at h ⊢
+      by_cases hxa : x = a
+      · subst hxa
+        simp [before, List.takeWhile_cons]
+      · have hxa' : (x != a) = true := by simpa using hxa
+        rcases List.mem_cons.mp h with h | h
+        · exact absurd h.symm hxa
+        · simp only [before, List.takeWhile_cons, hxa', ↓reduceIte, List.cons.injEq, true_and]
+          exact before_before h
+
+/-- In a list without repeats, the backtrack points before the latest are done before it. -/
+lemma sublist_before : ∀ {bt l : List ℕ} {lo : ℕ}, (bt ++ [lo]).Sublist l → l.Nodup →
+    bt.Sublist (before l lo)
+  | _, [], _, h, _ => by simp at h
+  | bt, x :: l, lo, h, hnd => by
+    have hbn : (bt ++ [lo]).Nodup := h.nodup hnd
+    have hlo : lo ∉ bt := by
+      intro hm
+      rw [List.nodup_append] at hbn
+      exact hbn.2.2 lo hm lo (List.mem_singleton_self lo) rfl
+    rw [List.nodup_cons] at hnd
+    rcases List.sublist_cons_iff.mp h with h | ⟨r, hr, hrl⟩
+    · by_cases hxl : x = lo
+      · subst hxl
+        exact absurd (h.subset (by simp)) hnd.1
+      · have hxl' : (x != lo) = true := by simpa using hxl
+        simp only [before, List.takeWhile_cons, hxl', ↓reduceIte]
+        exact (sublist_before h hnd.2).cons x
+    · cases bt with
+      | nil =>
+        simp only [List.nil_append, List.cons.injEq] at hr
+        obtain ⟨rfl, -⟩ := hr
+        exact List.nil_sublist _
+      | cons b bt =>
+        simp only [List.cons_append, List.cons.injEq] at hr
+        obtain ⟨rfl, rfl⟩ := hr
+        have hxl : b ≠ lo := fun e ↦ hlo (by rw [e]; exact List.mem_cons_self)
+        have hxl' : (b != lo) = true := by simpa using hxl
+        simp only [before, List.takeWhile_cons, hxl', ↓reduceIte]
+        exact (sublist_before hrl hnd.2).cons₂ b
+
 end Walk
+
+
 
 
 
