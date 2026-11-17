@@ -144,7 +144,7 @@ lemma mergeSort_pairLE_eq_of_perm {l₁ l₂ : List (ℤ × ℤ)} (h : l₁.Perm
 lemma ranksOf_relabel (σ : Equiv.Perm (Fin n)) (inv : Vector (List ℤ) n) :
     ranksOf (relabelVec σ inv) = relabelVec σ (ranksOf inv) :=
   eq_relabelVec_of_apply σ fun i ↦ by
-    simpa [ranksOf] using length_filter_finRange_comp σ.symm fun j ↦ lexLt inv[j] inv[i]
+    simpa [ranksOf] using length_filter_finRange_comp σ.symm fun j ↦ lexLT inv[j] inv[i]
 
 /-- Relabeling keeps the number of classes. -/
 lemma numClasses_relabel (σ : Equiv.Perm (Fin n)) (r : Ranks n) :
@@ -333,7 +333,8 @@ variable (d : MolData n)
 /-- Degree does not depend on labels. -/
 lemma degree_relabel (σ : Equiv.Perm (Fin n)) (i : Fin n) :
     (d.relabel σ).degree (σ i) = d.degree i := by
-  simpa [degree, bonds_relabel] using length_filter_finRange_comp σ.symm fun j ↦ d.bonds i j != 0
+  simpa [degree, neighbors, bonds_relabel] using
+    length_filter_finRange_comp σ.symm fun j ↦ d.bonds i j != 0
 
 /-- An atom's invariant does not depend on its label. -/
 lemma atomInvariant_relabel (σ : Equiv.Perm (Fin n)) (i : Fin n) :
@@ -689,7 +690,7 @@ lemma selfMirror_relabel (σ : Equiv.Perm (Fin n)) (i : Fin n) :
 /-- Whether an atom has two neighbors of equal rank does not depend on labels. -/
 lemma tiedNeighbors_relabel (σ : Equiv.Perm (Fin n)) (r : Ranks n) (i : Fin n) :
     (d.relabel σ).tiedNeighbors (relabelVec σ r) (σ i) = d.tiedNeighbors r i := by
-  unfold tiedNeighbors
+  unfold tiedNeighbors neighbors
   have h := ((map_finRange_perm σ.symm).filter fun j ↦ d.bonds i j != 0).map fun j ↦ r[j]
   rw [List.filter_map, List.map_map] at h
   have hp : (fun j ↦ (d.relabel σ).bonds (σ i) j != 0) = (fun j ↦ d.bonds i j != 0) ∘ σ.symm := by

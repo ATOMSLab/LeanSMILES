@@ -391,4 +391,7 @@ end Molecule
 
 instance : Repr Mol := ⟨fun M _ ↦ repr M.mol⟩
 
+/-- Relabel the atoms of a bundled molecule. -/
+def Mol.relabel (M : Mol) (σ : Equiv.Perm (Fin M.n)) : Mol := ⟨M.n, M.mol.relabel σ⟩
+
 end LeanSMILES

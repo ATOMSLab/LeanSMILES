@@ -156,6 +156,11 @@ def Mol.chargesConsistent (M : Mol) : Prop := M.mol.chargesConsistent
 instance (M : Mol) : Decidable M.chargesConsistent :=
   inferInstanceAs (Decidable M.mol.chargesConsistent)
 
+/-- Relabeling a bundled molecule neither creates nor removes an inconsistent charge. -/
+theorem Mol.chargesConsistent_relabel (M : Mol) (σ : Equiv.Perm (Fin M.n)) :
+    (M.relabel σ).chargesConsistent ↔ M.chargesConsistent :=
+  M.mol.chargesConsistent_relabel σ
+
 /-- `Molecule.checkCharges` for a bundled molecule: run it on the result of
 `SMILES.parse`, which checks syntax only. -/
 def Mol.checkCharges (M : Mol) : Except String Unit := M.mol.checkCharges
