@@ -7,6 +7,7 @@ module
 
 public import LeanSMILES.Aromaticity.KekulizeFacts
 public import LeanSMILES.Aromaticity.KekuleSim
+public import LeanSMILES.Aromaticity.ResonanceProofs
 
 /-!
 # LeanSMILES.Aromaticity.KekulizeWalk
@@ -1313,5 +1314,142 @@ theorem kekulizeWorker_correct (hwf : WF m0) (hnd : m0.NbrsDistinct)
 
 
 end Walk
+
+/-! ### The graph of the working copy -/
+
+/-- `cleanUp` keeps which atoms each bond joins. -/
+lemma CleanRel.skel {o w : Work} (h : CleanRel o w) : SameSkel o w where
+  numAtoms := h.atoms_size.symm
+  numBonds := h.bonds_size.symm
+  src k := (ends_getElem! h.bonds_size (fun k ↦ ends_of_single (h.bonds k)) k).1.symm
+  dst k := (ends_getElem! h.bonds_size (fun k ↦ ends_of_single (h.bonds k)) k).2.symm
+
+/-- Distinct neighbours depend only on which atoms the bonds join. -/
+lemma SameSkel.nbrsDistinct {w w' : Work} (h : SameSkel w w') (hw : w.NbrsDistinct) :
+    w'.NbrsDistinct := by
+  intro c k₁ k₂ h₁ h₂ he
+  rw [← h.bondsOf] at h₁ h₂
+  rw [← h.other, ← h.other] at he
+  exact hw c k₁ k₂ h₁ h₂ he
+
+/-- A molecule's working copy has distinct neighbours: its graph is simple. -/
+lemma nbrsDistinct_ofMolecule {n : ℕ} (m : Molecule n) : (Work.ofMolecule m).NbrsDistinct := by
+  intro c k₁ k₂ h₁ h₂ he
+  have hl₁ : k₁ < m.bonds.length := by
+    simpa [Work.ofMolecule, numBonds] using lt_of_mem_bondsOf h₁
+  have hl₂ : k₂ < m.bonds.length := by
+    simpa [Work.ofMolecule, numBonds] using lt_of_mem_bondsOf h₂
+  have t₁ := touches_of_mem_bondsOf h₁
+  have t₂ := touches_of_mem_bondsOf h₂
+  rw [ofMolecule_bond m hl₁] at t₁ he
+  rw [ofMolecule_bond m hl₂] at t₂ he
+  -- both bonds join `c` to the same neighbour, so they are the same edge
+  have hedge : (m.bonds[k₁]).edge = (m.bonds[k₂]).edge := by
+    simp only [toWBond, WBond.touches, WBond.other, Bool.or_eq_true, beq_iff_eq] at t₁ t₂ he
+    simp only [Bond.edge, Sym2.eq_iff, Fin.ext_iff]
+    split at he <;> split at he <;> simp_all <;> omega
+  have hnd := m.nodup
+  have e : (m.bonds.map Bond.edge)[k₁]'(by simpa using hl₁) =
+      (m.bonds.map Bond.edge)[k₂]'(by simpa using hl₂) := by simpa using hedge
+  exact (List.Nodup.getElem_inj_iff hnd).mp e
+
+/-- The copy `aromatize` kekulizes is well formed with distinct neighbours. -/
+lemma wf_nbrsDistinct_prepare {n : ℕ} (m : Molecule n) :
+    WF (Work.prepare m) ∧ (Work.prepare m).NbrsDistinct := by
+  have hs : SameSkel (Work.ofMolecule m) (Work.prepare m) :=
+    (skel_freezeHs _).trans ((cleanRel_cleanUp _).skel.trans (skel_cacheValences _))
+  exact ⟨hs.wf (ofMolecule_wf m), hs.nbrsDistinct (nbrsDistinct_ofMolecule m)⟩
+
+/-! ### One fused system -/
+
+/-- The candidate array `kekulizeSystem` builds: an atom of `l` that `p` accepts, in range. -/
+lemma foldl_cands (p : ℕ → Bool) : ∀ (l : List ℕ) (c : Array Bool),
+    (l.foldl (fun c i ↦ if p i then c.set! i true else c) c).size = c.size ∧
+    ∀ x, (l.foldl (fun c i ↦ if p i then c.set! i true else c) c)[x]! = true ↔
+      c[x]! = true ∨ (x ∈ l ∧ p x = true ∧ x < c.size)
+  | [], c => ⟨rfl, by simp⟩
+  | i :: l, c => by
+    obtain ⟨ih1, ih2⟩ := foldl_cands p l (if p i then c.set! i true else c)
+    simp only [List.foldl_cons]
+    refine ⟨by rw [ih1]; split <;> simp, fun x ↦ ?_⟩
+    rw [ih2 x]
+    by_cases hp : p i = true
+    · simp only [hp, ↓reduceIte]
+      have hs : (c.set! i true).size = c.size := by simp
+      rw [hs, getElem!_set!_bool]
+      by_cases hx : i = x
+      · subst hx
+        by_cases hlt : i < c.size <;> simp [hlt, hp]
+      · simp [hx, Ne.symm hx]
+    · simp only [Bool.not_eq_true] at hp
+      simp only [hp, Bool.false_eq_true, ↓reduceIte, List.mem_cons]
+      constructor
+      · rintro (h | ⟨hm, hpx, hlt⟩)
+        · exact .inl h
+        · exact .inr ⟨.inr hm, hpx, hlt⟩
+      · rintro (h | ⟨hm | hm, hpx, hlt⟩)
+        · exact .inl h
+        · subst hm
+          rw [hp] at hpx
+          cases hpx
+        · exact .inr ⟨hm, hpx, hlt⟩
+
+/-- Making single the bonds written aromatic at one atom, if it is flagged aromatic. -/
+lemma singleAromaticBonds_kind (wa : ℕ → Bool) (out : Work) (i k : ℕ) :
+    SameSkel out (singleAromaticBonds wa out i) ∧
+    ((singleAromaticBonds wa out i).bonds[k]! : WBond).kind =
+      if (out.atoms[i]! : WAtom).aromatic = true ∧ k ∈ out.bondsOf i ∧ wa k = true then .single
+      else (out.bonds[k]! : WBond).kind := by
+  unfold singleAromaticBonds
+  split
+  · rename_i ha
+    have key : ∀ (l : List ℕ) (o : Work), SameSkel out o →
+        SameSkel out (l.foldl (fun o k ↦ if wa k then o.setKind k .single else o) o) ∧
+        ((l.foldl (fun o k ↦ if wa k then o.setKind k .single else o) o).bonds[k]! : WBond).kind =
+          if k ∈ l ∧ wa k = true ∧ k < out.bonds.size then .single else (o.bonds[k]! : WBond).kind := by
+      intro l
+      induction l with
+      | nil => intro o h; exact ⟨h, by simp⟩
+      | cons j l ih =>
+        intro o h
+        rw [List.foldl_cons]
+        by_cases hj : wa j = true
+        · rw [if_pos hj]
+          obtain ⟨h1, h2⟩ := ih _ (h.trans (skel_setKind _ _ _))
+          refine ⟨h1, ?_⟩
+          rw [h2, kind_setKind]
+          have hsz : o.bonds.size = out.bonds.size := h.numBonds.symm
+          by_cases hk : k ∈ l ∧ wa k = true ∧ k < out.bonds.size
+          · rw [if_pos hk, if_pos ⟨List.mem_cons_of_mem _ hk.1, hk.2⟩]
+          · rw [if_neg hk]
+            by_cases hjk : j = k ∧ k < o.bonds.size
+            · rw [if_pos hjk, if_pos ⟨by rw [hjk.1]; exact List.mem_cons_self, hjk.1 ▸ hj,
+                hsz ▸ hjk.2⟩]
+            · rw [if_neg hjk, if_neg]
+              rintro ⟨hm, hw, hlt⟩
+              rcases List.mem_cons.mp hm with e | e
+              · exact hjk ⟨e.symm, hsz ▸ hlt⟩
+              · exact hk ⟨e, hw, hlt⟩
+        · rw [if_neg hj]
+          obtain ⟨h1, h2⟩ := ih _ h
+          refine ⟨h1, ?_⟩
+          rw [h2]
+          congr 1
+          apply propext
+          constructor
+          · rintro ⟨hm, hw, hlt⟩
+            exact ⟨List.mem_cons_of_mem _ hm, hw, hlt⟩
+          · rintro ⟨hm, hw, hlt⟩
+            rcases List.mem_cons.mp hm with rfl | hm
+            · exact absurd hw hj
+            · exact ⟨hm, hw, hlt⟩
+    obtain ⟨h1, h2⟩ := key (out.bondsOf i) out ⟨rfl, rfl, fun _ ↦ rfl, fun _ ↦ rfl⟩
+    refine ⟨h1, ?_⟩
+    rw [h2]
+    by_cases hk : k ∈ out.bondsOf i ∧ wa k = true
+    · rw [if_pos ⟨hk.1, hk.2, lt_of_mem_bondsOf hk.1⟩, if_pos ⟨ha, hk⟩]
+    · rw [if_neg (fun h ↦ hk ⟨h.1, h.2.1⟩), if_neg (fun h ↦ hk h.2)]
+  · rename_i ha
+    exact ⟨⟨rfl, rfl, fun _ ↦ rfl, fun _ ↦ rfl⟩, by rw [if_neg (fun h ↦ ha h.1)]⟩
 
 end LeanSMILES.Aromaticity.Work
