@@ -280,7 +280,7 @@ lake exe validity-test      # 10 000 broken SMILES: accepts everything RDKit acc
 lake exe oracle-test        # 1 128 Delaney molecules: graph = RDKit's, canonical SMILES round-trips and is relabeling-invariant (1 skipped, see above)
 lake exe morgan-test        # Morgan fingerprints: ring membership = RDKit's, bits = RDKit's wherever the graph is, relabeling-invariant
 lake exe charge-test        # formal charges: [C+123], [H+++], [C-123] parse but fail checkCharges; [Na+], [O-2], [Fe+3], [NH4+] pass
-lake exe invariance-test    # the unproved statements of Aromaticity/Invariance.lean, as written, on 805 hard cases
+lake exe invariance-test    # the unproved statements of Aromaticity/Invariance.lean, as written, on 805 hard cases, 229 pairs
 lake exe stereo-test        # stereoisomers vs RDKit and InChI (datasets/stereo-*.tsv from tools/rdkit_stereo.py):
                             # one canonical SMILES per stereoisomer, a different one per different isomer,
                             # no two / \ marks that contradict each other, @/@@ and / \ read as RDKit reads them
@@ -347,7 +347,9 @@ states what `aromatize` does not depend on: the numbering of the atoms
 which Kekulé structure was written (`aromatize_of_kekuleVariant`,
 `aromatize_aromatize`, `exists_kekule_aromatize`), with the corollary that every
 Kekulé structure of a molecule, renumbered and relisted any way, aromatizes to
-one canonical SMILES (`canonicalSmiles_aromatize_eq`). Every proof in that file
+one canonical SMILES (`canonicalSmiles_aromatize_eq`), and that a lowercase
+string and a Kekulé string of the same molecule do too, `c1cc[nH]c1` and
+`C1=CNC=C1` (`aromatize_of_isKekuleSpellingOf`). Every proof in that file
 is `sorry`. The statements carry hypotheses because without them they are
 false:
 
@@ -364,7 +366,7 @@ false:
   statement is about double bonds moved within what comes out aromatic.
 
 ```bash
-lake exe invariance-test    # each statement of Aromaticity/Invariance.lean, as written, on 805 hard cases
+lake exe invariance-test    # each statement of Aromaticity/Invariance.lean, as written, on 805 hard cases and 229 matched pairs
 ```
 RDKit's remaining sanitization steps were ported on that earlier representation;
 `docs/scope-canonical-smiles-morgan.md` records the port, the commit that holds

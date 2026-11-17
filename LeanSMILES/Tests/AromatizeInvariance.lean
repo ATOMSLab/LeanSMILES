@@ -29,8 +29,18 @@ The lines tagged `[info]` count what happens *without* the hypotheses, which
 is how the counterexamples in the module docstring of `Invariance.lean` show
 up: they must not be zero failures for the hypotheses to be earning their keep.
 
+For `aromatize_of_isKekuleSpellingOf`, three Kekulé spellings are built from
+each input on the Kekulé structure the pipeline computes for it — the atoms as
+written, in bracket normal form, and with every hydrogen in brackets — with
+up to eight Kekulé variants of each (`spellings`).  A file whose lines have two
+tab-separated SMILES is read as matched pairs, a molecule and a Kekulé string
+of it in the same atom order: the second is parsed on its own and read onto
+the bond list of the first (`alignOnto`), which is the theorem's situation for
+two strings a user wrote.
+
 ```
 lake exe invariance-test [files]            # default: datasets/aromatize-invariance.smi
+                                            #          and datasets/aromatize-pairs.tsv
 lake exe invariance-test --dump [files]     # one line per string: input, aromatize's output
 ```
 
@@ -128,6 +138,39 @@ def kekuleWitness (m a : Molecule n) : Option (Molecule n) :=
         else b
   | .error _ => none
 
+/-- Kekulé spellings of `m` to try, built on the Kekulé structure the pipeline computes for it
+(each bond written aromatic given the kind `Work.kekulize` gave it): the atoms as written with
+the aromatic flags cleared, the same in bracket normal form, and the same with every hydrogen
+written in brackets; then up to eight Kekulé variants of each over the bonds written aromatic.
+Whether each is an `IsKekuleSpellingOf m` is for the caller to decide. -/
+def spellings (m : Molecule n) : List (Molecule n) :=
+  let w := (Work.ofMolecule m).freezeHs.cleanUp.cacheValences
+  match w.kekulize w.relevantCycles with
+  | .error _ => []
+  | .ok w' =>
+    let k? := withBonds { m with atoms := m.atoms.map fun x ↦ { x with aromatic := false } } <|
+      m.bonds.zipIdx.map fun (b, i) ↦
+        if b.kind == BondKind.aromatic then
+          { b with kind := (w'.bonds[i]?.map (·.kind)).getD b.kind }
+        else b
+    match k? with
+    | none => []
+    | some k₀ =>
+      let sIdx := (m.bonds.zipIdx.filter fun (b, _) ↦ b.kind == BondKind.aromatic).map (·.2)
+      let bracketed : Molecule n :=
+        { k₀ with atoms := k₀.atoms.map fun x ↦
+            if x.totalH == 0 then x else { x with explicitH := some x.totalH, implicitH := 0 } }
+      [k₀, k₀.normalizeBrackets, bracketed].flatMap fun k ↦
+        if sIdx.isEmpty then [k] else kekuleVariants k sIdx 8
+
+/-- The molecule `kk` read onto the bond list of `ml`: `kk`'s atoms and configurations, `ml`'s
+bonds in `ml`'s order and orientation, each with the kind `kk` gives that pair of atoms. -/
+def alignOnto (ml kk : Molecule n) : Option (Molecule n) :=
+  withBonds { ml with atoms := kk.atoms, stereo := kk.stereo } <| ml.bonds.map fun b ↦
+    match kk.bondBetween b.src b.dst with
+    | some c => { b with kind := c.kind }
+    | none => b
+
 /-- Passed and checked, for one line of the report. -/
 abbrev Count := ℕ × ℕ
 
@@ -174,6 +217,25 @@ structure Tally where
   listingCanonical : Count := (0, 0)
   /-- The output aromatizes again. -/
   outputAromatizes : Count := (0, 0)
+  /-- `aromatize_of_isKekuleSpellingOf`, on the spellings built from the input. -/
+  spelling : Count := (0, 0)
+  /-- `canonicalSmiles_aromatize_of_isKekuleSpellingOf`, on those spellings. -/
+  spellingCanonical : Count := (0, 0)
+  /-- Built spellings that are `IsKekuleSpellingOf` the input as written. -/
+  spellingHyp : Count := (0, 0)
+  /-- A spelling aromatizes to the input's output, no hypothesis beyond the relation. -/
+  spellingAny : Count := (0, 0)
+  /-- Matched pairs read. -/
+  pairs : ℕ := 0
+  /-- Matched pairs whose second string, read onto the first, is an `IsKekuleSpellingOf` it. -/
+  pairHyp : Count := (0, 0)
+  /-- `aromatize_of_isKekuleSpellingOf`, on matched pairs. -/
+  pair : Count := (0, 0)
+  /-- `canonicalSmiles_aromatize_of_isKekuleSpellingOf`, on matched pairs: the second string as
+  parsed, against the first. -/
+  pairCanonical : Count := (0, 0)
+  /-- The two strings of a pair aromatize to one canonical SMILES, no hypothesis. -/
+  pairCanonicalAny : Count := (0, 0)
   /-- The first failures, as printed lines. -/
   misses : Array String := #[]
 
@@ -252,6 +314,26 @@ def testOne (s : String) (t : Tally) : Tally := Id.run do
     | none => false
   t := ({ t with witness := t.witness.add okW }).miss okW
     fun _ ↦ s!"exists_kekule_aromatize: {s}: {a.toSmiles}"
+  -- a Kekulé spelling of the input
+  let mut q := 0
+  for k in spellings m do
+    q := q + 1
+    let hyp : Bool := decide (k.IsKekuleSpellingOf m)
+    t := { t with spellingHyp := t.spellingHyp.add hyp }
+    if !hyp then continue
+    let some a' := arom k | continue
+    let ok : Bool := decide (a' = a)
+    t := { t with spellingAny := t.spellingAny.add ok }
+    if !(chg && kept && decide (k.ChargesKept a')) then continue
+    t := ({ t with spelling := t.spelling.add ok }).miss ok
+      fun _ ↦ s!"aromatize_of_isKekuleSpellingOf: {s}: {k.toSmiles}"
+    if q % 4 == 1 then
+      let k' := k.relabel (randPerm nn (30 + q))
+      let some k₂ := withBonds k' (randShuffle (k'.bonds.map Bond.flip) (40 + q)) | continue
+      if decide (k₂.SameBonds k') then
+        let ok := (arom k₂).map (·.canonicalSmiles) == some a.canonicalSmiles
+        t := ({ t with spellingCanonical := t.spellingCanonical.add ok }).miss ok
+          fun _ ↦ s!"canonicalSmiles_aromatize_of_isKekuleSpellingOf: {s}: {k.toSmiles}"
   -- the Kekulé structure
   let sIdx := (a.bonds.zipIdx.filter fun (b, _) ↦ b.kind == BondKind.aromatic).map (·.2)
   if kek && !sIdx.isEmpty then
@@ -274,6 +356,34 @@ def testOne (s : String) (t : Tally) : Tally := Id.run do
             fun _ ↦ s!"canonicalSmiles_aromatize_eq: {s}: {v.toSmiles}"
   return t
 
+/-- Run the Kekulé-spelling checks on a matched pair: `sl` a molecule as written, `sk` a Kekulé
+string of it in the same atom order. -/
+def testPair (sl sk : String) (t : Tally) : Tally := Id.run do
+  let (.ok Ml, .ok Mk) := (parse sl, parse sk) | return t
+  let mut t := { t with pairs := t.pairs + 1 }
+  if h : Mk.n = Ml.n then
+    let m := Ml.mol
+    let kk : Molecule Ml.n := h ▸ Mk.mol
+    let some a := arom m | return t
+    let okAny := (arom kk).map (·.canonicalSmiles) == some a.canonicalSmiles
+    t := { t with pairCanonicalAny := t.pairCanonicalAny.add okAny }
+    let some k := alignOnto m kk | return { t with pairHyp := t.pairHyp.add false }
+    let hyp : Bool := decide (k.IsKekuleSpellingOf m)
+    t := { t with pairHyp := t.pairHyp.add hyp }
+    if !hyp then return t
+    let some a' := arom k | return t
+    if !(decide (m.ChargesKept a) && decide (m.AromaticKept a) && decide (k.ChargesKept a')) then
+      return t
+    let ok : Bool := decide (a' = a)
+    t := ({ t with pair := t.pair.add ok }).miss ok
+      fun _ ↦ s!"aromatize_of_isKekuleSpellingOf: {sl} against {sk}"
+    -- the second string as parsed is `k` with its bonds listed another way
+    if decide (kk.atoms = k.atoms) && decide (kk.stereo = k.stereo) && decide (kk.SameBonds k) then
+      t := ({ t with pairCanonical := t.pairCanonical.add okAny }).miss okAny
+        fun _ ↦ s!"canonicalSmiles_aromatize_of_isKekuleSpellingOf: {sl} against {sk}"
+    return t
+  else return { t with pairHyp := t.pairHyp.add false }
+
 /-- The SMILES of a file: the first field of each line that is neither blank nor a `#` comment. -/
 def readSmiles (path : String) : IO (List String) := do
   let lines ← IO.FS.lines path
@@ -281,6 +391,18 @@ def readSmiles (path : String) : IO (List String) := do
     match (l.splitOn "\t").headD "" |>.trimAscii.toString with
     | "" => none
     | s => if s.startsWith "#" then none else some s
+
+/-- The matched pairs of a file: the first two tab-separated fields of each line that has two
+and is not a `#` comment. -/
+def readPairs (path : String) : IO (List (String × String)) := do
+  let lines ← IO.FS.lines path
+  return lines.toList.filterMap fun l ↦
+    if l.startsWith "#" then none else
+    match l.splitOn "\t" with
+    | a :: b :: _ =>
+      let (a, b) := (a.trimAscii.toString, b.trimAscii.toString)
+      if a.isEmpty || b.isEmpty then none else some (a, b)
+    | _ => none
 
 /-- One line of the report for a theorem: every check must pass. -/
 def must (label : String) (c : Count) : String := s!"{label}: {c.1}/{c.2}  [must be all]"
@@ -302,9 +424,21 @@ def report (t : Tally) : IO Bool := do
     ("aromatize_of_kekuleVariant", t.variant),
     ("aromatize_aromatize", t.idempotent),
     ("exists_kekule_aromatize (the pipeline's Kekulé structure as witness)", t.witness),
-    ("canonicalSmiles_aromatize_eq", t.canonical)]
+    ("canonicalSmiles_aromatize_eq", t.canonical),
+    ("aromatize_of_isKekuleSpellingOf (spellings built from the input)", t.spelling),
+    ("canonicalSmiles_aromatize_of_isKekuleSpellingOf (built spellings)", t.spellingCanonical),
+    ("aromatize_of_isKekuleSpellingOf (matched pairs)", t.pair),
+    ("canonicalSmiles_aromatize_of_isKekuleSpellingOf (matched pairs)", t.pairCanonical)]
   for (label, c) in theorems do IO.println (must label c)
   IO.println (must "generated variants are `KekuleVariant`s as written" t.variantHyp)
+  IO.println (info "built spellings that are `IsKekuleSpellingOf` the input as written"
+    t.spellingHyp)
+  IO.println (info s!"matched pairs ({t.pairs} read) that are `IsKekuleSpellingOf` as written"
+    t.pairHyp)
+  IO.println (info "without the charge and aromatic hypotheses: a spelling gives the same output"
+    t.spellingAny)
+  IO.println (info "without hypotheses: the two strings of a pair give one canonical SMILES"
+    t.pairCanonicalAny)
   IO.println (info "without hypotheses: relabeling commutes" t.relabelAny)
   IO.println (info "without hypotheses: relabeled molecule aromatizes iff the molecule does"
     t.relabelSuccess)
@@ -321,14 +455,21 @@ end LeanSMILES.Tests.AromatizeInvariance
 open LeanSMILES.Tests.AromatizeInvariance in
 /-- Entry point of `lake exe invariance-test`: checks the statements of
 `LeanSMILES.Aromaticity.Invariance` on the SMILES of the given files (by default
-`datasets/aromatize-invariance.smi`) and exits with 1 if any fails; with `--dump`, prints each
-string with `aromatize`'s output instead. -/
+`datasets/aromatize-invariance.smi` and the matched pairs of `datasets/aromatize-pairs.tsv`) and
+exits with 1 if any fails; with `--dump`, prints each string with `aromatize`'s output instead. -/
 public def main (args : List String) : IO UInt32 := do
   let dump := args.contains "--dump"
   let files := args.filter (· != "--dump")
-  let files := if files.isEmpty then ["datasets/aromatize-invariance.smi"] else files
+  let files := if files.isEmpty then
+      ["datasets/aromatize-invariance.smi", "datasets/aromatize-pairs.tsv"]
+    else files
   let mut t : Tally := {}
   for path in files do
+    let pairs ← readPairs path
+    -- a file of matched pairs: the pair checks only
+    if !dump && !pairs.isEmpty then
+      for (sl, sk) in pairs do t := testPair sl sk t
+      continue
     for s in ← readSmiles path do
       if dump then
         let out := match parse s with

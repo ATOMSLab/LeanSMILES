@@ -333,6 +333,142 @@ theorem canonicalSmiles_aromatize_eq {m m₁ m₂ a : Molecule n} (hk : m.IsKeku
     ∃ a₂, m₂.aromatize = .ok a₂ ∧ a₂.canonicalSmiles = a.canonicalSmiles := by
   sorry
 
+/-! ### 5. A lowercase molecule and a Kekulé spelling of it
+
+Sections 1 to 4 relate two Kekulé structures with the same atom records, and
+a lowercase molecule to a Kekulé structure of its own *output*.  They do not
+relate two *inputs* as a user writes them: `c1cc[nH]c1` and `C1=CNC=C1`.
+These differ in more than the bonds.  The nitrogen is a bracket atom with one
+written hydrogen in the first and a bare atom with one implied hydrogen in the
+second, and the carbons are flagged aromatic in the first only.
+
+The formulation chosen is a direct relation between the two inputs,
+`k.IsKekuleSpellingOf m`: the same atoms up to the aromatic flag and up to how
+their hydrogens are recorded, the same bond list up to the kinds, each bond
+written aromatic in `m` single or double in `k`, and — this is what makes `k`
+a Kekulé structure rather than any placement of double bonds — every atom
+with the same hydrogens and the same valence in both, *as `aromatize` counts
+them* (`sanitizedH`, `sanitizedValence`): RDKit counts an aromatic atom's
+bonds as a Kekulé structure would, so its valence in the lowercase molecule is
+the bond-order sum a Kekulé structure must give it.
+
+The other route, a lemma that `aromatize` does not depend on how an atom's
+hydrogens are recorded, is false: RDKit's `cleanUp` reads the *explicit*
+valence, which counts a bracket atom's hydrogens and not a bare atom's, so it
+rewrites `O=[IH]=O` (to `[O-][IH+2][O-]`) and leaves `O=I=O` alone, though the
+two have the same hydrogens and valences.
+
+What forces each hypothesis of `aromatize_of_isKekuleSpellingOf`:
+
+* `valence`: `Cn1cccc1` against `CN1(=CC=CC=1)`, a five-valent nitrogen with
+  two ring double bonds.  Same atoms, same hydrogens, every aromatic bond
+  single or double, every atom at an allowed valence; not aromatic.
+* `hydrogens`: `c1ccccc1` against `C1=CC=CCC1`.  Same valences, with two
+  hydrogens where benzene has one.
+* `AromaticKept`: `Cc1cccc2ncc12`, whose five-ring does not come out
+  aromatic, against `CC1=CC=CC2=NC=C12`, the Kekulé spelling with that ring's
+  double bonds the other way round from where kekulization put them.
+* `ChargesKept` for `m`, and for `k` with its own output: `O=I=O` and
+  `O=[IH]=O` are Kekulé spellings of each other, and `cleanUp` rewrites only
+  the second, whichever of the two is `m`.
+
+The conclusion is an equality of molecules because the relation fixes the
+bond list.  Two strings a user writes list their bonds differently, which is
+what the corollary `canonicalSmiles_aromatize_of_isKekuleSpellingOf` absorbs.
+
+Tested as written by `lake exe invariance-test`.  From each input, three
+spellings are built on the Kekulé structure the pipeline computes for it —
+atoms as in the input (`[nH]` becomes `[NH]`), in bracket normal form (`N`, as
+a user writes it), and with every hydrogen in brackets — with up to eight
+Kekulé variants of each.  The matched pairs are a lowercase and a Kekulé
+string of one molecule written by RDKit in the same atom order, each parsed on
+its own and the second read onto the bond list of the first: the 229 pairs of
+`datasets/aromatize-pairs.tsv` (17 with `[nH]`, 32 with stereo marks) and
+1 062 more from the 1 147 molecules above, of which 1 003 keep the atom order.
+
+| statement | checks | failures |
+|---|---|---|
+| `aromatize_of_isKekuleSpellingOf`, built spellings | 29 109 | 0 |
+| `aromatize_of_isKekuleSpellingOf`, matched pairs | 1 231 | 0 |
+| `canonicalSmiles_aromatize_of_isKekuleSpellingOf`, built spellings | 9 156 | 0 |
+| `canonicalSmiles_aromatize_of_isKekuleSpellingOf`, matched pairs | 1 231 | 0 |
+
+The built spellings are from the 805 hard cases, the 2 992 oracle strings and
+a one-in-four sample (3 425) of the 13 701 Kekulé and lowercase strings.
+Every one of the 30 459 spellings built satisfied `IsKekuleSpellingOf` as
+written; without `ChargesKept` and `AromaticKept`, 24 of them aromatize to
+something else.  In all 1 291 matched pairs the two strings got one canonical
+SMILES; the 60 that are not spellings as written list their atoms in
+different orders, or (one tetrazole) put a hydrogen on another nitrogen.
+-/
+
+/-- The hydrogens `aromatize` counts on atom `i` of the input: those written in its brackets, or
+for a bare atom those RDKit's valence rule gives it on the bonds as written.  (The `implicitH`
+recorded on the atom is not consulted.) -/
+def sanitizedH (m : Molecule n) (i : Fin n) : ℕ := (Aromaticity.Work.ofMolecule m).totalHs i
+
+/-- The valence `aromatize` counts on atom `i` of the input: its bond orders, an aromatic atom's
+snapped to what a Kekulé structure gives it (RDKit's explicit valence), plus all its
+hydrogens. -/
+def sanitizedValence (m : Molecule n) (i : Fin n) : ℕ :=
+  (Aromaticity.Work.ofMolecule m).explicitValence i + (Aromaticity.Work.ofMolecule m).implicitHs i
+
+/-- `k` is a Kekulé spelling of `m`: nothing in `k` is written aromatic; the configurations are
+the same; bond for bond the same atoms, orientation and mark, a bond written aromatic in `m`
+single or double in `k` and any other bond of the same kind; atom for atom the same record up
+to the aromatic flag and the hydrogens; and each atom with the hydrogens and the valence in `k`
+that it has in `m`, as `aromatize` counts them. -/
+structure IsKekuleSpellingOf (k m : Molecule n) : Prop where
+  /-- Nothing in `k` is written aromatic. -/
+  kekule : k.IsKekule
+  /-- The same configurations. -/
+  stereo : k.stereo = m.stereo
+  /-- Bond for bond: the same skeleton; a bond written aromatic in `m` is single or double in
+  `k`, any other bond has the same kind. -/
+  bonds : List.Forall₂ (fun b b' : Bond n ↦ b.src = b'.src ∧ b.dst = b'.dst ∧ b.dir = b'.dir ∧
+    if b'.kind = .aromatic then b.kind = .single ∨ b.kind = .double else b.kind = b'.kind)
+    k.bonds m.bonds
+  /-- Atom for atom the same record, the aromatic flag and the hydrogens aside. -/
+  atoms : ∀ i, ({ k.atom i with aromatic := false, explicitH := none, implicitH := 0 } : Atom) =
+    { m.atom i with aromatic := false, explicitH := none, implicitH := 0 }
+  /-- Every atom has the hydrogens it has in `m`. -/
+  hydrogens : ∀ i, k.sanitizedH i = m.sanitizedH i
+  /-- Every atom has the valence it has in `m`. -/
+  valence : ∀ i, k.sanitizedValence i = m.sanitizedValence i
+
+instance (k m : Molecule n) : Decidable (k.IsKekuleSpellingOf m) :=
+  decidable_of_iff (k.IsKekule ∧ k.stereo = m.stereo ∧
+    List.Forall₂ (fun b b' : Bond n ↦ b.src = b'.src ∧ b.dst = b'.dst ∧ b.dir = b'.dir ∧
+      if b'.kind = .aromatic then b.kind = .single ∨ b.kind = .double else b.kind = b'.kind)
+      k.bonds m.bonds ∧
+    (∀ i, ({ k.atom i with aromatic := false, explicitH := none, implicitH := 0 } : Atom) =
+      { m.atom i with aromatic := false, explicitH := none, implicitH := 0 }) ∧
+    (∀ i, k.sanitizedH i = m.sanitizedH i) ∧ ∀ i, k.sanitizedValence i = m.sanitizedValence i)
+    ⟨fun ⟨h₁, h₂, h₃, h₄, h₅, h₆⟩ ↦ ⟨h₁, h₂, h₃, h₄, h₅, h₆⟩,
+      fun h ↦ ⟨h.kekule, h.stereo, h.bonds, h.atoms, h.hydrogens, h.valence⟩⟩
+
+/-- **A Kekulé spelling of a molecule aromatizes to what the molecule does.**  If `m`
+aromatizes to `a` keeping its charges and every bond written aromatic, and a Kekulé spelling `k`
+of `m` aromatizes keeping its charges, the two outputs are equal.  This is `c1cc[nH]c1` against
+`C1=CNC=C1`. -/
+theorem aromatize_of_isKekuleSpellingOf {m k a a' : Molecule n} (h : m.aromatize = .ok a)
+    (hc : m.ChargesKept a) (hk : m.AromaticKept a) (hs : k.IsKekuleSpellingOf m)
+    (h' : k.aromatize = .ok a') (hc' : k.ChargesKept a') : a' = a := by
+  sorry
+
+/-- **A lowercase molecule and its Kekulé spellings have one canonical SMILES.**  With `m`, `k`
+as in `aromatize_of_isKekuleSpellingOf`, renumber the atoms of `k` by any `σ` and list the
+renumbered bonds in any order and orientation: the result `k₂` aromatizes, and to the canonical
+SMILES of `a`.  From `aromatize_of_isKekuleSpellingOf`, `IsKekule.aromatize_relabel`,
+`aromatize_of_sameBonds` and `canonicalSmiles_eq_of_sameBonds_relabel`. -/
+theorem canonicalSmiles_aromatize_of_isKekuleSpellingOf {m k k₂ a a' : Molecule n}
+    (h : m.aromatize = .ok a) (hc : m.ChargesKept a) (hk : m.AromaticKept a)
+    (hs : k.IsKekuleSpellingOf m) (h' : k.aromatize = .ok a') (hc' : k.ChargesKept a')
+    (σ : Equiv.Perm (Fin n)) (hat : k₂.atoms = (k.relabel σ).atoms)
+    (hst : k₂.stereo = (k.relabel σ).stereo) (hb : k₂.SameBonds (k.relabel σ)) :
+    ∃ a₂, k₂.aromatize = .ok a₂ ∧ a₂.canonicalSmiles = a.canonicalSmiles := by
+  sorry
+
 end Molecule
 
 end LeanSMILES

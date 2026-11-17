@@ -1,7 +1,8 @@
 # Hard cases for lake exe invariance-test (LeanSMILES/Aromaticity/Invariance.lean),
 # written by tools/rdkit_invariance_cases.py.
 # Hand-picked: lowercase rings that stay non-aromatic, fused aromatic/non-aromatic
-# systems, charged rings, exocyclic double bonds, annulenes, cyclophanes, clean-up cases.
+# systems, charged rings, exocyclic double bonds, annulenes, cyclophanes,
+# clean-up cases.
 Cc1cc2cccc2c1
 c1cc2cccc2c1
 c1ccc2cccc-2cc1

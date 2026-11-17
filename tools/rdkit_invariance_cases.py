@@ -2,6 +2,7 @@
 """Hard cases for `lake exe invariance-test` (`LeanSMILES/Aromaticity/Invariance.lean`).
 
     python3 tools/rdkit_invariance_cases.py > datasets/aromatize-invariance.smi
+    python3 tools/rdkit_invariance_cases.py --pairs > datasets/aromatize-pairs.tsv
 
 Two parts. `HAND` is written as it is, RDKit not involved: lowercase rings that stay
 non-aromatic (where relabeling does not commute with `aromatize`), fused systems with one
@@ -10,9 +11,17 @@ cyclophanes, and the inputs RDKit's `cleanUp` rewrites (where relisting the bond
 `CN(C)#N(C)CC` renumbering the atoms, changes the output).  `BASE` is written by RDKit:
 its canonical SMILES and four random atom orders, in lowercase and in Kekulé form.
 
+With `--pairs` it writes matched pairs instead, for `aromatize_of_isKekuleSpellingOf`: a
+lowercase and a Kekulé string of one molecule, both written by RDKit without canonical
+reordering, kept when they list the same atoms in the same order.  The molecules are `BASE`,
+the hand-picked aromaticity cases, and every sixth aromatic molecule of the Delaney and stereo
+sets (run from the repository root).
+
 Needs RDKit (`pip install rdkit`).  The random orders depend on the RDKit version.
 """
+import csv
 import random
+import sys
 
 from rdkit import Chem, RDLogger
 
@@ -90,11 +99,56 @@ def generated():
     return list(dict.fromkeys(out))
 
 
+def same_order(a, b):
+    """Do two strings list the same atoms, joined the same way, in the same order?"""
+    x, y = (Chem.MolFromSmiles(s, sanitize=False) for s in (a, b))
+    if x is None or y is None or x.GetNumAtoms() != y.GetNumAtoms():
+        return False
+    if [u.GetAtomicNum() for u in x.GetAtoms()] != [u.GetAtomicNum() for u in y.GetAtoms()]:
+        return False
+    edges = lambda m: {frozenset((e.GetBeginAtomIdx(), e.GetEndAtomIdx())) for e in m.GetBonds()}
+    return edges(x) == edges(y)
+
+
+def pairs():
+    sources = list(BASE)
+    with open("datasets/aromaticity-cases.csv") as f:
+        sources += [row[1].strip() for row in list(csv.reader(f))[1:]]
+    with open("datasets/delaney-processed.csv") as f:
+        rows = list(csv.reader(f))
+        col = rows[0].index("smiles")
+        sources += [row[col].strip() for row in rows[1:]][::6]
+    with open("datasets/stereo.smi") as f:
+        sources += [line.split()[0] for line in f if line.strip()][::6]
+    out = []
+    for s in sources:
+        m = Chem.MolFromSmiles(s)
+        if m is None or not any(a.GetIsAromatic() for a in m.GetAtoms()):
+            continue
+        k = Chem.Mol(m)
+        try:
+            Chem.Kekulize(k, clearAromaticFlags=True)
+        except Exception:
+            continue
+        low = Chem.MolToSmiles(m, canonical=False)
+        kek = Chem.MolToSmiles(k, kekuleSmiles=True, canonical=False)
+        if same_order(low, kek):
+            out.append(low + "\t" + kek)
+    return list(dict.fromkeys(out))
+
+
 if __name__ == "__main__":
+    if "--pairs" in sys.argv:
+        print("# Matched pairs for lake exe invariance-test: a lowercase and a Kekulé string of")
+        print("# one molecule, same atom order.  Written by")
+        print("# tools/rdkit_invariance_cases.py --pairs.")
+        print("\n".join(pairs()))
+        sys.exit(0)
     print("# Hard cases for lake exe invariance-test (LeanSMILES/Aromaticity/Invariance.lean),")
     print("# written by tools/rdkit_invariance_cases.py.")
     print("# Hand-picked: lowercase rings that stay non-aromatic, fused aromatic/non-aromatic")
-    print("# systems, charged rings, exocyclic double bonds, annulenes, cyclophanes, clean-up cases.")
+    print("# systems, charged rings, exocyclic double bonds, annulenes, cyclophanes,")
+    print("# clean-up cases.")
     print("\n".join(HAND))
     print("# Generated with RDKit: lowercase and Kekulé writings in random atom orders.")
     print("\n".join(generated()))
