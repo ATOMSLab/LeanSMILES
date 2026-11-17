@@ -204,7 +204,7 @@ lemma aromatic_getElem! (h : SameMarks w w') (j : ℕ) :
     (w'.atoms[j]! : WAtom).aromatic = (w.atoms[j]! : WAtom).aromatic := by
   have := h.flags j
   simp only [getElem!_def]
-  cases h1 : w'.atoms[j]? <;> cases h2 : w.atoms[j]? <;> simp_all <;> rfl
+  cases h1 : w'.atoms[j]? <;> cases h2 : w.atoms[j]? <;> simp_all
 
 lemma isAromaticAtom_eq (h : SameMarks w w') : w'.isAromaticAtom = w.isAromaticAtom := by
   funext i
@@ -244,5 +244,215 @@ theorem PerceiveAgree.setAromaticity {rings : Array (List ℕ)} {w w' : Work}
   unfold Work.setAromaticity
   rw [h.aromaticBondList_eq]
   exact hf.foldl_markAromatic _
+
+/-! ### The final hydrogen counts -/
+
+/-- An atom's implied hydrogens depend only on that atom and the bonds. -/
+lemma implicitHs_congr {w w' : Work} (hb : w'.bonds = w.bonds) {i : ℕ}
+    (ha : (w'.atoms[i]! : WAtom) = (w.atoms[i]! : WAtom)) : w'.implicitHs i = w.implicitHs i := by
+  have hbo : w'.bondsOf = w.bondsOf := by
+    funext j
+    simp only [bondsOf, numBonds, hb]
+  simp only [implicitHs, explicitValence, isAromaticAtom, bondHalfSum, hbo, hb, ha]
+  rfl
+
+@[simp] lemma adjustHsStep_bonds (w : Work) (j : ℕ) : (adjustHsStep w j).bonds = w.bonds := by
+  unfold adjustHsStep
+  dsimp only
+  split <;> (try split) <;> rfl
+
+@[simp] lemma size_adjustHsStep_atoms (w : Work) (j : ℕ) :
+    (adjustHsStep w j).atoms.size = w.atoms.size := by
+  unfold adjustHsStep
+  dsimp only
+  split <;> (try split) <;> simp
+
+/-- Atom `i` after editing it with `g`. -/
+lemma modifyAtom_atom_self (w : Work) (i : ℕ) (g : WAtom → WAtom) :
+    ((w.modifyAtom i g).atoms[i]! : WAtom) =
+      if i < w.atoms.size then g (w.atoms[i]! : WAtom) else (w.atoms[i]! : WAtom) := by
+  by_cases hi : i < w.atoms.size
+  · have hi' : i < (w.atoms.modify i g).size := by simpa using hi
+    rw [if_pos hi, getElem!_pos _ i hi', getElem!_pos _ i hi]
+    simp [modifyAtom, Array.getElem_modify]
+  · have hi' : ¬ i < (w.modifyAtom i g).atoms.size := by simpa [modifyAtom] using hi
+    rw [if_neg hi, getElem!_neg _ i hi', getElem!_neg _ i hi]
+
+@[simp] lemma size_foldl_adjustHsStep_atoms :
+    ∀ (l : List ℕ) (w : Work), (l.foldl adjustHsStep w).atoms.size = w.atoms.size
+  | [], _ => rfl
+  | j :: l, w => by rw [List.foldl_cons, size_foldl_adjustHsStep_atoms l, size_adjustHsStep_atoms]
+
+@[simp] lemma foldl_adjustHsStep_bonds :
+    ∀ (l : List ℕ) (w : Work), (l.foldl adjustHsStep w).bonds = w.bonds
+  | [], _ => rfl
+  | j :: l, w => by rw [List.foldl_cons, foldl_adjustHsStep_bonds l, adjustHsStep_bonds]
+
+/-- A step at another atom leaves atom `i` alone. -/
+lemma adjustHsStep_atom_of_ne (w : Work) {i j : ℕ} (hij : j ≠ i) :
+    ((adjustHsStep w j).atoms[i]! : WAtom) = (w.atoms[i]! : WAtom) := by
+  unfold adjustHsStep
+  dsimp only
+  split <;> (try split) <;> try rfl
+  simp only [modifyAtom, getElem!_def, Array.getElem?_modify, if_neg hij]
+
+/-- The step at atom `i` reads only atom `i` and the bonds. -/
+lemma adjustHsStep_atom_congr {w w' : Work} (hb : w'.bonds = w.bonds)
+    (hs : w'.atoms.size = w.atoms.size) {i : ℕ}
+    (ha : (w'.atoms[i]! : WAtom) = (w.atoms[i]! : WAtom)) :
+    ((adjustHsStep w' i).atoms[i]! : WAtom) = ((adjustHsStep w i).atoms[i]! : WAtom) := by
+  have hi := implicitHs_congr hb ha
+  have harom : w'.isAromaticAtom i = w.isAromaticAtom i := by
+    simp only [isAromaticAtom, bondsOf, numBonds, hb, ha]
+  unfold adjustHsStep
+  dsimp only
+  simp only [ha, hi, harom]
+  split <;> (try split) <;> try exact ha
+  rw [modifyAtom_atom_self, modifyAtom_atom_self, hs, ha]
+
+/-- Through the whole first pass of `finalizeHs`, atom `i` ends as the step at `i` leaves it. -/
+lemma foldl_adjustHsStep_atom (w : Work) (i : ℕ) :
+    ∀ (l : List ℕ) (w0 : Work), l.Nodup → w0.bonds = w.bonds → w0.atoms.size = w.atoms.size →
+      (w0.atoms[i]! : WAtom) = (w.atoms[i]! : WAtom) →
+      ((l.foldl adjustHsStep w0).atoms[i]! : WAtom) =
+        if i ∈ l then ((adjustHsStep w i).atoms[i]! : WAtom) else (w.atoms[i]! : WAtom)
+  | [], _, _, _, _, ha => by simpa using ha
+  | j :: l, w0, hnd, hb, hs, ha => by
+    rw [List.foldl_cons]
+    obtain ⟨hj, hnd⟩ := List.nodup_cons.mp hnd
+    by_cases hji : j = i
+    · subst hji
+      -- the rest of the fold does not visit `j` again
+      have hrest : ∀ (l : List ℕ) (v : Work), j ∉ l →
+          ((l.foldl adjustHsStep v).atoms[j]! : WAtom) = (v.atoms[j]! : WAtom) := by
+        intro l
+        induction l with
+        | nil => intro v _; rfl
+        | cons x l ih =>
+          intro v hx
+          rw [List.mem_cons, not_or] at hx
+          rw [List.foldl_cons, ih _ hx.2, adjustHsStep_atom_of_ne v (Ne.symm hx.1)]
+      rw [hrest l _ hj, if_pos List.mem_cons_self, adjustHsStep_atom_congr hb hs ha]
+    · have := foldl_adjustHsStep_atom w i l (adjustHsStep w0 j) hnd (by simp [hb]) (by simp [hs])
+        (by rw [adjustHsStep_atom_of_ne w0 hji, ha])
+      rw [this]
+      simp [List.mem_cons, Ne.symm hji]
+
+/-- **An atom's final hydrogen count is what the step at that atom gives**: its written
+hydrogens after `adjustHs`, plus those then implied. -/
+lemma frozenHs_finalizeHs (w : Work) {i : ℕ} (hi : i < w.atoms.size) :
+    ((w.finalizeHs.atoms[i]! : WAtom)).frozenHs =
+      some (((adjustHsStep w i).atoms[i]! : WAtom).explicitHs +
+        (adjustHsStep w i).implicitHs i) := by
+  set w1 := (List.range w.numAtoms).foldl adjustHsStep w with hw1
+  have hb1 : w1.bonds = w.bonds := by rw [hw1, foldl_adjustHsStep_bonds]
+  have hs1 : w1.atoms.size = w.atoms.size := by rw [hw1, size_foldl_adjustHsStep_atoms]
+  have ha1 := foldl_adjustHsStep_atom w i (List.range w.numAtoms) w List.nodup_range rfl rfl rfl
+  rw [if_pos (List.mem_range.mpr (by simpa [numAtoms] using hi))] at ha1
+  have himp : w1.implicitHs i = (adjustHsStep w i).implicitHs i :=
+    implicitHs_congr (by simp [hb1]) (by rw [← hw1] at ha1; exact ha1)
+  unfold finalizeHs
+  rw [← hw1]
+  have hi1 : i < w1.atoms.size := hs1 ▸ hi
+  simp only [numAtoms, getElem!_def, List.getElem?_toArray, Array.getElem?_map,
+    List.getElem?_range hi1, List.getElem?_map, Option.map_some,
+    Array.getElem?_eq_getElem hi1]
+  rw [← hw1] at ha1
+  simp only [getElem!_def, Array.getElem?_eq_getElem hi1] at ha1 himp
+  rw [ha1, himp]
+
+/-- Atom `i` after editing atom `j ≠ i`. -/
+lemma modifyAtom_atom_of_ne (w : Work) {i j : ℕ} (hij : j ≠ i) (g : WAtom → WAtom) :
+    ((w.modifyAtom j g).atoms[i]! : WAtom) = (w.atoms[i]! : WAtom) := by
+  simp only [modifyAtom, getElem!_def, Array.getElem?_modify, if_neg hij]
+
+/-- An edit that keeps the written and cached implied hydrogens keeps every cached total. -/
+lemma cachedTotalHs_modifyAtom (w : Work) (j : ℕ) (g : WAtom → WAtom)
+    (hg : ∀ a, (g a).explicitHs = a.explicitHs ∧ (g a).cachedImplicit = a.cachedImplicit) :
+    (w.modifyAtom j g).cachedTotalHs = w.cachedTotalHs := by
+  funext i
+  by_cases hij : j = i
+  · subst hij
+    simp only [cachedTotalHs, modifyAtom_atom_self]
+    split <;> simp [hg]
+  · simp only [cachedTotalHs, modifyAtom_atom_of_ne w hij]
+
+/-- Assigning radicals keeps the cached hydrogen totals. -/
+lemma cachedTotalHs_assignRadicals (w : Work) :
+    w.assignRadicals.cachedTotalHs = w.cachedTotalHs := by
+  unfold assignRadicals
+  generalize List.range w.numAtoms = l
+  induction l generalizing w with
+  | nil => rfl
+  | cons j l ih =>
+    rw [List.foldl_cons, ih]
+    unfold radicalStep
+    dsimp only
+    split
+    · rfl
+    · exact cachedTotalHs_modifyAtom _ _ _ fun _ ↦ ⟨rfl, rfl⟩
+
+/-- Marking aromatic bonds keeps the cached hydrogen totals. -/
+lemma cachedTotalHs_setAromaticity (w : Work) (rings : Array (List ℕ)) :
+    (w.setAromaticity rings).cachedTotalHs = w.cachedTotalHs := by
+  unfold setAromaticity
+  generalize w.aromaticBondList rings = l
+  induction l generalizing w with
+  | nil => rfl
+  | cons b l ih =>
+    rw [List.foldl_cons, ih]
+    unfold markAromatic
+    dsimp only
+    split
+    · rw [cachedTotalHs_modifyAtom _ _ (fun x ↦ { x with aromatic := true }) fun _ ↦ ⟨rfl, rfl⟩,
+        cachedTotalHs_modifyAtom _ _ (fun x ↦ { x with aromatic := true }) fun _ ↦ ⟨rfl, rfl⟩]
+      rfl
+    · rfl
+
+/-- The step at atom `i` keeps its aromatic flag. -/
+lemma aromatic_adjustHsStep (w : Work) (i : ℕ) :
+    ((adjustHsStep w i).atoms[i]! : WAtom).aromatic = (w.atoms[i]! : WAtom).aromatic := by
+  unfold adjustHsStep
+  dsimp only
+  split <;> (try split) <;> try rfl
+  rw [modifyAtom_atom_self]
+  split <;> rfl
+
+/-- `finalizeHs` keeps the aromatic flags. -/
+lemma aromatic_finalizeHs (w : Work) (i : ℕ) :
+    ((w.finalizeHs.atoms[i]! : WAtom)).aromatic = (w.atoms[i]! : WAtom).aromatic := by
+  set w1 := (List.range w.numAtoms).foldl adjustHsStep w with hw1
+  have hs1 : w1.atoms.size = w.atoms.size := by rw [hw1, size_foldl_adjustHsStep_atoms]
+  have hfs : w.finalizeHs.atoms.size = w.atoms.size := by
+    simp [finalizeHs, ← hw1, hs1, numAtoms]
+  by_cases hi : i < w.atoms.size
+  · have ha1 := foldl_adjustHsStep_atom w i (List.range w.numAtoms) w List.nodup_range rfl rfl rfl
+    rw [if_pos (List.mem_range.mpr (by simpa [numAtoms] using hi))] at ha1
+    have hi1 : i < w1.atoms.size := hs1 ▸ hi
+    unfold finalizeHs
+    rw [← hw1]
+    simp only [numAtoms, getElem!_def, List.getElem?_toArray, Array.getElem?_map,
+      List.getElem?_range hi1, Option.map_some, Option.getD_some, Array.getElem?_eq_getElem hi1]
+    rw [← hw1] at ha1
+    simp only [getElem!_def, Array.getElem?_eq_getElem hi1] at ha1
+    rw [ha1, ← getElem!_def, aromatic_adjustHsStep, getElem!_def]
+  · rw [getElem!_neg _ i (by omega), getElem!_neg _ i (by omega)]
+
+/-- `finalizeHs` keeps which atoms are aromatic. -/
+lemma isAromaticAtom_finalizeHs (w : Work) : w.finalizeHs.isAromaticAtom = w.isAromaticAtom := by
+  funext i
+  simp only [isAromaticAtom, aromatic_finalizeHs, bondsOf, numBonds, finalizeHs_bonds]
+
+/-- The step at atom `i` gives back the hydrogen total cached before kekulization: what both
+runs of the witness argument satisfy at every atom (`Work.frozenHs_finalizeHs_of_restored`). -/
+def HsRestored (w : Work) (i : ℕ) : Prop :=
+  ((adjustHsStep w i).atoms[i]! : WAtom).explicitHs + (adjustHsStep w i).implicitHs i =
+    w.cachedTotalHs i
+
+/-- **The final hydrogen count is the cached one** at an atom where the step restores it. -/
+lemma frozenHs_finalizeHs_of_restored (w : Work) {i : ℕ} (hi : i < w.atoms.size)
+    (h : HsRestored w i) :
+    ((w.finalizeHs.atoms[i]! : WAtom)).frozenHs = some (w.cachedTotalHs i) := by
+  rw [frozenHs_finalizeHs w hi, h]
 
 end LeanSMILES.Aromaticity.Work

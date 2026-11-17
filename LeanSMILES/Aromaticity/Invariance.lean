@@ -8,6 +8,7 @@ module
 public import LeanSMILES.Aromaticity.Congruence
 public import LeanSMILES.Aromaticity.KekuleSim
 public import LeanSMILES.Aromaticity.KekulizeFacts
+public import LeanSMILES.Aromaticity.PerceiveAgree
 public import LeanSMILES.Aromaticity.PerceiveFacts
 public import LeanSMILES.SMILES.Canonicity
 public import LeanSMILES.SMILES.KekuleClass
@@ -846,6 +847,49 @@ structure OutAgree (n : ℕ) (W W' : Work) : Prop where
       W.atoms[i.val]!.frozenHs.getD (W.atoms[i.val]!.explicitHs + W.implicitHs i)
 
 open Aromaticity in
+/-- **Two final working copies agree on what the output reads** if, before perception, they are
+read alike by it (`Work.PerceiveAgree`) with the same bonds and aromatic flags, and at every atom
+of each the `adjustHs` step gives back the cached hydrogen total (`Work.HsRestored`). -/
+theorem outAgree_finish {w w' : Work} {rings : Array (List ℕ)} (hn : w.atoms.size = n)
+    (hp : Work.PerceiveAgree rings w.assignRadicals w'.assignRadicals)
+    (hm : Work.SameMarks w.assignRadicals w'.assignRadicals)
+    (hr : ∀ i < n, Work.HsRestored (w.assignRadicals.setAromaticity rings) i)
+    (hr' : ∀ i < n, Work.HsRestored (w'.assignRadicals.setAromaticity rings) i) :
+    OutAgree n (w.finish rings) (w'.finish rings) := by
+  have hs := hp.setAromaticity hm
+  have hnA : w.assignRadicals.atoms.size = n := by
+    rw [(Work.afterRel_assignRadicals (w := w)).atoms_size, hn]
+  have hnA' : w'.assignRadicals.atoms.size = n := by rw [hp.size, hnA]
+  have hnS : (w.assignRadicals.setAromaticity rings).atoms.size = n := by
+    rw [(Work.afterRel_setAromaticity _ _).atoms_size, hnA]
+  have hnS' : (w'.assignRadicals.setAromaticity rings).atoms.size = n := by
+    rw [(Work.afterRel_setAromaticity _ _).atoms_size, hnA']
+  refine ⟨?_, fun i ↦ ?_, fun i ↦ ?_, fun i ↦ ?_⟩
+  · simp only [Work.finish, Work.finalizeHs_bonds]
+    exact hs.bonds
+  · simp only [Work.finish, Work.isAromaticAtom_finalizeHs]
+    exact congrFun hs.isAromaticAtom_eq i
+  · have hF : (w.finish rings).atoms.size = n := by
+      rw [(w.afterRel_finish rings).atoms_size, hn]
+    have hF' : (w'.finish rings).atoms.size = n := by
+      rw [(w'.afterRel_finish rings).atoms_size,
+        ← (Work.afterRel_assignRadicals (w := w')).atoms_size, hnA']
+    have e : some ((w'.finish rings).atoms[i.val]! : WAtom).charge =
+        some ((w.finish rings).atoms[i.val]! : WAtom).charge := by
+      rw [← Work.charge?_eq_of_lt _ (hF' ▸ i.isLt), ← Work.charge?_eq_of_lt _ (hF ▸ i.isLt),
+        congrFun (w'.afterRel_finish rings).charge, congrFun (w.afterRel_finish rings).charge,
+        ← congrFun (Work.afterRel_assignRadicals (w := w')).charge,
+        ← congrFun (Work.afterRel_assignRadicals (w := w)).charge,
+        Work.charge?_eq_of_lt _ (hnA' ▸ i.isLt), Work.charge?_eq_of_lt _ (hnA ▸ i.isLt),
+        hp.charge]
+    exact Option.some_injective _ e
+  · simp only [Work.finish]
+    rw [Work.frozenHs_finalizeHs_of_restored _ (hnS' ▸ i.isLt) (hr' i i.isLt),
+      Work.frozenHs_finalizeHs_of_restored _ (hnS ▸ i.isLt) (hr i i.isLt), Option.getD_some,
+      Option.getD_some, Work.cachedTotalHs_setAromaticity, Work.cachedTotalHs_setAromaticity,
+      hp.total]
+
+open Aromaticity in
 /-- **A working copy read like the first run's final one gives the output back from the
 witness**: the witness's atoms are the output's, which bracket normalization leaves alone. -/
 theorem aromatizeOutput_kekuleWitness_of_agree {m a : Molecule n} {K W' : Work}
@@ -894,13 +938,39 @@ theorem aromatizeOutput_kekuleWitness_of_agree {m a : Molecule n} {K W' : Work}
   rw [hout, hN, atom_aromatizeOutput, normalizeBracket_normalizeBracket]
 
 open Aromaticity in
+/-- The working copy `aromatize` starts from has an atom for each atom of `m`. -/
+lemma size_prepare_atoms (m : Molecule n) : (Work.prepare m).atoms.size = n := by
+  simp [Work.prepare, (Work.cleanRel_cleanUp _).atoms_size, Work.ofMolecule]
+
+open Aromaticity in
+/-- **The starting relation**: after radicals, the kekulized copy of the first run and the
+witness's copy are read alike by perception (`Work.PerceiveAgree`), with the same bonds and
+flags, and at every atom of each the `adjustHs` step gives back the cached hydrogen total
+(`Work.HsRestored`).  Each part holds on all 17 425 molecules of the datasets and the fuzz set
+that satisfy the hypotheses.  Open: the bond part of the first copy's cached valence is its Kekulé
+bond-order sum only because the kekulizer gives every atom that needs a double bond exactly one,
+and the rest is RDKit's valence and hydrogen arithmetic on atoms whose hydrogens the two copies
+record differently. -/
+theorem kekuleWitness_start {m a : Molecule n} {K : Work}
+    (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K)
+    (ha : m.aromatizeOutput (K.finish (Work.prepare m).relevantCycles) = a)
+    (hv : (Work.ofMolecule (kekuleWitness a K)).freezeHs.firstBadValence = none)
+    (hw : m.AromaticWritten) :
+    Work.PerceiveAgree (Work.prepare m).relevantCycles K.assignRadicals
+        (Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences.assignRadicals ∧
+      Work.SameMarks K.assignRadicals
+        (Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences.assignRadicals ∧
+      (∀ i < n, Work.HsRestored
+        (K.assignRadicals.setAromaticity (Work.prepare m).relevantCycles) i) ∧
+      ∀ i < n, Work.HsRestored
+        ((Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences.assignRadicals.setAromaticity
+          (Work.prepare m).relevantCycles) i := by
+  sorry
+
+open Aromaticity in
 /-- **The core**: perception and the final hydrogen counts see the same on the witness's working
-copy as on the kekulized one.  The two copies have the same bonds
-(`bonds_ofMolecule_kekuleWitness`) and the same ring set, and differ only in the atoms'
-bookkeeping: hydrogens written in brackets or implied, and the valences cached before
-kekulization (aromatic, rounded the RDKit way) or after (Kekulé).  What this needs is that the
-kekulizer gives every atom that needs a double bond exactly one, so that each atom's Kekulé
-valence is the aromatic one RDKit cached. -/
+copy as on the kekulized one.  From the starting relation (`kekuleWitness_start`) through
+perception and `finalizeHs` (`outAgree_finish`). -/
 theorem finish_kekuleWitness_agree {m a : Molecule n} {K : Work}
     (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K)
     (ha : m.aromatizeOutput (K.finish (Work.prepare m).relevantCycles) = a)
@@ -909,7 +979,10 @@ theorem finish_kekuleWitness_agree {m a : Molecule n} {K : Work}
     OutAgree n (K.finish (Work.prepare m).relevantCycles)
       ((Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences.finish
         (Work.prepare m).relevantCycles) := by
-  sorry
+  obtain ⟨hp, hm, hr, hr'⟩ := kekuleWitness_start hK ha hv hw
+  have hn : K.atoms.size = n := by
+    rw [(Work.kekulize_kindsRel hK).atoms_size, size_prepare_atoms]
+  exact outAgree_finish hn hp hm hr hr'
 
 open Aromaticity in
 /-- The witness, its valences allowed, gives the output back from its working copy: from
@@ -923,11 +996,6 @@ theorem aromatizeOutput_kekuleWitness {m a : Molecule n} {K : Work}
       ((Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences.finish
         (Work.prepare m).relevantCycles) = a :=
   aromatizeOutput_kekuleWitness_of_agree hK ha (finish_kekuleWitness_agree hK ha hv hw)
-
-open Aromaticity in
-/-- The working copy `aromatize` starts from has an atom for each atom of `m`. -/
-lemma size_prepare_atoms (m : Molecule n) : (Work.prepare m).atoms.size = n := by
-  simp [Work.prepare, (Work.cleanRel_cleanUp _).atoms_size, Work.ofMolecule]
 
 open Aromaticity in
 /-- **The witness aromatizes back to the output**, unless `cleanUp` rewrites it or its valences
