@@ -30,6 +30,7 @@ public import LeanSMILES.Aromaticity.Passes
 public import LeanSMILES.Aromaticity.Congruence
 public import LeanSMILES.Aromaticity.PerceiveFacts
 public import LeanSMILES.Aromaticity.KekulizeFacts
+public import LeanSMILES.Aromaticity.PerceiveAgree
 public import LeanSMILES.Aromaticity.Invariance
 public import LeanSMILES.Aromaticity.Resonance
 public import LeanSMILES.Aromaticity.KekuleSim
