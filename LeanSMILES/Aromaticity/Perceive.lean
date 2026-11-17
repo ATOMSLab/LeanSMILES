@@ -137,9 +137,19 @@ def isConnectedSet (rids : List Nat) (nbrs : Array (List Nat)) : Bool := Id.run 
         if rids.contains v && !seen.contains v then seen := seen ++ [v]
   return seen.length == rids.length
 
-/-- Mark the aromatic rings' bonds and atoms (`setAromaticity`, default model: `aromaticityHelper`,
-`Aromaticity.cpp:839`, then `applyHuckelToFused` on each fused system). -/
-def setAromaticity (m : Work) (rings : Array (List Nat)) : Work := Id.run do
+/-- Make bond `b` aromatic, with its two atoms, if it is single or double; otherwise leave it.
+`setAromaticity` folds this over `aromaticBondList`. -/
+def markAromatic (out : Work) (b : Nat) : Work :=
+  let bd := out.bonds[b]!
+  if bd.kind == .single || bd.kind == .double then
+    ((out.setKind b .aromatic).modifyAtom bd.src ({ · with aromatic := true }))
+      |>.modifyAtom bd.dst ({ · with aromatic := true })
+  else out
+
+/-- The bonds `setAromaticity` makes aromatic, in the order it visits them, repeats included
+(`aromaticityHelper`, `Aromaticity.cpp:839`, then `applyHuckelToFused` on each fused system): every
+bond that occurs once in a group of fused candidate rings passing Hückel's rule. -/
+def aromaticBondList (m : Work) (rings : Array (List Nat)) : List Nat := Id.run do
   let ringBondSet := (rings.toList.flatMap m.ringBonds).eraseDups
   -- 1-2. donor types (first time each atom is seen) and candidate rings
   let mut seen := Array.replicate m.numAtoms false
@@ -172,7 +182,7 @@ def setAromaticity (m : Work) (rings : Array (List Nat)) : Work := Id.run do
       if rbonds[i]!.length ≤ 24 && rbonds[j]!.length ≤ 24 &&
           (rbonds[i]!.filter rbonds[j]!.contains).length == 1 then
         nbrs := (nbrs.modify i (· ++ [j])).modify j (· ++ [i])
-  let mut out := m
+  let mut out : Array Nat := #[]
   for fused in components nr nbrs do
     let nRings := fused.length
     let systemBonds := (fused.flatMap (rbonds[·]!)).eraseDups
@@ -192,12 +202,14 @@ def setAromaticity (m : Work) (rings : Array (List Nat)) : Work := Id.run do
           let all := cur.flatMap (rbonds[·]!)
           for b in all.eraseDups.mergeSort (· ≤ ·) do
             if all.count b == 1 then
-              let bd := out.bonds[b]!
-              if bd.kind == .single || bd.kind == .double then
-                out := ((out.setKind b .aromatic).modifyAtom bd.src ({ · with aromatic := true }))
-                  |>.modifyAtom bd.dst ({ · with aromatic := true })
+              out := out.push b
               if !doneBonds.contains b then doneBonds := doneBonds ++ [b]
-  return out
+  return out.toList
+
+/-- Mark the aromatic rings' bonds and atoms (`setAromaticity`, default model): each bond of
+`aromaticBondList` that is single or double becomes aromatic, with its two atoms. -/
+def setAromaticity (m : Work) (rings : Array (List Nat)) : Work :=
+  (m.aromaticBondList rings).foldl markAromatic m
 
 end Work
 end LeanSMILES.Aromaticity
@@ -219,7 +231,32 @@ lemma map_edge_withKinds {n : ℕ} (m : Molecule n) (w : Work) :
   rw [← List.zipIdx_map_fst 0 m.bonds, List.map_map, withKinds, List.map_map]
   rfl
 
+/-- The working copy `aromatize` kekulizes: `cleanUp` after the hydrogen counts are frozen, with
+valences cached. -/
+def Work.prepare {n : ℕ} (m : Molecule n) : Work :=
+  (Work.ofMolecule m).freezeHs.cleanUp.cacheValences
+
+/-- What `aromatize` does after kekulization: radicals, aromaticity perception over `rings`, and
+the final hydrogen counts. -/
+def Work.finish (w : Work) (rings : Array (List Nat)) : Work :=
+  (w.assignRadicals.setAromaticity rings).finalizeHs
+
 end Aromaticity
+
+open Aromaticity in
+/-- The molecule `aromatize` returns from the final working copy `w` of `m`: `m`'s atoms with
+`w`'s aromatic flags, charges and hydrogen counts, `m`'s bonds with `w`'s kinds, in bracket normal
+form. -/
+def Molecule.aromatizeOutput {n : ℕ} (m : Molecule n) (w : Work) : Molecule n :=
+  let atoms := Vector.ofFn fun i : Fin n ↦
+    let a := m.atom i
+    let wa := w.atoms[i.val]!
+    let total := wa.frozenHs.getD (wa.explicitHs + w.implicitHs i.val)
+    { a with aromatic := w.isAromaticAtom i.val, charge := wa.charge,
+             implicitH := total - a.explicitH.getD 0 }
+  Molecule.normalizeBrackets
+    { atoms, bonds := withKinds m w, nodup := map_edge_withKinds m w ▸ m.nodup,
+      stereo := m.stereo }
 
 open Aromaticity in
 /-- RDKit's view of the molecule's bonds, charges and hydrogens: `cleanUp` (nitro `N(=O)=O` →
@@ -231,19 +268,10 @@ atoms, bonds and everything else stay. The atoms come back in bracket normal for
 back: pyrrole's nitrogen from `C1=CNC=C1` is `[nH]`, not a hydrogen-less `n`, and a redundant
 `[CH4]` is `C`. Fails when RDKit's would ("Can't kekulize mol", e.g. `c1cccc1`). -/
 def Molecule.aromatize {n : ℕ} (m : Molecule n) : Except String (Molecule n) := do
-  let w := (Work.ofMolecule m).freezeHs.cleanUp.cacheValences
+  let w := Work.prepare m
   let rings := w.relevantCycles
   let w ← w.kekulize rings
-  let w := (w.assignRadicals.setAromaticity rings).finalizeHs
-  let atoms := Vector.ofFn fun i : Fin n ↦
-    let a := m.atom i
-    let wa := w.atoms[i.val]!
-    let total := wa.frozenHs.getD (wa.explicitHs + w.implicitHs i.val)
-    { a with aromatic := w.isAromaticAtom i.val, charge := wa.charge,
-             implicitH := total - a.explicitH.getD 0 }
-  return Molecule.normalizeBrackets
-    { atoms, bonds := withKinds m w, nodup := map_edge_withKinds m w ▸ m.nodup,
-      stereo := m.stereo }
+  return m.aromatizeOutput (w.finish rings)
 
 /-- `Molecule.aromatize` on a bundled molecule. -/
 def Mol.aromatize (M : Mol) : Except String Mol := do

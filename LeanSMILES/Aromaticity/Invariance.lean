@@ -5,7 +5,7 @@ Authors: Tyler Josephson
 -/
 module
 
-public import LeanSMILES.Aromaticity.Perceive
+public import LeanSMILES.Aromaticity.Passes
 public import LeanSMILES.SMILES.Canonicity
 
 /-!
