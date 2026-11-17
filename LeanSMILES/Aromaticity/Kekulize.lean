@@ -87,81 +87,94 @@ structure KekState where
   /-- Back-tracks so far. -/
   numBt : Nat
 
+/-- The atom the walk visits next, with the queue after it: the queue's head, else the lowest
+atom of `sorted` not done yet (with an empty queue); `none` when every atom is done. -/
+def KekState.nextAtom (s : KekState) (sorted : List Nat) : Option (Nat × List Nat) :=
+  match s.queue with
+  | c :: rest => some (c, rest)
+  | [] => (sorted.find? (!s.done.contains ·)).map (·, [])
+
+/-- One neighbour `j` of `curr` in the scan: `j` joins the new queue unless it is queued, and it
+is an option for `curr`'s double bond if both need one and their bond was written aromatic.
+The accumulator is (new queue, options). -/
+def scanStep (m : Work) (wasAromatic : Nat → Bool) (cands : Array Bool) (curr : Nat)
+    (ccand : Bool) (queue : List Nat) (p : List Nat × List Nat) (j : Nat) :
+    List Nat × List Nat :=
+  let newQueue := if !queue.contains j then p.1 ++ [j] else p.1
+  let opts := match m.bondBetween? curr j with
+    | some k => if ccand && cands[j]! && wasAromatic k then p.2 ++ [j] else p.2
+    | none => p.2
+  (newQueue, opts)
+
+/-- Bond `k` in a back-track: a bond the walk made double, with neither end in `keep`, is made
+single again and its ends need a double bond again. The accumulator is (molecule, bonds made
+double, atoms needing one). -/
+def undoAdds (keep : List Nat) (p : Work × Array Bool × Array Bool) (k : Nat) :
+    Work × Array Bool × Array Bool :=
+  let (m, adds, cands) := p
+  if adds[k]! then
+    let b := m.bonds[k]!
+    if !keep.contains b.src && !keep.contains b.dst then
+      (m.setKind k .single, adds.set! k false, (cands.set! b.src true).set! b.dst true)
+    else p
+  else p
+
+/-- `curr` gets its double bond, along bond `k` to its first option `n`; `rest` are its other
+options, kept for back-tracking. -/
+def KekState.placeDouble (s : KekState) (curr n k : Nat) (rest : List Nat) : KekState :=
+  let (options, btMoves, lastOpt) :=
+    if (s.options.lookup curr).isSome then
+      if rest.isEmpty then
+        (s.options.filter (·.1 != curr), s.btMoves.dropLast, s.btMoves.dropLast.getLast?)
+      else
+        (s.options.map fun (a, o) ↦ if a == curr then (a, rest) else (a, o), s.btMoves,
+          s.lastOpt)
+    else if !rest.isEmpty then (s.options ++ [(curr, rest)], s.btMoves ++ [curr], some curr)
+    else (s.options, s.btMoves, s.lastOpt)
+  { s with m := s.m.setKind k .double, cands := (s.cands.set! curr false).set! n false,
+           adds := s.adds.set! k true, options, btMoves, lastOpt }
+
+/-- Back-track to `lo` (`backTrack`, `Kekulize.cpp:24`): the atoms done from `lo` on go back to
+the head of the queue, and the double bonds placed away from the atoms kept are undone. -/
+def KekState.backTrack (s : KekState) (lo : Nat) : KekState :=
+  let pos := s.done.idxOf lo
+  let keep := s.done.take pos
+  let (m, adds, cands) := (List.range s.m.numBonds).foldl (undoAdds keep) (s.m, s.adds, s.cands)
+  { s with m, adds, cands, queue := s.done.drop pos ++ s.queue, done := keep,
+           numBt := s.numBt + 1 }
+
 /-- One pass of `kekulizeWorker`'s walk: visit the next atom, give it a double bond if it needs
 one, or back-track. `.inl r` ends the walk with `r`; `.inr s` goes on from `s`. `atoms` are the
 system's atoms and `sorted` the same in increasing order. -/
 def kekulizeStep (wasAromatic : Nat → Bool) (atoms sorted : List Nat) (s : KekState) :
-    Option Work ⊕ KekState := Id.run do
-  let mut m := s.m
-  let mut cands := s.cands
-  let mut done := s.done
-  let mut adds := s.adds
-  let mut queue := s.queue
-  let mut options := s.options
-  let mut lastOpt := s.lastOpt
-  let mut btMoves := s.btMoves
-  let mut numBt := s.numBt
-  -- next atom: from the queue, else the lowest atom not done yet
-  let curr ← match queue with
-    | c :: rest => do
-      queue := rest
-      pure c
-    | [] => match sorted.find? (!done.contains ·) with
-      | some c => pure c
-      | none => return .inl (some m)
-  done := done ++ [curr]
-  let ccand := cands[curr]!
-  let mut opts : List Nat := []
-  match options.lookup curr with
-  | some o => opts := o
-  | none =>
-    let nbrs := ((m.neighbors curr).map (·.2)).filter fun j ↦
-      atoms.contains j && !done.contains j
-    let mut newQueue : List Nat := []
-    for j in nbrs.mergeSort (· ≤ ·) do
-      if !queue.contains j then newQueue := newQueue ++ [j]
-      if let some k := m.bondBetween? curr j then
-        if ccand && cands[j]! && wasAromatic k then opts := opts ++ [j]
-    queue := queue ++ newQueue
-  if !ccand then
-    return .inr ⟨m, cands, done, adds, queue, options, lastOpt, btMoves, numBt⟩
-  match opts with
-  | n :: rest =>
-    -- double bond to the first option
-    let some k := m.bondBetween? curr n | return .inl none
-    m := m.setKind k .double
-    cands := (cands.set! curr false).set! n false
-    adds := adds.set! k true
-    if (options.lookup curr).isSome then
-      if rest.isEmpty then
-        options := options.filter (·.1 != curr)
-        btMoves := btMoves.dropLast
-        lastOpt := btMoves.getLast?
-      else
-        options := options.map fun (a, o) ↦ if a == curr then (a, rest) else (a, o)
-    else if !rest.isEmpty then
-      lastOpt := some curr
-      btMoves := btMoves ++ [curr]
-      options := options ++ [(curr, rest)]
-  | [] =>
-    -- stuck: back to the last atom that still has options (backTrack, Kekulize.cpp:24)
-    match lastOpt with
-    | some lo =>
-      if 100 ≤ numBt then return .inl none
-      numBt := numBt + 1
-      let pos := done.idxOf lo
-      let keep := done.take pos
-      queue := done.drop pos ++ queue
-      for k in [0:m.numBonds] do
-        if adds[k]! then
-          let b := m.bonds[k]!
-          if !keep.contains b.src && !keep.contains b.dst then
-            adds := adds.set! k false
-            m := m.setKind k .single
-            cands := (cands.set! b.src true).set! b.dst true
-      done := keep
-    | none => return .inl none
-  return .inr ⟨m, cands, done, adds, queue, options, lastOpt, btMoves, numBt⟩
+    Option Work ⊕ KekState :=
+  match s.nextAtom sorted with
+  | none => .inl (some s.m)
+  | some (curr, queue) =>
+    let done := s.done ++ [curr]
+    let ccand := s.cands[curr]!
+    -- options for `curr`'s double bond: kept from an earlier visit, else from scanning its
+    -- neighbours, which also queues them
+    let (opts, queue) := match s.options.lookup curr with
+      | some o => (o, queue)
+      | none =>
+        let nbrs := ((s.m.neighbors curr).map (·.2)).filter fun j ↦
+          atoms.contains j && !done.contains j
+        let p := (nbrs.mergeSort (· ≤ ·)).foldl
+          (scanStep s.m wasAromatic s.cands curr ccand queue) ([], [])
+        (p.2, queue ++ p.1)
+    let s := { s with done, queue }
+    if !ccand then .inr s else
+    match opts with
+    | n :: rest =>
+      match s.m.bondBetween? curr n with
+      | some k => .inr (s.placeDouble curr n k rest)
+      | none => .inl none
+    | [] =>
+      -- stuck: back to the last atom that still has options
+      match s.lastOpt with
+      | some lo => if 100 ≤ s.numBt then .inl none else .inr (s.backTrack lo)
+      | none => .inl none
 
 /-- `kekulizeWorker`'s walk, at most `fuel` passes: it goes on while some atom of the system is
 not done or the queue is not empty. Out of fuel, it fails. -/
@@ -189,6 +202,45 @@ def kekulizeWorker (m : Work) (wasAromatic : Nat → Bool) (atoms : List Nat) (c
     { m, cands, done, adds := Array.replicate m.numBonds false, queue := [], options := [],
       lastOpt := none, btMoves := [], numBt := 0 }
 
+/-- The aromatic bonds of aromatic atom `i` become single (`markDbondCands`). -/
+def singleAromaticBonds (wasAromatic : Nat → Bool) (out : Work) (i : Nat) : Work :=
+  if out.atoms[i]!.aromatic then
+    (out.bondsOf i).foldl (fun o k ↦ if wasAromatic k then o.setKind k .single else o) out
+  else out
+
+/-- One fused ring system `system` (indices into `rings`) of `Kekulize`: if any of its atoms is
+aromatic, mark the atoms that need a double bond, make the aromatic bonds of its aromatic atoms
+single, and place the double bonds with `kekulizeWorker`. `ev0` are the explicit valences before
+kekulization. -/
+def kekulizeSystem (wasAromatic : Nat → Bool) (ev0 : List Nat) (rings : Array (List Nat))
+    (out : Work) (system : List Nat) : Except String Work :=
+  let atoms := (system.flatMap (rings[·]!)).eraseDups
+  if !atoms.any (out.atoms[·]!.aromatic) then pure out else
+  -- markDbondCands: candidates, non-aromatic atoms are already done,
+  -- aromatic bonds of the aromatic atoms become single
+  let cands := atoms.foldl (init := Array.replicate out.numAtoms false) fun c i ↦
+    if out.atoms[i]!.aromatic && out.needsDoubleBond wasAromatic ev0[i]! i then c.set! i true
+    else c
+  let done := atoms.filter (!out.atoms[·]!.aromatic)
+  match (atoms.foldl (singleAromaticBonds wasAromatic) out).kekulizeWorker wasAromatic atoms
+    cands done with
+  | some m' => pure m'
+  | none => throw "Can't kekulize mol"
+
+/-- Clear atom `i`'s aromatic flag (`markAtomsBonds`); an aromatic atom outside every ring is an
+error. GitHub #141: a neutral aromatic N/P with one bracket H keeps the H implicitly, and RDKit
+refreshes its cached valence on the Kekulé graph (`Kekulize.cpp:789`). -/
+def clearAromatic (ringAtoms : List Nat) (out : Work) (i : Nat) : Except String Work :=
+  let a := out.atoms[i]!
+  if !a.aromatic then pure out
+  else if !ringAtoms.contains i then throw s!"non-ring atom {i} marked aromatic"
+  else if [7, 15].contains a.z && a.charge == 0 && a.explicitHs == 1 then
+    let ev := ((out.bondsOf i).foldl (fun s k ↦ s + halfOrder out.bonds[k]!.kind) 0) / 2
+    let out := out.modifyAtom i fun a ↦
+      { a with aromatic := false, noImplicit := false, explicitHs := 0, cachedValence := some ev }
+    pure (out.modifyAtom i ({ · with cachedImplicit := out.implicitHs i }))
+  else pure (out.modifyAtom i ({ · with aromatic := false }))
+
 /-- RDKit's `Kekulize` (`KekulizeFragment` with `canonical = false`) over the fused ring systems
 of `rings`; fails (like RDKit's "Can't kekulize mol") if no valid structure exists. -/
 def kekulize (m : Work) (rings : Array (List Nat)) : Except String Work := do
@@ -201,39 +253,9 @@ def kekulize (m : Work) (rings : Array (List Nat)) : Except String Work := do
   let nbrs := (List.range rings.size).toArray.map fun i ↦
     (List.range rings.size).filter fun j ↦
       j != i && rbonds[i]!.any rbonds[j]!.contains
-  let mut out := m
-  for system in components rings.size nbrs do
-    let atoms := (system.flatMap (rings[·]!)).eraseDups
-    if !atoms.any (out.atoms[·]!.aromatic) then continue
-    -- markDbondCands: candidates, non-aromatic atoms are already done,
-    -- aromatic bonds of the aromatic atoms become single
-    let cands := atoms.foldl (init := Array.replicate out.numAtoms false) fun c i ↦
-      if out.atoms[i]!.aromatic && out.needsDoubleBond wasAromatic ev0[i]! i then c.set! i true
-      else c
-    let done := atoms.filter (!out.atoms[·]!.aromatic)
-    for i in atoms do
-      if out.atoms[i]!.aromatic then
-        for k in out.bondsOf i do
-          if wasAromatic k then out := out.setKind k .single
-    match out.kekulizeWorker wasAromatic atoms cands done with
-    | some m' => out := m'
-    | none => throw "Can't kekulize mol"
+  let out ← (components rings.size nbrs).foldlM (kekulizeSystem wasAromatic ev0 rings) m
   -- markAtomsBonds: clear aromatic flags
-  let ringAtoms := rings.toList.flatten.eraseDups
-  for i in [0:out.numAtoms] do
-    let a := out.atoms[i]!
-    if a.aromatic then
-      if !ringAtoms.contains i then throw s!"non-ring atom {i} marked aromatic"
-      -- GitHub #141: a neutral aromatic N/P with one bracket H keeps the H implicitly,
-      -- and RDKit refreshes its cached valence on the Kekulé graph (Kekulize.cpp:789)
-      if [7, 15].contains a.z && a.charge == 0 && a.explicitHs == 1 then
-        let ev := ((out.bondsOf i).foldl (fun s k ↦ s + halfOrder out.bonds[k]!.kind) 0) / 2
-        out := out.modifyAtom i fun a ↦
-          { a with aromatic := false, noImplicit := false, explicitHs := 0,
-                   cachedValence := some ev }
-        out := out.modifyAtom i ({ · with cachedImplicit := out.implicitHs i })
-      else
-        out := out.modifyAtom i ({ · with aromatic := false })
+  let out ← (List.range out.numAtoms).foldlM (clearAromatic rings.toList.flatten.eraseDups) out
   if out.bonds.any (·.kind == .aromatic) then throw "aromatic bond left after kekulization"
   return out
 
