@@ -35,14 +35,14 @@ list starts, and the relabeling one also needs kekulization's walk to give
 every candidate atom exactly one double bond), `aromatize_aromatize`,
 `exists_kekule_aromatize` and `aromatize_of_isKekuleSpellingOf`.
 
-`aromatize_of_kekuleVariant` is **false as stated**, and stays `sorry`:
+The Kekulé statement is **false without `ChargesKept`**, so it is stated only
+with it (`aromatize_of_kekuleVariant_of_chargesKept`):
 `O=P1[SiH]=CC=CC=1` aromatizes to `[O-][p+]1[siH]cccc1` (`cleanUp`'s phosphorus
 rule fires: P has `=O` and `=C`), while its Kekulé variant `O=P1=[SiH]C=CC=C1`
 (the ring bonds flipped, every bond-order sum kept) has P's ring double bond on
 silicon, so the rule does not fire and it aromatizes to itself.  RDKit 2025.09
-agrees.  `ChargesKept` excludes this, and the headline already assumes it, so
-`canonicalSmiles_aromatize_eq` goes through
-`aromatize_of_kekuleVariant_of_chargesKept`.
+agrees.  The headline `canonicalSmiles_aromatize_eq` assumes `ChargesKept`
+anyway.
 
 `LeanSMILES.Aromaticity.Resonance` states the Kekulé-structure result from the
 input's side (no moved bond at an atom `cleanUp` may rewrite, instead of
@@ -124,7 +124,7 @@ cases are in the repository; the test takes other files as arguments.
 | `aromatize_relabel` | 100 290 | 0 |
 | `IsKekule.aromatize_relabel` | 81 140 | 0 |
 | `aromatize_of_sameBonds` | 100 690 | 0 |
-| `aromatize_of_kekuleVariant` (none of the inputs was a counterexample) | 77 310 | 0 |
+| the Kekulé statement without `ChargesKept` (none of the inputs was a counterexample) | 77 310 | 0 |
 | `aromatize_aromatize` | 20 216 | 0 |
 | `exists_kekule_aromatize` (the witness below) | 20 216 | 0 |
 | `canonicalSmiles_aromatize_eq` | 37 950 | 0 |
@@ -413,22 +413,6 @@ theorem aromatize_of_sameBonds {m m' a : Molecule n} (h : m.aromatize = .ok a)
 
 /-! ### 3. The Kekulé structure -/
 
-/-- **False as stated** (see the comment in the proof and the module docstring); the true
-statement is `aromatize_of_kekuleVariant_of_chargesKept`.  Every Kekulé structure of an aromatic
-system aromatizes to the same molecule: if the Kekulé structure `m` aromatizes to `a`, so does
-every `m'` that differs from `m` only on bonds aromatic in `a`, with each atom keeping its
-bond-order sum. -/
-theorem aromatize_of_kekuleVariant {m m' a : Molecule n} (hk : m.IsKekule)
-    (h : m.aromatize = .ok a) (hv : KekuleVariant a m m') : m'.aromatize = .ok a := by
-  -- FALSE as stated, so left open.  `m` = `O=P1[SiH]=CC=CC=1` (P=O outside the ring, P–Si
-  -- and P=C in it) aromatizes to `a` = `[O-][p+]1[siH]cccc1`: `cleanUp`'s phosphorus rule fires,
-  -- because P has `=O` and a double bond to a carbon.  `m'` = `O=P1=[SiH]C=CC=C1` is a
-  -- `KekuleVariant a m m'` (the ring bonds flipped, every bond-order sum kept), but there P's
-  -- ring double bond goes to silicon, the rule does not fire, P stays neutral and five-valent,
-  -- is no aromatic candidate, and `m'` aromatizes to itself, not to `a`.  `ChargesKept m a`
-  -- fails here; `aromatize_of_kekuleVariant_of_chargesKept` adds it.  RDKit 2025.09 agrees.
-  sorry
-
 /-- Two lists related element for element: at each position both have nothing, or both have an
 element, related. -/
 lemma _root_.List.Forall₂.getElem? {α β : Type*} {R : α → β → Prop} {l₁ : List α}
@@ -508,9 +492,10 @@ lemma aromatizeOutput_eq_of_forall₂ {m m' : Molecule n} (W : Aromaticity.Work)
   simp only [aromatizeOutput, atom, hat, hk, hst]
 
 /-- **Every Kekulé structure of an aromatic system aromatizes to the same molecule**, when the
-charges are kept.  `aromatize_of_kekuleVariant` with `ChargesKept`, the hypothesis the headline
-`canonicalSmiles_aromatize_eq` has anyway: without it the statement is false
-(`aromatize_of_kekuleVariant`). -/
+charges are kept: if the Kekulé structure `m` aromatizes to `a`, so does every `m'` that differs
+from `m` only on bonds aromatic in `a`, with each atom keeping its bond-order sum.  `ChargesKept`
+is the hypothesis the headline `canonicalSmiles_aromatize_eq` has anyway; without it the
+statement is false (`O=P1[SiH]=CC=CC=1`, module docstring). -/
 theorem aromatize_of_kekuleVariant_of_chargesKept {m m' a : Molecule n} (hk : m.IsKekule)
     (h : m.aromatize = .ok a) (hc : m.ChargesKept a) (hv : KekuleVariant a m m') :
     m'.aromatize = .ok a := by

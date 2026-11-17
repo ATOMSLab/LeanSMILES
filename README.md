@@ -363,8 +363,8 @@ structures of one aromatic system aromatize to the same molecule**
 the statements it names. Still `sorry`: invariance under renumbering and
 relisting (they need ring perception's output to be canonical up to order),
 idempotence, the Kekulé witness for a lowercase input, and the lowercase/Kekulé
-spelling statement. `aromatize_of_kekuleVariant` without `ChargesKept` is
-false: `O=P1[SiH]=CC=CC=1` aromatizes to `[O-][p+]1[siH]cccc1`, its other
+spelling statement. The Kekulé statement without `ChargesKept` is false,
+so it is not stated: `O=P1[SiH]=CC=CC=1` aromatizes to `[O-][p+]1[siH]cccc1`, its other
 Kekulé structure `O=P1=[SiH]C=CC=C1` to itself (RDKit agrees), because
 `cleanUp`'s phosphorus rule looks at which ring neighbour carries the double
 bond. The statements carry hypotheses because without them they are false:
