@@ -14,9 +14,11 @@ public import Mathlib.Logic.Equiv.Fin.Rotate
 Each theorem of `LeanSMILES/Aromaticity/Invariance.lean` is checked on every
 SMILES of the given files: its hypotheses decided by the instances there, its
 conclusion as an equality of molecules.  A theorem whose hypotheses fail on an
-input is not counted for it.  The theorems are unproved (`sorry`) for now, so
-this test is the evidence that they are true; it stays useful afterwards as a
-check that a refactoring of `aromatize` did not change what they are about.
+input is not counted for it.  For the theorems still `sorry` this test is the
+evidence that they are true; for all of them it is a check that a refactoring
+of `aromatize` did not change what they are about.  `aromatize_of_kekuleVariant`
+is false as stated (`O=P1[SiH]=CC=CC=1`), so it is counted for information only
+and `aromatize_of_kekuleVariant_of_chargesKept` is checked in its place.
 
 Per string: five renumberings (a rotation, the reversal, three pseudo-random
 permutations), five relistings of the bonds (reversed, every bond turned

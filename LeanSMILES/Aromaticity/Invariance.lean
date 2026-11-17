@@ -5,7 +5,8 @@ Authors: Tyler Josephson
 -/
 module
 
-public import LeanSMILES.Aromaticity.Passes
+public import LeanSMILES.Aromaticity.Congruence
+public import LeanSMILES.Aromaticity.PerceiveFacts
 public import LeanSMILES.SMILES.Canonicity
 
 /-!
@@ -18,9 +19,29 @@ this gives the statement a user wants: every Kekulé structure of a molecule,
 with its atoms in any order and its bonds listed any way, aromatizes to one
 canonical SMILES (`canonicalSmiles_aromatize_eq`).
 
-**Status: statements only.**  Every proof in this file is `sorry`.  The
-definitions are complete and decidable, and each statement was tested as
-written (below) before it was fixed.
+**Status: partly proved.**  The definitions are complete and decidable, and
+each statement was tested as written (below) before it was fixed.  Proved, with
+only the standard axioms: `sameSkeleton_aromatize`, `stereo_aromatize`,
+`IsKekule.exists_aromatize`, `IsKekule.aromaticKept`, `kind_aromatize` and
+`aromatize_of_kekuleVariant_of_chargesKept` (two Kekulé structures of one
+aromatic system aromatize to the same molecule; the facts it rests on are in
+`Aromaticity/Passes.lean`, `Aromaticity/Congruence.lean` and
+`Aromaticity/PerceiveFacts.lean`).  Every corollary is proved from the
+statements it names, so it is as proved as they are.  Still `sorry`:
+`aromatize_relabel` and `aromatize_of_sameBonds` (both need the ring set
+`Work.relevantCycles` to be canonical up to order and to where each ring's atom
+list starts, and the relabeling one also needs kekulization's walk to give
+every candidate atom exactly one double bond), `aromatize_aromatize`,
+`exists_kekule_aromatize` and `aromatize_of_isKekuleSpellingOf`.
+
+`aromatize_of_kekuleVariant` is **false as stated**, and stays `sorry`:
+`O=P1[SiH]=CC=CC=1` aromatizes to `[O-][p+]1[siH]cccc1` (`cleanUp`'s phosphorus
+rule fires: P has `=O` and `=C`), while its Kekulé variant `O=P1=[SiH]C=CC=C1`
+(the ring bonds flipped, every bond-order sum kept) has P's ring double bond on
+silicon, so the rule does not fire and it aromatizes to itself.  RDKit 2025.09
+agrees.  `ChargesKept` excludes this, and the headline already assumes it, so
+`canonicalSmiles_aromatize_eq` goes through
+`aromatize_of_kekuleVariant_of_chargesKept`.
 
 ## The hypotheses, and why each is there
 
@@ -68,7 +89,7 @@ The output is a fixed point (`aromatize_aromatize`), and it is the image of a
 Kekulé structure of itself (`exists_kekule_aromatize`): its own atoms with the
 aromatic flags cleared and each aromatic bond single or double.  Every other
 Kekulé structure with the same bond-order sums then has the same image
-(`aromatize_of_kekuleVariant`).
+(`aromatize_of_kekuleVariant_of_chargesKept`).
 
 ## What was tested
 
@@ -96,7 +117,7 @@ cases are in the repository; the test takes other files as arguments.
 | `aromatize_relabel` | 100 290 | 0 |
 | `IsKekule.aromatize_relabel` | 81 140 | 0 |
 | `aromatize_of_sameBonds` | 100 690 | 0 |
-| `aromatize_of_kekuleVariant` | 77 310 | 0 |
+| `aromatize_of_kekuleVariant` (none of the inputs was a counterexample) | 77 310 | 0 |
 | `aromatize_aromatize` | 20 216 | 0 |
 | `exists_kekule_aromatize` (the witness below) | 20 216 | 0 |
 | `canonicalSmiles_aromatize_eq` | 37 950 | 0 |
@@ -239,25 +260,30 @@ lemma charge?_finish_prepare (m : Molecule n) (k : Work) (hk : Work.AfterRel (Wo
   simp [Work.prepare]
 
 open Aromaticity in
+/-- **When the charges are kept, `cleanUp` did nothing.** -/
+lemma ChargesKept.cleanUp_eq {m a : Molecule n} (k : Work) (hk : Work.AfterRel (Work.prepare m) k)
+    (rings : Array (List ℕ)) (ha : m.aromatizeOutput (k.finish rings) = a) (hc : m.ChargesKept a) :
+    (Work.ofMolecule m).freezeHs.cleanUp = (Work.ofMolecule m).freezeHs := by
+  apply Work.cleanUp_eq_self_of_charge
+  intro j
+  by_cases hj : j < n
+  · have h1 := charge?_finish_prepare m k hk rings ⟨j, hj⟩
+    rw [ha, hc ⟨j, hj⟩] at h1
+    rw [← h1, Work.charge?_freezeHs, Work.charge?_ofMolecule m ⟨j, hj⟩]
+  · have h2 : ¬ j < (Work.ofMolecule m).freezeHs.cleanUp.atoms.size := by
+      simpa [(Work.cleanRel_cleanUp _).atoms_size] using hj
+    have h3 : ¬ j < (Work.ofMolecule m).freezeHs.atoms.size := by simpa using hj
+    rw [← Work.charge?_isSome_iff, Bool.not_eq_true, Option.isSome_eq_false_iff,
+      Option.isNone_iff_eq_none] at h2 h3
+    rw [h2, h3]
+
+open Aromaticity in
 /-- **When the charges are kept, `cleanUp` did nothing**: the working copy kekulized is the input's,
 with its hydrogens frozen and valences cached. -/
 lemma ChargesKept.prepare_eq {m a : Molecule n} (k : Work) (hk : Work.AfterRel (Work.prepare m) k)
     (rings : Array (List ℕ)) (ha : m.aromatizeOutput (k.finish rings) = a) (hc : m.ChargesKept a) :
     Work.prepare m = (Work.ofMolecule m).freezeHs.cacheValences := by
-  have : (Work.ofMolecule m).freezeHs.cleanUp = (Work.ofMolecule m).freezeHs := by
-    apply Work.cleanUp_eq_self_of_charge
-    intro j
-    by_cases hj : j < n
-    · have h1 := charge?_finish_prepare m k hk rings ⟨j, hj⟩
-      rw [ha, hc ⟨j, hj⟩] at h1
-      rw [← h1, Work.charge?_freezeHs, Work.charge?_ofMolecule m ⟨j, hj⟩]
-    · have h2 : ¬ j < (Work.ofMolecule m).freezeHs.cleanUp.atoms.size := by
-        simpa [(Work.cleanRel_cleanUp _).atoms_size] using hj
-      have h3 : ¬ j < (Work.ofMolecule m).freezeHs.atoms.size := by simpa using hj
-      rw [← Work.charge?_isSome_iff, Bool.not_eq_true, Option.isSome_eq_false_iff,
-        Option.isNone_iff_eq_none] at h2 h3
-      rw [h2, h3]
-  simp only [Work.prepare, this]
+  simp only [Work.prepare, hc.cleanUp_eq k hk rings ha]
 
 /-- `aromatize` changes bond kinds and nothing else about the bond list: its order, and every
 bond's two atoms, orientation and `/` `\` mark, are the input's. -/
@@ -388,9 +414,11 @@ theorem aromatize_of_sameBonds {m m' a : Molecule n} (h : m.aromatize = .ok a)
 
 /-! ### 3. The Kekulé structure -/
 
-/-- **Every Kekulé structure of an aromatic system aromatizes to the same molecule.**  If the
-Kekulé structure `m` aromatizes to `a`, so does every `m'` that differs from `m` only on bonds
-aromatic in `a`, with each atom keeping its bond-order sum. -/
+/-- **False as stated** (see the comment in the proof and the module docstring); the true
+statement is `aromatize_of_kekuleVariant_of_chargesKept`.  Every Kekulé structure of an aromatic
+system aromatizes to the same molecule: if the Kekulé structure `m` aromatizes to `a`, so does
+every `m'` that differs from `m` only on bonds aromatic in `a`, with each atom keeping its
+bond-order sum. -/
 theorem aromatize_of_kekuleVariant {m m' a : Molecule n} (hk : m.IsKekule)
     (h : m.aromatize = .ok a) (hv : KekuleVariant a m m') : m'.aromatize = .ok a := by
   -- FALSE as stated, so left open.  `m` = `O=P1[SiH]=CC=CC=1` (P=O outside the ring, P–Si
@@ -402,6 +430,84 @@ theorem aromatize_of_kekuleVariant {m m' a : Molecule n} (hk : m.IsKekule)
   -- fails here; `aromatize_of_kekuleVariant_of_chargesKept` adds it.  RDKit 2025.09 agrees.
   sorry
 
+/-- Two lists related element for element: at each position both have nothing, or both have an
+element, related. -/
+lemma _root_.List.Forall₂.getElem? {α β : Type*} {R : α → β → Prop} {l₁ : List α}
+    {l₂ : List β} (h : List.Forall₂ R l₁ l₂) (k : ℕ) :
+    (l₁[k]? = none ∧ l₂[k]? = none) ∨ ∃ x y, l₁[k]? = some x ∧ l₂[k]? = some y ∧ R x y := by
+  induction h generalizing k with
+  | nil => simp
+  | cons hr _ ih =>
+    cases k with
+    | zero => exact .inr ⟨_, _, rfl, rfl, hr⟩
+    | succ k => simpa using ih k
+
+/-- The bonds of `withKinds`, position by position. -/
+lemma getElem?_withKinds (m : Molecule n) (w : Aromaticity.Work) (k : ℕ) :
+    (Aromaticity.withKinds m w)[k]? =
+      m.bonds[k]?.map fun b ↦ { b with kind := (w.bonds[k]?.map (·.kind)).getD b.kind } := by
+  simp only [Aromaticity.withKinds, List.getElem?_map, List.getElem?_zipIdx]
+  cases m.bonds[k]? <;> simp
+
+/-- A bond of `m` joins atoms an aromatic bond of the output `a` joins exactly when its own
+output is aromatic: the outputs' bonds are `m`'s in order, and no two join the same atoms. -/
+lemma edge_mem_aromaticEdges_iff {m a : Molecule n} (hs : m.SameSkeleton a) {k : ℕ} {b : Bond n}
+    (hb : m.bonds[k]? = some b) :
+    b.edge ∈ a.aromaticEdges ↔ ∃ b', a.bonds[k]? = some b' ∧ b'.kind = .aromatic := by
+  have hk : k < m.bonds.length := (List.getElem?_eq_some_iff.mp hb).1
+  have hlen := hs.length_eq
+  have hka : k < a.bonds.length := hlen ▸ hk
+  have hedge : (a.bonds[k]).edge = b.edge := by
+    rcases hs.getElem? k with ⟨h1, -⟩ | ⟨x, y, hx, hy, hxy⟩
+    · rw [hb] at h1; cases h1
+    · rw [hb] at hx
+      cases hx
+      rw [List.getElem?_eq_getElem hka] at hy
+      cases hy
+      simp [Bond.edge, hxy.1, hxy.2.1]
+  constructor
+  · intro he
+    simp only [aromaticEdges, List.mem_map, List.mem_filter, beq_iff_eq] at he
+    obtain ⟨b', ⟨hb', hk'⟩, he'⟩ := he
+    obtain ⟨k', hk'l, rfl⟩ := List.getElem_of_mem hb'
+    have : k' = k := by
+      have hnd := a.nodup
+      have e : (a.bonds.map Bond.edge)[k']'(by simpa using hk'l) =
+          (a.bonds.map Bond.edge)[k]'(by simpa using hka) := by
+        simp [he', hedge]
+      exact (List.Nodup.getElem_inj_iff hnd).mp e
+    subst this
+    exact ⟨_, List.getElem?_eq_getElem hka, hk'⟩
+  · rintro ⟨b', hb', hk'⟩
+    rw [List.getElem?_eq_getElem hka] at hb'
+    cases hb'
+    simp only [aromaticEdges, List.mem_map, List.mem_filter, beq_iff_eq]
+    exact ⟨_, ⟨List.getElem_mem hka, hk'⟩, hedge⟩
+
+/-- The output of the finished working copy does not see the kinds of the input's bonds: inputs
+with the same atoms, configurations and skeleton give the same output. -/
+lemma aromatizeOutput_eq_of_forall₂ {m m' : Molecule n} (W : Aromaticity.Work)
+    (hat : m'.atoms = m.atoms) (hst : m'.stereo = m.stereo)
+    (hb : List.Forall₂ (fun b b' ↦ b.src = b'.src ∧ b.dst = b'.dst ∧ b.dir = b'.dir)
+      m.bonds m'.bonds) (hW : W.bonds.size = m.bonds.length) :
+    m'.aromatizeOutput W = m.aromatizeOutput W := by
+  have hk : Aromaticity.withKinds m' W = Aromaticity.withKinds m W := by
+    apply List.ext_getElem?
+    intro k
+    rw [getElem?_withKinds, getElem?_withKinds]
+    rcases hb.getElem? k with ⟨h1, h2⟩ | ⟨x, y, hx, hy, hxy⟩
+    · rw [h1, h2]
+    · rw [hx, hy]
+      have hkl : k < W.bonds.size := hW ▸ (List.getElem?_eq_some_iff.mp hx).1
+      simp only [Option.map_some, Array.getElem?_eq_getElem hkl, Option.getD_some,
+        Option.some.injEq]
+      obtain ⟨s, d, kd, dir, ne⟩ := x
+      obtain ⟨s', d', kd', dir', ne'⟩ := y
+      simp only at hxy
+      obtain ⟨rfl, rfl, rfl⟩ := hxy
+      rfl
+  simp only [aromatizeOutput, atom, hat, hk, hst]
+
 /-- **Every Kekulé structure of an aromatic system aromatizes to the same molecule**, when the
 charges are kept.  `aromatize_of_kekuleVariant` with `ChargesKept`, the hypothesis the headline
 `canonicalSmiles_aromatize_eq` has anyway: without it the statement is false
@@ -409,7 +515,118 @@ charges are kept.  `aromatize_of_kekuleVariant` with `ChargesKept`, the hypothes
 theorem aromatize_of_kekuleVariant_of_chargesKept {m m' a : Molecule n} (hk : m.IsKekule)
     (h : m.aromatize = .ok a) (hc : m.ChargesKept a) (hv : KekuleVariant a m m') :
     m'.aromatize = .ok a := by
-  sorry
+  open Aromaticity in
+  obtain ⟨k, hkek, ha⟩ := aromatize_eq_ok.mp h
+  rw [hk.kekulize_prepare] at hkek
+  cases hkek
+  set F0 := (Work.ofMolecule m).freezeHs with hF0
+  set R := (Work.prepare m).relevantCycles with hR
+  have hcl : F0.cleanUp = F0 := hc.cleanUp_eq _ (.refl _) _ ha
+  have hP : Work.prepare m = F0.cacheValences := by simp only [Work.prepare, ← hF0, hcl]
+  have hskel := sameSkeleton_aromatize h
+  -- the bonds that are aromatic in `a`
+  let Fs : ℕ → Bool := fun k ↦ (a.bonds[k]?.map (·.kind == .aromatic)).getD false
+  have hFs : ∀ k, Fs k = true ↔ ∃ b', a.bonds[k]? = some b' ∧ b'.kind = .aromatic := by
+    intro k
+    simp only [Fs]
+    cases a.bonds[k]? <;> simp
+  -- in the run on `m` they are made aromatic by `setAromaticity`
+  have hA : ∀ k, Fs k = true →
+      ((Work.prepare m).assignRadicals.setAromaticity R).kind? k = some .aromatic := by
+    intro k hk'
+    obtain ⟨b', hb', hk''⟩ := (hFs k).mp hk'
+    rw [← ha, aromatizeOutput_bonds, getElem?_withKinds] at hb'
+    obtain ⟨b, hb, rfl⟩ := Option.map_eq_some_iff.mp hb'
+    simp only at hk''
+    have hbk : b.kind ≠ .aromatic := hk.2 b (List.mem_of_getElem? hb)
+    have e : ((Work.prepare m).finish R).kind? k = some .aromatic := by
+      unfold Work.kind?
+      cases hw : ((Work.prepare m).finish R).bonds[k]? with
+      | none => rw [hw] at hk''; exact absurd hk'' hbk
+      | some x => rw [hw] at hk''; simpa using hk''
+    simpa [Work.finish, Work.kind?, Work.finalizeHs_bonds] using e
+  have h0 : ∀ k, (Work.prepare m).assignRadicals.kind? k ≠ some .aromatic := by
+    intro k e
+    rw [Work.kind?, Work.assignRadicals_bonds, Option.map_eq_some_iff] at e
+    obtain ⟨x, hx, hxk⟩ := e
+    exact hk.noArom_prepare.2 x (Array.mem_of_getElem? hx) hxk
+  have hsrc := fun k (hk' : Fs k = true) ↦
+    Work.of_kind?_setAromaticity _ R (hA k hk') (h0 k)
+  -- the swap
+  have hsw : Work.Swapped Fs (Work.ofMolecule m) (Work.ofMolecule m') := by
+    -- bond `k` of `m` is in `Fs` exactly when its atoms are joined by an aromatic bond of `a`
+    have hFx : ∀ k x, m.bonds[k]? = some x → (Fs k = true ↔ x.edge ∈ a.aromaticEdges) :=
+      fun k x hx ↦ (hFs k).trans (edge_mem_aromaticEdges_iff hskel hx).symm
+    refine ⟨?_, ?_, fun k ↦ ?_, fun k hk' ↦ ?_, fun k hk' ↦ ?_, fun i ↦ ?_⟩
+    · simp only [Work.ofMolecule, Molecule.atom, hv.atoms]
+    · simp [Work.ofMolecule, hv.bonds.length_eq]
+    · rw [Work.getElem?_ofMolecule_bonds, Work.getElem?_ofMolecule_bonds]
+      rcases hv.bonds.getElem? k with ⟨h1, h2⟩ | ⟨x, y, hx, hy, hxy⟩
+      · rw [h1, h2]
+      · rw [hx, hy]
+        simp [hxy.1, hxy.2.1]
+    · rw [Work.kind?_ofMolecule, Work.kind?_ofMolecule]
+      rcases hv.bonds.getElem? k with ⟨h1, h2⟩ | ⟨x, y, hx, hy, hxy⟩
+      · rw [h1, h2]
+      · rw [hx, hy]
+        have hne : x.edge ∉ a.aromaticEdges := fun he ↦ by
+          rw [← hFx k x hx] at he; rw [he] at hk'; cases hk'
+        obtain ⟨-, -, -, hif⟩ := hxy
+        rw [if_neg hne] at hif
+        simp [hif]
+    · rw [Work.kind?_ofMolecule, Work.kind?_ofMolecule]
+      rcases hv.bonds.getElem? k with ⟨h1, -⟩ | ⟨x, y, hx, hy, hxy⟩
+      · obtain ⟨b', hb', -⟩ := (hFs k).mp hk'
+        have : k < a.bonds.length := (List.getElem?_eq_some_iff.mp hb').1
+        rw [← hskel.length_eq] at this
+        rw [List.getElem?_eq_none_iff] at h1
+        omega
+      · rw [hx, hy]
+        obtain ⟨-, -, -, hif⟩ := hxy
+        rw [if_pos ((hFx k x hx).mp hk')] at hif
+        exact ⟨⟨x.kind, rfl, hif.1⟩, ⟨y.kind, rfl, hif.2⟩⟩
+    · by_cases hi : i < n
+      · have e1 := Work.bondHalfSum_ofMolecule m ⟨i, hi⟩
+        have e2 := Work.bondHalfSum_ofMolecule m' ⟨i, hi⟩
+        rw [hv.valence ⟨i, hi⟩, ← e1] at e2
+        exact_mod_cast e2
+      · rw [Work.bondHalfSum_ofMolecule_of_le m (Nat.le_of_not_lt hi),
+          Work.bondHalfSum_ofMolecule_of_le m' (Nat.le_of_not_lt hi)]
+  -- `cleanUp` does nothing on `m'` either
+  have hcl' : (Work.ofMolecule m').freezeHs.cleanUp = (Work.ofMolecule m').freezeHs := by
+    refine Work.cleanUp_eq_of_quiet _ (hsw.freezeHs.quiet (Work.quiet_of_cleanUp_eq _ hcl) ?_)
+    intro k hk' i hki hv
+    obtain ⟨bd, hbd, -, ⟨d₁, hd₁⟩, d₂, hd₂⟩ := hsrc k hk'
+    rw [Work.assignRadicals_bonds, hP, Work.cacheValences_bonds] at hbd
+    have ht : F0.bonds[k]!.touches i = true := by
+      simp only [Work.bondsOf, List.mem_filter] at hki
+      exact hki.2
+    replace ht : bd.touches i = true := by simpa [getElem!_def, hbd] using ht
+    rw [hP] at hd₁ hd₂
+    by_cases hi : i < F0.atoms.size
+    · simp only [WBond.touches, Bool.or_eq_true, beq_iff_eq] at ht
+      rcases ht with rfl | rfl
+      · exact Work.not_hypervalent_of_isAromaticCandidate F0 hi hd₁ hv
+      · exact Work.not_hypervalent_of_isAromaticCandidate F0 hi hd₂ hv
+    · have hz : F0.atoms[i]!.z = 0 := by
+        simp [getElem!_def, Array.getElem?_eq_none (Nat.le_of_not_lt hi)]; rfl
+      obtain ⟨-, ⟨hz', -⟩ | ⟨hz', -⟩⟩ := hv <;> rw [hz] at hz' <;> omega
+  have hP' : Work.prepare m' = (Work.ofMolecule m').freezeHs.cacheValences := by
+    simp only [Work.prepare, hcl']
+  have hsw2 : Work.Swapped Fs (Work.prepare m) (Work.prepare m') := by
+    rw [hP, hP']; exact hsw.freezeHs.cacheValences
+  have hF : ∀ k, Fs k = true → k ∈ R.toList.flatMap (Work.prepare m).ringBonds := by
+    intro k hk'
+    obtain ⟨-, -, hmem, -⟩ := hsrc k hk'
+    rwa [Work.ringBonds_of_bonds_eq (Work.assignRadicals_bonds _)] at hmem
+  rw [aromatize_eq_ok]
+  refine ⟨Work.prepare m', (hv.isKekule hk).kekulize_prepare, ?_⟩
+  rw [hsw2.relevantCycles_eq, ← hR, hsw2.finish_eq R hF hA, ← ha]
+  refine aromatizeOutput_eq_of_forall₂ _ hv.atoms hv.stereo
+    (hv.bonds.imp fun _ _ h ↦ ⟨h.1, h.2.1, h.2.2.1⟩) ?_
+  rw [Work.finish, Work.finalizeHs_bonds, (Work.afterRel_setAromaticity _ R).bonds_size,
+    Work.assignRadicals_bonds, hP]
+  simp [hF0, Work.ofMolecule]
 
 /-- **`aromatize` is idempotent**: an output that aromatizes again aromatizes to itself.  This
 is the lowercase form of a molecule as an input: a fixed point. -/
@@ -451,8 +668,9 @@ theorem canonicalSmiles_aromatize_aromatize {m a a' : Molecule n} (h : m.aromati
 /-- **One molecule, one aromatic canonical SMILES.**  Let the Kekulé structure `m` aromatize to
 `a`, keeping its charges.  Take any other Kekulé structure `m₁` of it over the aromatic bonds,
 renumber its atoms by any `σ`, and list the renumbered bonds in any order and orientation: the
-result `m₂` aromatizes, and to the canonical SMILES of `a`.  From `aromatize_of_kekuleVariant`,
-`IsKekule.aromatize_relabel`, `aromatize_of_sameBonds` and
+result `m₂` aromatizes, and to the canonical SMILES of `a`.  From
+`aromatize_of_kekuleVariant_of_chargesKept`, `IsKekule.aromatize_relabel`,
+`aromatize_of_sameBonds` and
 `canonicalSmiles_eq_of_sameBonds_relabel`. -/
 theorem canonicalSmiles_aromatize_eq {m m₁ m₂ a : Molecule n} (hk : m.IsKekule)
     (h : m.aromatize = .ok a) (hc : m.ChargesKept a) (hv : KekuleVariant a m m₁)

@@ -329,18 +329,22 @@ def nitrogensCleanup : Work :=
   let (w, consider) := (List.range m.numAtoms).foldl nitroStep (m, [])
   consider.foldl azideStep w
 
+/-- What `phosphorusCleanup` looks for around atom `i`: the last neutral `=O` (bond and atom), and
+whether there is a `=C` or `=N` whose atom has at least two neighbours. -/
+def phosphorusScan (i : ℕ) : Option (ℕ × ℕ) × Bool :=
+  (m.neighbors i).foldl (init := ((none : Option (ℕ × ℕ)), false)) fun (dblO, dblCN) (k, j) ↦
+    let b := m.atoms[j]!
+    if b.z == 8 && b.charge == 0 && m.bonds[k]!.kind == .double then (some (k, j), dblCN)
+    else if (b.z == 6 || b.z == 7) && 2 ≤ m.degree j && m.bonds[k]!.kind == .double then
+      (dblO, true)
+    else (dblO, dblCN)
+
 /-- `MolOps.cpp:138-180`: neutral 5-valent P with three neighbours, `=O` and
 `=C`/`=N` (the C/N having ≥ 2 neighbours). The last such `=O` becomes `-O⁻`. -/
 def phosphorusCleanup (i : ℕ) : Work :=
   let a := m.atoms[i]!
   if a.charge != 0 || m.explicitValence i != 5 || m.degree i != 3 then m else
-  let (dblO, dblCN) := (m.neighbors i).foldl (init := ((none : Option (ℕ × ℕ)), false))
-    fun (dblO, dblCN) (k, j) ↦
-      let b := m.atoms[j]!
-      if b.z == 8 && b.charge == 0 && m.bonds[k]!.kind == .double then (some (k, j), dblCN)
-      else if (b.z == 6 || b.z == 7) && 2 ≤ m.degree j && m.bonds[k]!.kind == .double then
-        (dblO, true)
-      else (dblO, dblCN)
+  let (dblO, dblCN) := m.phosphorusScan i
   match dblO with
   | some (k, j) =>
     if dblCN then

@@ -484,7 +484,8 @@ lemma quiet_of_cleanUp_eq (h : w.cleanUp = w) : w.Quiet := by
     unfold nitrogensCleanup at h2
     generalize hq : (List.range w.numAtoms).foldl nitroStep (w, []) = q at h1 h2
     obtain ⟨w', consider⟩ := q
-    have h3 := foldl_cleanStep (w := w') azideStep consider fun w'' i _ _ ↦ cleanStep_azideStep w'' i
+    have h3 := foldl_cleanStep (w := w') azideStep consider fun w'' i _ _ ↦
+      cleanStep_azideStep w'' i
     simp only at h1 h2 ⊢
     rw [h2] at h3
     rcases h1.2 with e | hc
@@ -533,6 +534,186 @@ lemma quiet_of_cleanUp_eq (h : w.cleanUp = w) : w.Quiet := by
     rw [hN] at h2
     exact foldl_eq_self_of_cleanStep cleanUpStep _ w (fun w' a ha hs ↦ cleanStep_cleanUpStep w'
       (by rw [hs]; simpa [numAtoms] using ha)) h2 i (by simpa [numAtoms] using hi)
+
+/-- Charging a neutral atom of `w` gives something other than `w`. -/
+lemma modifyAtom_charge_ne {X : Work} {j : ℕ} {d : ℤ} (hs : X.atoms.size = w.atoms.size)
+    (hj : j < w.atoms.size) (h0 : w.atoms[j]!.charge = 0) (hd : d ≠ 0) :
+    X.modifyAtom j ({ · with charge := d }) ≠ w := by
+  intro e
+  have := congrArg (fun w ↦ w.charge? j) e
+  simp only at this
+  rw [charge?_modifyAtom_charge_self X (hs ▸ hj), charge?_eq_of_lt w hj, h0] at this
+  exact hd (Option.some.inj this)
+
+/-- What `nitroStep` looks for: a neutral oxygen on a double bond. -/
+def nitroO (x : ℕ × ℕ) : Bool :=
+  w.atoms[x.2]!.z == 8 && w.atoms[x.2]!.charge == 0 && w.bonds[x.1]!.kind == .double
+
+/-- `nitroStep` changes nothing exactly when the atom is no `nitroCand` or has no neutral `=O`. -/
+lemma nitroStep_fst_eq_iff (c : List ℕ) (i : ℕ) :
+    (nitroStep (w, c) i).1 = w ↔
+      (w.nitroCand i = true → ∀ x ∈ w.neighbors i, w.nitroO x = false) := by
+  unfold nitroStep nitroCand
+  dsimp only
+  split
+  · rename_i hg
+    simp only [Bool.or_eq_true, bne_iff_ne, ne_eq] at hg
+    simp only [Bool.and_eq_true, beq_iff_eq, true_iff]
+    intro h; tauto
+  · rename_i hg
+    simp only [Bool.or_eq_true, bne_iff_ne, ne_eq, not_or, not_not] at hg
+    simp only [hg, beq_self_eq_true, Bool.and_self, forall_const]
+    split
+    · rename_i k j hf
+      have hp := List.find?_some hf
+      simp only [Bool.and_eq_true, beq_iff_eq] at hp
+      refine iff_of_false (modifyAtom_charge_ne w (by simp) (w.lt_size_of_z_ne_zero
+        (by rw [hp.1.1]; decide)) hp.1.2 (by decide)) fun h ↦ ?_
+      have := h _ (List.mem_of_find?_eq_some hf)
+      simp [nitroO, hp.1.1, hp.1.2, hp.2] at this
+    · rename_i hf
+      simp only [true_iff]
+      intro x hx
+      have := List.find?_eq_none.mp hf x hx
+      simpa [nitroO] using this
+
+/-- What `azideStep` looks for: a neutral nitrogen on a triple bond. -/
+def azideN (x : ℕ × ℕ) : Bool :=
+  w.atoms[x.2]!.z == 7 && w.atoms[x.2]!.charge == 0 && w.bonds[x.1]!.kind == .triple
+
+/-- `azideStep` changes nothing exactly when there is no neutral `#N`. -/
+lemma azideStep_eq_iff (i : ℕ) :
+    azideStep w i = w ↔ ∀ x ∈ w.neighbors i, w.azideN x = false := by
+  unfold azideStep
+  dsimp only
+  split
+  · rename_i k j hf
+    have hp := List.find?_some hf
+    simp only [Bool.and_eq_true, beq_iff_eq] at hp
+    refine iff_of_false (modifyAtom_charge_ne w (by simp) (w.lt_size_of_z_ne_zero
+      (by rw [hp.1.1]; decide)) hp.1.2 (by decide)) fun h ↦ ?_
+    have := h _ (List.mem_of_find?_eq_some hf)
+    simp [azideN, hp.1.1, hp.1.2, hp.2] at this
+  · rename_i hf
+    simp only [true_iff]
+    intro x hx
+    have := List.find?_eq_none.mp hf x hx
+    simpa [azideN] using this
+
+/-- The guard of `phosphorusCleanup`: the rule looks no further. -/
+def phosphorusGuard (i : ℕ) : Bool :=
+  w.atoms[i]!.charge != 0 || w.explicitValence i != 5 || w.degree i != 3
+
+/-- `phosphorusCleanup` on an atom in range changes nothing exactly when its guard stops it or
+the scan finds no `=O` with a `=C`/`=N`. -/
+lemma phosphorusCleanup_eq_iff {i : ℕ} (hi : i < w.atoms.size) :
+    w.phosphorusCleanup i = w ↔
+      (w.phosphorusGuard i = false → ¬ ((w.phosphorusScan i).1.isSome ∧
+        (w.phosphorusScan i).2 = true)) := by
+  unfold phosphorusCleanup phosphorusGuard
+  dsimp only
+  split
+  · rename_i hg
+    simp [hg]
+  · rename_i hg
+    simp only [Bool.not_eq_true] at hg
+    simp only [hg, forall_const]
+    obtain ⟨dblO, dblCN⟩ := w.phosphorusScan i
+    simp only [Bool.or_eq_false_iff, bne_eq_false_iff_eq] at hg
+    cases dblO with
+    | none => simp
+    | some kj =>
+      obtain ⟨k, j⟩ := kj
+      cases dblCN
+      · simp
+      · simp only [if_true, Option.isSome_some, and_self, not_true_eq_false, iff_false]
+        exact modifyAtom_charge_ne w (by simp) hi hg.1.1 one_ne_zero
+
+lemma halogenStep_size (p : Work × ℤ) (kj : ℕ × ℕ) :
+    (halogenStep p kj).1.atoms.size = p.1.atoms.size := by
+  unfold halogenStep
+  dsimp only
+  split <;> simp
+
+lemma foldl_halogenStep_size : ∀ (l : List (ℕ × ℕ)) (p : Work × ℤ),
+    (l.foldl halogenStep p).1.atoms.size = p.1.atoms.size
+  | [], _ => rfl
+  | kj :: l, p => by rw [List.foldl_cons, foldl_halogenStep_size l, halogenStep_size]
+
+lemma le_foldl_halogenStep : ∀ (l : List (ℕ × ℕ)) (p : Work × ℤ),
+    p.2 ≤ (l.foldl halogenStep p).2
+  | [], _ => le_rfl
+  | kj :: l, p => by
+    rw [List.foldl_cons]
+    refine le_trans ?_ (le_foldl_halogenStep l _)
+    unfold halogenStep
+    dsimp only
+    split <;> simp
+
+/-- The halogen fold counts no `=O` only when there is none. -/
+lemma not_double_of_foldl_halogenStep : ∀ (l : List (ℕ × ℕ)) (w : Work) (fc : ℤ),
+    (l.foldl halogenStep (w, fc)).2 = fc → ∀ kj ∈ l, w.bonds[kj.1]!.kind ≠ .double
+  | [], _, _, _ => by simp
+  | ⟨k, j⟩ :: l, w, fc, h => by
+    rw [List.foldl_cons] at h
+    by_cases hk : w.bonds[k]!.kind = .double
+    · exfalso
+      have := le_foldl_halogenStep l (halogenStep (w, fc) (k, j))
+      simp only [halogenStep, hk, beq_self_eq_true, if_true] at this h
+      omega
+    · have e : halogenStep (w, fc) (k, j) = (w, fc) := by
+        simp [halogenStep, hk]
+      rw [e] at h
+      intro kj hkj
+      rcases List.mem_cons.mp hkj with rfl | hkj
+      · exact hk
+      · exact not_double_of_foldl_halogenStep l w fc h kj hkj
+
+/-- With no `=O`, the halogen fold does nothing. -/
+lemma foldl_halogenStep_of_not_double : ∀ (l : List (ℕ × ℕ)) (w : Work) (fc : ℤ),
+    (∀ kj ∈ l, w.bonds[kj.1]!.kind ≠ .double) → l.foldl halogenStep (w, fc) = (w, fc)
+  | [], _, _, _ => rfl
+  | ⟨k, j⟩ :: l, w, fc, h => by
+    have e : halogenStep (w, fc) (k, j) = (w, fc) := by
+      simp [halogenStep, h (k, j) List.mem_cons_self]
+    rw [List.foldl_cons, e]
+    exact foldl_halogenStep_of_not_double l w fc fun kj hkj ↦ h kj (List.mem_cons_of_mem _ hkj)
+
+/-- The guard of `halogenCleanup`: the rule looks no further. -/
+def halogenGuard (i : ℕ) : Bool :=
+  w.atoms[i]!.charge != 0 || ![3, 5, 7].contains (w.explicitValence i) ||
+    !(w.neighbors i).all (fun (_, j) ↦ w.atoms[j]!.z == 8)
+
+/-- `halogenCleanup` on an atom in range changes nothing exactly when its guard stops it or no
+bond at it is double. -/
+lemma halogenCleanup_eq_iff {i : ℕ} (hi : i < w.atoms.size) :
+    w.halogenCleanup i = w ↔
+      (w.halogenGuard i = false → ∀ kj ∈ w.neighbors i, w.bonds[kj.1]!.kind ≠ .double) := by
+  unfold halogenCleanup halogenGuard
+  dsimp only
+  split
+  · rename_i hg
+    exact ⟨fun _ h ↦ by rw [hg] at h; simp at h, fun _ ↦ rfl⟩
+  · rename_i hg
+    split
+    · rename_i hg'
+      exact ⟨fun _ h ↦ by rw [hg'] at h; simp at h, fun _ ↦ rfl⟩
+    · rename_i hg'
+      simp only [Bool.or_eq_true, bne_iff_ne, ne_eq, not_or, not_not] at hg
+      simp only [Bool.not_eq_true', Bool.not_eq_false] at hg'
+      simp only [Bool.or_eq_false_iff, bne_eq_false_iff_eq, Bool.not_eq_false', hg.1, hg', hg.2,
+        and_self, forall_const]
+      constructor
+      · intro h
+        apply not_double_of_foldl_halogenStep _ w 0
+        by_contra hfc
+        have hs := foldl_halogenStep_size (w.neighbors i) (w, 0)
+        generalize (w.neighbors i).foldl halogenStep (w, 0) = q at h hfc hs
+        obtain ⟨w', fc⟩ := q
+        exact modifyAtom_charge_ne w hs hi hg.1 hfc h
+      · intro h
+        rw [foldl_halogenStep_of_not_double _ w 0 h]
+        exact modifyAtom_charge_self w hg.1
 
 lemma cleanUp_eq_of_quiet (h : w.Quiet) : w.cleanUp = w := by
   obtain ⟨h1, h2, h3⟩ := h
@@ -733,6 +914,19 @@ lemma afterRel_finalizeHs : AfterRel w w.finalizeHs := by
   by_cases hj : j < w'.atoms.size
   · simp [hj, getElem!_def]
   · simp [hj]
+
+/-- `finalizeHs` does not touch the bonds. -/
+lemma finalizeHs_bonds : w.finalizeHs.bonds = w.bonds := by
+  unfold finalizeHs
+  dsimp only
+  refine foldl_induction (fun w' : Work ↦ w'.bonds = w.bonds) _ _ _ rfl fun w' i _ h ↦ ?_
+  unfold adjustHsStep
+  dsimp only
+  split
+  · split
+    · exact h
+    · exact h
+  · exact h
 
 lemma afterRel_finish (rings : Array (List ℕ)) : AfterRel w (w.finish rings) :=
   ((w.afterRel_assignRadicals).trans (afterRel_setAromaticity _ rings)).trans

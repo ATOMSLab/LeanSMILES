@@ -11,7 +11,7 @@ LeanSMILES/           the typed SMILES toolkit (imports Mathlib)
   SMILES/             tokenizer, parser, writer, canonical SMILES and its canonicity proof
   Fingerprint/        RDKit-compatible Morgan fingerprints on Molecule n; order-invariance proof
   Aromaticity/        Molecule.aromatize: RDKit's ring set, kekulization, aromaticity perception;
-                      Invariance: what it does not depend on (stated, proofs pending)
+                      Invariance: what it does not depend on (partly proved)
   Depict/             2D depiction: layout, SVG, mol blocks, #draw for the Infoview, lake exe depict;
                       fingerprint grid/barcode (#fingerprint)
   Data/               CSV parser (columns by header name) for the Delaney dataset
@@ -280,7 +280,7 @@ lake exe validity-test      # 10 000 broken SMILES: accepts everything RDKit acc
 lake exe oracle-test        # 1 128 Delaney molecules: graph = RDKit's, canonical SMILES round-trips and is relabeling-invariant (1 skipped, see above)
 lake exe morgan-test        # Morgan fingerprints: ring membership = RDKit's, bits = RDKit's wherever the graph is, relabeling-invariant
 lake exe charge-test        # formal charges: [C+123], [H+++], [C-123] parse but fail checkCharges; [Na+], [O-2], [Fe+3], [NH4+] pass
-lake exe invariance-test    # the unproved statements of Aromaticity/Invariance.lean, as written, on 805 hard cases, 229 pairs
+lake exe invariance-test    # the statements of Aromaticity/Invariance.lean, as written, on 805 hard cases, 229 pairs
 lake exe stereo-test        # stereoisomers vs RDKit and InChI (datasets/stereo-*.tsv from tools/rdkit_stereo.py):
                             # one canonical SMILES per stereoisomer, a different one per different isomer,
                             # no two / \ marks that contradict each other, @/@@ and / \ read as RDKit reads them
@@ -341,17 +341,29 @@ one RDKit accepts. The code is ported from the `canonical-smiles` branch's
 array-based sanitization (commit `5b5fe9e`) and still runs on an index-based
 working copy inside; its interface is `Molecule n → Except String (Molecule n)`.
 
-**Invariance: stated, not yet proved.** `LeanSMILES/Aromaticity/Invariance.lean`
+**Invariance: partly proved.** `LeanSMILES/Aromaticity/Invariance.lean`
 states what `aromatize` does not depend on: the numbering of the atoms
 (`aromatize_relabel`), the listing of the bonds (`aromatize_of_sameBonds`) and
-which Kekulé structure was written (`aromatize_of_kekuleVariant`,
+which Kekulé structure was written (`aromatize_of_kekuleVariant_of_chargesKept`,
 `aromatize_aromatize`, `exists_kekule_aromatize`), with the corollary that every
 Kekulé structure of a molecule, renumbered and relisted any way, aromatizes to
 one canonical SMILES (`canonicalSmiles_aromatize_eq`), and that a lowercase
 string and a Kekulé string of the same molecule do too, `c1cc[nH]c1` and
-`C1=CNC=C1` (`aromatize_of_isKekuleSpellingOf`). Every proof in that file
-is `sorry`. The statements carry hypotheses because without them they are
-false:
+`C1=CNC=C1` (`aromatize_of_isKekuleSpellingOf`).
+
+Proved so far: what `aromatize` keeps (the bond list's order, ends and marks,
+the configurations, the bond kinds of a Kekulé input that do not come out
+aromatic), that a Kekulé structure always aromatizes, and that **two Kekulé
+structures of one aromatic system aromatize to the same molecule**
+(`aromatize_of_kekuleVariant_of_chargesKept`). Every corollary is proved from
+the statements it names. Still `sorry`: invariance under renumbering and
+relisting (they need ring perception's output to be canonical up to order),
+idempotence, the Kekulé witness for a lowercase input, and the lowercase/Kekulé
+spelling statement. `aromatize_of_kekuleVariant` without `ChargesKept` is
+false: `O=P1[SiH]=CC=CC=1` aromatizes to `[O-][p+]1[siH]cccc1`, its other
+Kekulé structure `O=P1=[SiH]C=CC=C1` to itself (RDKit agrees), because
+`cleanUp`'s phosphorus rule looks at which ring neighbour carries the double
+bond. The statements carry hypotheses because without them they are false:
 
 - **Renumbering a lowercase ring that is not aromatic changes the output.**
   Kekulization places its double bonds by a walk in atom order, and they stay

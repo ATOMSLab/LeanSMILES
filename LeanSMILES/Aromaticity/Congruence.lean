@@ -248,7 +248,8 @@ theorem perm_map (h : Swapped F w w') {β : Type*} (i : ℕ) (g : ℕ → BondKi
 
 /-- Whether some bond at an atom has a kind with a property does not change. -/
 lemma any_eq (h : Swapped F w w') (i : ℕ) (p : BondKind → Bool) :
-    (w'.bondsOf i).any (fun k ↦ p w'.bonds[k]!.kind) = (w.bondsOf i).any (fun k ↦ p w.bonds[k]!.kind) := by
+    (w'.bondsOf i).any (fun k ↦ p w'.bonds[k]!.kind) =
+      (w.bondsOf i).any (fun k ↦ p w.bonds[k]!.kind) := by
   have := (h.perm_map i (fun _ x ↦ p x) p fun _ _ ↦ rfl).any_eq' id
   simpa [List.any_map, Function.comp_def] using this
 
@@ -505,11 +506,17 @@ lemma eq_of_aromatic (h : KindRel F w w') (hA : ∀ k, F k = true → w.kind? k 
       cases Option.some.inj hx
       rcases hsx with e | e <;> cases e
   simp only at he
-  cases h1 : B[k]? <;> cases h2 : B'[k]? <;> simp_all
-  rename_i b b'
-  cases b
-  cases b'
-  simp_all
+  cases h1 : B[k]? <;> cases h2 : B'[k]?
+  · rfl
+  · simp [h1, h2] at he
+  · simp [h1, h2] at he
+  · rename_i b b'
+    simp only [h1, h2, Option.map_some, Option.some.injEq, Prod.mk.injEq] at he hk
+    obtain ⟨s, d, kd⟩ := b
+    obtain ⟨s', d', kd'⟩ := b'
+    simp only at he hk
+    obtain ⟨rfl, rfl⟩ := he
+    rw [hk]
 
 end KindRel
 
@@ -598,6 +605,195 @@ lemma bondHalfSum_ofMolecule_of_le {n : ℕ} (m : Molecule n) {i : ℕ} (hi : n 
   · rfl
   · simp only [Function.comp_apply, WBond.touches, Bool.or_eq_true, beq_iff_eq, not_or]
     exact ⟨by have := b.src.isLt; omega, by have := b.dst.isLt; omega⟩
+
+/-! ### `cleanUp` on another Kekulé structure -/
+
+/-- A left fold with two step functions that agree on the list. -/
+theorem _root_.LeanSMILES.Aromaticity.foldl_congr_mem {α β : Type*} {f g : β → α → β} :
+    ∀ {l : List α}, (∀ b, ∀ a ∈ l, f b a = g b a) → ∀ b, l.foldl f b = l.foldl g b
+  | [], _, _ => rfl
+  | a :: l, h, b => by
+    rw [List.foldl_cons, List.foldl_cons, h b a List.mem_cons_self]
+    exact foldl_congr_mem (fun b' a' ha' ↦ h b' a' (List.mem_cons_of_mem _ ha')) _
+
+/-- Atom `i` is one `cleanUp` could rewrite at: a neutral N or P of valence 5, or a neutral Cl,
+Br or I of valence 3, 5 or 7. -/
+def Hypervalent (w : Work) (i : ℕ) : Prop :=
+  w.atoms[i]!.charge = 0 ∧ ((w.atoms[i]!.z = 7 ∨ w.atoms[i]!.z = 15) ∧ w.explicitValence i = 5 ∨
+    (w.atoms[i]!.z = 17 ∨ w.atoms[i]!.z = 35 ∨ w.atoms[i]!.z = 53) ∧
+      (w.explicitValence i = 3 ∨ w.explicitValence i = 5 ∨ w.explicitValence i = 7))
+
+lemma mem_bondsOf_of_mem_neighbors {w : Work} {i k j : ℕ} (h : (k, j) ∈ w.neighbors i) :
+    k ∈ w.bondsOf i := by
+  simp only [neighbors, List.mem_map, Prod.mk.injEq] at h
+  obtain ⟨k', hk', rfl, -⟩ := h
+  exact hk'
+
+namespace Swapped
+
+lemma nitroCand_eq (h : Swapped F w w') : w'.nitroCand = w.nitroCand := by
+  funext i
+  simp only [nitroCand, h.atoms, h.explicitValence_eq]
+
+lemma phosphorusGuard_eq (h : Swapped F w w') : w'.phosphorusGuard = w.phosphorusGuard := by
+  funext i
+  simp only [phosphorusGuard, h.atoms, h.explicitValence_eq, h.degree_eq]
+
+lemma halogenGuard_eq (h : Swapped F w w') : w'.halogenGuard = w.halogenGuard := by
+  funext i
+  simp only [halogenGuard, h.atoms, h.explicitValence_eq, h.neighbors_eq]
+
+/-- **`cleanUp` does nothing on another Kekulé structure either**, if it does nothing on `w` and no
+bond of `F` touches an atom it could rewrite at. -/
+theorem quiet (h : Swapped F w w') (hq : w.Quiet)
+    (hc : ∀ k, F k = true → ∀ i, k ∈ w.bondsOf i → ¬ Hypervalent w i) : w'.Quiet := by
+  have hsz : w'.atoms.size = w.atoms.size := by rw [h.atoms]
+  have kindEq : ∀ i, Hypervalent w i → ∀ x ∈ w.neighbors i,
+      w'.bonds[x.1]!.kind = w.bonds[x.1]!.kind := by
+    intro i hv ⟨k, j⟩ hx
+    have hk := mem_bondsOf_of_mem_neighbors hx
+    cases hF : F k
+    · exact h.kind_eq (mem_bondsOf_lt hk) hF
+    · exact absurd hv (hc k hF i hk)
+  have hvN : ∀ i, w.nitroCand i = true → Hypervalent w i := by
+    intro i hn
+    simp only [nitroCand, Bool.and_eq_true, beq_iff_eq] at hn
+    exact ⟨hn.1.2, .inl ⟨.inl hn.1.1, hn.2⟩⟩
+  refine ⟨fun i hi ↦ ?_, fun i hi hn ↦ ?_, fun i hi ↦ ?_⟩
+  · have hw := (nitroStep_fst_eq_iff w [] i).mp (hq.1 i (hsz ▸ hi))
+    rw [nitroStep_fst_eq_iff, h.nitroCand_eq, h.neighbors_eq]
+    intro hn x hx
+    rw [← hw hn x hx]
+    simp only [nitroO, h.atoms, kindEq i (hvN i hn) x hx]
+  · rw [h.nitroCand_eq] at hn
+    have hw := (azideStep_eq_iff w i).mp (hq.2.1 i (hsz ▸ hi) hn)
+    rw [azideStep_eq_iff, h.neighbors_eq]
+    intro x hx
+    rw [← hw x hx]
+    simp only [azideN, h.atoms, kindEq i (hvN i hn) x hx]
+  · have hi' : i < w.atoms.size := hsz ▸ hi
+    have hw := hq.2.2 i hi'
+    unfold cleanUpStep at hw ⊢
+    simp only [h.atoms] at ⊢
+    by_cases hz : (w.atoms[i]!.z == 15) = true
+    · simp only [hz, if_true] at hw ⊢
+      rw [phosphorusCleanup_eq_iff w' hi, h.phosphorusGuard_eq]
+      have hw' := (phosphorusCleanup_eq_iff w hi').mp hw
+      intro hg
+      have hv : Hypervalent w i := by
+        simp only [phosphorusGuard, Bool.or_eq_false_iff, bne_eq_false_iff_eq] at hg
+        simp only [beq_iff_eq] at hz
+        exact ⟨hg.1.1, .inl ⟨.inr hz, hg.1.2⟩⟩
+      have hs : w'.phosphorusScan i = w.phosphorusScan i := by
+        unfold phosphorusScan
+        rw [h.neighbors_eq]
+        refine foldl_congr_mem (fun s x hx ↦ ?_) _
+        obtain ⟨k, j⟩ := x
+        simp only [h.atoms, h.degree_eq, kindEq i hv (k, j) hx]
+      rw [hs]
+      exact hw' hg
+    · simp only [hz, Bool.false_eq_true, if_false] at hw ⊢
+      by_cases hz' : (w.atoms[i]!.z == 17 || w.atoms[i]!.z == 35 || w.atoms[i]!.z == 53) = true
+      · simp only [hz', if_true] at hw ⊢
+        rw [halogenCleanup_eq_iff w' hi, h.halogenGuard_eq, h.neighbors_eq]
+        have hw' := (halogenCleanup_eq_iff w hi').mp hw
+        intro hg kj hkj
+        have hv : Hypervalent w i := by
+          simp only [halogenGuard, Bool.or_eq_false_iff, bne_eq_false_iff_eq] at hg
+          simp only [Bool.or_eq_true, beq_iff_eq] at hz'
+          refine ⟨hg.1.1, .inr ⟨by tauto, ?_⟩⟩
+          have := hg.1.2
+          simp only [Bool.not_eq_false', List.contains_cons, List.contains_nil, Bool.or_false,
+            Bool.or_eq_true, beq_iff_eq] at this
+          omega
+        rw [kindEq i hv kj hkj]
+        exact hw' hg kj hkj
+      · simp only [hz', Bool.false_eq_true, if_false]
+
+end Swapped
+
+/-! ### Aromatic candidates are not hypervalent -/
+
+/-- The first two checks of `isAromaticCandidate`: a candidate is in the first three rows (or Se,
+Te), and not over its default valence. -/
+lemma isAromaticCandidate_spec {w : Work} {i : ℕ} {d : Donor}
+    (h : w.isAromaticCandidate i d = true) :
+    ¬ (18 < w.atoms[i]!.z ∧ w.atoms[i]!.z ≠ 34 ∧ w.atoms[i]!.z ≠ 52) ∧
+      ¬ (0 < defaultValence w.atoms[i]!.z ∧
+        defaultValence (((w.atoms[i]!.z : ℤ) - w.atoms[i]!.charge).toNat) <
+          w.cachedValence i + w.atoms[i]!.cachedImplicit) := by
+  unfold isAromaticCandidate at h
+  simp only [Id.run] at h
+  constructor
+  · intro hz
+    simp [hz.1, hz.2.1, hz.2.2] at h
+  · intro hv
+    split at h
+    · exact Bool.false_ne_true h
+    split at h
+    · exact Bool.false_ne_true h
+    split at h
+    · exact Bool.false_ne_true h
+    · rename_i hc
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at hc
+      exact hc hv
+
+/-- `assignRadicals` changes only the radical counts. -/
+lemma assignRadicals_atoms (w : Work) (j : ℕ) :
+    (w.assignRadicals.atoms[j]?).map (fun a : WAtom ↦ { a with radicals := 0 }) =
+      (w.atoms[j]?).map (fun a : WAtom ↦ { a with radicals := 0 }) := by
+  unfold assignRadicals
+  refine foldl_induction (fun w' : Work ↦ (w'.atoms[j]?).map (fun a : WAtom ↦
+    { a with radicals := 0 }) = (w.atoms[j]?).map (fun a : WAtom ↦ { a with radicals := 0 }))
+    _ _ _ rfl fun w' i _ h ↦ ?_
+  unfold radicalStep
+  dsimp only
+  split
+  · exact h
+  · rw [← h, getElem?_modifyAtom_atoms]
+    split <;> simp [Option.map_map, Function.comp_def]
+
+/-- **An aromatic candidate is not hypervalent**: perception runs on the working copy with its
+valences cached, and a neutral N or P of valence 5, or a neutral Cl of valence 3, 5 or 7, is over
+its default valence (Br and I are past the third row). -/
+theorem not_hypervalent_of_isAromaticCandidate (w : Work) {i : ℕ} (hi : i < w.atoms.size)
+    {d : Donor} (h : w.cacheValences.assignRadicals.isAromaticCandidate i d = true) :
+    ¬ Hypervalent w i := by
+  obtain ⟨hz, hv⟩ := isAromaticCandidate_spec h
+  -- the atom perception sees: `w`'s, with its valence cached
+  obtain ⟨a1, ha1, hz1, hc1, hv1⟩ : ∃ a1, w.cacheValences.assignRadicals.atoms[i]? = some a1 ∧
+      a1.z = w.atoms[i]!.z ∧ a1.charge = w.atoms[i]!.charge ∧
+      a1.cachedValence = some (w.explicitValence i) := by
+    have e := assignRadicals_atoms w.cacheValences i
+    rw [getElem?_cacheValences_atoms, Array.getElem?_eq_getElem hi] at e
+    obtain ⟨a1, ha1, he⟩ := Option.map_eq_some_iff.mp e
+    refine ⟨a1, ha1, ?_, ?_, ?_⟩
+    · have := congrArg WAtom.z he; simpa [getElem!_def, Array.getElem?_eq_getElem hi] using this
+    · have := congrArg WAtom.charge he
+      simpa [getElem!_def, Array.getElem?_eq_getElem hi] using this
+    · have := congrArg WAtom.cachedValence he; simpa using this
+  have hb : w.cacheValences.assignRadicals.atoms[i]! = a1 := by simp [getElem!_def, ha1]
+  have hcv : w.cacheValences.assignRadicals.cachedValence i = w.explicitValence i := by
+    simp [cachedValence, hb, hv1]
+  rw [hb, hz1, hc1, hcv] at hv
+  rw [hb, hz1] at hz
+  rintro ⟨h0, ⟨hz', hev⟩ | ⟨hz', hev⟩⟩
+  · rw [h0, hev] at hv
+    have h7 : defaultValence 7 = 3 := by decide
+    have h15 : defaultValence 15 = 3 := by decide
+    rcases hz' with e | e <;> rw [e] at hv <;> apply hv <;>
+      simp only [Int.sub_zero, Int.toNat_natCast, h7, h15] <;> omega
+  · rw [h0] at hv
+    rcases hz' with e | e | e
+    · rw [e] at hv
+      apply hv
+      refine ⟨by decide, ?_⟩
+      simp only [Int.sub_zero, Int.toNat_natCast]
+      have : defaultValence 17 = 1 := by decide
+      rw [this]
+      omega
+    · rw [e] at hz; exact hz ⟨by decide, by decide, by decide⟩
+    · rw [e] at hz; exact hz ⟨by decide, by decide, by decide⟩
 
 end Work
 
