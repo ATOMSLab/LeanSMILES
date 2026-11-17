@@ -240,6 +240,19 @@ lemma ringInv_donorData (w : Work) (rings : Array (List ℕ)) :
 
 /-! ### `setAromaticity` -/
 
+/-- A bond of `aromaticBondList` is a bond of one of the rings. -/
+lemma mem_flatMap_ringBonds_of_mem_aromaticBondList (w : Work) (rings : Array (List ℕ)) {b : ℕ}
+    (hb : b ∈ w.aromaticBondList rings) : b ∈ rings.toList.flatMap w.ringBonds := by
+  unfold aromaticBondList at hb
+  obtain ⟨r, hr⟩ := mem_fusedBonds hb
+  have hr' : r < (w.donorData rings).candRings.size := by
+    by_contra hlt
+    rw [getElem!_neg _ r (by simpa using hlt)] at hr
+    exact List.not_mem_nil hr
+  rw [getElem!_pos _ r (by simpa using hr'), Array.getElem_map] at hr
+  obtain ⟨-, hcr⟩ := ringInv_donorData w rings
+  exact List.mem_flatMap.2 ⟨_, (hcr _ (Array.getElem_mem hr')).1, hr⟩
+
 /-- A bond `setAromaticity` makes aromatic is a bond of one of the rings, and both its atoms are
 aromatic candidates. -/
 theorem of_kind?_setAromaticity (w : Work) (rings : Array (List ℕ)) {b : ℕ}

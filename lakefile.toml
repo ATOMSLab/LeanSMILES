@@ -83,6 +83,16 @@ root = "LeanSMILES.Tests.Aromaticity"
 name = "invariance-test"
 root = "LeanSMILES.Tests.AromatizeInvariance"
 
+# The resonance specification (LeanSMILES.Aromaticity.Resonance) checked on the data
+[[lean_exe]]
+name = "resonance-test"
+root = "LeanSMILES.Tests.Resonance"
+
+# What the Kekulé-class canonical form (LeanSMILES.SMILES.KekuleClass) costs, on worst cases
+[[lean_exe]]
+name = "kekule-bench"
+root = "LeanSMILES.Tests.KekuleBench"
+
 # Pipelines: ridge regression of Delaney log solubility on Morgan fingerprints vs scikit-learn
 # (tools/sklearn_delaney.py); `--svg PATH` also writes the parity plot
 [[lean_exe]]

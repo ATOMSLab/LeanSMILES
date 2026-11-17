@@ -8,6 +8,7 @@ module
 public import LeanSMILES.Aromaticity.Congruence
 public import LeanSMILES.Aromaticity.PerceiveFacts
 public import LeanSMILES.SMILES.Canonicity
+public import LeanSMILES.SMILES.KekuleClass
 
 /-!
 # LeanSMILES.Aromaticity.Invariance
@@ -42,6 +43,12 @@ silicon, so the rule does not fire and it aromatizes to itself.  RDKit 2025.09
 agrees.  `ChargesKept` excludes this, and the headline already assumes it, so
 `canonicalSmiles_aromatize_eq` goes through
 `aromatize_of_kekuleVariant_of_chargesKept`.
+
+`LeanSMILES.Aromaticity.Resonance` states the Kekulé-structure result from the
+input's side (no moved bond at an atom `cleanUp` may rewrite, instead of
+`ChargesKept`), with its converse, and `LeanSMILES.SMILES.KekuleClass` gives a
+canonical form for Kekulé structures that needs no model of aromaticity and no
+hypothesis.  `IsKekule` is defined there.
 
 ## The hypotheses, and why each is there
 
@@ -146,14 +153,6 @@ namespace Molecule
 variable {n : ℕ}
 
 /-! ### The relations -/
-
-/-- Nothing written aromatic: no lowercase atom, no aromatic bond.  A Kekulé structure. -/
-def IsKekule (m : Molecule n) : Prop :=
-  (∀ i, (m.atom i).aromatic = false) ∧ ∀ b ∈ m.bonds, b.kind ≠ .aromatic
-
-instance (m : Molecule n) : Decidable m.IsKekule :=
-  inferInstanceAs (Decidable ((∀ i, (m.atom i).aromatic = false) ∧
-    ∀ b ∈ m.bonds, b.kind ≠ .aromatic))
 
 /-- Bond for bond, the same two atoms in the same orientation with the same `/` `\` mark: the
 bond lists differ at most in the kinds. -/

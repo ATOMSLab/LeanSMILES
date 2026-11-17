@@ -20,6 +20,7 @@ public import LeanSMILES.SMILES.Parse
 public import LeanSMILES.SMILES.Write
 public import LeanSMILES.SMILES.Canon
 public import LeanSMILES.SMILES.Canonicity
+public import LeanSMILES.SMILES.KekuleClass
 public import LeanSMILES.Fingerprint.Morgan
 public import LeanSMILES.Fingerprint.MorganInvariance
 public import LeanSMILES.Fingerprint.MorganRadius3
@@ -29,6 +30,9 @@ public import LeanSMILES.Aromaticity.Passes
 public import LeanSMILES.Aromaticity.Congruence
 public import LeanSMILES.Aromaticity.PerceiveFacts
 public import LeanSMILES.Aromaticity.Invariance
+public import LeanSMILES.Aromaticity.Resonance
+public import LeanSMILES.Aromaticity.KekuleSim
+public import LeanSMILES.Aromaticity.ResonanceProofs
 public import LeanSMILES.Depict.Graph
 public import LeanSMILES.Depict.Layout
 public import LeanSMILES.Depict.Svg
