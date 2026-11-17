@@ -295,8 +295,11 @@ def Molecule.aromatizeOutput {n : ℕ} (m : Molecule n) (w : Work) : Molecule n 
     let a := m.atom i
     let wa := w.atoms[i.val]!
     let total := wa.frozenHs.getD (wa.explicitHs + w.implicitHs i.val)
-    { a with aromatic := w.isAromaticAtom i.val, charge := wa.charge,
-             implicitH := total - a.explicitH.getD 0 }
+    -- the written hydrogens, but never more than the pipeline left (RDKit drops the one of
+    -- `C1=[nH]C=CC=C1`, GitHub #141): the atom carries exactly `total`
+    let written := a.explicitH.map (min · total)
+    { a with aromatic := w.isAromaticAtom i.val, charge := wa.charge, explicitH := written,
+             implicitH := total - written.getD 0 }
   Molecule.normalizeBrackets
     { atoms, bonds := withKinds m w, nodup := map_edge_withKinds m w ▸ m.nodup,
       stereo := m.stereo }
