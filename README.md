@@ -10,7 +10,8 @@ LeanSMILES/           the typed SMILES toolkit (imports Mathlib)
   Chem/               Element, Atom, Bond, Molecule n, Mathlib graph and matrix views, charges
   SMILES/             tokenizer, parser, writer, canonical SMILES and its canonicity proof
   Fingerprint/        RDKit-compatible Morgan fingerprints on Molecule n; order-invariance proof
-  Aromaticity/        Molecule.aromatize: RDKit's ring set, kekulization, aromaticity perception
+  Aromaticity/        Molecule.aromatize: RDKit's ring set, kekulization, aromaticity perception;
+                      Invariance: what it does not depend on (stated, proofs pending)
   Depict/             2D depiction: layout, SVG, mol blocks, #draw for the Infoview, lake exe depict;
                       fingerprint grid/barcode (#fingerprint)
   Data/               CSV parser (columns by header name) for the Delaney dataset
@@ -279,6 +280,7 @@ lake exe validity-test      # 10 000 broken SMILES: accepts everything RDKit acc
 lake exe oracle-test        # 1 128 Delaney molecules: graph = RDKit's, canonical SMILES round-trips and is relabeling-invariant (1 skipped, see above)
 lake exe morgan-test        # Morgan fingerprints: ring membership = RDKit's, bits = RDKit's wherever the graph is, relabeling-invariant
 lake exe charge-test        # formal charges: [C+123], [H+++], [C-123] parse but fail checkCharges; [Na+], [O-2], [Fe+3], [NH4+] pass
+lake exe invariance-test    # the unproved statements of Aromaticity/Invariance.lean, as written, on 805 hard cases
 lake exe stereo-test        # stereoisomers vs RDKit and InChI (datasets/stereo-*.tsv from tools/rdkit_stereo.py):
                             # one canonical SMILES per stereoisomer, a different one per different isomer,
                             # no two / \ marks that contradict each other, @/@@ and / \ read as RDKit reads them
@@ -338,6 +340,32 @@ atoms gets RDKit's bond types, hydrogen counts and Morgan fingerprint:
 one RDKit accepts. The code is ported from the `canonical-smiles` branch's
 array-based sanitization (commit `5b5fe9e`) and still runs on an index-based
 working copy inside; its interface is `Molecule n → Except String (Molecule n)`.
+
+**Invariance: stated, not yet proved.** `LeanSMILES/Aromaticity/Invariance.lean`
+states what `aromatize` does not depend on: the numbering of the atoms
+(`aromatize_relabel`), the listing of the bonds (`aromatize_of_sameBonds`) and
+which Kekulé structure was written (`aromatize_of_kekuleVariant`,
+`aromatize_aromatize`, `exists_kekule_aromatize`), with the corollary that every
+Kekulé structure of a molecule, renumbered and relisted any way, aromatizes to
+one canonical SMILES (`canonicalSmiles_aromatize_eq`). Every proof in that file
+is `sorry`. The statements carry hypotheses because without them they are
+false:
+
+- **Renumbering a lowercase ring that is not aromatic changes the output.**
+  Kekulization places its double bonds by a walk in atom order, and they stay
+  visible: `Cc1cccc2ncc12` aromatizes to two different canonical SMILES. RDKit
+  2025.09 does the same (`Cc1cccc2c1C=N2` or `Cc1cccc2c1=CN=2`, by atom order).
+- **Renumbering `CN(C)#N(C)CC` changes the output**, and relisting the bonds of
+  `c1ccccc1N(=O)=O` moves a charge between its oxygens: `cleanUp` takes "the
+  first" atom or bond it finds. (RDKit rejects the first of these for its
+  valence, which `aromatize` does not check.)
+- **Two Kekulé structures need not be the same molecule.** The two bond-shift
+  forms of 1,2-dimethylcyclooctatetraene are not, and aromatize differently; the
+  statement is about double bonds moved within what comes out aromatic.
+
+```bash
+lake exe invariance-test    # each statement of Aromaticity/Invariance.lean, as written, on 805 hard cases
+```
 RDKit's remaining sanitization steps were ported on that earlier representation;
 `docs/scope-canonical-smiles-morgan.md` records the port, the commit that holds
 its code, the oracle datasets and the Python references.

@@ -77,6 +77,12 @@ root = "Pipelines.Tests.Logistic"
 name = "aromaticity-test"
 root = "LeanSMILES.Tests.Aromaticity"
 
+# The statements of LeanSMILES/Aromaticity/Invariance.lean, as written, on
+# datasets/aromatize-invariance.smi (or the files given); `--dump` prints aromatize's outputs
+[[lean_exe]]
+name = "invariance-test"
+root = "LeanSMILES.Tests.AromatizeInvariance"
+
 # Pipelines: ridge regression of Delaney log solubility on Morgan fingerprints vs scikit-learn
 # (tools/sklearn_delaney.py); `--svg PATH` also writes the parity plot
 [[lean_exe]]
