@@ -45,10 +45,10 @@ the full search (`search_subset_leavesAll`); the two minima agree
 
 Configurations ride along: relabeling moves each one with its ligands
 (`relabelStereo`), an automorphism must preserve them, and the steps that
-first drop redundant brackets and erase meaningless marks are made of
+first normalize brackets and erase meaningless marks are made of
 label-independent tests — a bond-order sum, a canonical string, ranks, a
 configuration equal to its own mirror image — so they commute with
-relabeling too (`Molecule.dropRedundantBrackets_relabel`, `dropFake_relabel`;
+relabeling too (`Molecule.normalizeBrackets_relabel`, `dropFake_relabel`;
 together `Molecule.reduce_relabel`).
 -/
 
@@ -762,17 +762,17 @@ end MolData
 theorem Molecule.reduce_relabel (m : Molecule n) (σ : Equiv.Perm (Fin n)) :
     (m.relabel σ).reduce = m.reduce.relabel σ := by
   refine Molecule.ext ?_ rfl ?_
-  · change (m.relabel σ).dropRedundantBrackets.atoms = (m.dropRedundantBrackets.relabel σ).atoms
-    rw [dropRedundantBrackets_relabel]
-  · change (m.relabel σ).dropRedundantBrackets.toMolData.keptStereo
-      = relabelStereo σ m.dropRedundantBrackets.toMolData.keptStereo
-    rw [dropRedundantBrackets_relabel, toMolData_relabel, MolData.keptStereo_relabel]
+  · change (m.relabel σ).normalizeBrackets.atoms = (m.normalizeBrackets.relabel σ).atoms
+    rw [normalizeBrackets_relabel]
+  · change (m.relabel σ).normalizeBrackets.toMolData.keptStereo
+      = relabelStereo σ m.normalizeBrackets.toMolData.keptStereo
+    rw [normalizeBrackets_relabel, toMolData_relabel, MolData.keptStereo_relabel]
 
 /-- The canonical SMILES does not depend on how the atoms are numbered: every
 relabeling of the molecule writes the same string. -/
 theorem Molecule.canonicalSmiles_relabel (m : Molecule n) (σ : Equiv.Perm (Fin n)) :
     (m.relabel σ).canonicalSmiles = m.canonicalSmiles := by
-  simp only [canonicalSmiles, MolData.dropFakeAndCanonical_snd, dropRedundantBrackets_relabel,
+  simp only [canonicalSmiles, MolData.dropFakeAndCanonical_snd, normalizeBrackets_relabel,
     toMolData_relabel, MolData.dropFake_relabel, MolData.canonical_relabel]
 
 /-- The canonical SMILES of a bundled molecule does not depend on its atom order. -/
