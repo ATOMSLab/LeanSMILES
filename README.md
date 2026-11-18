@@ -361,11 +361,14 @@ Proved so far: what `aromatize` keeps (the bond list's order, ends and marks,
 the configurations, the bond kinds of a Kekulé input that do not come out
 aromatic), that a Kekulé structure always aromatizes, and that **two Kekulé
 structures of one aromatic system aromatize to the same molecule**
-(`aromatize_of_kekuleVariant_of_chargesKept`). Every corollary is proved from
-the statements it names. Still `sorry`: invariance under renumbering and
-relisting (they need ring perception's output to be canonical up to order),
-idempotence, the Kekulé witness for a lowercase input, and the lowercase/Kekulé
-spelling statement. The Kekulé statement without `ChargesKept` is false,
+(`aromatize_of_kekuleVariant_of_chargesKept`), and that **every output is the
+image of a Kekulé structure of itself** (`exists_kekule_aromatize`: the Kekulé
+structure the pipeline computes aromatizes back to the output, with the
+per-atom hydrogen and donor arithmetic decided by `decide +kernel` over every
+organic-subset element and bond pattern). Every corollary is proved from the
+statements it names. Still `sorry`: invariance under renumbering and relisting
+(they need ring perception's output to be canonical up to order), idempotence,
+and the lowercase/Kekulé spelling statement. The Kekulé statement without `ChargesKept` is false,
 so it is not stated: `O=P1[SiH]=CC=CC=1` aromatizes to `[O-][p+]1[siH]cccc1`, its other
 Kekulé structure `O=P1=[SiH]C=CC=C1` to itself (RDKit agrees), because
 `cleanUp`'s phosphorus rule looks at which ring neighbour carries the double

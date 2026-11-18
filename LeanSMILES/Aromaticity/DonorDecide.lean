@@ -48,11 +48,13 @@ def swapCheck (e : Element) (kk : List BondKind) : Bool :=
   let z := e.atomicNumber
   let h := bhs kk
   if kk.length < 2 then true else
-  -- hydrogens implied in the kekulized copy: RDKit's count
-  let Tr := impl { z := z, aromatic := false, charge := 0, explicitHs := 0, noImplicit := false } h
-    false
-  ((envs kk).all fun (w, p, r, g) ↦
-    readAlike (canon z 0 Tr h 0 false) (canon z 0 Tr h Tr true) kk w p r g) &&
+  -- hydrogens implied in the kekulized copy: RDKit's count, at the charges `cleanUp` leaves on a
+  -- bare atom
+  (([-1, 0, 1] : List ℤ).all fun c ↦
+    let Tr := impl { z := z, aromatic := false, charge := c, explicitHs := 0, noImplicit := false }
+      h false
+    (envs kk).all fun (w, p, r, g) ↦
+      readAlike (canon z c Tr h 0 false) (canon z c Tr h Tr true) kk w p r g) &&
   -- hydrogens written in the kekulized copy: OpenSMILES's count on the bonds perception leaves
   ((marks kk).all fun sk ↦
     let ar := sk.any (· == .aromatic)
@@ -82,13 +84,18 @@ lemma elec_eq_neg_one {a : WAtom} {ks : List BondKind}
   · simp [Id.run, hd]; rfl
   · simp [Id.run, hd, h3]; rfl
 
+/-- No electrons to count, no donor. -/
+lemma ringDonorL_none_of_elec {a : WAtom} {ks : List BondKind} (he : elec a ks = -1)
+    (w p r g : Bool) : ringDonorL a ks w p r g = .none := by
+  have hd : donorL a ks w p r = .none := by
+    simp only [donorL, Id.run, he]
+    rfl
+  simp only [ringDonorL, hd]
+  split <;> rfl
+
 lemma ringDonorL_none_of_deg {a : WAtom} {ks : List BondKind}
     (h : 3 < ks.length + (a.explicitHs + a.cachedImplicit)) (w p r g : Bool) :
-    ringDonorL a ks w p r g = .none := by
-  have he := elec_eq_neg_one h
-  simp only [ringDonorL, donorL, Id.run, he]
-  simp
-  intro _
-  rfl
+    ringDonorL a ks w p r g = .none :=
+  ringDonorL_none_of_elec (elec_eq_neg_one h) w p r g
 
 end LeanSMILES.Aromaticity.Loc
