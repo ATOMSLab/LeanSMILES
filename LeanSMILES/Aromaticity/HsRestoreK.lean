@@ -908,4 +908,62 @@ theorem hsRestored_kekulize {n : ℕ} {m : Molecule n} {K : Work}
     rw [Loc.restore_congr hKz hKc hKe hKn hKi hKadj]
     exact this
 
+/-! ### Donor types, locally -/
+
+/-- **A donor type other than `none` needs what `Loc.donorOk` asks**: a non-negative electron
+count, and two or more electrons, a multiple bond, or (one electron) a multiple bond's worth of
+valence or a positive charge. -/
+lemma donorOk_of_donorType (w : Work) (rbs : List ℕ) (i : ℕ) (h : w.donorType rbs i ≠ .none) :
+    Loc.donorOk w.atoms[i]! (w.kindsAt i) = true := by
+  have hel := countAtomElec_eq_loc w i
+  have hcv := cachedValence_eq_loc w i
+  have hdeg := degree_eq_loc w i
+  -- a negative count gives `none`
+  have hne : 0 ≤ w.countAtomElec i := by
+    by_contra hlt
+    push Not at hlt
+    apply h
+    unfold donorType
+    simp [Id.run, hlt]
+    rfl
+  by_cases hm : (w.kindsAt i).any isMultiple = true
+  · unfold Loc.donorOk
+    simp [← hel, hne, hm]
+  have hnm : ∀ k ∈ w.bondsOf i, isMultiple (w.bonds[k]! : WBond).kind = false := by
+    intro k hk
+    by_contra hk'
+    rw [Bool.not_eq_false] at hk'
+    exact hm (List.any_eq_true.2 ⟨_, List.mem_map.2 ⟨k, hk, rfl⟩, hk'⟩)
+  have hwho : w.exocyclicMultiple? rbs i = none := by
+    unfold exocyclicMultiple?
+    rw [Option.map_eq_none_iff, List.find?_eq_none]
+    intro x hx
+    obtain ⟨k, hk, rfl⟩ := List.mem_map.1 hx
+    simp [hnm k hk]
+  have hring' : ¬ ∃ x ∈ w.bondsOf i, x ∈ rbs ∧ isMultiple (w.bonds[x]! : WBond).kind = true := by
+    rintro ⟨x, hx, -, hmx⟩
+    rw [hnm x hx] at hmx
+    cases hmx
+  by_cases h2 : 2 ≤ w.countAtomElec i
+  · unfold Loc.donorOk
+    simp [← hel, hne, h2]
+  by_cases h0 : w.countAtomElec i = 0
+  · exfalso
+    apply h
+    unfold donorType
+    simp [Id.run, hwho, hring', h0]
+    rfl
+  have h1 : w.countAtomElec i = 1 := by omega
+  by_cases hc : w.cachedValence i ≠ w.degree i + (w.atoms[i]! : WAtom).explicitHs ∨
+      (w.atoms[i]! : WAtom).charge = 1
+  · unfold Loc.donorOk
+    rw [← hel, ← hcv, ← hdeg]
+    simp [h1, hc]
+  · exfalso
+    apply h
+    push Not at hc
+    unfold donorType
+    simp [Id.run, hwho, h1, hc.1, hc.2]
+    rfl
+
 end LeanSMILES.Aromaticity.Work

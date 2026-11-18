@@ -6,6 +6,7 @@ Authors: Samiha Sharlin
 module
 
 public import LeanSMILES.Aromaticity.HsLocal
+public import Mathlib.Tactic.Linarith
 
 /-!
 # LeanSMILES.Aromaticity.HsDecide
@@ -246,5 +247,170 @@ theorem branch_restore {z : ℕ} {pk kk sk : List BondKind} (hz : z = 7 ∨ z = 
       omega
   simp only [hfalse, Bool.false_eq_true, if_false] at this
   exact this
+
+end LeanSMILES.Aromaticity.Loc
+
+/-! ### Hydrogen totals of the witness -/
+
+namespace LeanSMILES.Aromaticity.Loc
+
+/-- `Work.radicalCount`, at an atom of element `z`, charge `ch` and Kekulé valence `kv`. -/
+def radC (z : ℕ) (ch : ℤ) (kv : ℕ) : ℕ := Id.run do
+  let no : ℤ := outerElectrons z
+  let tv : ℤ := kv
+  let base : ℤ := if z == 1 || z == 2 then 2 else 8
+  let mut nr : ℤ := base - no - tv + ch
+  if nr < 0 then
+    nr := 0
+    if 1 < (valences z).length then
+      if let some v := ((valences z).map Int.ofNat).find? (fun v ↦ 0 ≤ v - tv + ch) then
+        nr := v - tv + ch
+  let nr2 := no - tv - ch
+  if 0 ≤ nr2 then nr := min nr nr2
+  return nr.toNat
+
+/-- A donor type other than `none` is possible: what `Work.donorType` needs before it gives
+anything but `none`. -/
+def donorOk (a : WAtom) (kk : List BondKind) : Bool :=
+  let ne := elec a kk
+  0 ≤ ne && (2 ≤ ne || kk.any isMultiple ||
+    (ne == 1 && (cv a kk != kk.length + a.explicitHs || a.charge == 1)))
+
+/-- A bare atom kekulization leaves alone: its implicit hydrogens counted on the Kekulé bonds are
+those counted before. -/
+def bareKekCheck (z : ℕ) (ch : ℤ) (pk : List BondKind) : Bool :=
+  let narom := (pk.filter (· == .aromatic)).length
+  if narom < 2 || 3 < pk.length || !([5, 6, 7, 8, 15, 16] : List ℕ).contains z then true else
+  let aP := bareP z ch true pk
+  (kekAll (ndb aP pk (aP.cachedValence.getD 0)) pk).all fun kk ↦
+    impl { aP with aromatic := false } (bhs kk) false == aP.cachedImplicit
+
+theorem bareKek_ok :
+    (bareZC.all fun (z, ch) ↦ (lists 3).all (bareKekCheck z ch)) = true := by
+  decide +kernel
+
+/-- The non-aromatic bonds of up to `n` kinds. -/
+def nonArom : ℕ → List (List BondKind)
+  | 0 => [[]]
+  | n + 1 => [] :: (nonArom n).flatMap fun l ↦
+      [BondKind.single, .double, .triple, .quadruple].map (· :: l)
+
+/-- The organic-subset elements. -/
+def organic : List Element := [.B, .C, .N, .O, .P, .S, .F, .Cl, .Br, .I]
+
+/-- A bracketed atom written bare in the output, not aromatic: OpenSMILES's count at bond-order sum
+`h / 2` is RDKit's on the Kekulé bonds. -/
+def bareNonAromCheck (e : Element) (h : ℕ) : Bool :=
+  let b : Atom := { element := some e, aromatic := false }
+  let q : ℚ := (h : ℚ) / 2
+  let w : WAtom :=
+    { z := e.atomicNumber, aromatic := false, charge := 0, explicitHs := 0, noImplicit := false }
+  Molecule.readsDifferentlyInRDKit b q || impl w h false == Molecule.implicitHydrogens b q
+
+theorem bareNonArom_ok :
+    (organic.all fun e ↦ (List.range 9).all fun t ↦ bareNonAromCheck e (2 * t)) = true := by
+  decide +kernel
+
+/-- A bracketed atom written bare in the output, aromatic: OpenSMILES's count at the aromatic bonds
+is RDKit's on the Kekulé bonds, when perception could make it aromatic. -/
+def bareAromCheck (e : Element) (kk : List BondKind) : Bool :=
+  let z := e.atomicNumber
+  let h := bhs kk
+  (marks kk).all fun sk ↦
+    let b : Atom := { element := some e, aromatic := true }
+    let q : ℚ := ((sk.map BondKind.order).sum)
+    let T := Molecule.implicitHydrogens b q
+    let aK : WAtom :=
+      { z := z, aromatic := false, charge := 0, explicitHs := T, noImplicit := true,
+        radicals := radC z 0 (h / 2 + T), cachedImplicit := 0, cachedValence := some (h / 2 + T) }
+    let w0 : WAtom :=
+      { z := z, aromatic := false, charge := 0, explicitHs := 0, noImplicit := false }
+    !sk.any (· == .aromatic) || sk.length < 2 ||
+      (sk.length == 2 && (sk.zip kk).any fun (s, k) ↦ s != .aromatic && Work.isSD k) ||
+      Molecule.readsDifferentlyInRDKit b q || elec aK kk < 0 || !cand aK kk || !donorOk aK kk ||
+      impl w0 h false == T
+
+theorem bareArom_ok : (organic.all fun e ↦ (nonArom 3).all (bareAromCheck e)) = true := by
+  decide +kernel
+
+/-- The `[nH]`/`[pH]` kekulization rewrites has at most one implicit hydrogen. -/
+def branchHCheck (z : ℕ) (pk : List BondKind) : Bool :=
+  let narom := (pk.filter (· == .aromatic)).length
+  if narom < 2 || 3 < pk.length then true else
+  let aP := branchP z pk
+  (kekAll (ndb aP pk (aP.cachedValence.getD 0)) pk).all fun kk ↦
+    (branchK z pk kk).cachedImplicit ≤ 1
+
+theorem branchH_ok : (([7, 15] : List ℕ).all fun z ↦ (lists 3).all (branchHCheck z)) = true := by
+  decide +kernel
+
+end LeanSMILES.Aromaticity.Loc
+
+namespace LeanSMILES.Aromaticity.Loc
+
+lemma defaultValences_le_six : ∀ e : Element, ∀ v ∈ e.defaultValences, v ≤ 6 := by decide
+
+lemma elementTable_le_six : ∀ x ∈ elementTable, ∀ v ∈ x.2.1, v ≤ 6 := by decide
+
+lemma valences_le_six (z : ℕ) : ∀ v ∈ valences z, v ≤ 6 := by
+  intro v hv
+  unfold valences at hv
+  cases h : elementTable.find? (·.1 == z) with
+  | none => simp [h] at hv
+  | some x =>
+    simp only [h, Option.map_some, Option.getD_some] at hv
+    exact elementTable_le_six x (List.mem_of_find?_eq_some h) v hv
+
+/-- At a bond-order sum above every valence, OpenSMILES gives a bare atom no hydrogen. -/
+lemma implicitHydrogens_large (e : Element) {q : ℚ} (hq : 6 < q) :
+    Molecule.implicitHydrogens { element := some e, aromatic := false } q = 0 := by
+  unfold Molecule.implicitHydrogens
+  simp only [Bool.false_and, Bool.false_eq_true, if_false]
+  split
+  · rename_i v hv
+    exfalso
+    have hp := List.find?_some hv
+    have hmem := List.mem_of_find?_eq_some hv
+    simp only [List.pure_def, List.bind_eq_flatMap, List.mem_flatMap, List.mem_cons,
+      List.not_mem_nil, or_false] at hmem
+    obtain ⟨a, ha, rfl⟩ := hmem
+    have h6 : (a : ℚ) ≤ 6 := by exact_mod_cast defaultValences_le_six e a ha
+    simp only [decide_eq_true_eq] at hp
+    split at hp <;> linarith
+  · rfl
+
+/-- At a bond half-sum above every valence, RDKit gives a neutral atom no implicit hydrogen,
+when it is not hypervalent. -/
+lemma impl_large {a : WAtom} {h : ℕ} (hc : a.charge = 0)
+    (hz : a.z ≤ 16 ∨ a.z = 17 ∨ a.z = 35 ∨ a.z = 53) (he : a.explicitHs = 0) (hh : 13 < h) :
+    impl a h false = 0 := by
+  have hev : ev a h false = (h + 1) / 2 := by
+    simp [ev, he]
+    split <;> rfl
+  have hhv : Work.canBeHypervalent a (Work.effectiveZ a) = false := by
+    simp only [Work.canBeHypervalent, Work.effectiveZ, hc, sub_zero, Int.toNat_natCast]
+    rcases hz with hz | hz | hz | hz
+    · simp [hz]; omega
+    all_goals simp [hz]
+  have hfind : ((valences (Work.effectiveZ a)).map Int.ofNat).find?
+      (fun v ↦ decide ((((h + 1) / 2 : ℕ) : ℤ) ≤ v)) = none := by
+    rw [List.find?_eq_none]
+    intro v hv
+    obtain ⟨v', hv', rfl⟩ := List.mem_map.1 hv
+    have := valences_le_six _ v' hv'
+    simp only [decide_eq_true_eq, not_le, Int.ofNat_eq_natCast]
+    omega
+  have hfind2 : List.find? ((fun x : ℤ ↦ decide (((h : ℤ) + 1) / 2 ≤ x)) ∘ Int.ofNat)
+      (valences (Work.effectiveZ a)) = none := by
+    rw [List.find?_eq_none]
+    intro v hv
+    have := valences_le_six _ v hv
+    simp only [Function.comp_apply, decide_eq_true_eq, not_le, Int.ofNat_eq_natCast]
+    omega
+  unfold impl
+  simp [Id.run, hhv, hev, hfind2]
+  split
+  · rfl
+  · split <;> rfl
 
 end LeanSMILES.Aromaticity.Loc
