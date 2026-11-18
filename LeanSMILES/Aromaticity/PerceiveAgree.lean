@@ -296,7 +296,7 @@ lemma counts_eq_zero {numAtoms : ℕ} {candRings : Array (List ℕ)} {cur : List
   rw [outer cur _ ha]
   by_cases hlt : a < numAtoms
   · simp [hlt]
-  · simp [getElem!_def, hlt]
+  · simp [hlt]
 
 lemma groupBonds_congr {numAtoms : ℕ} {rbonds candRings : Array (List ℕ)} {d d' : Array Donor}
     {nbrs : Array (List ℕ)} (h : ∀ r : ℕ, ∀ a ∈ candRings[r]!, d'[a]! = d[a]!) (cur : List ℕ) :
