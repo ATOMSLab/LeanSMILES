@@ -1630,7 +1630,7 @@ theorem kekuleWitness_totals {m a : Molecule n} {K : Work}
               linarith
           | true =>
             -- aromatic: the decided check, with what perception tells
-            obtain ⟨hl2, hel, hcd, hdo, hd2⟩ := hperc (haS ▸ haromS ▸ rfl)
+            obtain ⟨hl2, hel, hcd, hdo, hd2, -⟩ := hperc (haS ▸ haromS ▸ rfl)
             have hkk3 : kk ∈ Loc.nonArom 3 := Loc.mem_nonArom 3 kk hKk (by
               have := Work.elec_nonneg_length hel; omega)
             have hb := Loc.bareArom_ok

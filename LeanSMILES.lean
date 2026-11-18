@@ -41,6 +41,8 @@ public import LeanSMILES.Aromaticity.KekulizeAtoms
 public import LeanSMILES.Aromaticity.PrepareFacts
 public import LeanSMILES.Aromaticity.HsRestoreK
 public import LeanSMILES.Aromaticity.MarkFacts
+public import LeanSMILES.Aromaticity.DonorLocal
+public import LeanSMILES.Aromaticity.DonorDecide
 public import LeanSMILES.Aromaticity.Invariance
 public import LeanSMILES.Aromaticity.Resonance
 public import LeanSMILES.Aromaticity.KekuleSim

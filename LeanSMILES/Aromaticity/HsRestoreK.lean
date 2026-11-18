@@ -991,7 +991,8 @@ theorem perceived_atom {n : ℕ} {m : Molecule n} {K : Work}
         Loc.cand KR.atoms[i]! (K.kindsAt i) = true ∧
         Loc.donorOk KR.atoms[i]! (K.kindsAt i) = true ∧
         ((S.kindsAt i).length = 2 →
-          ((S.kindsAt i).zip (K.kindsAt i)).all fun sk ↦ sk.1 == .aromatic || !isSD sk.2)) := by
+          ((S.kindsAt i).zip (K.kindsAt i)).all fun sk ↦ sk.1 == .aromatic || !isSD sk.2) ∧
+        ∃ rbs len, KR.isAromaticCandidate i (KR.ringDonor rbs len i) = true) := by
   intro S KR
   set P := prepare m with hP
   set R := P.relevantCycles with hR
@@ -1071,7 +1072,7 @@ theorem perceived_atom {n : ℕ} {m : Molecule n} {K : Work}
   obtain ⟨rbs, len, hc⟩ := hcand
   have hlS : (S.kindsAt i).length = (KR.bondsOf i).length := by
     simp only [kindsAt, List.length_map, hsSKR.bondsOf]
-  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ⟨rbs, len, hc⟩⟩
   · have hIs : P.IsRing ring := isRing_of_mem_relevantCycles P (by simpa [hR] using hring)
     obtain ⟨k₁, k₂, hne, -, -, hk₁, hk₂⟩ := hIs.two_bonds hir
     have := two_le_length_of_ne hne hk₁ hk₂
