@@ -1884,10 +1884,12 @@ theorem kekuleWitness_counts {m a : Molecule n} {K : Work}
     let P' := (Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences
     let R := (Work.prepare m).relevantCycles
     let rbs := (R.toList.flatMap K.assignRadicals.ringBonds).eraseDups
-    (∀ i : ℕ, (P'.assignRadicals.atoms[i]! : WAtom).radicals =
-        (K.assignRadicals.atoms[i]! : WAtom).radicals) ∧
-      (∀ ring ∈ R.toList, ∀ i ∈ ring,
-        P'.assignRadicals.donorType rbs i = K.assignRadicals.donorType rbs i) ∧
+    (∀ ring ∈ R.toList, ∀ i ∈ ring, ∀ len : ℕ,
+        P'.assignRadicals.isAromaticCandidate i (P'.assignRadicals.ringDonor rbs len i) =
+          K.assignRadicals.isAromaticCandidate i (K.assignRadicals.ringDonor rbs len i)) ∧
+      (∀ ring ∈ R.toList, ∀ i ∈ ring, ∀ len : ℕ,
+        K.assignRadicals.isAromaticCandidate i (K.assignRadicals.ringDonor rbs len i) = true →
+          P'.assignRadicals.ringDonor rbs len i = K.assignRadicals.ringDonor rbs len i) ∧
       ∀ i < n, Work.HsRestored (P'.assignRadicals.setAromaticity R) i := by
   sorry
 
@@ -1916,7 +1918,7 @@ theorem kekuleWitness_start {m a : Molecule n} {K : Work}
         ((Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences.assignRadicals.setAromaticity
           (Work.prepare m).relevantCycles) i := by
   obtain ⟨hb, hs, hz, hc, hm, hna⟩ := kekuleWitness_start_basic hK ha
-  obtain ⟨hrad, helec, hr'⟩ := kekuleWitness_counts hK ha hv hw hbw hsv
+  obtain ⟨hcand, hdon, hr'⟩ := kekuleWitness_counts hK ha hv hw hbw hsv
   have htot := kekuleWitness_totals hK ha hw hbw hsv
   have hr : ∀ i < n, Work.HsRestored
       (K.assignRadicals.setAromaticity (Work.prepare m).relevantCycles) i :=
@@ -1935,7 +1937,7 @@ theorem kekuleWitness_start {m a : Molecule n} {K : Work}
     intro i
     rw [Work.cachedValence_sub_of_noArom hna' i, hkek i]
     simp only [Work.bondHalfSum, Work.bondsOf, Work.numBonds, hb]
-  exact ⟨⟨hb, hs, hz, hc, hrad, htot, hbp, hkek, hna, helec⟩, hm, hr, hr'⟩
+  exact ⟨⟨hb, hs, hz, hc, htot, hbp, hkek, hna, hcand, hdon⟩, hm, hr, hr'⟩
 
 open Aromaticity in
 /-- **The core**: perception and the final hydrogen counts see the same on the witness's working

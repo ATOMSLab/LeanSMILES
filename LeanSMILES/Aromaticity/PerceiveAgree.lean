@@ -19,19 +19,21 @@ the other) and whose valences were cached at different times (before kekulizatio
 RDKit way, or after).  Perception reads only some combinations of those, and
 `Work.PerceiveAgree` asks the two copies to agree on exactly these:
 
-* the same bonds, elements, charges and radicals;
+* the same bonds, elements and charges;
 * the same cached hydrogen total (written plus implied), and the same cached valence less written
   hydrogens (the bond part of the valence);
 * on the first copy, that bond part is the Kekulé bond-order sum (what kekulization makes true);
-* at every atom of a ring, the same donor type (`donorType`, over all the rings' bonds).  Not the
-  same `countAtomElec`: an atom whose hydrogen is written in one copy and implied in the other
+* at every atom of a ring, the same verdict of the candidate test, for the donor type the ring
+  gives it;
+* at every candidate atom of a ring, the same donor type.  Not the same `countAtomElec`, nor the
+  same radicals: an atom whose hydrogen is written in one copy and implied in the other
   (`[sH]1ccccc1`, written `S1=CC=CC=C1` back) can count its electrons differently and still get
-  the same donor type.
+  the same donor type, and an over-valent atom RDKit's valence check skips (bonded to a metal,
+  `C[B](C)(C)[Fe]`) can carry a radical in one copy only, but fails the candidate test in both.
 
-Then `donorData`, and so `aromaticBondList`, are the same (`PerceiveAgree.donorData_eq`,
-`PerceiveAgree.aromaticBondList_eq`).  The one place perception reads a cached valence alone,
-`isAromaticCandidate`'s "two multiple bonds at an atom of valence above degree + 1", cannot tell
-the copies apart: where they differ there, the atom has at most one multiple bond.
+Then the first pass of perception agrees on its candidates, candidate rings and their donor types
+(`PerceiveAgree.donorData_rel`), and the second reads donor types only at atoms of candidate
+rings, so `aromaticBondList` is the same (`PerceiveAgree.aromaticBondList_eq`).
 -/
 
 @[expose] public section
@@ -69,8 +71,6 @@ structure PerceiveAgree (rings : Array (List ℕ)) (w w' : Work) : Prop where
   z : ∀ i : ℕ, (w'.atoms[i]! : WAtom).z = (w.atoms[i]! : WAtom).z
   /-- The same charges. -/
   charge : ∀ i : ℕ, (w'.atoms[i]! : WAtom).charge = (w.atoms[i]! : WAtom).charge
-  /-- The same radicals. -/
-  radicals : ∀ i : ℕ, (w'.atoms[i]! : WAtom).radicals = (w.atoms[i]! : WAtom).radicals
   /-- The same cached hydrogen totals. -/
   total : ∀ i : ℕ, w'.cachedTotalHs i = w.cachedTotalHs i
   /-- The same bond part of the cached valence. -/
@@ -81,10 +81,25 @@ structure PerceiveAgree (rings : Array (List ℕ)) (w w' : Work) : Prop where
     ((w.bondHalfSum i / 2 : ℕ) : ℤ)
   /-- No bond is aromatic. -/
   noArom : ∀ b ∈ w.bonds, b.kind ≠ .aromatic
-  /-- At every atom of a ring, the same donor type over the rings' bonds. -/
-  donor : ∀ ring ∈ rings.toList, ∀ i ∈ ring,
-    w'.donorType ((rings.toList.flatMap w.ringBonds).eraseDups) i =
-      w.donorType ((rings.toList.flatMap w.ringBonds).eraseDups) i
+  /-- At every atom of a ring, the same verdict of the candidate test, for the donor type the ring
+  gives it. -/
+  cand : ∀ ring ∈ rings.toList, ∀ i ∈ ring, ∀ len : ℕ,
+    w'.isAromaticCandidate i (w'.ringDonor ((rings.toList.flatMap w.ringBonds).eraseDups) len i) =
+      w.isAromaticCandidate i (w.ringDonor ((rings.toList.flatMap w.ringBonds).eraseDups) len i)
+  /-- At every candidate atom of a ring, the same donor type. -/
+  donor : ∀ ring ∈ rings.toList, ∀ i ∈ ring, ∀ len : ℕ,
+    w.isAromaticCandidate i (w.ringDonor ((rings.toList.flatMap w.ringBonds).eraseDups) len i) =
+      true →
+    w'.ringDonor ((rings.toList.flatMap w.ringBonds).eraseDups) len i =
+      w.ringDonor ((rings.toList.flatMap w.ringBonds).eraseDups) len i
+
+lemma getElem!_set!_donor (a : Array Donor) (i j : ℕ) (v : Donor) :
+    (a.set! i v)[j]! = if i = j ∧ j < a.size then v else a[j]! := by
+  by_cases hj : j < a.size
+  · rw [getElem!_pos _ j (by simpa using hj), getElem!_pos a j hj]
+    simp [Array.set!, Array.getElem_setIfInBounds, hj]
+  · rw [getElem!_neg _ j (by simpa using hj), getElem!_neg a j hj]
+    simp [hj]
 
 namespace PerceiveAgree
 
@@ -134,49 +149,195 @@ lemma cachedValence_add_cachedImplicit (i : ℕ) :
   simp only [cachedTotalHs] at h2
   omega
 
-/-- **The candidate test sees the same.**  Its one read of the cached valence alone, "more than
-one multiple bond at an atom of valence above degree + 1", cannot differ: where the two copies
-fall on different sides of degree + 1, the bond part is at most degree + 1, so the atom has at
-most one multiple bond. -/
-lemma isAromaticCandidate_eq (i : ℕ) (d : Donor) :
-    w'.isAromaticCandidate i d = w.isAromaticCandidate i d := by
-  have hcv := h.cachedValence_add_cachedImplicit i
-  have hbp := h.bondPart i
-  have hk := h.kekule i
-  have hle := length_filter_isMultiple_add_degree_le w i fun k hk' hkk ↦ by
-    have hlt := Swapped.mem_bondsOf_lt hk'
-    rw [getElem!_pos w.bonds k hlt] at hkk
-    exact h.noArom _ (Array.getElem_mem hlt) hkk
-  unfold isAromaticCandidate
-  simp only [Id.run, h.z, h.charge, h.radicals, h.degree_eq, h.bondsOf_eq, h.bonds, hcv]
-  by_cases hM : 1 < ((w.bondsOf i).filter fun k ↦ isMultiple (w.bonds[k]! : WBond).kind).length
-  · have key : w.degree i + 1 < w'.cachedValence i ↔ w.degree i + 1 < w.cachedValence i := by
-      omega
-    simp only [key]
-  · simp [hM]
+/-- Two states of perception's first pass that agree on what it has seen, which atoms are
+candidates, the candidate rings, and the donor types of the candidates. -/
+def DonorRel (s s' : DonorState) : Prop :=
+  s'.seen = s.seen ∧ s'.cand = s.cand ∧ s'.candRings = s.candRings ∧
+    s'.donor.size = s.donor.size ∧ ∀ j : ℕ, s.cand[j]! = true → s'.donor[j]! = s.donor[j]!
 
-/-- The donor type a ring gives its atom is the same. -/
-lemma ringDonor_eq {ring : List ℕ} (hr : ring ∈ rings.toList) (len : ℕ) {i : ℕ}
-    (hi : i ∈ ring) :
-    w'.ringDonor ((rings.toList.flatMap w.ringBonds).eraseDups) len i =
-      w.ringDonor ((rings.toList.flatMap w.ringBonds).eraseDups) len i := by
-  simp only [ringDonor, h.donor ring hr i hi, h.z, h.charge, h.degree_eq,
-    h.hasMultipleBond_eq]
+lemma donorAtomStep_rel {ring : List ℕ} (hr : ring ∈ rings.toList) {i : ℕ} (hi : i ∈ ring)
+    {s s' : DonorState} (hs : DonorRel s s') (a : Bool) :
+    DonorRel (w.donorAtomStep ((rings.toList.flatMap w.ringBonds).eraseDups) ring.length (s, a) i).1
+        (w'.donorAtomStep ((rings.toList.flatMap w.ringBonds).eraseDups) ring.length (s', a) i).1 ∧
+      (w'.donorAtomStep ((rings.toList.flatMap w.ringBonds).eraseDups) ring.length (s', a) i).2 =
+        (w.donorAtomStep ((rings.toList.flatMap w.ringBonds).eraseDups) ring.length
+          (s, a) i).2 := by
+  obtain ⟨h1, h2, h3, h5, h4⟩ := hs
+  have hc := h.cand ring hr i hi ring.length
+  have hd := h.donor ring hr i hi ring.length
+  unfold donorAtomStep
+  dsimp only
+  rw [h1, h2]
+  split
+  · exact ⟨⟨h1, h2, h3, h5, h4⟩, rfl⟩
+  · refine ⟨⟨rfl, by rw [hc], h3, by simp [h5], fun j hj ↦ ?_⟩, by rw [hc]⟩
+    simp only at hj ⊢
+    rw [getElem!_set!_bool] at hj
+    rw [getElem!_set!_donor, getElem!_set!_donor, h5]
+    by_cases hij : i = j
+    · subst hij
+      by_cases hlt : i < s.cand.size
+      · rw [if_pos ⟨rfl, hlt⟩] at hj
+        simp only [hd hj]
+        by_cases hds : i < s.donor.size
+        · simp [hds]
+        · simp only [hds, and_false, if_false]
+          rw [getElem!_neg s'.donor i (by omega), getElem!_neg s.donor i hds]
+      · rw [if_neg (fun h ↦ hlt h.2)] at hj
+        rw [getElem!_neg s.cand i hlt] at hj
+        cases hj
+    · rw [if_neg (fun h ↦ hij h.1)] at hj
+      rw [if_neg (fun h ↦ hij h.1), if_neg (fun h ↦ hij h.1)]
+      exact h4 j hj
 
-/-- **The first pass of perception is the same**: it visits only ring atoms, where the donor
-types and candidacies agree. -/
-lemma donorData_eq : w'.donorData rings = w.donorData rings := by
+lemma foldl_donorAtomStep_rel {ring : List ℕ} (hr : ring ∈ rings.toList) :
+    ∀ (l : List ℕ), (∀ i ∈ l, i ∈ ring) → ∀ (s s' : DonorState) (a : Bool), DonorRel s s' →
+      DonorRel (l.foldl (w.donorAtomStep ((rings.toList.flatMap w.ringBonds).eraseDups)
+          ring.length) (s, a)).1
+        (l.foldl (w'.donorAtomStep ((rings.toList.flatMap w.ringBonds).eraseDups)
+          ring.length) (s', a)).1 ∧
+      (l.foldl (w'.donorAtomStep ((rings.toList.flatMap w.ringBonds).eraseDups)
+          ring.length) (s', a)).2 =
+        (l.foldl (w.donorAtomStep ((rings.toList.flatMap w.ringBonds).eraseDups)
+          ring.length) (s, a)).2
+  | [], _, _, _, _, hs => ⟨hs, rfl⟩
+  | i :: l, hl, s, s', a, hs => by
+    rw [List.foldl_cons, List.foldl_cons]
+    obtain ⟨r1, r2⟩ := h.donorAtomStep_rel hr (hl i List.mem_cons_self) hs a
+    have e : (w'.donorAtomStep ((rings.toList.flatMap w.ringBonds).eraseDups) ring.length
+        (s', a) i) = ((w'.donorAtomStep ((rings.toList.flatMap w.ringBonds).eraseDups)
+          ring.length (s', a) i).1,
+        (w.donorAtomStep ((rings.toList.flatMap w.ringBonds).eraseDups) ring.length
+          (s, a) i).2) := by rw [← r2]
+    have e' : (w.donorAtomStep ((rings.toList.flatMap w.ringBonds).eraseDups) ring.length
+        (s, a) i) = ((w.donorAtomStep ((rings.toList.flatMap w.ringBonds).eraseDups)
+          ring.length (s, a) i).1,
+        (w.donorAtomStep ((rings.toList.flatMap w.ringBonds).eraseDups) ring.length
+          (s, a) i).2) := rfl
+    rw [e, e']
+    exact foldl_donorAtomStep_rel hr l (fun x hx ↦ hl x (List.mem_cons_of_mem _ hx)) _ _ _ r1
+
+/-- **The first pass of perception agrees** where it matters: the same candidates and candidate
+rings, and the same donor types at the candidates. -/
+lemma donorData_rel : DonorRel (w.donorData rings) (w'.donorData rings) := by
   unfold donorData
   rw [h.ringBonds_eq, h.numAtoms_eq]
-  refine foldl_congr_mem (fun s ring hr ↦ ?_) _
-  unfold donorRingStep
-  rw [foldl_congr_mem (g := w.donorAtomStep ((rings.toList.flatMap w.ringBonds).eraseDups)
-    ring.length) (fun p i hi ↦ by
-    simp only [donorAtomStep, h.ringDonor_eq hr _ hi, h.isAromaticCandidate_eq]) (s, true)]
+  have key : ∀ (l : List (List ℕ)), (∀ r ∈ l, r ∈ rings.toList) → ∀ s s' : DonorState,
+      DonorRel s s' →
+      DonorRel (l.foldl (w.donorRingStep ((rings.toList.flatMap w.ringBonds).eraseDups)) s)
+        (l.foldl (w'.donorRingStep ((rings.toList.flatMap w.ringBonds).eraseDups)) s') := by
+    intro l
+    induction l with
+    | nil => intro _ s s' hs; exact hs
+    | cons ring l ih =>
+      intro hl s s' hs
+      rw [List.foldl_cons, List.foldl_cons]
+      apply ih (fun r hr ↦ hl r (List.mem_cons_of_mem _ hr))
+      have hr := hl ring List.mem_cons_self
+      obtain ⟨r1, r2⟩ := h.foldl_donorAtomStep_rel hr ring (fun _ h ↦ h) s s' true hs
+      unfold donorRingStep
+      dsimp only
+      rw [r2]
+      split
+      · obtain ⟨g1, g2, g3, g5, g4⟩ := r1
+        exact ⟨g1, g2, by simp [g3], g5, g4⟩
+      · exact r1
+  exact key _ (fun _ h ↦ h) _ _ ⟨rfl, rfl, rfl, rfl, fun _ _ ↦ rfl⟩
+
+end PerceiveAgree
+
+/-! ### The second pass reads donor types only at atoms of candidate rings -/
+
+lemma huckel_congr {atoms : List ℕ} {d d' : Array Donor} (h : ∀ a ∈ atoms, d'[a]! = d[a]!) :
+    huckel atoms d' = huckel atoms d := by
+  have e1 : atoms.filter (d'[·]! == .any) = atoms.filter (d[·]! == .any) :=
+    List.filter_congr fun a ha ↦ by rw [h a ha]
+  have e3 : ∀ (f : Donor → ℕ) (l : List ℕ) (n : ℕ), (∀ a ∈ l, d'[a]! = d[a]!) →
+      l.foldl (fun s a ↦ s + f d'[a]!) n = l.foldl (fun s a ↦ s + f d[a]!) n := by
+    intro f l
+    induction l with
+    | nil => intro _ _; rfl
+    | cons a l ih =>
+      intro n hl
+      simp only [List.foldl_cons]
+      rw [hl a List.mem_cons_self]
+      exact ih _ (fun x hx ↦ hl x (List.mem_cons_of_mem _ hx))
+  have e2 : ∀ (f : Donor → ℕ), atoms.foldl (fun s a ↦ s + f d'[a]!) 0 =
+      atoms.foldl (fun s a ↦ s + f d[a]!) 0 := fun f ↦ e3 f atoms 0 h
+  unfold huckel
+  simp only [Id.run, e1]
+  rw [e2 (fun x ↦ x.range.1), e2 (fun x ↦ x.range.2)]
+
+/-- An atom no ring of the group passes through has count zero. -/
+lemma counts_eq_zero {numAtoms : ℕ} {candRings : Array (List ℕ)} {cur : List ℕ} {a : ℕ}
+    (ha : ∀ r ∈ cur, a ∉ candRings[r]!) :
+    (cur.foldl (fun acc r ↦ candRings[r]!.foldl (fun acc a ↦ acc.modify a (· + 1)) acc)
+      (Array.replicate numAtoms 0))[a]! = 0 := by
+  have inner : ∀ (l : List ℕ) (acc : Array ℕ), a ∉ l →
+      (l.foldl (fun acc a ↦ acc.modify a (· + 1)) acc)[a]! = acc[a]! := by
+    intro l
+    induction l with
+    | nil => intro _ _; rfl
+    | cons x l ih =>
+      intro acc hl
+      rw [List.foldl_cons, ih _ (fun h ↦ hl (List.mem_cons_of_mem _ h))]
+      have hx : x ≠ a := fun e ↦ hl (e ▸ List.mem_cons_self)
+      simp [getElem!_def, Array.getElem?_modify, hx]
+  have outer : ∀ (l : List ℕ) (acc : Array ℕ), (∀ r ∈ l, a ∉ candRings[r]!) →
+      (l.foldl (fun acc r ↦ candRings[r]!.foldl (fun acc a ↦ acc.modify a (· + 1)) acc)
+        acc)[a]! = acc[a]! := by
+    intro l
+    induction l with
+    | nil => intro _ _; rfl
+    | cons r l ih =>
+      intro acc hl
+      rw [List.foldl_cons, ih _ (fun r hr ↦ hl r (List.mem_cons_of_mem _ hr)),
+        inner _ _ (hl r List.mem_cons_self)]
+  rw [outer cur _ ha]
+  by_cases hlt : a < numAtoms
+  · simp [hlt]
+  · simp [getElem!_def, hlt]
+
+lemma groupBonds_congr {numAtoms : ℕ} {rbonds candRings : Array (List ℕ)} {d d' : Array Donor}
+    {nbrs : Array (List ℕ)} (h : ∀ r : ℕ, ∀ a ∈ candRings[r]!, d'[a]! = d[a]!) (cur : List ℕ) :
+    groupBonds numAtoms rbonds candRings d' nbrs cur =
+      groupBonds numAtoms rbonds candRings d nbrs cur := by
+  unfold groupBonds
+  split
+  · rfl
+  · dsimp only
+    rw [huckel_congr]
+    intro a ha
+    simp only [List.mem_filter, List.mem_range, Bool.or_eq_true, beq_iff_eq] at ha
+    by_contra hne
+    have : ∀ r ∈ cur, a ∉ candRings[r]! := fun r _ har ↦ hne (h r a har)
+    rw [counts_eq_zero this] at ha
+    omega
+
+lemma fusedBonds_congr {numAtoms : ℕ} {rbonds candRings : Array (List ℕ)} {d d' : Array Donor}
+    (h : ∀ r : ℕ, ∀ a ∈ candRings[r]!, d'[a]! = d[a]!) :
+    fusedBonds numAtoms rbonds candRings d' = fusedBonds numAtoms rbonds candRings d := by
+  unfold fusedBonds systemBonds
+  simp only [groupBonds_congr h]
+
+namespace PerceiveAgree
+
+variable {rings : Array (List ℕ)} {w w' : Work} (h : PerceiveAgree rings w w')
+include h
 
 /-- **The same bonds are made aromatic.** -/
 lemma aromaticBondList_eq : w'.aromaticBondList rings = w.aromaticBondList rings := by
-  simp only [aromaticBondList, h.donorData_eq, h.numAtoms_eq, h.ringBonds_eq]
+  obtain ⟨-, h2, h3, -, h4⟩ := h.donorData_rel
+  obtain ⟨-, hcr⟩ := ringInv_donorData w rings
+  simp only [aromaticBondList]
+  rw [h.ringBonds_eq, h.numAtoms_eq, h3]
+  apply fusedBonds_congr
+  intro r a ha
+  by_cases hlt : r < (w.donorData rings).candRings.size
+  · rw [getElem!_pos _ r hlt] at ha
+    exact h4 a ((hcr _ (Array.getElem_mem hlt)).2 a ha)
+  · rw [getElem!_neg _ r hlt] at ha
+    cases ha
 
 end PerceiveAgree
 
