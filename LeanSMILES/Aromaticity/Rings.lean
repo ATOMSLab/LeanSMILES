@@ -43,21 +43,44 @@ def listLt : List Nat → List Nat → Bool
   | _ :: _, [] => false
   | a :: as, b :: bs => a < b || (a == b && listLt as bs)
 
+/-- One visit of the breadth-first search: each neighbour of `u` not reached yet gets `u`'s
+distance plus one and joins the end of the queue. -/
+def Work.bfsVisit (m : Work) (u : Nat) (p : Array (Option Nat) × Array Nat) :
+    Array (Option Nat) × Array Nat :=
+  let du := (p.1[u]!).getD 0
+  (m.neighbors u).foldl (fun (dist, queue) (_, v) ↦
+    if dist[v]!.isNone then (dist.set! v (some (du + 1)), queue.push v) else (dist, queue)) p
+
+/-- The breadth-first search from queue position `head`, at most `fuel` visits. -/
+def Work.bfsLoop (m : Work) : Nat → Nat → Array (Option Nat) × Array Nat →
+    Array (Option Nat) × Array Nat
+  | 0, _, p => p
+  | fuel + 1, head, p =>
+    if h : head < p.2.size then m.bfsLoop fuel (head + 1) (m.bfsVisit p.2[head] p) else p
+
 /-- Breadth-first distances from `r` (`none` = unreachable) and the visiting order, which lists the
-reachable atoms by nondecreasing distance (`_bfs` in `aromaticity_ref.py`). -/
-def Work.bfs (m : Work) (r : Nat) : Array (Option Nat) × Array Nat := Id.run do
-  let mut dist : Array (Option Nat) := (Array.replicate m.numAtoms none).set! r (some 0)
-  let mut queue := #[r]
-  let mut head := 0
-  while h : head < queue.size do
-    let u := queue[head]
-    head := head + 1
-    let du := (dist[u]!).getD 0
-    for (_, v) in m.neighbors u do
-      if dist[v]!.isNone then
-        dist := dist.set! v (some (du + 1))
-        queue := queue.push v
-  return (dist, queue)
+reachable atoms by nondecreasing distance (`_bfs` in `aromaticity_ref.py`). Each atom is queued
+once, so `numAtoms + 1` visits suffice for a well-formed copy. (RDKit's search is a `while` loop;
+written with a bound it is a structural recursion, so that what it returns can be proved.) -/
+def Work.bfs (m : Work) (r : Nat) : Array (Option Nat) × Array Nat :=
+  m.bfsLoop (m.numAtoms + m.numBonds + 2) 0
+    ((Array.replicate m.numAtoms none).set! r (some 0), #[r])
+
+/-- The search reads the copy only through its neighbour lists and sizes. -/
+lemma Work.bfs_congr {w w' : Work} (hn : w'.neighbors = w.neighbors)
+    (ha : w'.numAtoms = w.numAtoms) (hb : w'.numBonds = w.numBonds) : w'.bfs = w.bfs := by
+  have hv : w'.bfsVisit = w.bfsVisit := by
+    funext u p
+    simp only [Work.bfsVisit, hn]
+  have hl : w'.bfsLoop = w.bfsLoop := by
+    funext fuel
+    induction fuel with
+    | zero => rfl
+    | succ n ih =>
+      funext head p
+      simp only [Work.bfsLoop, hv, ih]
+  funext r
+  simp only [Work.bfs, hl, ha, hb]
 
 /-- Every shortest path from `r` to each atom, as atom lists starting at `r`, filled along the BFS
 `order` so each atom's predecessors come first (`_all_shortest_paths` in `aromaticity_ref.py`). -/
