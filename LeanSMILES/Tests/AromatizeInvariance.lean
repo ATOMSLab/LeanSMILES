@@ -213,6 +213,8 @@ structure Tally where
   idempotentAny : Count := (0, 0)
   /-- `exists_kekule_aromatize`, with `kekuleWitness`. -/
   witness : Count := (0, 0)
+  /-- Parsed molecules satisfy `BareWritable`, as every parsed molecule should. -/
+  bareWritable : Count := (0, 0)
   /-- `canonicalSmiles_aromatize_eq`. -/
   canonical : Count := (0, 0)
   /-- Relabeling commutes, no hypothesis. -/
@@ -257,6 +259,7 @@ def testOne (s : String) (t : Tally) : Tally := Id.run do
   let m := M.mol
   let nn := M.n
   let mut t := { t with parsed := t.parsed + 1 }
+  t := { t with bareWritable := t.bareWritable.add (decide m.BareWritable) }
   let kek : Bool := decide m.IsKekule
   let perms : List (Equiv.Perm (Fin nn)) :=
     [finRotate nn, Fin.revPerm, randPerm nn 1, randPerm nn 2, randPerm nn 3]
@@ -323,7 +326,8 @@ def testOne (s : String) (t : Tally) : Tally := Id.run do
     | some k => decide k.IsKekule && decide (k.IsKekuleStructureOf a) &&
         match arom k with
         | some a' => !decide (k.ChargesKept a') || !decide k.ValenceOk ||
-            !decide m.AromaticWritten || !decide (m.SameValences k) || decide (a' = a)
+            !decide m.AromaticWritten || !decide m.BareWritable || !decide (m.SameValences k) ||
+            decide (a' = a)
         | none => false
     | none => false
   t := ({ t with witness := t.witness.add okW }).miss okW
@@ -441,6 +445,7 @@ def report (t : Tally) : IO Bool := do
     ("aromatize_of_kekuleVariant_of_chargesKept", t.variant),
     ("aromatize_aromatize", t.idempotent),
     ("exists_kekule_aromatize (the pipeline's Kekulé structure as witness)", t.witness),
+    ("parsed molecules are `BareWritable`", t.bareWritable),
     ("canonicalSmiles_aromatize_eq", t.canonical),
     ("aromatize_of_isKekuleSpellingOf (spellings built from the input)", t.spelling),
     ("canonicalSmiles_aromatize_of_isKekuleSpellingOf (built spellings)", t.spellingCanonical),
