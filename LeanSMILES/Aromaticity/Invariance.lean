@@ -9,6 +9,7 @@ public import LeanSMILES.Aromaticity.Congruence
 public import LeanSMILES.Aromaticity.KekuleSim
 public import LeanSMILES.Aromaticity.KekulizeFacts
 public import LeanSMILES.Aromaticity.KekulizeCompose
+public import LeanSMILES.Aromaticity.HsRestoreK
 public import LeanSMILES.Aromaticity.PerceiveAgree
 public import LeanSMILES.Aromaticity.PerceiveFacts
 public import LeanSMILES.SMILES.Canonicity
@@ -41,8 +42,9 @@ list starts, and the relabeling one also needs kekulization's walk to give
 every candidate atom exactly one double bond), `aromatize_aromatize`,
 `kekuleWitness_counts` (so `kekuleWitness_aromatize` and `exists_kekule_aromatize`, which are
 proved from it: the radicals, hydrogen totals, donor types and final hydrogen counts of the
-witness argument) and `aromatize_of_isKekuleSpellingOf`.  Kekulization itself is proved correct
-(`Work.kekulize_correct`, with the ring facts of `Aromaticity/RingFacts.lean`).
+witness argument; the final hydrogen counts of the kekulized copy are proved,
+`Work.hsRestored_kekulize`) and `aromatize_of_isKekuleSpellingOf`.  Kekulization itself is proved
+correct (`Work.kekulize_correct`, with the ring facts of `Aromaticity/RingFacts.lean`).
 
 The Kekulé statement is **false without `ChargesKept`**, so it is stated only
 with it (`aromatize_of_kekuleVariant_of_chargesKept`):
@@ -1191,12 +1193,13 @@ theorem kekuleWitness_kekule {m a : Molecule n} {K : Work}
 open Aromaticity in
 /-- **The counting part of the starting relation** (open): after radicals, the two copies have the
 same radicals and cached hydrogen totals, ring atoms have the same donor type, and at every atom
-of each copy the `adjustHs` step gives back the cached hydrogen total.  Each holds at every atom of
-the molecules of the datasets, the fuzz set, random and exotic strings that satisfy the
-hypotheses.  What it needs is RDKit's hydrogen, radical and donor arithmetic on atoms whose
-hydrogens the two copies record differently (written in brackets in one, implied in the other).
-Without `hsv` it is false (`c1cc2cc[s-]2cc1`); with the electron count `countAtomElec` in place
-of the donor type, false too (`[sH]1ccccc1`). -/
+of the witness's copy the `adjustHs` step gives back the cached hydrogen total (on the kekulized
+copy it does, `Work.hsRestored_kekulize`).  Each holds at every atom of the molecules of the
+datasets, the fuzz set, random and exotic strings that satisfy the hypotheses.  What it needs is
+RDKit's hydrogen, radical and donor arithmetic on atoms whose hydrogens the two copies record
+differently (written in brackets in one, implied in the other).  Without `hsv` it is false
+(`c1cc2cc[s-]2cc1`); with the electron count `countAtomElec` in place of the donor type, false
+too (`[sH]1ccccc1`). -/
 theorem kekuleWitness_counts {m a : Molecule n} {K : Work}
     (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K)
     (ha : m.aromatizeOutput (K.finish (Work.prepare m).relevantCycles) = a)
@@ -1215,7 +1218,6 @@ theorem kekuleWitness_counts {m a : Molecule n} {K : Work}
       (∀ i : ℕ, P'.assignRadicals.cachedTotalHs i = K.assignRadicals.cachedTotalHs i) ∧
       (∀ ring ∈ R.toList, ∀ i ∈ ring,
         P'.assignRadicals.donorType rbs i = K.assignRadicals.donorType rbs i) ∧
-      (∀ i < n, Work.HsRestored (K.assignRadicals.setAromaticity R) i) ∧
       ∀ i < n, Work.HsRestored (P'.assignRadicals.setAromaticity R) i := by
   sorry
 
@@ -1244,7 +1246,10 @@ theorem kekuleWitness_start {m a : Molecule n} {K : Work}
         ((Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences.assignRadicals.setAromaticity
           (Work.prepare m).relevantCycles) i := by
   obtain ⟨hb, hs, hz, hc, hm, hna⟩ := kekuleWitness_start_basic hK ha
-  obtain ⟨hrad, htot, helec, hr, hr'⟩ := kekuleWitness_counts hK ha hv hw hbw hsv
+  obtain ⟨hrad, htot, helec, hr'⟩ := kekuleWitness_counts hK ha hv hw hbw hsv
+  have hr : ∀ i < n, Work.HsRestored
+      (K.assignRadicals.setAromaticity (Work.prepare m).relevantCycles) i :=
+    fun i hi ↦ Work.hsRestored_kekulize hw.1 hw.2 hbw hK ⟨i, hi⟩
   have hkek := kekuleWitness_kekule hK ha hsv
   -- the witness's copy has nothing aromatic, so its bond part is its Kekulé sum, and the bonds
   -- are the kekulized copy's

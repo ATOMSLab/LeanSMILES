@@ -142,10 +142,11 @@ lemma mem_ringBonds {w : Work} {ring : List ℕ} {k : ℕ} (h : k ∈ w.ringBond
 /-! ### `donorData` -/
 
 /-- What every step of `donorData` keeps: `cand` and `seen` have the same size, and a candidate
-atom has been seen and is an aromatic candidate for some donor type. -/
+atom has been seen and is an aromatic candidate for the donor type some ring gave it. -/
 def DonorInv (w : Work) (s : DonorState) : Prop :=
   s.cand.size = s.seen.size ∧
-    ∀ j : ℕ, s.cand[j]! = true → s.seen[j]! = true ∧ ∃ d, w.isAromaticCandidate j d = true
+    ∀ j : ℕ, s.cand[j]! = true → s.seen[j]! = true ∧
+      ∃ rbs len, w.isAromaticCandidate j (w.ringDonor rbs len j) = true
 
 /-- One `donorAtomStep` keeps `DonorInv`, keeps every candidate a candidate and the candidate
 rings, and its flag is true only if it was and atom `i` is a candidate. -/
@@ -170,7 +171,7 @@ lemma donorAtomStep_spec (w : Work) (rbs : List ℕ) (len : ℕ) (s : DonorState
       split at hj
       · obtain ⟨rfl, hj'⟩ := ‹i = j ∧ j < s.cand.size›
         rw [if_pos ⟨rfl, hsize ▸ hj'⟩]
-        exact ⟨rfl, _, hj⟩
+        exact ⟨rfl, rbs, len, hj⟩
       · obtain ⟨h1, h2⟩ := hc j hj
         refine ⟨?_, h2⟩
         split <;> simp_all
@@ -273,7 +274,34 @@ theorem of_kind?_setAromaticity (w : Work) (rings : Array (List ℕ)) {b : ℕ}
   have hmem : (w.donorData rings).candRings[r] ∈ (w.donorData rings).candRings :=
     Array.getElem_mem hr'
   obtain ⟨hring, hall⟩ := hcr _ hmem
+  obtain ⟨r1, l1, h1⟩ := (hc _ (hall _ hsrc)).2
+  obtain ⟨r2, l2, h2⟩ := (hc _ (hall _ hdst)).2
   exact ⟨w.bonds[b], getElem?_pos w.bonds b hk, List.mem_flatMap.2 ⟨_, hring, hr⟩,
-    (hc _ (hall _ hsrc)).2, (hc _ (hall _ hdst)).2⟩
+    ⟨_, h1⟩, ⟨_, h2⟩⟩
+
+/-- A bond `setAromaticity` makes aromatic is a bond of one of the rings, joining two atoms of that
+ring, each an aromatic candidate for the donor type a ring gave it. -/
+theorem of_kind?_setAromaticity_donor (w : Work) (rings : Array (List ℕ)) {b : ℕ}
+    (h : (w.setAromaticity rings).kind? b = some .aromatic) (h0 : w.kind? b ≠ some .aromatic) :
+    ∃ hb : b < w.bonds.size, ∃ ring ∈ rings.toList, w.bonds[b].src ∈ ring ∧
+      w.bonds[b].dst ∈ ring ∧
+      (∃ rbs len, w.isAromaticCandidate w.bonds[b].src (w.ringDonor rbs len w.bonds[b].src) =
+        true) ∧
+      ∃ rbs len, w.isAromaticCandidate w.bonds[b].dst (w.ringDonor rbs len w.bonds[b].dst) =
+        true := by
+  have hb := mem_aromaticBondList_of_kind? w rings h h0
+  unfold aromaticBondList at hb
+  obtain ⟨r, hr⟩ := mem_fusedBonds hb
+  have hr' : r < (w.donorData rings).candRings.size := by
+    by_contra hlt
+    rw [getElem!_neg _ r (by simpa using hlt)] at hr
+    exact List.not_mem_nil hr
+  rw [getElem!_pos _ r (by simpa using hr'), Array.getElem_map] at hr
+  obtain ⟨hk, hsrc, hdst⟩ := mem_ringBonds hr
+  obtain ⟨⟨-, hc⟩, hcr⟩ := ringInv_donorData w rings
+  have hmem : (w.donorData rings).candRings[r] ∈ (w.donorData rings).candRings :=
+    Array.getElem_mem hr'
+  obtain ⟨hring, hall⟩ := hcr _ hmem
+  exact ⟨hk, _, hring, hsrc, hdst, (hc _ (hall _ hsrc)).2, (hc _ (hall _ hdst)).2⟩
 
 end LeanSMILES.Aromaticity.Work

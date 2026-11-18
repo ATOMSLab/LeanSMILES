@@ -34,6 +34,12 @@ public import LeanSMILES.Aromaticity.PerceiveAgree
 public import LeanSMILES.Aromaticity.KekulizeWalk
 public import LeanSMILES.Aromaticity.RingFacts
 public import LeanSMILES.Aromaticity.KekulizeCompose
+public import LeanSMILES.Aromaticity.HsLocal
+public import LeanSMILES.Aromaticity.HsDecide
+public import LeanSMILES.Aromaticity.CleanFacts
+public import LeanSMILES.Aromaticity.KekulizeAtoms
+public import LeanSMILES.Aromaticity.PrepareFacts
+public import LeanSMILES.Aromaticity.HsRestoreK
 public import LeanSMILES.Aromaticity.Invariance
 public import LeanSMILES.Aromaticity.Resonance
 public import LeanSMILES.Aromaticity.KekuleSim
