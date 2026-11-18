@@ -164,9 +164,7 @@ lemma ringBonds_eq (h : Swapped F w w') : w'.ringBonds = w.ringBonds := by
 
 /-- **The same rings**: ring perception reads only which atoms the bonds join. -/
 lemma relevantCycles_eq (h : Swapped F w w') : w'.relevantCycles = w.relevantCycles := by
-  simp only [relevantCycles, candidateCycles,
-    bfs_congr h.neighbors_eq h.numAtoms_eq h.numBonds_eq, allShortestPaths, cycleMask,
-    h.neighbors_eq, h.bondBetween?_eq, h.numAtoms_eq]
+  exact relevantCycles_congr h.neighbors_eq h.bondBetween?_eq h.numAtoms_eq h.numBonds_eq
 
 lemma mem_bondsOf_lt {i k : ℕ} (hk : k ∈ w.bondsOf i) : k < w.bonds.size := by
   simp only [bondsOf, List.mem_filter, List.mem_range, numBonds] at hk

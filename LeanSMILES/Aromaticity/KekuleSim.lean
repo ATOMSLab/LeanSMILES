@@ -94,8 +94,7 @@ lemma ringBonds : w₁.ringBonds = w₂.ringBonds := by
   simp [Work.ringBonds, h.bondBetween?]
 
 lemma relevantCycles : w₁.relevantCycles = w₂.relevantCycles := by
-  unfold Work.relevantCycles Work.candidateCycles Work.allShortestPaths Work.cycleMask
-  rw [Work.bfs_congr h.neighbors h.numAtoms h.numBonds, h.numAtoms, h.neighbors, h.bondBetween?]
+  exact Work.relevantCycles_congr h.neighbors h.bondBetween? h.numAtoms h.numBonds
 
 lemma reachSweep : w₁.reachSweep = w₂.reachSweep := by
   funext skip seen

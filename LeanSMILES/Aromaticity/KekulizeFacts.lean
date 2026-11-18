@@ -300,8 +300,7 @@ lemma relevantCycles_eq_of_ends {w w' : Work} (hn : w'.atoms.size = w.atoms.size
   have hbb : w'.bondBetween? = w.bondBetween? := by
     funext i j
     simp only [bondBetween?, hB, hsrc, hdst]
-  simp only [relevantCycles, candidateCycles, bfs_congr hnb hN hB, allShortestPaths, cycleMask,
-    hnb, hbb, hN]
+  exact relevantCycles_congr hnb hbb hN hB
 
 /-! ### Nothing aromatic comes out -/
 

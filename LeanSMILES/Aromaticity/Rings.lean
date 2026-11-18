@@ -62,7 +62,7 @@ def Work.bfsLoop (m : Work) : Nat → Nat → Array (Option Nat) × Array Nat �
 reachable atoms by nondecreasing distance (`_bfs` in `aromaticity_ref.py`). Each atom is queued
 once, so `numAtoms + 1` visits suffice for a well-formed copy. (RDKit's search is a `while` loop;
 written with a bound it is a structural recursion, so that what it returns can be proved.) -/
-def Work.bfs (m : Work) (r : Nat) : Array (Option Nat) × Array Nat :=
+@[irreducible] def Work.bfs (m : Work) (r : Nat) : Array (Option Nat) × Array Nat :=
   m.bfsLoop (m.numAtoms + m.numBonds + 2) 0
     ((Array.replicate m.numAtoms none).set! r (some 0), #[r])
 
@@ -82,18 +82,23 @@ lemma Work.bfs_congr {w w' : Work} (hn : w'.neighbors = w.neighbors)
   funext r
   simp only [Work.bfs, hl, ha, hb]
 
+/-- The predecessors of atom `v` on shortest paths: its neighbours one step nearer the root. -/
+def Work.shortestPreds (m : Work) (dist : Array (Option Nat)) (v : Nat) : List Nat :=
+  let dv := (dist[v]!).getD 0
+  (m.neighbors v).filterMap fun (_, u) ↦ if dist[u]! == some (dv - 1) then some u else none
+
+/-- One atom of `allShortestPaths`: the paths to `v` are those to its predecessors, extended by
+`v`. -/
+def Work.shortestPathsStep (m : Work) (dist : Array (Option Nat)) (r : Nat)
+    (paths : Array (List (List Nat))) (v : Nat) : Array (List (List Nat)) :=
+  if v == r then paths
+  else paths.set! v ((m.shortestPreds dist v).flatMap fun u ↦ paths[u]!.map (· ++ [v]))
+
 /-- Every shortest path from `r` to each atom, as atom lists starting at `r`, filled along the BFS
 `order` so each atom's predecessors come first (`_all_shortest_paths` in `aromaticity_ref.py`). -/
 def Work.allShortestPaths (m : Work) (dist : Array (Option Nat)) (order : Array Nat) (r : Nat) :
-    Array (List (List Nat)) := Id.run do
-  let mut paths : Array (List (List Nat)) := (Array.replicate m.numAtoms []).set! r [[r]]
-  for v in order do
-    if v == r then continue
-    let dv := (dist[v]!).getD 0
-    let preds := (m.neighbors v).filterMap fun (_, u) ↦
-      if dist[u]! == some (dv - 1) then some u else none
-    paths := paths.set! v (preds.flatMap fun u ↦ paths[u]!.map (· ++ [v]))
-  return paths
+    Array (List (List Nat)) :=
+  order.toList.foldl (m.shortestPathsStep dist r) ((Array.replicate m.numAtoms []).set! r [[r]])
 
 /-- Bond bitmask of a cycle given as a list of atoms: bit `k` is set iff bond `k` joins two
 consecutive atoms of the cycle (the `mask` of `add` in `relevant_cycles`). -/
@@ -104,87 +109,149 @@ def Work.cycleMask (m : Work) (cyc : List Nat) : Nat :=
     | some k => acc ||| (1 <<< k)
     | none => acc
 
+/-- Two paths from the root that meet only there. -/
+def disjointTails (p q : List Nat) : Bool := p.tail.all fun a ↦ !q.tail.contains a
+
+/-- Odd cycles through the bond from `x` (at distance `dx`) to a later neighbour at the same
+distance: a shortest path to each end, closed by the bond. -/
+def Work.oddCycles (m : Work) (dist : Array (Option Nat)) (paths : Array (List (List Nat)))
+    (x dx : Nat) : List (List Nat) :=
+  (m.neighbors x).flatMap fun (_, y) ↦
+    if x < y && dist[y]! == some dx then
+      paths[x]!.flatMap fun p ↦ paths[y]!.filterMap fun q ↦
+        if disjointTails p q then some (p ++ q.reverse.dropLast) else none
+    else []
+
+/-- Even cycles at `x` (at distance `dx`): shortest paths to two different predecessors, closed
+through `x`. -/
+def Work.evenCycles (m : Work) (dist : Array (Option Nat)) (paths : Array (List (List Nat)))
+    (x dx : Nat) : List (List Nat) :=
+  let preds := (m.neighbors x).filterMap fun (_, u) ↦
+    if dist[u]! == some (dx - 1) then some u else none
+  (List.range preds.length).flatMap fun a ↦ (List.range' (a + 1) (preds.length - (a + 1))).flatMap
+    fun b ↦ paths[preds[a]!]!.flatMap fun p ↦ paths[preds[b]!]!.filterMap fun q ↦
+      if disjointTails p q then some (p ++ [x] ++ q.reverse.dropLast) else none
+
+/-- The cycles found at atom `x` for the root whose distances and paths are given. -/
+def Work.cyclesAt (m : Work) (dist : Array (Option Nat)) (paths : Array (List (List Nat)))
+    (x : Nat) : List (List Nat) :=
+  match dist[x]! with
+  | none => []
+  | some dx =>
+    if dx == 0 then []
+    else m.oddCycles dist paths x dx ++ (if 2 ≤ dx then m.evenCycles dist paths x dx else [])
+
+/-- The cycles found from root `r`. -/
+def Work.cyclesFrom (m : Work) (r : Nat) : List (List Nat) :=
+  let (dist, order) := m.bfs r
+  let paths := m.allShortestPaths dist order r
+  (List.range m.numAtoms).flatMap (m.cyclesAt dist paths)
+
+/-- Keep a cycle unless one with the same bond set is kept already. -/
+def Work.addCandidate (m : Work) (cands : Array (Nat × List Nat)) (cyc : List Nat) :
+    Array (Nat × List Nat) :=
+  let mask := m.cycleMask cyc
+  if !cands.any (·.1 == mask) then cands.push (mask, cyc) else cands
+
 /-- Candidate cycles (bond mask, atoms), first representative of each bond set kept: for each root,
 two vertex-disjoint shortest paths closed by a bond or by a shared atom (`relevant_cycles`). -/
-def Work.candidateCycles (m : Work) : Array (Nat × List Nat) := Id.run do
-  let mut cands : Array (Nat × List Nat) := #[]
-  let disjointTails (p q : List Nat) := p.tail.all fun a ↦ !q.tail.contains a
-  for r in [0:m.numAtoms] do
-    let (dist, order) := m.bfs r
-    let paths := m.allShortestPaths dist order r
-    let mut found : List (List Nat) := []
-    for x in [0:m.numAtoms] do
-      let some dx := dist[x]! | continue
-      if dx == 0 then continue
-      -- odd cycles: bond x–y with both ends at the same distance
-      for (_, y) in m.neighbors x do
-        if x < y && dist[y]! == some dx then
-          for p in paths[x]! do
-            for q in paths[y]! do
-              if disjointTails p q then found := found ++ [p ++ q.reverse.dropLast]
-      -- even cycles: x reached by two different predecessors
-      if 2 ≤ dx then
-        let preds := (m.neighbors x).filterMap fun (_, u) ↦
-          if dist[u]! == some (dx - 1) then some u else none
-        for a in [0:preds.length] do
-          for b in [a + 1:preds.length] do
-            for p in paths[preds[a]!]! do
-              for q in paths[preds[b]!]! do
-                if disjointTails p q then found := found ++ [p ++ [x] ++ q.reverse.dropLast]
-    for cyc in found do
-      let mask := m.cycleMask cyc
-      if !cands.any (·.1 == mask) then cands := cands.push (mask, cyc)
-  return cands
+@[irreducible] def Work.candidateCycles (m : Work) : Array (Nat × List Nat) :=
+  (List.range m.numAtoms).foldl (fun cands r ↦ (m.cyclesFrom r).foldl m.addCandidate cands) #[]
 
 /-- Reduce bitmask `v` by a GF(2) echelon basis of (pivot bit, vector) pairs, highest pivot first
 (`reduce` in `relevant_cycles`); `v` reduces to `0` iff it is a sum of basis vectors. -/
 def reduceBy (basis : List (Nat × Nat)) (v : Nat) : Nat :=
   basis.foldl (init := v) fun v (p, b) ↦ if v.testBit p then v ^^^ b else v
 
+/-- Add a kept cycle's reduced mask to the echelon basis, if it is not a sum of the others. -/
+def addToBasis (basis : List (Nat × Nat)) (c : Nat × List Nat) : List (Nat × Nat) :=
+  let v := reduceBy basis c.1
+  if v != 0 then (basis ++ [(v.log2, v)]).mergeSort fun x y ↦ y.1 ≤ x.1 else basis
+
+/-- One size of `relevantCycles`: keep the cycles of that size independent of the strictly
+smaller cycles kept so far, and add them to the basis. -/
+def relevantStep (sorted : List (Nat × List Nat))
+    (st : List (Nat × Nat) × Array (List Nat)) (size : Nat) :
+    List (Nat × Nat) × Array (List Nat) :=
+  let (basis, result) := st
+  let group := sorted.filter (popcount ·.1 == size)
+  let kept := group.filter fun c ↦ reduceBy basis c.1 != 0
+  (kept.foldl addToBasis basis, result ++ (kept.map (·.2)).toArray)
+
 /-- RDKit's ring set (`symmetrizeSSSR`, `FindRings.cpp:1085`): the relevant cycles as atom lists,
 sorted by (size, sorted atoms), following `relevant_cycles` in `aromaticity_ref.py`. -/
-def Work.relevantCycles (m : Work) : Array (List Nat) := Id.run do
+@[irreducible] def Work.relevantCycles (m : Work) : Array (List Nat) :=
   let key (c : Nat × List Nat) := (popcount c.1, c.2.mergeSort (· ≤ ·))
   let sorted := m.candidateCycles.toList.mergeSort fun a b ↦
     let (la, sa) := key a
     let (lb, sb) := key b
     la < lb || (la == lb && (listLt sa sb || sa == sb))
   let sizes := (sorted.map (popcount ·.1)).eraseDups
-  let mut basis : List (Nat × Nat) := []
-  let mut result : Array (List Nat) := #[]
-  for size in sizes do
-    let group := sorted.filter (popcount ·.1 == size)
-    -- independent of the strictly smaller cycles kept so far?
-    let kept := group.filter fun c ↦ reduceBy basis c.1 != 0
-    result := result ++ (kept.map (·.2)).toArray
-    for c in kept do
-      let v := reduceBy basis c.1
-      if v != 0 then
-        basis := (basis ++ [(v.log2, v)]).mergeSort fun x y ↦ y.1 ≤ x.1
-  return result
+  (sizes.foldl (relevantStep sorted) ([], #[])).2
+
+/-- **Ring perception reads the copy only through its neighbour lists, `bondBetween?` and sizes.**
+-/
+lemma Work.relevantCycles_congr {w w' : Work} (hn : w'.neighbors = w.neighbors)
+    (hbb : w'.bondBetween? = w.bondBetween?) (ha : w'.numAtoms = w.numAtoms)
+    (hb : w'.numBonds = w.numBonds) : w'.relevantCycles = w.relevantCycles := by
+  have hbfs := Work.bfs_congr hn ha hb
+  have hpred : w'.shortestPreds = w.shortestPreds := by
+    funext d v
+    simp only [Work.shortestPreds, hn]
+  have hstep : w'.shortestPathsStep = w.shortestPathsStep := by
+    funext d r p v
+    simp only [Work.shortestPathsStep, hpred]
+  have hasp : w'.allShortestPaths = w.allShortestPaths := by
+    funext d o r
+    simp only [Work.allShortestPaths, hstep, ha]
+  have hodd : w'.oddCycles = w.oddCycles := by
+    funext d p x dx
+    simp only [Work.oddCycles, hn]
+  have heven : w'.evenCycles = w.evenCycles := by
+    funext d p x dx
+    simp only [Work.evenCycles, hn]
+  have hat : w'.cyclesAt = w.cyclesAt := by
+    funext d p x
+    simp only [Work.cyclesAt, hodd, heven]
+  have hfrom : w'.cyclesFrom = w.cyclesFrom := by
+    funext r
+    simp only [Work.cyclesFrom, hbfs, hasp, hat, ha]
+  have hmask : w'.cycleMask = w.cycleMask := by
+    funext c
+    simp only [Work.cycleMask, hbb]
+  have hadd : w'.addCandidate = w.addCandidate := by
+    funext c cyc
+    simp only [Work.addCandidate, hmask]
+  have hcc : w'.candidateCycles = w.candidateCycles := by
+    simp only [Work.candidateCycles, hfrom, hadd, ha]
+  simp only [Work.relevantCycles, hcc]
+
+/-- One neighbour in the depth-first search: if not seen, it is marked and pushed. -/
+def pushNbr (st : Array Bool × List Nat) (v : Nat) : Array Bool × List Nat :=
+  if !st.1[v]! then (st.1.set! v true, v :: st.2) else st
+
+/-- The depth-first search of one component, at most `fuel` pops: (seen, component, stack). -/
+def dfsComp (nbrs : Array (List Nat)) : Nat → Array Bool × List Nat × List Nat →
+    Array Bool × List Nat
+  | 0, (seen, comp, _) => (seen, comp)
+  | _ + 1, (seen, comp, []) => (seen, comp)
+  | fuel + 1, (seen, comp, u :: rest) =>
+    let (seen, stack) := nbrs[u]!.foldl pushNbr (seen, rest)
+    dfsComp nbrs fuel (seen, u :: comp, stack)
+
+/-- One start atom of `components`: if not seen, its component, sorted. -/
+def componentsStep (n : Nat) (nbrs : Array (List Nat)) (st : Array Bool × List (List Nat))
+    (s : Nat) : Array Bool × List (List Nat) :=
+  let (seen, comps) := st
+  if seen[s]! then (seen, comps) else
+  let (seen, comp) := dfsComp nbrs n (seen.set! s true, [], [s])
+  (seen, comps ++ [comp.mergeSort (· ≤ ·)])
 
 /-- Connected components of a graph on `[0, n)` given by neighbor lists, each sorted increasingly;
-`Kekulize` groups fused ring systems with it (`RingUtils::pickFusedRings`). -/
-def components (n : Nat) (nbrs : Array (List Nat)) : List (List Nat) := Id.run do
-  let mut seen := Array.replicate n false
-  let mut comps : List (List Nat) := []
-  for s in [0:n] do
-    if seen[s]! then continue
-    seen := seen.set! s true
-    let mut comp : List Nat := []
-    let mut stack := [s]
-    for _ in [0:n] do
-      match stack with
-      | [] => break
-      | u :: rest =>
-        stack := rest
-        comp := u :: comp
-        for v in nbrs[u]! do
-          if !seen[v]! then
-            seen := seen.set! v true
-            stack := v :: stack
-    comps := comps ++ [comp.mergeSort (· ≤ ·)]
-  return comps
+`Kekulize` groups fused ring systems with it (`RingUtils::pickFusedRings`). The search of each
+component pops at most `n` atoms, as RDKit's loop does. -/
+@[irreducible] def components (n : Nat) (nbrs : Array (List Nat)) : List (List Nat) :=
+  ((List.range n).foldl (componentsStep n nbrs) (Array.replicate n false, [])).2
 
 /-- One sweep over the bonds other than `skip`: a bond with one endpoint marked marks the other. -/
 def Work.reachSweep (m : Work) (skip : Nat) (seen : Array Bool) : Array Bool :=
