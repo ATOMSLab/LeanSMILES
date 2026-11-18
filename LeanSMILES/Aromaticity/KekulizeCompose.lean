@@ -7,6 +7,7 @@ module
 
 public import LeanSMILES.Aromaticity.KekulizeWalk
 public import LeanSMILES.Aromaticity.RingFacts
+public import LeanSMILES.Aromaticity.PerceiveAgree
 
 /-!
 # LeanSMILES.Aromaticity.KekulizeCompose
@@ -27,8 +28,6 @@ aromatic atoms ends up single or double.
 @[expose] public section
 
 namespace LeanSMILES.Aromaticity.Work
-
-open Classical
 
 /-- The bonds `kekulize` treats as written aromatic. -/
 def kekWa (m : Work) (k : ℕ) : Bool :=
@@ -63,6 +62,7 @@ variable (m : Work) (wa : ℕ → Bool) (ev0 : List ℕ)
 /-- An atom that is aromatic and needs a double bond, read on `m`. -/
 def candOf (x : ℕ) : Bool := (m.atoms[x]! : WAtom).aromatic && m.needsDoubleBond wa ev0[x]! x
 
+open Classical in
 /-- After the systems whose atoms `P` collects: bonds of `D` are double, other bonds written
 aromatic at an aromatic atom of `P` are single, the rest are as in `m`; `D` is a matching of
 candidates of `P` covering them. -/
@@ -150,7 +150,10 @@ lemma sysInv_step (hwf : WF m) (hnd : m.NbrsDistinct) {rings : Array (List ℕ)}
         · rintro ⟨hwk, x, hx | hx, hxa, hxk⟩
           · exact ⟨hwk, x, hx, hxa, hxk⟩
           · exact absurd ⟨x, hx, by rw [hi.atoms]; exact hxa, by rw [hbo]; exact hxk, hwk⟩ hA
-      simp only [hc]
+      by_cases hco : wa k = true ∧ ∃ x, P x ∧ (m.atoms[x]! : WAtom).aromatic = true ∧
+          k ∈ m.bondsOf x
+      · rw [if_pos hco, if_pos (hc.1 hco)]
+      · rw [if_neg hco, if_neg (fun h ↦ hco (hc.2 h))]
   · -- dOk
     rcases Bool.or_eq_true_iff.1 hk with hk | hk
     · obtain ⟨h1, h2, h3⟩ := hi.dOk k hk
@@ -358,5 +361,113 @@ theorem kekulize_correct {m K : Work} {rings : Array (List ℕ)} (hwf : WF m)
               simp only [candOf, Bool.and_eq_true] at hc
               exact hc.1
             exact hi.cover x (hP x ha) hc hx
+
+/-! ### What kekulization caches at an atom -/
+
+/-- Atom `i` keeps the cached valence `cv` and written hydrogens `e`, or (the nitrogen and
+phosphorus case of `clearAromatic`) has no written hydrogens and the Kekulé bond-order sum as
+cached valence. -/
+def CvOk (w : Work) (i : ℕ) (cv : Option ℕ) (e : ℕ) : Prop :=
+  ((w.atoms[i]! : WAtom).cachedValence = cv ∧ (w.atoms[i]! : WAtom).explicitHs = e) ∨
+    ((w.atoms[i]! : WAtom).explicitHs = 0 ∧
+      (w.atoms[i]! : WAtom).cachedValence = some (w.bondHalfSum i / 2))
+
+lemma foldl_halfOrder (w : Work) (l : List ℕ) (s : ℕ) :
+    l.foldl (fun s k ↦ s + halfOrder (w.bonds[k]! : WBond).kind) s =
+      s + (l.map fun k ↦ halfOrder (w.bonds[k]! : WBond).kind).sum := by
+  induction l generalizing s with
+  | nil => simp
+  | cons k l ih => simp only [List.foldl_cons, ih, List.map_cons, List.sum_cons]; omega
+
+lemma bondHalfSum_congr {w w' : Work} (h : w'.bonds = w.bonds) :
+    w'.bondHalfSum = w.bondHalfSum := by
+  funext i
+  simp only [bondHalfSum, bondsOf, numBonds, h]
+
+lemma CvOk.of_atom {w w' : Work} {i : ℕ} {cv : Option ℕ} {e : ℕ} (hb : w'.bonds = w.bonds)
+    (ha : (w'.atoms[i]! : WAtom) = (w.atoms[i]! : WAtom)) (h : CvOk w i cv e) :
+    CvOk w' i cv e := by
+  unfold CvOk
+  rw [ha, bondHalfSum_congr hb]
+  exact h
+
+lemma clearAromatic_cvOk {ra : List ℕ} {w w' : Work} {j : ℕ} (hw : clearAromatic ra w j = .ok w')
+    (i : ℕ) {cv : Option ℕ} {e : ℕ} (h : CvOk w i cv e) :
+    w'.bonds = w.bonds ∧ CvOk w' i cv e := by
+  unfold clearAromatic at hw
+  dsimp only at hw
+  split at hw
+  · cases hw; exact ⟨rfl, h⟩
+  split at hw
+  · cases hw
+  split at hw
+  · cases hw
+    refine ⟨rfl, ?_⟩
+    by_cases hji : j = i
+    · subst hji
+      by_cases hjs : j < w.atoms.size
+      · right
+        rw [modifyAtom_atom_self, if_pos (by simpa [modifyAtom] using hjs), modifyAtom_atom_self,
+          if_pos hjs]
+        refine ⟨rfl, ?_⟩
+        simp only [Option.some.injEq]
+        rw [foldl_halfOrder, Nat.zero_add, bondHalfSum_congr (by rfl)]
+        rfl
+      · refine CvOk.of_atom (w := w) rfl ?_ h
+        rw [modifyAtom_atom_self, if_neg (by simpa [modifyAtom] using hjs), modifyAtom_atom_self,
+          if_neg hjs]
+    · refine CvOk.of_atom (w := w) rfl ?_ h
+      rw [modifyAtom_atom_of_ne _ hji, modifyAtom_atom_of_ne _ hji]
+  · cases hw
+    refine ⟨rfl, ?_⟩
+    by_cases hji : j = i
+    · subst hji
+      rcases h with ⟨h1, h2⟩ | ⟨h1, h2⟩
+      · left
+        rw [modifyAtom_atom_self]
+        split <;> exact ⟨h1, h2⟩
+      · right
+        rw [modifyAtom_atom_self, bondHalfSum_congr (w' := w.modifyAtom j _) rfl]
+        split <;> exact ⟨h1, h2⟩
+    · refine CvOk.of_atom (w := w) rfl ?_ h
+      rw [modifyAtom_atom_of_ne _ hji]
+
+lemma foldlM_clearAromatic_cvOk {ra : List ℕ} (i : ℕ) {cv : Option ℕ} {e : ℕ} :
+    ∀ (l : List ℕ) (w w' : Work), l.foldlM (clearAromatic ra) w = .ok w' → CvOk w i cv e →
+      CvOk w' i cv e
+  | [], w, w', hw, h => by cases hw; exact h
+  | x :: l, w, w', hw, h => by
+    rw [List.foldlM_cons] at hw
+    cases hx : clearAromatic ra w x with
+    | error e => rw [hx] at hw; cases hw
+    | ok v =>
+      rw [hx] at hw
+      exact foldlM_clearAromatic_cvOk i l v w' hw (clearAromatic_cvOk hx i h).2
+
+/-- **What kekulization caches at an atom**: the cached valence and written hydrogens it had, or
+none written and the Kekulé bond-order sum. -/
+theorem kekulize_cvOk {m K : Work} {rings : Array (List ℕ)} (hK : m.kekulize rings = .ok K)
+    (i : ℕ) : CvOk K i (m.atoms[i]! : WAtom).cachedValence (m.atoms[i]! : WAtom).explicitHs := by
+  unfold kekulize at hK
+  dsimp only at hK
+  split at hK
+  · cases hK; exact .inl ⟨rfl, rfl⟩
+  · simp only [pure, Except.pure, bind, Except.bind] at hK
+    split at hK
+    · cases hK
+    · rename_i out1 h1
+      have q1 := foldlM_except_of (fun w ↦ w.atoms = m.atoms) _
+        (fun _ _ _ hq hx ↦ kekulizeSystem_m (Q := fun w ↦ w.atoms = m.atoms)
+          (fun _ _ _ h ↦ h) hq hx) _ _ _ rfl h1
+      split at hK
+      · cases hK
+      · rename_i out2 h2
+        split at hK
+        · cases hK
+        · cases hK
+          refine foldlM_clearAromatic_cvOk i _ _ _ h2 (.inl ?_)
+          simp only at q1
+          rw [q1]
+          exact ⟨rfl, rfl⟩
 
 end LeanSMILES.Aromaticity.Work

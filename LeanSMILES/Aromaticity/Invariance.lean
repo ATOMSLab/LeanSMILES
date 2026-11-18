@@ -8,6 +8,7 @@ module
 public import LeanSMILES.Aromaticity.Congruence
 public import LeanSMILES.Aromaticity.KekuleSim
 public import LeanSMILES.Aromaticity.KekulizeFacts
+public import LeanSMILES.Aromaticity.KekulizeCompose
 public import LeanSMILES.Aromaticity.PerceiveAgree
 public import LeanSMILES.Aromaticity.PerceiveFacts
 public import LeanSMILES.SMILES.Canonicity
@@ -38,8 +39,10 @@ statements it names, so it is as proved as they are.  Still `sorry`:
 `Work.relevantCycles` to be canonical up to order and to where each ring's atom
 list starts, and the relabeling one also needs kekulization's walk to give
 every candidate atom exactly one double bond), `aromatize_aromatize`,
-`kekuleWitness_aromatize` (so `exists_kekule_aromatize`, which is proved from
-it) and `aromatize_of_isKekuleSpellingOf`.
+`kekuleWitness_counts` (so `kekuleWitness_aromatize` and `exists_kekule_aromatize`, which are
+proved from it: the radicals, hydrogen totals, donor types and final hydrogen counts of the
+witness argument) and `aromatize_of_isKekuleSpellingOf`.  Kekulization itself is proved correct
+(`Work.kekulize_correct`, with the ring facts of `Aromaticity/RingFacts.lean`).
 
 The Kekulé statement is **false without `ChargesKept`**, so it is stated only
 with it (`aromatize_of_kekuleVariant_of_chargesKept`):
@@ -99,8 +102,9 @@ assume both runs succeed rather than assert it.
 
 A lowercase molecule is related to its Kekulé structures through the output.
 The output is a fixed point (`aromatize_aromatize`), and it is the image of a
-Kekulé structure of itself (`exists_kekule_aromatize`), both provided `cleanUp`
-rewrites nothing on the second run: `O=p1ccccc1` aromatizes to
+Kekulé structure of itself (`exists_kekule_aromatize`, provided RDKit reads the
+valences of both alike, `Molecule.SameValences`, which fails only at exotic aromatic atoms like
+the `[s-]` of `c1cc2cc[s-]2cc1`), both provided `cleanUp` rewrites nothing on the second run: `O=p1ccccc1` aromatizes to
 `O=P1=CC=CC=C1`, which `cleanUp` then rewrites to `[O-][p+]1ccccc1`, in RDKit
 too, because the first run's `cleanUp` came before kekulization made the
 `P=C`.  The Kekulé structure is its own atoms with the
@@ -207,6 +211,22 @@ def AromaticWritten (m : Molecule n) : Prop :=
 
 instance (m : Molecule n) : Decidable m.AromaticWritten := by
   unfold AromaticWritten
+  infer_instance
+
+/-- RDKit's explicit valence of atom `i` less its written hydrogens (the bond part of the
+valence), as it reads `m` before kekulization: rounded the RDKit way at an aromatic atom. -/
+def bondValence (m : Molecule n) (i : Fin n) : ℤ :=
+  ((Aromaticity.Work.prepare m).cachedValence i.val : ℤ) -
+    ((Aromaticity.Work.prepare m).atoms[i.val]! : Aromaticity.WAtom).explicitHs
+
+/-- `k` gives every atom the bond part of the valence `m` gives it.  For a Kekulé structure `k` of
+an aromatic `m`, this asks RDKit's rounding of each aromatic atom's valence to land on the Kekulé
+one.  It does at every atom of the 12 027 dataset molecules, but not at some exotic aromatic atoms:
+`c1cc2cc[s-]2cc1` (rounded to 5, Kekulé 4), `c1c[pH2-](C)cc1`, `O=c1cc[as+2]cc1`. -/
+def SameValences (m k : Molecule n) : Prop := ∀ i, k.bondValence i = m.bondValence i
+
+instance (m k : Molecule n) : Decidable (m.SameValences k) := by
+  unfold SameValences
   infer_instance
 
 /-- Every bond of `m` written aromatic is aromatic in `a`, bond for bond.  For `a` the output of
@@ -1073,31 +1093,108 @@ theorem kekuleWitness_start_basic {m a : Molecule n} {K : Work}
     exact (Work.kekulize_noArom hK).2 b hb'
 
 open Aromaticity in
+/-- `assignRadicals` keeps every cached valence. -/
+lemma Work.cachedValence_assignRadicals (w : Work) (i : ℕ) :
+    w.assignRadicals.cachedValence i = w.cachedValence i := by
+  have h1 : (w.assignRadicals.atoms[i]! : WAtom).cachedValence =
+      (w.atoms[i]! : WAtom).cachedValence :=
+    Work.getElem!_eq_of_map (fun x : WAtom ↦ x.cachedValence)
+      (Work.getElem?_assignRadicals_map w _ (fun _ ↦ rfl) i)
+  have h2 : (w.assignRadicals.atoms[i]! : WAtom).explicitHs = (w.atoms[i]! : WAtom).explicitHs :=
+    Work.getElem!_eq_of_map (fun x : WAtom ↦ x.explicitHs)
+      (Work.getElem?_assignRadicals_map w _ (fun _ ↦ rfl) i)
+  simp only [Work.cachedValence, Work.kekuleValence, h1, h2,
+    Work.bondHalfSum_congr (Work.assignRadicals_bonds w)]
+
+open Aromaticity in
+lemma Work.explicitHs_assignRadicals (w : Work) (i : ℕ) :
+    (w.assignRadicals.atoms[i]! : WAtom).explicitHs = (w.atoms[i]! : WAtom).explicitHs :=
+  Work.getElem!_eq_of_map (fun x : WAtom ↦ x.explicitHs)
+    (Work.getElem?_assignRadicals_map w _ (fun _ ↦ rfl) i)
+
+open Aromaticity in
+/-- `cacheValences` caches every atom's explicit valence. -/
+lemma Work.cachedValence_cacheValences_atom (w : Work) {i : ℕ} (hi : i < w.atoms.size) :
+    (w.cacheValences.atoms[i]! : WAtom).cachedValence = some (w.explicitValence i) := by
+  rw [getElem!_pos _ i (by simpa [Work.cacheValences, Work.numAtoms] using hi)]
+  simp [Work.cacheValences, Work.numAtoms]
+
+open Aromaticity in
+/-- **The kekulized copy's cached valence, less its written hydrogens, is its Kekulé bond-order
+sum**, when RDKit gives the witness the input's valences (`Molecule.SameValences`): at an atom
+kekulization leaves alone, the cached valence is the input's, which is the witness's, whose bonds
+are the kekulized ones; at the nitrogen and phosphorus `clearAromatic` rewrites, kekulization
+caches the Kekulé sum itself. -/
+theorem kekuleWitness_kekule {m a : Molecule n} {K : Work}
+    (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K)
+    (ha : m.aromatizeOutput (K.finish (Work.prepare m).relevantCycles) = a)
+    (hsv : ∀ i < n,
+      ((Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences.cachedValence i : ℤ) -
+          ((Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences.atoms[i]! :
+            WAtom).explicitHs =
+        ((Work.prepare m).cachedValence i : ℤ) - ((Work.prepare m).atoms[i]! : WAtom).explicitHs)
+    (i : ℕ) :
+    (K.assignRadicals.cachedValence i : ℤ) - (K.assignRadicals.atoms[i]! : WAtom).explicitHs =
+      ((K.assignRadicals.bondHalfSum i / 2 : ℕ) : ℤ) := by
+  rw [Work.cachedValence_assignRadicals, Work.explicitHs_assignRadicals,
+    Work.bondHalfSum_congr (Work.assignRadicals_bonds K)]
+  have hnK : K.atoms.size = n := by
+    rw [(Work.kekulize_kindsRel hK).atoms_size, size_prepare_atoms]
+  by_cases hi : i < n
+  · rcases Work.kekulize_cvOk hK i with ⟨h1, h2⟩ | ⟨h1, h2⟩
+    · -- as `prepare` cached it: the witness's bond part
+      have hP : ((Work.prepare m).atoms[i]! : WAtom).cachedValence =
+          some ((Work.ofMolecule m).freezeHs.cleanUp.explicitValence i) := by
+        unfold Work.prepare
+        apply Work.cachedValence_cacheValences_atom
+        rw [(Work.cleanRel_cleanUp _).atoms_size]
+        simpa [Work.ofMolecule, Work.freezeHs, Work.numAtoms] using hi
+      have hKc : K.cachedValence i = (Work.prepare m).cachedValence i := by
+        simp only [Work.cachedValence, h1, hP, Option.getD_some]
+      rw [hKc, h2, ← hsv i hi]
+      obtain ⟨hk, -⟩ := kekuleWitness_spec hK ha
+      have hna := Work.noArom_freezeHs (Work.noArom_ofMolecule (kekuleWitness a K) hk.1 hk.2)
+      have := Work.cachedValence_sub_of_noArom hna i
+      rw [Work.cachedValence_assignRadicals, Work.explicitHs_assignRadicals] at this
+      rw [this, Work.bondHalfSum_congr (w := K) (w' := _) ?_]
+      · rw [Work.assignRadicals_bonds, Work.cacheValences_bonds, Work.freezeHs_bonds,
+          bonds_ofMolecule_kekuleWitness hK ha]
+    · -- kekulization cached the Kekulé sum
+      simp only [Work.cachedValence, h2, Option.getD_some, h1, CharP.cast_eq_zero, sub_zero]
+  · -- beyond the atoms: nothing cached, nothing written
+    have hd : (K.atoms[i]! : WAtom) = default := getElem!_neg K.atoms i (by omega)
+    have hcv : (default : WAtom).cachedValence = none := rfl
+    have he : (default : WAtom).explicitHs = 0 := rfl
+    simp only [Work.cachedValence, Work.kekuleValence, hd, hcv, he, Option.getD_none, add_zero,
+      Nat.cast_zero, sub_zero]
+
+open Aromaticity in
 /-- **The counting part of the starting relation** (open): after radicals, the two copies have the
-same radicals and cached hydrogen totals, the first copy's cached valence less its written
-hydrogens is its Kekulé bond-order sum (the witness's is, `Work.cachedValence_sub_of_noArom`),
-ring atoms have the same `countAtomElec`, and at every atom of each copy the `adjustHs` step gives
-back the cached hydrogen total.  Each holds at every
-atom of the 17 425 molecules of the datasets and the fuzz set that satisfy the hypotheses.  What
-it needs: the kekulizer gives every atom that needs a double bond exactly one (so the bond part
-RDKit cached on the aromatic molecule is the Kekulé one), and RDKit's valence, radical and
-hydrogen arithmetic on atoms whose hydrogens the two copies record differently (written in
-brackets in one, implied in the other). -/
+same radicals and cached hydrogen totals, ring atoms have the same donor type, and at every atom
+of each copy the `adjustHs` step gives back the cached hydrogen total.  Each holds at every atom of
+the molecules of the datasets, the fuzz set, random and exotic strings that satisfy the
+hypotheses.  What it needs is RDKit's hydrogen, radical and donor arithmetic on atoms whose
+hydrogens the two copies record differently (written in brackets in one, implied in the other).
+Without `hsv` it is false (`c1cc2cc[s-]2cc1`); with the electron count `countAtomElec` in place
+of the donor type, false too (`[sH]1ccccc1`). -/
 theorem kekuleWitness_counts {m a : Molecule n} {K : Work}
     (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K)
     (ha : m.aromatizeOutput (K.finish (Work.prepare m).relevantCycles) = a)
     (hv : (Work.ofMolecule (kekuleWitness a K)).freezeHs.firstBadValence = none)
-    (hw : m.AromaticWritten) :
+    (hw : m.AromaticWritten)
+    (hsv : ∀ i < n,
+      ((Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences.cachedValence i : ℤ) -
+          ((Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences.atoms[i]! :
+            WAtom).explicitHs =
+        ((Work.prepare m).cachedValence i : ℤ) - ((Work.prepare m).atoms[i]! : WAtom).explicitHs) :
     let P' := (Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences
     let R := (Work.prepare m).relevantCycles
+    let rbs := (R.toList.flatMap K.assignRadicals.ringBonds).eraseDups
     (∀ i : ℕ, (P'.assignRadicals.atoms[i]! : WAtom).radicals =
         (K.assignRadicals.atoms[i]! : WAtom).radicals) ∧
       (∀ i : ℕ, P'.assignRadicals.cachedTotalHs i = K.assignRadicals.cachedTotalHs i) ∧
-      (∀ i : ℕ, (K.assignRadicals.cachedValence i : ℤ) -
-          (K.assignRadicals.atoms[i]! : WAtom).explicitHs =
-        ((K.assignRadicals.bondHalfSum i / 2 : ℕ) : ℤ)) ∧
       (∀ ring ∈ R.toList, ∀ i ∈ ring,
-        P'.assignRadicals.countAtomElec i = K.assignRadicals.countAtomElec i) ∧
+        P'.assignRadicals.donorType rbs i = K.assignRadicals.donorType rbs i) ∧
       (∀ i < n, Work.HsRestored (K.assignRadicals.setAromaticity R) i) ∧
       ∀ i < n, Work.HsRestored (P'.assignRadicals.setAromaticity R) i := by
   sorry
@@ -1111,7 +1208,12 @@ theorem kekuleWitness_start {m a : Molecule n} {K : Work}
     (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K)
     (ha : m.aromatizeOutput (K.finish (Work.prepare m).relevantCycles) = a)
     (hv : (Work.ofMolecule (kekuleWitness a K)).freezeHs.firstBadValence = none)
-    (hw : m.AromaticWritten) :
+    (hw : m.AromaticWritten)
+    (hsv : ∀ i < n,
+      ((Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences.cachedValence i : ℤ) -
+          ((Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences.atoms[i]! :
+            WAtom).explicitHs =
+        ((Work.prepare m).cachedValence i : ℤ) - ((Work.prepare m).atoms[i]! : WAtom).explicitHs) :
     Work.PerceiveAgree (Work.prepare m).relevantCycles K.assignRadicals
         (Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences.assignRadicals ∧
       Work.SameMarks K.assignRadicals
@@ -1122,7 +1224,8 @@ theorem kekuleWitness_start {m a : Molecule n} {K : Work}
         ((Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences.assignRadicals.setAromaticity
           (Work.prepare m).relevantCycles) i := by
   obtain ⟨hb, hs, hz, hc, hm, hna⟩ := kekuleWitness_start_basic hK ha
-  obtain ⟨hrad, htot, hkek, helec, hr, hr'⟩ := kekuleWitness_counts hK ha hv hw
+  obtain ⟨hrad, htot, helec, hr, hr'⟩ := kekuleWitness_counts hK ha hv hw hsv
+  have hkek := kekuleWitness_kekule hK ha hsv
   -- the witness's copy has nothing aromatic, so its bond part is its Kekulé sum, and the bonds
   -- are the kekulized copy's
   have hk := (kekuleWitness_spec hK ha).1
@@ -1146,11 +1249,16 @@ theorem finish_kekuleWitness_agree {m a : Molecule n} {K : Work}
     (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K)
     (ha : m.aromatizeOutput (K.finish (Work.prepare m).relevantCycles) = a)
     (hv : (Work.ofMolecule (kekuleWitness a K)).freezeHs.firstBadValence = none)
-    (hw : m.AromaticWritten) :
+    (hw : m.AromaticWritten)
+    (hsv : ∀ i < n,
+      ((Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences.cachedValence i : ℤ) -
+          ((Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences.atoms[i]! :
+            WAtom).explicitHs =
+        ((Work.prepare m).cachedValence i : ℤ) - ((Work.prepare m).atoms[i]! : WAtom).explicitHs) :
     OutAgree n (K.finish (Work.prepare m).relevantCycles)
       ((Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences.finish
         (Work.prepare m).relevantCycles) := by
-  obtain ⟨hp, hm, hr, hr'⟩ := kekuleWitness_start hK ha hv hw
+  obtain ⟨hp, hm, hr, hr'⟩ := kekuleWitness_start hK ha hv hw hsv
   have hn : K.atoms.size = n := by
     rw [(Work.kekulize_kindsRel hK).atoms_size, size_prepare_atoms]
   exact outAgree_finish hn hp hm hr hr'
@@ -1162,11 +1270,16 @@ theorem aromatizeOutput_kekuleWitness {m a : Molecule n} {K : Work}
     (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K)
     (ha : m.aromatizeOutput (K.finish (Work.prepare m).relevantCycles) = a)
     (hv : (Work.ofMolecule (kekuleWitness a K)).freezeHs.firstBadValence = none)
-    (hw : m.AromaticWritten) :
+    (hw : m.AromaticWritten)
+    (hsv : ∀ i < n,
+      ((Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences.cachedValence i : ℤ) -
+          ((Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences.atoms[i]! :
+            WAtom).explicitHs =
+        ((Work.prepare m).cachedValence i : ℤ) - ((Work.prepare m).atoms[i]! : WAtom).explicitHs) :
     (kekuleWitness a K).aromatizeOutput
       ((Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences.finish
         (Work.prepare m).relevantCycles) = a :=
-  aromatizeOutput_kekuleWitness_of_agree hK ha (finish_kekuleWitness_agree hK ha hv hw)
+  aromatizeOutput_kekuleWitness_of_agree hK ha (finish_kekuleWitness_agree hK ha hv hw hsv)
 
 open Aromaticity in
 /-- **The witness aromatizes back to the output**, unless `cleanUp` rewrites it or its valences
@@ -1177,7 +1290,8 @@ theorem kekuleWitness_aromatize {m a a' : Molecule n} {K : Work}
     (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K)
     (ha : m.aromatizeOutput (K.finish (Work.prepare m).relevantCycles) = a)
     (h' : (kekuleWitness a K).aromatize = .ok a') (hc' : (kekuleWitness a K).ChargesKept a')
-    (hv : (kekuleWitness a K).ValenceOk) (hw : m.AromaticWritten) : a' = a := by
+    (hv : (kekuleWitness a K).ValenceOk) (hw : m.AromaticWritten)
+    (hsv : m.SameValences (kekuleWitness a K)) : a' = a := by
   obtain ⟨hkk, -⟩ := kekuleWitness_spec hK ha
   obtain ⟨K', hK', ha'⟩ := aromatize_eq_ok.mp h'
   rw [hkk.kekulize_prepare] at hK'
@@ -1196,9 +1310,12 @@ theorem kekuleWitness_aromatize {m a a' : Molecule n} {K : Work}
     rw [hKP.atoms_size, size_prepare_atoms, size_prepare_atoms]
   rw [hR, hP'] at ha'
   rw [← ha']
-  refine aromatizeOutput_kekuleWitness hK ha ?_ hw
-  unfold ValenceOk at hv
-  rwa [hcl] at hv
+  refine aromatizeOutput_kekuleWitness hK ha ?_ hw fun i hi ↦ ?_
+  · unfold ValenceOk at hv
+    rwa [hcl] at hv
+  · have := hsv ⟨i, hi⟩
+    simp only [bondValence, hP'] at this
+    exact this
 
 /-- **Every output is the image of a Kekulé structure of itself**, unless `cleanUp` rewrites
 that structure.  A witness is the structure the pipeline computes on the way: the output's atoms
@@ -1212,10 +1329,11 @@ aromatic atoms RDKit's valence rounding misreads (`N[se]=CC`, `C:c1ccccc1`). -/
 theorem exists_kekule_aromatize {m a : Molecule n} (h : m.aromatize = .ok a)
     (hw : m.AromaticWritten) :
     ∃ k : Molecule n, k.IsKekule ∧ k.IsKekuleStructureOf a ∧
-      ∀ a', k.aromatize = .ok a' → k.ChargesKept a' → k.ValenceOk → a' = a := by
+      ∀ a', k.aromatize = .ok a' → k.ChargesKept a' → k.ValenceOk → m.SameValences k →
+        a' = a := by
   obtain ⟨K, hK, ha⟩ := aromatize_eq_ok.mp h
   obtain ⟨hk, hs⟩ := kekuleWitness_spec hK ha
-  exact ⟨_, hk, hs, fun _ h' hc' hv ↦ kekuleWitness_aromatize hK ha h' hc' hv hw⟩
+  exact ⟨_, hk, hs, fun _ h' hc' hv hsv ↦ kekuleWitness_aromatize hK ha h' hc' hv hw hsv⟩
 
 /-! ### 4. The canonical string -/
 

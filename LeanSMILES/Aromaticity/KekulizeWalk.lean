@@ -435,7 +435,8 @@ lemma walkInv_continue {s : KekState} (hi : WalkInv wa atoms m0 cands0 s) {curr 
     · exact .inl (List.mem_append_left _ h)
     · exact .inr (List.mem_append_left _ h)
   doneNodup := List.nodup_append.mpr ⟨hi.doneNodup, List.nodup_singleton _,
-    fun a ha b hb ↦ by rw [List.mem_singleton] at hb; subst hb; exact fun e ↦ hp.currNotDone (e ▸ ha)⟩
+    fun a ha b hb ↦ by
+      rw [List.mem_singleton] at hb; subst hb; exact fun e ↦ hp.currNotDone (e ▸ ha)⟩
   queueNodup := hp.qNodup
   disjoint x hx := by
     obtain ⟨hd, hc'⟩ := hp.qDisj x hx
@@ -786,7 +787,8 @@ lemma head?_drop_idxOf : ∀ {l : List ℕ} {a : ℕ}, a ∈ l → (l.drop (l.id
         exact head?_drop_idxOf h
 
 /-- Before an element that is itself before `lo`: the same as in the whole list. -/
-lemma before_before : ∀ {l : List ℕ} {lo a : ℕ}, a ∈ before l lo → before (before l lo) a = before l a
+lemma before_before : ∀ {l : List ℕ} {lo a : ℕ}, a ∈ before l lo →
+    before (before l lo) a = before l a
   | [], _, _, h => by simp [before] at h
   | x :: l, lo, a, h => by
     by_cases hxl : x = lo
@@ -1056,7 +1058,8 @@ lemma walkInv_backTrack (hwf : WF m0) {s : KekState} (hi : WalkInv wa atoms m0 c
     · exact ⟨ht ▸ hu.2.1, by rw [← ht, hsrc]; exact h1⟩
     · exact ⟨ht ▸ hu.2.2, by rw [← ht, hdst]; exact h2⟩
   refine ⟨hi.skel.trans hsk, fun k ↦ ?_, by rw [hAs, hi.addsSize], by rw [hCs, hi.candsSize],
-    fun k hk ↦ hi.addsOk k (hA' k hk), fun k₁ k₂ x h₁ h₂ ↦ hi.matching k₁ k₂ x (hA' _ h₁) (hA' _ h₂),
+    fun k hk ↦ hi.addsOk k (hA' k hk),
+    fun k₁ k₂ x h₁ h₂ ↦ hi.matching k₁ k₂ x (hA' _ h₁) (hA' _ h₂),
     fun x ↦ ?_, fun x hx ↦ ?_, fun k hk ↦ ?_, (List.take_sublist _ _).nodup hd1, ?_,
     fun x hx ↦ ?_, fun x hx ↦ hi.doneSub x (hkd x hx), fun x hx ↦ ?_, fun a o hao ↦ ?_, hi.keys,
     hi.lastOpt, .inr ⟨lo, bt, hbt, hbtk, ?_, hlok⟩⟩
@@ -1420,7 +1423,8 @@ lemma singleAromaticBonds_kind (wa : ℕ → Bool) (out : Work) (i k : ℕ) :
     have key : ∀ (l : List ℕ) (o : Work), SameSkel out o →
         SameSkel out (l.foldl (fun o k ↦ if wa k then o.setKind k .single else o) o) ∧
         ((l.foldl (fun o k ↦ if wa k then o.setKind k .single else o) o).bonds[k]! : WBond).kind =
-          if k ∈ l ∧ wa k = true ∧ k < out.bonds.size then .single else (o.bonds[k]! : WBond).kind := by
+          if k ∈ l ∧ wa k = true ∧ k < out.bonds.size then .single
+          else (o.bonds[k]! : WBond).kind := by
       intro l
       induction l with
       | nil => intro o h; exact ⟨h, by simp⟩

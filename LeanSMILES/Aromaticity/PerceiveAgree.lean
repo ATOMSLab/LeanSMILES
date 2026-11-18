@@ -23,7 +23,10 @@ RDKit way, or after).  Perception reads only some combinations of those, and
 * the same cached hydrogen total (written plus implied), and the same cached valence less written
   hydrogens (the bond part of the valence);
 * on the first copy, that bond part is the Kekulé bond-order sum (what kekulization makes true);
-* at every atom of a ring, the same `countAtomElec`.
+* at every atom of a ring, the same donor type (`donorType`, over all the rings' bonds).  Not the
+  same `countAtomElec`: an atom whose hydrogen is written in one copy and implied in the other
+  (`[sH]1ccccc1`, written `S1=CC=CC=C1` back) can count its electrons differently and still get
+  the same donor type.
 
 Then `donorData`, and so `aromaticBondList`, are the same (`PerceiveAgree.donorData_eq`,
 `PerceiveAgree.aromaticBondList_eq`).  The one place perception reads a cached valence alone,
@@ -78,8 +81,10 @@ structure PerceiveAgree (rings : Array (List ℕ)) (w w' : Work) : Prop where
     ((w.bondHalfSum i / 2 : ℕ) : ℤ)
   /-- No bond is aromatic. -/
   noArom : ∀ b ∈ w.bonds, b.kind ≠ .aromatic
-  /-- At every atom of a ring, the same `countAtomElec`. -/
-  elec : ∀ ring ∈ rings.toList, ∀ i ∈ ring, w'.countAtomElec i = w.countAtomElec i
+  /-- At every atom of a ring, the same donor type over the rings' bonds. -/
+  donor : ∀ ring ∈ rings.toList, ∀ i ∈ ring,
+    w'.donorType ((rings.toList.flatMap w.ringBonds).eraseDups) i =
+      w.donorType ((rings.toList.flatMap w.ringBonds).eraseDups) i
 
 namespace PerceiveAgree
 
@@ -150,24 +155,12 @@ lemma isAromaticCandidate_eq (i : ℕ) (d : Donor) :
     simp only [key]
   · simp [hM]
 
-/-- **The donor type of a ring atom is the same**: it reads `countAtomElec` (the same at ring
-atoms), the bonds and neighbours' elements, and the cached valence only through "is it more than
-degree plus written hydrogens", which is the bond part against the degree. -/
-lemma donorType_eq (rbs : List ℕ) {ring : List ℕ} (hr : ring ∈ rings.toList) {i : ℕ}
-    (hi : i ∈ ring) : w'.donorType rbs i = w.donorType rbs i := by
-  have hbp := h.bondPart i
-  have hne : (w'.cachedValence i != w.degree i + (w'.atoms[i]! : WAtom).explicitHs) =
-      (w.cachedValence i != w.degree i + (w.atoms[i]! : WAtom).explicitHs) := by
-    rw [Bool.eq_iff_iff, bne_iff_ne, bne_iff_ne]
-    omega
-  unfold donorType
-  simp only [Id.run, h.elec ring hr i hi, h.exocyclicMultiple?_eq, h.z, h.charge, h.degree_eq,
-    h.bondsOf_eq, h.bonds, hne]
-
 /-- The donor type a ring gives its atom is the same. -/
-lemma ringDonor_eq (rbs : List ℕ) {ring : List ℕ} (hr : ring ∈ rings.toList) (len : ℕ) {i : ℕ}
-    (hi : i ∈ ring) : w'.ringDonor rbs len i = w.ringDonor rbs len i := by
-  simp only [ringDonor, h.donorType_eq rbs hr hi, h.z, h.charge, h.degree_eq,
+lemma ringDonor_eq {ring : List ℕ} (hr : ring ∈ rings.toList) (len : ℕ) {i : ℕ}
+    (hi : i ∈ ring) :
+    w'.ringDonor ((rings.toList.flatMap w.ringBonds).eraseDups) len i =
+      w.ringDonor ((rings.toList.flatMap w.ringBonds).eraseDups) len i := by
+  simp only [ringDonor, h.donor ring hr i hi, h.z, h.charge, h.degree_eq,
     h.hasMultipleBond_eq]
 
 /-- **The first pass of perception is the same**: it visits only ring atoms, where the donor
@@ -179,7 +172,7 @@ lemma donorData_eq : w'.donorData rings = w.donorData rings := by
   unfold donorRingStep
   rw [foldl_congr_mem (g := w.donorAtomStep ((rings.toList.flatMap w.ringBonds).eraseDups)
     ring.length) (fun p i hi ↦ by
-    simp only [donorAtomStep, h.ringDonor_eq _ hr _ hi, h.isAromaticCandidate_eq]) (s, true)]
+    simp only [donorAtomStep, h.ringDonor_eq hr _ hi, h.isAromaticCandidate_eq]) (s, true)]
 
 /-- **The same bonds are made aromatic.** -/
 lemma aromaticBondList_eq : w'.aromaticBondList rings = w.aromaticBondList rings := by

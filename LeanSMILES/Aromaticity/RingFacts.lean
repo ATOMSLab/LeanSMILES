@@ -989,7 +989,8 @@ theorem components_spec {n : ℕ} {nbrs : Array (List ℕ)} (hlt : ∀ i : ℕ, 
       · rw [getElem!_neg _ x (by simpa using hx)] at hx'; cases hx'
     · rintro ⟨C, hC, -⟩
       simp at hC
-  obtain ⟨hi, hs⟩ := key (List.range n) (Array.replicate n false, []) (fun s hs ↦ List.mem_range.1 hs) hinit
+  obtain ⟨hi, hs⟩ := key (List.range n) (Array.replicate n false, [])
+    (fun s hs ↦ List.mem_range.1 hs) hinit
   unfold components
   refine ⟨fun i hi' ↦ (hi.seenIff i).1 (hs i (List.mem_range.2 hi')), hi.pairwise, hi.lt,
     hi.closed⟩
@@ -1060,8 +1061,10 @@ theorem fusedSystems_spec (m : Work) {rings : Array (List ℕ)}
       by_contra h'; rw [getElem!_neg rings i h'] at hxi; exact absurd hxi List.not_mem_nil
     have hj : j < rings.size := by
       by_contra h'; rw [getElem!_neg rings j h'] at hxj; exact absurd hxj List.not_mem_nil
-    have hRi : m.IsRing rings[i]! := hr _ (by rw [getElem!_pos rings i hi]; exact Array.getElem_mem hi)
-    have hRj : m.IsRing rings[j]! := hr _ (by rw [getElem!_pos rings j hj]; exact Array.getElem_mem hj)
+    have hRi : m.IsRing rings[i]! :=
+      hr _ (by rw [getElem!_pos rings i hi]; exact Array.getElem_mem hi)
+    have hRj : m.IsRing rings[j]! :=
+      hr _ (by rw [getElem!_pos rings j hj]; exact Array.getElem_mem hj)
     obtain ⟨k, hk1, hk2⟩ := hRi.shared_bond hRj hxi hxj (by omega)
     have := hcl C hC i hiC j (mem_kekFusedNbrs.2 ⟨hi, hj, Ne.symm hij, k, hk1, hk2⟩)
     exact hCD j this hjD
