@@ -62,6 +62,8 @@ HAND = [
     'O=N(=O)c1ccccc1', 'CN(C)(=O)C',
     # iodine at bond-order sum 2 or 4, which RDKit gives a hydrogen and OpenSMILES does not
     'CC=[I]', 'C[I]C', 'C[I](C)(C)C', 'C=[I]=C', 'C1=C[I]C=C1', 'O=C1C=C[I]C=C1',
+    # four-bonded nitrogen bonded to a metal, which RDKit's valence check skips
+    'C[NH](C)(C)[Fe]', '[Fe][NH](C)(C)C',
 ]
 
 BASE = """c1ccc2c(c1)Cc1ccccc12 C1=Cc2ccccc2C1 c1ccc2c(c1)C=Cc1ccccc1-2 O=C1C=Cc2ccccc21 O=C1c2ccccc2C(=O)c2ccccc12
@@ -150,7 +152,7 @@ if __name__ == "__main__":
     print("# written by tools/rdkit_invariance_cases.py.")
     print("# Hand-picked: lowercase rings that stay non-aromatic, fused aromatic/non-aromatic")
     print("# systems, charged rings, exocyclic double bonds, annulenes, cyclophanes,")
-    print("# clean-up cases, hypervalent iodine.")
+    print("# clean-up cases, hypervalent iodine and nitrogen.")
     print("\n".join(HAND))
     print("# Generated with RDKit: lowercase and Kekulé writings in random atom orders.")
     print("\n".join(generated()))

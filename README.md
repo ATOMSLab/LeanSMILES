@@ -282,7 +282,7 @@ lake exe validity-test      # 10 000 broken SMILES: accepts everything RDKit acc
 lake exe oracle-test        # 1 128 Delaney molecules: graph = RDKit's, canonical SMILES round-trips and is relabeling-invariant (1 skipped, see above)
 lake exe morgan-test        # Morgan fingerprints: ring membership = RDKit's, bits = RDKit's wherever the graph is, relabeling-invariant
 lake exe charge-test        # formal charges: [C+123], [H+++], [C-123] parse but fail checkCharges; [Na+], [O-2], [Fe+3], [NH4+] pass
-lake exe invariance-test    # the statements of Aromaticity/Invariance.lean, as written, on 811 hard cases, 229 pairs
+lake exe invariance-test    # the statements of Aromaticity/Invariance.lean, as written, on 813 hard cases, 229 pairs
 lake exe resonance-test     # the statements of Aromaticity/Resonance.lean on every Kekulé partner of 2399 structures
 lake exe kekule-bench       # SMILES/KekuleClass.lean: the fast search against the specification, and its cost
 lake exe stereo-test        # stereoisomers vs RDKit and InChI (datasets/stereo-*.tsv from tools/rdkit_stereo.py):
@@ -384,7 +384,7 @@ bond. The statements carry hypotheses because without them they are false:
   statement is about double bonds moved within what comes out aromatic.
 
 ```bash
-lake exe invariance-test    # each statement of Aromaticity/Invariance.lean, as written, on 811 hard cases and 229 matched pairs
+lake exe invariance-test    # each statement of Aromaticity/Invariance.lean, as written, on 813 hard cases and 229 matched pairs
 ```
 
 **Kekulé structures: three statements about one `aromatize`.** Canonical SMILES

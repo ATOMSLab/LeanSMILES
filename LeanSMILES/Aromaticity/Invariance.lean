@@ -127,10 +127,10 @@ instances below, the conclusions as equalities of molecules — by
 20 216 SMILES: every Kekulé structure and the lowercase form of 1 147 aromatic
 molecules in random atom orders (13 701 strings); 2 719 lowercase rewrites of
 stereo-rich molecules; the 2 992 strings of `datasets/*-oracle.csv`; and the
-811 hard cases of `datasets/aromatize-invariance.smi` (lowercase rings that
+813 hard cases of `datasets/aromatize-invariance.smi` (lowercase rings that
 stay non-aromatic, fused systems with one aromatic and one non-aromatic ring,
 charged rings, exocyclic double bonds, annulenes, cyclophanes, large
-polycyclic aromatics, the inputs `cleanUp` rewrites, hypervalent iodine; in
+polycyclic aromatics, the inputs `cleanUp` rewrites, hypervalent iodine and nitrogen; in
 lowercase and Kekulé form and in random atom orders).  Per string: five renumberings (a rotation,
 the reversal, three pseudo-random permutations), five relistings (reversed,
 every bond turned round, three pseudo-random orders), and up to 64 Kekulé
@@ -1465,7 +1465,7 @@ its own and the second read onto the bond list of the first: the 229 pairs of
 | `canonicalSmiles_aromatize_of_isKekuleSpellingOf`, built spellings | 9 156 | 0 |
 | `canonicalSmiles_aromatize_of_isKekuleSpellingOf`, matched pairs | 1 231 | 0 |
 
-The built spellings are from the 811 hard cases, the 2 992 oracle strings and
+The built spellings are from the 813 hard cases, the 2 992 oracle strings and
 a one-in-four sample (3 425) of the 13 701 Kekulé and lowercase strings.
 Every one of the 30 459 spellings built satisfied `IsKekuleSpellingOf` as
 written; without `ChargesKept` and `AromaticKept`, 24 of them aromatize to

@@ -2,7 +2,7 @@
 # written by tools/rdkit_invariance_cases.py.
 # Hand-picked: lowercase rings that stay non-aromatic, fused aromatic/non-aromatic
 # systems, charged rings, exocyclic double bonds, annulenes, cyclophanes,
-# clean-up cases, hypervalent iodine.
+# clean-up cases, hypervalent iodine and nitrogen.
 Cc1cc2cccc2c1
 c1cc2cccc2c1
 c1ccc2cccc-2cc1
@@ -122,6 +122,8 @@ C[I](C)(C)C
 C=[I]=C
 C1=C[I]C=C1
 O=C1C=C[I]C=C1
+C[NH](C)(C)[Fe]
+[Fe][NH](C)(C)C
 # Generated with RDKit: lowercase and Kekulé writings in random atom orders.
 c1ccc2c(c1)Cc1ccccc1-2
 C1c2ccccc2-c2c1cccc2

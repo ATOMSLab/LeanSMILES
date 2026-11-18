@@ -227,13 +227,18 @@ a bare aromatic nitrogen still holding its hydrogen — one canonical SMILES wit
 and writes it as `[nH]` rather than as a hydrogen-less `n`. -/
 
 /-- A bare atom that RDKit reads with a different hydrogen count from OpenSMILES: iodine at a
-bond-order sum of 2 or 4.  OpenSMILES gives iodine the one default valence 1, so a bare `I` there
-has no hydrogen; RDKit allows it 1, 3 and 5 and fills it up to the next one with a hydrogen
-(`CI(C)C` is `C[IH](C)C` to RDKit).  Bracket normal form keeps such an atom bracketed, as RDKit's
-writer does, so that the output of `Molecule.aromatize` reads back as itself.  The other
-elements that may be written bare read alike wherever RDKit allows their valence. -/
+bond-order sum of 2 or 4, and a non-aromatic nitrogen at 4.  OpenSMILES gives iodine the one
+default valence 1, so a bare `I` there has no hydrogen; RDKit allows it 1, 3 and 5 and fills it up
+to the next one with a hydrogen (`CI(C)C` is `C[IH](C)C` to RDKit).  OpenSMILES allows nitrogen
+3 and 5, so a bare `N` with four bonds has a hydrogen; RDKit allows only 3 and gives it none
+(`C[NH](C)(C)[Fe]` would come back as `CN(C)(C)[Fe]`, which RDKit reads as `C[N](C)(C)[Fe]`;
+RDKit's valence check, which would reject the four-valent nitrogen, skips atoms bonded to a
+metal).  Bracket normal form keeps such an atom bracketed, as RDKit's writer does, so that the
+output of `Molecule.aromatize` reads back as itself.  The other elements that may be written bare
+read alike wherever RDKit allows their valence. -/
 def readsDifferentlyInRDKit (a : Atom) (orderSum : ℚ) : Bool :=
-  a.element == some .I && (orderSum == 2 || orderSum == 4)
+  (a.element == some .I && (orderSum == 2 || orderSum == 4)) ||
+    (a.element == some .N && !a.aromatic && orderSum == 4)
 
 /-- The atom in bracket normal form at bond-order sum `orderSum`, with the same hydrogen count.
 An atom with no isotope, charge, chirality or class, whose element may be written bare, is
@@ -241,11 +246,11 @@ written bare when `implicitHydrogens` at `orderSum` gives the bare atom exactly 
 and in brackets with all of them otherwise.  Any other atom is itself.  `[n]` (two aromatic
 bonds and a methyl) and `[CH4]` become `n` and `C`; a bare aromatic nitrogen with one hydrogen
 and two aromatic bonds becomes `[nH]`; `[nH]`, `[CH3]` (a radical), `[C]`, `[13CH4]` and `[O-]`
-stay as they are.  Iodine at a bond-order sum of 2 or 4 stays bracketed too
-(`readsDifferentlyInRDKit`): `CI(C)C` would mean no hydrogen here and one in RDKit.  A
-tetrahedral mark is not on the atom (the parser moves it to `Molecule.stereo`), so a parsed
-`[C@H]` counts as carrying none: it is unbracketed here and the writer brackets it again with the
-mark it computes. -/
+stay as they are.  Iodine at a bond-order sum of 2 or 4, and a non-aromatic nitrogen at 4, stay
+bracketed too (`readsDifferentlyInRDKit`): `CI(C)C` would mean no hydrogen here and one in
+RDKit.  A tetrahedral mark is not on the atom (the parser moves it to `Molecule.stereo`), so a
+parsed `[C@H]` counts as carrying none: it is unbracketed here and the writer brackets it again
+with the mark it computes. -/
 def normalizeBracket (a : Atom) (orderSum : ℚ) : Atom :=
   let b : Atom := { a with explicitH := none, implicitH := 0 }
   if b.canBeBare then
