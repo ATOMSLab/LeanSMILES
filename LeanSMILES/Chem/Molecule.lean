@@ -226,19 +226,31 @@ SMILES; adding the missing ones is what makes pyrrole parsed as `C1=CNC=C1` and 
 a bare aromatic nitrogen still holding its hydrogen — one canonical SMILES with `c1cc[nH]c1`,
 and writes it as `[nH]` rather than as a hydrogen-less `n`. -/
 
+/-- A bare atom that RDKit reads with a different hydrogen count from OpenSMILES: iodine at a
+bond-order sum of 2 or 4.  OpenSMILES gives iodine the one default valence 1, so a bare `I` there
+has no hydrogen; RDKit allows it 1, 3 and 5 and fills it up to the next one with a hydrogen
+(`CI(C)C` is `C[IH](C)C` to RDKit).  Bracket normal form keeps such an atom bracketed, as RDKit's
+writer does, so that the output of `Molecule.aromatize` reads back as itself.  The other
+elements that may be written bare read alike wherever RDKit allows their valence. -/
+def readsDifferentlyInRDKit (a : Atom) (orderSum : ℚ) : Bool :=
+  a.element == some .I && (orderSum == 2 || orderSum == 4)
+
 /-- The atom in bracket normal form at bond-order sum `orderSum`, with the same hydrogen count.
 An atom with no isotope, charge, chirality or class, whose element may be written bare, is
 written bare when `implicitHydrogens` at `orderSum` gives the bare atom exactly its hydrogens,
 and in brackets with all of them otherwise.  Any other atom is itself.  `[n]` (two aromatic
 bonds and a methyl) and `[CH4]` become `n` and `C`; a bare aromatic nitrogen with one hydrogen
 and two aromatic bonds becomes `[nH]`; `[nH]`, `[CH3]` (a radical), `[C]`, `[13CH4]` and `[O-]`
-stay as they are.  A tetrahedral mark is not on the atom (the parser moves it to
-`Molecule.stereo`), so a parsed `[C@H]` counts as carrying none: it is unbracketed here and the
-writer brackets it again with the mark it computes. -/
+stay as they are.  Iodine at a bond-order sum of 2 or 4 stays bracketed too
+(`readsDifferentlyInRDKit`): `CI(C)C` would mean no hydrogen here and one in RDKit.  A
+tetrahedral mark is not on the atom (the parser moves it to `Molecule.stereo`), so a parsed
+`[C@H]` counts as carrying none: it is unbracketed here and the writer brackets it again with the
+mark it computes. -/
 def normalizeBracket (a : Atom) (orderSum : ℚ) : Atom :=
   let b : Atom := { a with explicitH := none, implicitH := 0 }
   if b.canBeBare then
-    if implicitHydrogens b orderSum == a.totalH then { b with implicitH := a.totalH }
+    if implicitHydrogens b orderSum == a.totalH && !readsDifferentlyInRDKit b orderSum then
+      { b with implicitH := a.totalH }
     else { b with explicitH := some a.totalH }
   else a
 
@@ -261,10 +273,22 @@ the default-valence rule. -/
 /-- Bracket normalization is idempotent: an atom in normal form stays as it is. -/
 @[simp] lemma normalizeBracket_normalizeBracket (a : Atom) (s : ℚ) :
     normalizeBracket (normalizeBracket a s) s = normalizeBracket a s := by
-  unfold normalizeBracket
-  by_cases hb : ({ a with explicitH := none, implicitH := 0 } : Atom).canBeBare <;>
-    by_cases hh : implicitHydrogens { a with explicitH := none, implicitH := 0 } s == a.totalH <;>
-    simp_all [Atom.totalH]
+  by_cases h1 : ({ a with explicitH := none, implicitH := 0 } : Atom).canBeBare
+  · -- normalization reads only the bare-atom part and the hydrogen count, which it keeps
+    have key : ∀ x : Atom,
+        ({ x with explicitH := none, implicitH := 0 } : Atom) =
+          { a with explicitH := none, implicitH := 0 } →
+        x.totalH = a.totalH → normalizeBracket x s = normalizeBracket a s := by
+      intro x hx ht
+      unfold normalizeBracket
+      rw [hx, ht]
+      simp only [h1, if_true]
+    rw [key (normalizeBracket a s) ?_ (totalH_normalizeBracket a s)]
+    dsimp only [normalizeBracket]; split <;> (try split) <;> rfl
+  · have h : normalizeBracket a s = a := by
+      unfold normalizeBracket
+      simp only [h1, Bool.false_eq_true, if_false]
+    rw [h, h]
 
 /-- Every atom in bracket normal form (`normalizeBracket`, at the atom's own bond-order sum).
 The bonds, and every atom's element, charge and hydrogen count, are unchanged.

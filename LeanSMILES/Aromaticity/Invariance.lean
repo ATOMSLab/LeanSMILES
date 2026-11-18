@@ -103,11 +103,15 @@ assume both runs succeed rather than assert it.
 A lowercase molecule is related to its Kekulé structures through the output.
 The output is a fixed point (`aromatize_aromatize`), and it is the image of a
 Kekulé structure of itself (`exists_kekule_aromatize`, provided RDKit reads the
-valences of both alike, `Molecule.SameValences`, which fails only at exotic aromatic atoms like
-the `[s-]` of `c1cc2cc[s-]2cc1`), both provided `cleanUp` rewrites nothing on the second run: `O=p1ccccc1` aromatizes to
+valences of both alike, `Molecule.SameValences`, which fails only at exotic
+aromatic atoms like the `[s-]` of `c1cc2cc[s-]2cc1`), both provided `cleanUp`
+rewrites nothing on the second run: `O=p1ccccc1` aromatizes to
 `O=P1=CC=CC=C1`, which `cleanUp` then rewrites to `[O-][p+]1ccccc1`, in RDKit
 too, because the first run's `cleanUp` came before kekulization made the
-`P=C`.  The Kekulé structure is its own atoms with the
+`P=C`.  Both need the output's bare atoms to read back with their hydrogens,
+which is why bracket normal form keeps iodine at a bond-order sum of 2 or 4
+bracketed (`readsDifferentlyInRDKit`): written bare, `CC=[I]` would come back
+as `CC=I`, which RDKit reads as `CC=[IH]`.  The Kekulé structure is its own atoms with the
 aromatic flags cleared and each aromatic bond single or double.  Every other
 Kekulé structure with the same bond-order sums then has the same image
 (`aromatize_of_kekuleVariant_of_chargesKept`).
@@ -120,11 +124,11 @@ instances below, the conclusions as equalities of molecules — by
 20 216 SMILES: every Kekulé structure and the lowercase form of 1 147 aromatic
 molecules in random atom orders (13 701 strings); 2 719 lowercase rewrites of
 stereo-rich molecules; the 2 992 strings of `datasets/*-oracle.csv`; and the
-805 hard cases of `datasets/aromatize-invariance.smi` (lowercase rings that
+811 hard cases of `datasets/aromatize-invariance.smi` (lowercase rings that
 stay non-aromatic, fused systems with one aromatic and one non-aromatic ring,
 charged rings, exocyclic double bonds, annulenes, cyclophanes, large
-polycyclic aromatics, the inputs `cleanUp` rewrites; in lowercase and Kekulé
-form and in random atom orders).  Per string: five renumberings (a rotation,
+polycyclic aromatics, the inputs `cleanUp` rewrites, hypervalent iodine; in
+lowercase and Kekulé form and in random atom orders).  Per string: five renumberings (a rotation,
 the reversal, three pseudo-random permutations), five relistings (reversed,
 every bond turned round, three pseudo-random orders), and up to 64 Kekulé
 variants over the aromatic bonds, enumerated exhaustively.  Only the hard
@@ -1438,7 +1442,7 @@ its own and the second read onto the bond list of the first: the 229 pairs of
 | `canonicalSmiles_aromatize_of_isKekuleSpellingOf`, built spellings | 9 156 | 0 |
 | `canonicalSmiles_aromatize_of_isKekuleSpellingOf`, matched pairs | 1 231 | 0 |
 
-The built spellings are from the 805 hard cases, the 2 992 oracle strings and
+The built spellings are from the 811 hard cases, the 2 992 oracle strings and
 a one-in-four sample (3 425) of the 13 701 Kekulé and lowercase strings.
 Every one of the 30 459 spellings built satisfied `IsKekuleSpellingOf` as
 written; without `ChargesKept` and `AromaticKept`, 24 of them aromatize to
