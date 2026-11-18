@@ -190,15 +190,20 @@ def ValenceOk (m : Molecule n) : Prop :=
 instance (m : Molecule n) : Decidable m.ValenceOk :=
   inferInstanceAs (Decidable (_ = none))
 
-/-- Every atom written lowercase has a bond written aromatic, and at most three bonds.  RDKit
-rounds the valence of an aromatic atom as if its bonds were aromatic; at a lowercase atom with no
-aromatic bond (`N[se]=CC`, `Cp1=CC=CC=C1`, `C[se]1(C)CC1` with three single bonds) or with four
-(`c2\3c4c56`) the rounded valence is not the one any Kekulé structure gives it.  None of the
-12 027 dataset molecules fails this; malformed strings like `C1CCCCn1` do. -/
+/-- Aromatic bonds as they are written: every atom written lowercase has at least two bonds
+written aromatic and at most three bonds, and every bond written aromatic joins two lowercase
+atoms.  RDKit rounds the valence of an aromatic atom as if its bonds were aromatic; where this
+fails the rounded valence is not the one any Kekulé structure gives the atom: a lowercase atom with
+fewer than two aromatic bonds (`N[se]=CC`; `c1cC2C(=O)NC(=O)C2cc1`, whose ring passes through
+uppercase carbons; `C[se]1(C)CC1`), one with four bonds (`c2\3c4c56`), or an uppercase atom with
+an aromatic bond (`C:c1ccccc1`).  Of the 12 027 dataset molecules, 3 fail this, all malformed in
+the second way. -/
 def AromaticWritten (m : Molecule n) : Prop :=
-  ∀ i, (m.atom i).aromatic = true →
-    (∃ b ∈ m.bonds, b.touches i = true ∧ b.kind = .aromatic) ∧
-      (m.bonds.filter (·.touches i)).length ≤ 3
+  (∀ i, (m.atom i).aromatic = true →
+    2 ≤ (m.bonds.filter fun b ↦ b.touches i && b.kind == .aromatic).length ∧
+      (m.bonds.filter (·.touches i)).length ≤ 3) ∧
+  ∀ b ∈ m.bonds, b.kind = .aromatic →
+    (m.atom b.src).aromatic = true ∧ (m.atom b.dst).aromatic = true
 
 instance (m : Molecule n) : Decidable m.AromaticWritten := by
   unfold AromaticWritten
@@ -1203,7 +1208,7 @@ aromatizes to `a`.  Both provisos are needed: for `O=p1ccccc1` the witness is `O
 which `cleanUp` rewrites (`aromatize_aromatize`); for `Oc#1ccccc1` the kekulizer gives the carbon
 next to the triple bond a single ring bond, so the witness `OC#1C=CC=CC1` has a five-valent
 carbon (RDKit would reject it), and aromatizes to itself.  `m.AromaticWritten` excludes
-lowercase atoms RDKit's valence rounding misreads (`N[se]=CC`). -/
+aromatic atoms RDKit's valence rounding misreads (`N[se]=CC`, `C:c1ccccc1`). -/
 theorem exists_kekule_aromatize {m a : Molecule n} (h : m.aromatize = .ok a)
     (hw : m.AromaticWritten) :
     ∃ k : Molecule n, k.IsKekule ∧ k.IsKekuleStructureOf a ∧
