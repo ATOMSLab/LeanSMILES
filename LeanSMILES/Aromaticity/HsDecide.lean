@@ -414,3 +414,46 @@ lemma impl_large {a : WAtom} {h : ℕ} (hc : a.charge = 0)
   · split <;> rfl
 
 end LeanSMILES.Aromaticity.Loc
+
+namespace LeanSMILES.Aromaticity.Loc
+
+lemma implicitHydrogens_congr {a b : Atom} (he : a.element = b.element)
+    (har : a.aromatic = b.aromatic) (hh : a.explicitH = b.explicitH) (q : ℚ) :
+    Molecule.implicitHydrogens a q = Molecule.implicitHydrogens b q := by
+  unfold Molecule.implicitHydrogens
+  rw [he, har, hh]
+
+lemma readsDifferently_congr {a b : Atom} (he : a.element = b.element)
+    (har : a.aromatic = b.aromatic) (q : ℚ) :
+    Molecule.readsDifferentlyInRDKit a q = Molecule.readsDifferentlyInRDKit b q := by
+  unfold Molecule.readsDifferentlyInRDKit
+  rw [he, har]
+
+lemma mem_organic (e : Element) (h : e.inOrganicSubset = true) : e ∈ organic := by
+  cases e <;> simp_all [Element.inOrganicSubset, organic]
+
+lemma organic_z {e : Element} (h : e ∈ organic) : e.atomicNumber ≤ 16 ∨ e.atomicNumber = 17 ∨
+    e.atomicNumber = 35 ∨ e.atomicNumber = 53 := by
+  simp only [organic, List.mem_cons, List.not_mem_nil, or_false] at h
+  rcases h with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> decide
+
+lemma organic_z_pos {e : Element} (h : e ∈ organic) : e.atomicNumber ≠ 0 := by
+  simp only [organic, List.mem_cons, List.not_mem_nil, or_false] at h
+  rcases h with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> decide
+
+end LeanSMILES.Aromaticity.Loc
+
+namespace LeanSMILES.Aromaticity.Loc
+
+lemma mem_nonArom : ∀ (n : ℕ) (l : List BondKind), l.any (· == .aromatic) = false →
+    l.length ≤ n → l ∈ nonArom n
+  | 0, [], _, _ => by simp [nonArom]
+  | 0, _ :: _, _, h => by simp at h
+  | n + 1, [], _, _ => by simp [nonArom]
+  | n + 1, k :: l, ha, h => by
+    simp only [List.any_cons, Bool.or_eq_false_iff] at ha
+    simp only [nonArom, List.mem_cons, List.mem_flatMap, List.mem_map]
+    refine .inr ⟨l, mem_nonArom n l ha.2 (by simpa using h), k, ?_, rfl⟩
+    cases k <;> simp_all
+
+end LeanSMILES.Aromaticity.Loc

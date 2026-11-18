@@ -8,6 +8,7 @@ module
 public import LeanSMILES.Aromaticity.PrepareFacts
 public import LeanSMILES.Aromaticity.HsDecide
 public import LeanSMILES.Aromaticity.PerceiveFacts
+public import LeanSMILES.Aromaticity.MarkFacts
 
 /-!
 # LeanSMILES.Aromaticity.HsRestoreK
@@ -965,5 +966,223 @@ lemma donorOk_of_donorType (w : Work) (rbs : List ℕ) (i : ℕ) (h : w.donorTyp
     unfold donorType
     simp [Id.run, hwho, h1, hc.1, hc.2]
     rfl
+
+/-! ### What perception leaves at an atom, for reuse -/
+
+lemma IsRing.of_sameSkel {w w' : Work} (h : SameSkel w' w) {c : List ℕ} (hc : w.IsRing c) :
+    w'.IsRing c := by
+  have hadj : w'.Adj = w.Adj := by
+    funext u v
+    simp only [Adj, h.neighbors]
+  exact ⟨hc.nodup, hc.three, hadj ▸ hc.chain, hadj ▸ hc.close⟩
+
+/-- **What perception leaves at an atom of the kekulized copy**: its bonds' kinds are a marking
+of the Kekulé ones, it is aromatic exactly when one is marked, and if one is, it lies on a ring
+(two bonds at least), passes the candidate test, has a donor type, and at two bonds has every
+single or double bond marked. -/
+theorem perceived_atom {n : ℕ} {m : Molecule n} {K : Work}
+    (hK : (prepare m).kekulize (prepare m).relevantCycles = .ok K) (i : ℕ) :
+    let S := K.assignRadicals.setAromaticity (prepare m).relevantCycles
+    let KR := K.assignRadicals
+    S.kindsAt i ∈ Loc.marks (K.kindsAt i) ∧
+      S.isAromaticAtom i = (S.kindsAt i).any (· == .aromatic) ∧
+      ((S.kindsAt i).any (· == .aromatic) = true →
+        2 ≤ (S.kindsAt i).length ∧ 0 ≤ Loc.elec KR.atoms[i]! (K.kindsAt i) ∧
+        Loc.cand KR.atoms[i]! (K.kindsAt i) = true ∧
+        Loc.donorOk KR.atoms[i]! (K.kindsAt i) = true ∧
+        ((S.kindsAt i).length = 2 →
+          ((S.kindsAt i).zip (K.kindsAt i)).all fun sk ↦ sk.1 == .aromatic || !isSD sk.2)) := by
+  intro S KR
+  set P := prepare m with hP
+  set R := P.relevantCycles with hR
+  have hKP := kekulize_kindsRel hK
+  have hna := kekulize_noArom hK
+  have hsKP : SameSkel K P := hKP.sameSkel
+  have hsKRK : SameSkel KR K := (afterRel_assignRadicals (w := K)).sameSkel
+  have hsSKR : SameSkel S KR := (afterRel_setAromaticity KR R).sameSkel
+  have hKRk : KR.kindsAt i = K.kindsAt i := by
+    simp only [kindsAt, bondsOf, numBonds, KR, assignRadicals_bonds]
+  have hkindS : ∀ k < KR.bonds.size, (S.bonds[k]! : WBond).kind =
+      if k ∈ KR.aromaticBondList R ∧ isSD (KR.bonds[k]! : WBond).kind then .aromatic
+      else (KR.bonds[k]! : WBond).kind := fun k hk ↦ by
+    simp only [S, setAromaticity]
+    exact kind_foldl_markAromatic KR _ k hk
+  have hmarks : S.kindsAt i ∈ Loc.marks (K.kindsAt i) := by
+    rw [← hKRk]
+    refine Loc.mem_marks _ _ (kindsAt_forall₂ hsSKR (fun s k ↦ Loc.MarkRel k s) i
+      fun k hk ↦ ?_).flip
+    have hk' : k < KR.bonds.size := lt_of_mem_bondsOf hk
+    change Loc.MarkRel (KR.bonds[k]! : WBond).kind (S.bonds[k]! : WBond).kind
+    rw [hkindS k hk']
+    unfold Loc.MarkRel
+    split
+    · rename_i h
+      right
+      refine ⟨rfl, ?_⟩
+      simpa [isSD] using h.2
+    · left; rfl
+  have hKnoar : ∀ k : ℕ, (K.bonds[k]! : WBond).kind ≠ .aromatic := by
+    intro k
+    by_cases hk : k < K.bonds.size
+    · rw [getElem!_pos K.bonds k hk]; exact hna.2 _ (Array.getElem_mem hk)
+    · rw [getElem!_neg K.bonds k hk]; decide
+  have hKRflag : ∀ j : ℕ, (KR.atoms[j]! : WAtom).aromatic = false := by
+    intro j
+    have e := congrArg WAtom.aromatic
+      (getElem!_eq_of_map_radicals (getElem?_assignRadicals_atoms K) j)
+    simp only at e
+    rw [e]
+    by_cases hj : j < K.atoms.size
+    · rw [getElem!_pos K.atoms j hj]; exact hna.1 _ (Array.getElem_mem hj)
+    · rw [getElem!_neg K.atoms j hj]; rfl
+  have harS : S.isAromaticAtom i = (S.kindsAt i).any (· == .aromatic) := by
+    rw [isAromaticAtom_eq_loc]
+    cases hf : (S.atoms[i]! : WAtom).aromatic
+    · rfl
+    · obtain ⟨k, hk, hka⟩ := setAromaticity_flag KR R hKRflag i hf
+      symm
+      simp only [Bool.true_or, List.any_eq_true, beq_iff_eq]
+      exact ⟨_, List.mem_map.2 ⟨k, hk, rfl⟩, hka⟩
+  refine ⟨hmarks, harS, fun har ↦ ?_⟩
+  simp only [List.any_eq_true, beq_iff_eq, kindsAt, List.mem_map] at har
+  obtain ⟨_, ⟨k, hk, rfl⟩, hka⟩ := har
+  have hkS : k < S.bonds.size := lt_of_mem_bondsOf hk
+  have hkKR : k < KR.bonds.size := by simpa [hsSKR.numBonds] using lt_of_mem_bondsOf hk
+  have h1 : S.kind? k = some .aromatic := by
+    simp [kind?, Array.getElem?_eq_getElem hkS, ← getElem!_pos S.bonds k hkS, hka]
+  have h0 : KR.kind? k ≠ some .aromatic := by
+    have hb : KR.bonds = K.bonds := assignRadicals_bonds K
+    have hkK : k < K.bonds.size := by rwa [← hb]
+    simp only [kind?, hb, Array.getElem?_eq_getElem hkK, Option.map_some, ne_eq,
+      Option.some.injEq]
+    rw [← getElem!_pos K.bonds k hkK]
+    exact hKnoar k
+  have hmem := mem_aromaticBondList_of_kind? KR R h1 h0
+  obtain ⟨_, ring, hring, hsrc, hdst, ⟨r₁, l₁, c₁⟩, ⟨r₂, l₂, c₂⟩⟩ :=
+    of_kind?_setAromaticity_donor KR R h1 h0
+  have ht := touches_of_mem_bondsOf hk
+  rw [WBond.touches, hsSKR.src, hsSKR.dst, getElem!_pos KR.bonds k hkKR] at ht
+  simp only [Bool.or_eq_true, beq_iff_eq] at ht
+  have hcand : ∃ rbs len, KR.isAromaticCandidate i (KR.ringDonor rbs len i) = true := by
+    rcases ht with ht | ht
+    · exact ⟨r₁, l₁, ht ▸ c₁⟩
+    · exact ⟨r₂, l₂, ht ▸ c₂⟩
+  have hir : i ∈ ring := by rcases ht with ht | ht <;> [exact ht ▸ hsrc; exact ht ▸ hdst]
+  obtain ⟨rbs, len, hc⟩ := hcand
+  have hlS : (S.kindsAt i).length = (KR.bondsOf i).length := by
+    simp only [kindsAt, List.length_map, hsSKR.bondsOf]
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  · have hIs : P.IsRing ring := isRing_of_mem_relevantCycles P (by simpa [hR] using hring)
+    obtain ⟨k₁, k₂, hne, -, -, hk₁, hk₂⟩ := hIs.two_bonds hir
+    have := two_le_length_of_ne hne hk₁ hk₂
+    have hl : (S.kindsAt i).length = (P.bondsOf i).length := by
+      simp only [kindsAt, List.length_map, hsSKR.bondsOf, hsKRK.bondsOf, hsKP.bondsOf]
+    omega
+  · rw [← hKRk, ← countAtomElec_eq_loc]
+    exact countAtomElec_nonneg_of_cand KR hc
+  · rw [← hKRk, ← isAromaticCandidate_eq_loc KR i (isAromaticCandidate_donor_ne hc)]
+    exact hc
+  · rw [← hKRk]
+    apply donorOk_of_donorType KR rbs i
+    intro hd
+    have hne := isAromaticCandidate_donor_ne hc
+    apply hne
+    unfold ringDonor
+    simp [hd]
+  · intro h2
+    have hdeg : (KR.bondsOf i).length = 2 := by omega
+    have hrings : ∀ r ∈ R.toList, KR.IsRing r := fun r hr ↦
+      IsRing.of_sameSkel (hsKRK.trans hsKP)
+        (isRing_of_mem_relevantCycles P (by simpa [hR] using hr))
+    rw [← hKRk]
+    unfold kindsAt
+    rw [hsSKR.bondsOf, zip_map_map, List.all_map, List.all_eq_true]
+    intro k' hk'
+    have hk'lt : k' < KR.bonds.size := lt_of_mem_bondsOf hk'
+    have hmem' := mem_aromaticBondList_deg2 KR R hrings hdeg (by rwa [← hsSKR.bondsOf]) hk' hmem
+    simp only [Function.comp_apply, hkindS k' hk'lt]
+    by_cases hsd : isSD (KR.bonds[k']! : WBond).kind = true
+    · simp [hmem', hsd]
+    · simp [hsd]
+
+/-! ### Small facts for the witness -/
+
+lemma order_sum_eq_bhs (ks : List BondKind) :
+    (ks.map BondKind.order).sum = (Loc.bhs ks : ℚ) / 2 := by
+  induction ks with
+  | nil => simp [Loc.bhs]
+  | cons k ks ih =>
+    simp only [List.map_cons, List.sum_cons, ih, Loc.bhs, Nat.cast_add]
+    cases k <;> simp [BondKind.order, halfOrder] <;> linarith
+
+lemma bhs_even_of_noArom : ∀ {ks : List BondKind}, ks.any (· == .aromatic) = false →
+    Loc.bhs ks % 2 = 0
+  | [], _ => rfl
+  | k :: ks, h => by
+    simp only [List.any_cons, Bool.or_eq_false_iff] at h
+    have ih := bhs_even_of_noArom h.2
+    simp only [Loc.bhs, List.map_cons, List.sum_cons] at ih ⊢
+    cases k <;> simp_all [halfOrder] <;> omega
+
+lemma donorOk_congr {a b : WAtom} (hz : a.z = b.z) (hc : a.charge = b.charge)
+    (he : a.explicitHs = b.explicitHs) (hi : a.cachedImplicit = b.cachedImplicit)
+    (hr : a.radicals = b.radicals) (hv : a.cachedValence = b.cachedValence) (ks : List BondKind) :
+    Loc.donorOk a ks = Loc.donorOk b ks := by
+  simp only [Loc.donorOk, Loc.elec_congr hz hc he hi hr hv, Loc.cv_congr he hv, he, hc]
+
+lemma radicalCount_eq_loc (w : Work) (i : ℕ) :
+    w.radicalCount i = Loc.radC (w.atoms[i]! : WAtom).z (w.atoms[i]! : WAtom).charge
+      (w.bondHalfSum i / 2 + (w.atoms[i]! : WAtom).explicitHs) := rfl
+
+/-- `assignRadicals` gives a bracketed atom its radical count. -/
+lemma radicals_assignRadicals (w : Work) {i : ℕ} (hi : i < w.atoms.size)
+    (hn : (w.atoms[i]! : WAtom).noImplicit = true) (hz : (w.atoms[i]! : WAtom).z ≠ 0) :
+    (w.assignRadicals.atoms[i]! : WAtom).radicals = w.radicalCount i := by
+  -- the steps at other atoms leave atom `i`, the bonds and the size alone
+  have other : ∀ (l : List ℕ) (x : Work), i ∉ l →
+      ((l.foldl radicalStep x).atoms[i]! : WAtom) = x.atoms[i]! ∧
+        (l.foldl radicalStep x).bonds = x.bonds ∧
+        (l.foldl radicalStep x).atoms.size = x.atoms.size := by
+    intro l
+    induction l with
+    | nil => intro x _; exact ⟨rfl, rfl, rfl⟩
+    | cons j l ih =>
+      intro x hl
+      rw [List.foldl_cons]
+      have hj : j ≠ i := fun e ↦ hl (e ▸ List.mem_cons_self)
+      obtain ⟨h1, h2, h3⟩ := ih (radicalStep x j) (fun h ↦ hl (List.mem_cons_of_mem _ h))
+      refine ⟨h1.trans ?_, h2.trans ?_, h3.trans ?_⟩
+      · unfold radicalStep
+        dsimp only
+        split
+        · rfl
+        · exact modifyAtom_atom_of_ne x hj _
+      · unfold radicalStep
+        dsimp only
+        split <;> rfl
+      · unfold radicalStep
+        dsimp only
+        split
+        · rfl
+        · simp
+  have hmem : i ∈ List.range w.numAtoms := List.mem_range.2 (by simpa [numAtoms] using hi)
+  obtain ⟨l₁, l₂, hl⟩ := List.append_of_mem hmem
+  have hnd : (l₁ ++ i :: l₂).Nodup := hl ▸ List.nodup_range
+  have h1 : i ∉ l₁ := fun h ↦ (List.nodup_append.1 hnd).2.2 _ h _ List.mem_cons_self rfl
+  have h2 : i ∉ l₂ := (List.nodup_cons.1 (List.nodup_append.1 hnd).2.1).1
+  unfold assignRadicals
+  rw [hl, List.foldl_append, List.foldl_cons]
+  obtain ⟨a1, b1, c1⟩ := other l₁ w h1
+  set x := l₁.foldl radicalStep w
+  have hstep : ((radicalStep x i).atoms[i]! : WAtom).radicals = w.radicalCount i := by
+    unfold radicalStep
+    dsimp only
+    have hcond : (!(x.atoms[i]! : WAtom).noImplicit || (x.atoms[i]! : WAtom).z == 0) = false := by
+      rw [a1]; simp [hn, hz]
+    rw [if_neg (by rw [hcond]; decide), modifyAtom_atom_self, if_pos (by rw [c1]; exact hi)]
+    simp only [radicalCount_eq_loc, a1]
+    simp only [bondHalfSum, bondsOf, numBonds, b1]
+  obtain ⟨a2, -⟩ := other l₂ (radicalStep x i) h2
+  rw [a2, hstep]
 
 end LeanSMILES.Aromaticity.Work

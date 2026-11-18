@@ -176,4 +176,46 @@ lemma freezeHs_atom_z_charge {n : ℕ} (m : Molecule n) (i : Fin n) :
   rw [ho]
   exact ⟨rfl, rfl⟩
 
+/-- An atom of a molecule's frozen, cached working copy (no `cleanUp`): the molecule's atom with
+RDKit's caches filled. -/
+lemma freezeCache_atom {n : ℕ} (x : Molecule n) (i : Fin n) :
+    ((ofMolecule x).freezeHs.cacheValences.atoms[i.val]! : WAtom) =
+      { z := (x.atom i).atomicNumber, aromatic := (x.atom i).aromatic,
+        charge := (x.atom i).charge, explicitHs := (x.atom i).explicitH.getD 0,
+        noImplicit := (x.atom i).explicitH.isSome || (x.atom i).element.isNone,
+        frozenHs := some ((ofMolecule x).totalHs i),
+        cachedValence := some ((ofMolecule x).freezeHs.explicitValence i),
+        cachedImplicit := (ofMolecule x).freezeHs.implicitHs i,
+        adjustHs := (ofMolecule x).freezeHs.isAromaticAtom i } := by
+  have hlt : i.val < (ofMolecule x).atoms.size := by simp [ofMolecule]
+  have hlt' : i.val < (ofMolecule x).freezeHs.atoms.size := by simp
+  have hlt'' : i.val < (ofMolecule x).freezeHs.cacheValences.atoms.size := by simp
+  have h1 := getElem?_cacheValences_atoms (ofMolecule x).freezeHs i.val
+  have h2 := getElem?_freezeHs_atoms (ofMolecule x) i.val
+  rw [Array.getElem?_eq_getElem hlt'', Array.getElem?_eq_getElem hlt', Option.map_some,
+    Option.some.injEq] at h1
+  rw [Array.getElem?_eq_getElem hlt', Array.getElem?_eq_getElem hlt, Option.map_some,
+    Option.some.injEq] at h2
+  rw [getElem!_pos (ofMolecule x).freezeHs.cacheValences.atoms i.val hlt'', h1, h2]
+  have ho := ofMolecule_atom x i
+  rw [getElem!_pos (ofMolecule x).atoms i.val hlt] at ho
+  rw [ho]
+
+/-- An atom of a molecule's frozen working copy. -/
+lemma freezeHs_ofMolecule_atom {n : ℕ} (x : Molecule n) (i : Fin n) :
+    ((ofMolecule x).freezeHs.atoms[i.val]! : WAtom) =
+      { z := (x.atom i).atomicNumber, aromatic := (x.atom i).aromatic,
+        charge := (x.atom i).charge, explicitHs := (x.atom i).explicitH.getD 0,
+        noImplicit := (x.atom i).explicitH.isSome || (x.atom i).element.isNone,
+        frozenHs := some ((ofMolecule x).totalHs i) } := by
+  have hlt : i.val < (ofMolecule x).atoms.size := by simp [ofMolecule]
+  have hlt' : i.val < (ofMolecule x).freezeHs.atoms.size := by simp
+  have h2 := getElem?_freezeHs_atoms (ofMolecule x) i.val
+  rw [Array.getElem?_eq_getElem hlt', Array.getElem?_eq_getElem hlt, Option.map_some,
+    Option.some.injEq] at h2
+  rw [getElem!_pos (ofMolecule x).freezeHs.atoms i.val hlt', h2]
+  have ho := ofMolecule_atom x i
+  rw [getElem!_pos (ofMolecule x).atoms i.val hlt] at ho
+  rw [ho]
+
 end LeanSMILES.Aromaticity.Work
