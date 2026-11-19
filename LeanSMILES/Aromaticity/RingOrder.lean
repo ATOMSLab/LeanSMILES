@@ -1273,6 +1273,78 @@ theorem isConnectedSet_iff (rids : List ℕ) (nbrs : Array (List ℕ)) :
         (List.subperm_of_subset hrn fun v hv ↦ hreach v (hall v hv)).perm_of_length_le hle
       exact hp.length_eq.symm
 
+/-! ### A group of rings, in any order -/
+
+lemma GroupReach.mem {S : List ℕ} {nbrs : Array (List ℕ)} {a v : ℕ} (ha : a ∈ S)
+    (h : GroupReach S nbrs a v) : v ∈ S := by
+  induction h with
+  | refl => exact ha
+  | tail _ hs _ => exact hs.1
+
+lemma GroupReach.congr {S S' : List ℕ} {nbrs : Array (List ℕ)} (hS : ∀ x, x ∈ S ↔ x ∈ S')
+    {a v : ℕ} (h : GroupReach S nbrs a v) : GroupReach S' nbrs a v := by
+  induction h with
+  | refl => exact .refl
+  | tail _ hs ih => exact ih.tail ⟨(hS _).1 hs.1, hs.2⟩
+
+/-- With symmetric neighbours, a path inside `S` from a ring of `S` runs back. -/
+lemma GroupReach.symm {S : List ℕ} {nbrs : Array (List ℕ)}
+    (hsym : ∀ i j : ℕ, j ∈ nbrs[i]! → i ∈ nbrs[j]!) {a v : ℕ} (ha : a ∈ S)
+    (h : GroupReach S nbrs a v) : GroupReach S nbrs v a := by
+  induction h with
+  | refl => exact .refl
+  | @tail x y hxy hs ih =>
+    exact Relation.ReflTransGen.head ⟨GroupReach.mem ha hxy, hsym _ _ hs.2⟩ ih
+
+/-- **Connectivity does not depend on where the test starts**, with symmetric neighbours. -/
+lemma isConnectedSet_perm {rids rids' : List ℕ} {nbrs : Array (List ℕ)}
+    (hsym : ∀ i j : ℕ, j ∈ nbrs[i]! → i ∈ nbrs[j]!) (hp : rids.Perm rids') :
+    isConnectedSet rids' nbrs = isConnectedSet rids nbrs := by
+  have hS : ∀ x, x ∈ rids ↔ x ∈ rids' := fun x ↦ hp.mem_iff
+  -- connected from one ring of the group means connected from any
+  have key : ∀ {L L' : List ℕ}, L.Perm L' → isConnectedSet L nbrs = true →
+      isConnectedSet L' nbrs = true := by
+    intro L L' hLL h
+    rw [isConnectedSet_iff] at h ⊢
+    intro f' hf'
+    cases hL : L.head? with
+    | none =>
+      rw [List.head?_eq_none_iff] at hL
+      subst hL
+      rw [List.nil_perm] at hLL
+      subst hLL
+      cases hf'
+    | some f =>
+      obtain ⟨hnd, hall⟩ := h f hL
+      have hfL : f ∈ L := List.mem_of_mem_head? hL
+      have hf'L : f' ∈ L := hLL.mem_iff.2 (List.mem_of_mem_head? hf')
+      refine ⟨hLL.nodup_iff.1 hnd, fun v hv ↦ ?_⟩
+      have h1 : GroupReach L nbrs f' f := (hall f' hf'L).symm hsym hfL
+      have h2 : GroupReach L nbrs f v := hall v (hLL.mem_iff.2 hv)
+      exact GroupReach.congr (fun x ↦ hLL.mem_iff) (Relation.ReflTransGen.trans h1 h2)
+  cases h1 : isConnectedSet rids nbrs <;> cases h2 : isConnectedSet rids' nbrs
+  · rfl
+  · exact absurd (key hp.symm h2) (by simp [h1])
+  · exact absurd (key hp h1) (by simp [h2])
+  · rfl
+
+/-- **A group of fused rings makes the same bonds aromatic in any order.** -/
+lemma groupBonds_perm {numAtoms : ℕ} {rb C : Array (List ℕ)} {d : Array Donor}
+    {nbrs : Array (List ℕ)} (hsym : ∀ i j : ℕ, j ∈ nbrs[i]! → i ∈ nbrs[j]!) {cur cur' : List ℕ}
+    (hp : cur.Perm cur') :
+    groupBonds numAtoms rb C d nbrs cur' = groupBonds numAtoms rb C d nbrs cur := by
+  unfold groupBonds
+  rw [isConnectedSet_perm hsym hp]
+  have hcount : cur'.foldl (fun acc r ↦ C[r]!.foldl (fun acc a ↦ acc.modify a (· + 1)) acc)
+      (Array.replicate numAtoms 0) =
+      cur.foldl (fun acc r ↦ C[r]!.foldl (fun acc a ↦ acc.modify a (· + 1)) acc)
+      (Array.replicate numAtoms 0) := by
+    refine (hp.symm.foldl_eq' (fun x _ y _ z ↦ ?_) _)
+    rw [← List.foldl_append, ← List.foldl_append]
+    exact foldl_count_perm List.perm_append_comm z
+  have hall : (cur'.flatMap (rb[·]!)).Perm (cur.flatMap (rb[·]!)) := hp.symm.flatMap_right _
+  simp only [hcount, mergeSort_eraseDups_perm hall, hall.count_eq]
+
 end Work
 
 end LeanSMILES.Aromaticity
