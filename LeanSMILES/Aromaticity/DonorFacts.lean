@@ -277,6 +277,71 @@ lemma restore_of_cached {a : WAtom} {ks : List BondKind} (hadj : a.adjustHs = fa
     (hi : a.cachedImplicit = impl a (bhs ks) false) : restore a ks false = true := by
   simp [restore, hadj, ← hi]
 
+/-- Perception reads `b` and `a` alike when it reads `a` and `b` alike. -/
+lemma readAlike_symm {a b : WAtom} {ks : List BondKind} {w p r g : Bool}
+    (h : readAlike a b ks w p r g = true) : readAlike b a ks w p r g = true := by
+  unfold readAlike at h ⊢
+  generalize ringDonorL a ks w p r g = da at h ⊢
+  generalize ringDonorL b ks w p r g = db at h ⊢
+  generalize candD a ks da = ca at h ⊢
+  generalize candD b ks db = cb at h ⊢
+  cases ca <;> cases cb <;> cases da <;> cases db <;> revert h <;> decide
+
+/-- A bare atom of a Kekulé input, with RDKit's count on its bonds, made aromatic by perception:
+the `adjustHs` step gives back its hydrogens. -/
+def bareRestoreCheck (e : Element) (kk : List BondKind) : Bool :=
+  let z := e.atomicNumber
+  let h := bhs kk
+  let Tr := rdCount z 0 h
+  let aB := canon z 0 Tr h 0 false
+  (marks kk).all fun sk ↦
+    !sk.any (· == .aromatic) || decide (sk.length < 2) ||
+      (sk.length == 2 && (sk.zip kk).any fun (s, k) ↦ s != .aromatic && Work.isSD k) ||
+      decide (elec aB kk < 0) || !cand aB kk || !donorOk aB kk ||
+      restore (bareRec z Tr) sk true
+
+theorem bareRestore_ok : (organic.all fun e ↦ (nonArom 3).all (bareRestoreCheck e)) = true := by
+  decide +kernel
+
+lemma restore_bare {e : Element} (he : e ∈ organic) {kk : List BondKind} (hkk : kk ∈ nonArom 3)
+    {sk : List BondKind} (hsk : sk ∈ marks kk) (har : sk.any (· == .aromatic) = true)
+    (hl : 2 ≤ sk.length)
+    (hd2 : sk.length = 2 →
+      ((sk.zip kk).all fun sk ↦ sk.1 == .aromatic || !Work.isSD sk.2) = true)
+    (hel : 0 ≤ elec (canon e.atomicNumber 0 (rdCount e.atomicNumber 0 (bhs kk)) (bhs kk) 0 false)
+      kk)
+    (hc : cand (canon e.atomicNumber 0 (rdCount e.atomicNumber 0 (bhs kk)) (bhs kk) 0 false) kk =
+      true)
+    (hdo : donorOk (canon e.atomicNumber 0 (rdCount e.atomicNumber 0 (bhs kk)) (bhs kk) 0 false)
+      kk = true)
+    {a : WAtom} (hz : a.z = e.atomicNumber) (hch : a.charge = 0) (he0 : a.explicitHs = 0)
+    (hn : a.noImplicit = false) (hi : a.cachedImplicit = rdCount e.atomicNumber 0 (bhs kk))
+    (hadj : a.adjustHs = false) : restore a sk true = true := by
+  have h := bareRestore_ok
+  rw [List.all_eq_true] at h
+  have h2 := List.all_eq_true.1 (List.all_eq_true.1 (h e he) kk hkk) sk hsk
+  rw [restore_congr (b := bareRec e.atomicNumber (rdCount e.atomicNumber 0 (bhs kk))) hz hch he0
+    hn hi hadj]
+  have g1 : decide (sk.length < 2) = false := by simp; omega
+  have g2 : (sk.length == 2 && (sk.zip kk).any fun (s, k) ↦ s != .aromatic && Work.isSD k) =
+      false := by
+    by_cases h2l : sk.length = 2
+    · have := hd2 h2l
+      rw [List.all_eq_true] at this
+      rw [Bool.and_eq_false_iff]
+      right
+      rw [List.any_eq_false]
+      intro ⟨s, k⟩ hp
+      have h' := this _ hp
+      revert h'
+      cases s <;> cases k <;> decide
+    · simp [h2l]
+  have g3 : decide (elec (canon e.atomicNumber 0 (rdCount e.atomicNumber 0 (bhs kk)) (bhs kk) 0
+      false) kk < 0) = false := by simpa using hel
+  dsimp only at h2
+  simp only [har, Bool.not_true, Bool.false_or, Bool.or_false, g1, g2, g3, hc, hdo] at h2
+  exact h2
+
 end Loc
 
 namespace Work
@@ -345,6 +410,103 @@ lemma env_mem (w : Work) (rbs : List ℕ) (i : ℕ) (g : Bool) :
   rcases Bool.or_eq_true _ _ ▸ h with h | h
   · exact any_isMultiple_of_whoS w rbs i h
   · exact any_isMultiple_of_ringMultB w rbs i h
+
+/-- **Perception reads an atom alike in two Kekulé copies** whose records at it, before radicals,
+write the same hydrogens, or swap them between written and implied at RDKit's count on the
+Kekulé bonds (`Loc.readAlike_rd`). -/
+theorem readAlike_of_swap {w w' : Work} (hb : w'.bonds = w.bonds) {i : ℕ}
+    (hi : i < w.atoms.size) (hi' : i < w'.atoms.size) (hlen : 2 ≤ (w.kindsAt i).length)
+    (hnoar : (w.kindsAt i).any (· == .aromatic) = false)
+    (hzz : (w'.atoms[i]! : WAtom).z = (w.atoms[i]! : WAtom).z)
+    (hcc : (w'.atoms[i]! : WAtom).charge = (w.atoms[i]! : WAtom).charge)
+    (htot : w'.cachedTotalHs i = w.cachedTotalHs i)
+    (hkek : (w.assignRadicals.cachedValence i : ℤ) -
+      (w.assignRadicals.atoms[i]! : WAtom).explicitHs =
+      ((w.bondHalfSum i / 2 : ℕ) : ℤ))
+    (hkek' : (w'.assignRadicals.cachedValence i : ℤ) -
+      (w'.assignRadicals.atoms[i]! : WAtom).explicitHs = ((w'.bondHalfSum i / 2 : ℕ) : ℤ))
+    (hr0 : (w.atoms[i]! : WAtom).radicals = 0) (hr0' : (w'.atoms[i]! : WAtom).radicals = 0)
+    (hcls : ((w'.atoms[i]! : WAtom).explicitHs = (w.atoms[i]! : WAtom).explicitHs ∧
+        (w'.atoms[i]! : WAtom).noImplicit = (w.atoms[i]! : WAtom).noImplicit) ∨
+      ∃ e ∈ Loc.organic, (w.atoms[i]! : WAtom).z = e.atomicNumber ∧
+        (w.atoms[i]! : WAtom).charge = 0 ∧
+        w.cachedTotalHs i = Loc.rdCount e.atomicNumber 0 (Loc.bhs (w.kindsAt i)) ∧
+        (((w.atoms[i]! : WAtom).explicitHs = 0 ∧ (w.atoms[i]! : WAtom).noImplicit = false ∧
+            (w'.atoms[i]! : WAtom).explicitHs = w.cachedTotalHs i ∧
+            (w'.atoms[i]! : WAtom).noImplicit = true) ∨
+          ((w'.atoms[i]! : WAtom).explicitHs = 0 ∧ (w'.atoms[i]! : WAtom).noImplicit = false ∧
+            (w.atoms[i]! : WAtom).explicitHs = w.cachedTotalHs i ∧
+            (w.atoms[i]! : WAtom).noImplicit = true)))
+    (rbs : List ℕ) (big : Bool) :
+    Loc.readAlike (w.assignRadicals.atoms[i]! : WAtom) (w'.assignRadicals.atoms[i]! : WAtom)
+      (w.assignRadicals.kindsAt i) (w.assignRadicals.whoS rbs i) (w.assignRadicals.pullsB rbs i)
+      (w.assignRadicals.ringMultB rbs i) big = true := by
+  have hKk : w.assignRadicals.kindsAt i = w.kindsAt i := by
+    simp only [Work.kindsAt, Work.bondsOf, Work.numBonds, Work.assignRadicals_bonds]
+  have hKk' : w'.assignRadicals.kindsAt i = w.kindsAt i := by
+    simp only [Work.kindsAt, Work.bondsOf, Work.numBonds, Work.assignRadicals_bonds, hb]
+  have hbh : w'.bondHalfSum i = w.bondHalfSum i := by
+    simp only [Work.bondHalfSum, Work.bondsOf, Work.numBonds, hb]
+  have eqK := Work.getElem!_eq_of_map_radicals (Work.getElem?_assignRadicals_atoms w) i
+  have eqP := Work.getElem!_eq_of_map_radicals (Work.getElem?_assignRadicals_atoms w') i
+  have tK : ∀ {α : Type} (f : WAtom → α), (∀ x : WAtom, f { x with radicals := 0 } = f x) →
+      f (w.assignRadicals.atoms[i]! : WAtom) = f (w.atoms[i]! : WAtom) := by
+    intro α f h2; rw [← h2, eqK, h2]
+  have tP : ∀ {α : Type} (f : WAtom → α), (∀ x : WAtom, f { x with radicals := 0 } = f x) →
+      f (w'.assignRadicals.atoms[i]! : WAtom) = f (w'.atoms[i]! : WAtom) := by
+    intro α f h2; rw [← h2, eqP, h2]
+  rw [hKk]
+  set kk := w.kindsAt i with hkk
+  set x := (w.assignRadicals.atoms[i]! : WAtom) with hx
+  set y := (w'.assignRadicals.atoms[i]! : WAtom) with hy
+  have hxz : x.z = (w.atoms[i]! : WAtom).z := tK WAtom.z (fun _ ↦ rfl)
+  have hxc : x.charge = (w.atoms[i]! : WAtom).charge := tK WAtom.charge (fun _ ↦ rfl)
+  have hxe : x.explicitHs = (w.atoms[i]! : WAtom).explicitHs := tK WAtom.explicitHs (fun _ ↦ rfl)
+  have hxn : x.noImplicit = (w.atoms[i]! : WAtom).noImplicit := tK WAtom.noImplicit (fun _ ↦ rfl)
+  have hxi : x.cachedImplicit = (w.atoms[i]! : WAtom).cachedImplicit :=
+    tK WAtom.cachedImplicit (fun _ ↦ rfl)
+  have hyz : y.z = (w'.atoms[i]! : WAtom).z := tP WAtom.z (fun _ ↦ rfl)
+  have hyc : y.charge = (w'.atoms[i]! : WAtom).charge := tP WAtom.charge (fun _ ↦ rfl)
+  have hye : y.explicitHs = (w'.atoms[i]! : WAtom).explicitHs := tP WAtom.explicitHs (fun _ ↦ rfl)
+  have hyn : y.noImplicit = (w'.atoms[i]! : WAtom).noImplicit := tP WAtom.noImplicit (fun _ ↦ rfl)
+  have hyi : y.cachedImplicit = (w'.atoms[i]! : WAtom).cachedImplicit :=
+    tP WAtom.cachedImplicit (fun _ ↦ rfl)
+  -- both records are canonical
+  have hcx : Loc.Canonish x kk := by
+    constructor
+    · rw [Work.cachedValence_eq_loc, Work.bondHalfSum_eq_loc, hKk, ← hx, ← hkk] at hkek
+      omega
+    · rw [Work.radicals_assignRadicals_eq w hi, hr0, Work.bondHalfSum_eq_loc, ← hkk, ← hxz, ← hxc,
+        ← hxe, ← hxn]
+  have hcy : Loc.Canonish y kk := by
+    constructor
+    · rw [Work.cachedValence_eq_loc, hbh, Work.bondHalfSum_eq_loc, hKk', ← hy, ← hkk] at hkek'
+      omega
+    · rw [Work.radicals_assignRadicals_eq w' hi', hr0', hbh, Work.bondHalfSum_eq_loc, ← hkk,
+        ← hyz, ← hyc, ← hye, ← hyn]
+  have hzyx : y.z = x.z := by rw [hyz, hxz, hzz]
+  have hcyx : y.charge = x.charge := by rw [hyc, hxc, hcc]
+  have hxT : x.explicitHs + x.cachedImplicit = w.cachedTotalHs i := by rw [hxe, hxi]; rfl
+  have htyx : y.explicitHs + y.cachedImplicit = x.explicitHs + x.cachedImplicit := by
+    rw [hye, hyi, hxT, ← htot]; rfl
+  by_cases hdeg : 3 < kk.length
+  · exact Loc.readAlike_of_deg hdeg _ _ _ _
+  by_cases hdv : defaultValence x.z ≤ 1
+  · exact Loc.readAlike_of_dv hdv hzyx _ _ _ _
+  have hkk3 : kk ∈ Loc.nonArom 3 := Loc.mem_nonArom 3 kk hnoar (by omega)
+  have henv := Work.env_mem w.assignRadicals rbs i big
+  rw [hKk] at henv
+  rw [Loc.readAlike_canonOf hcx hcy]
+  unfold Loc.canonOf
+  rw [hzyx, hcyx, htyx, hxT]
+  rcases hcls with ⟨he, hn⟩ |
+    ⟨e, he, hez, hc0, hTr, ⟨hxe0, hxn0, hye1, hyn1⟩ | ⟨hye0, hyn0, hxe1, hxn1⟩⟩
+  · rw [hye, hyn, he, hn, ← hxe, ← hxn]
+    exact Loc.readAlike_self _ _ _ _ _ _
+  · rw [hye, hyn, hye1, hyn1, hxe, hxn, hxe0, hxn0, hTr, hxz.trans hez, hxc.trans hc0]
+    exact Loc.readAlike_rd he hkk3 hlen (.inr (.inl rfl)) henv
+  · rw [hye, hyn, hye0, hyn0, hxe, hxn, hxe1, hxn1, hTr, hxz.trans hez, hxc.trans hc0]
+    exact Loc.readAlike_symm (Loc.readAlike_rd he hkk3 hlen (.inr (.inl rfl)) henv)
 
 end Work
 

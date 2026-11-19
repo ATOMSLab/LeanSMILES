@@ -976,13 +976,13 @@ lemma IsRing.of_sameSkel {w w' : Work} (h : SameSkel w' w) {c : List ℕ} (hc : 
     simp only [Adj, h.neighbors]
   exact ⟨hc.nodup, hc.three, hadj ▸ hc.chain, hadj ▸ hc.close⟩
 
-/-- **What perception leaves at an atom of the kekulized copy**: its bonds' kinds are a marking
-of the Kekulé ones, it is aromatic exactly when one is marked, and if one is, it lies on a ring
+/-- **What perception leaves at an atom of a Kekulé copy** (no aromatic atom or bond), over rings
+of that copy: its bonds' kinds are a marking of the Kekulé ones, it is aromatic exactly when one is marked, and if one is, it lies on a ring
 (two bonds at least), passes the candidate test, has a donor type, and at two bonds has every
 single or double bond marked. -/
-theorem perceived_atom {n : ℕ} {m : Molecule n} {K : Work}
-    (hK : (prepare m).kekulize (prepare m).relevantCycles = .ok K) (i : ℕ) :
-    let S := K.assignRadicals.setAromaticity (prepare m).relevantCycles
+theorem perceived_atom_of_noArom {K : Work} (hna : K.NoArom) {R : Array (List ℕ)}
+    (hringsK : ∀ r ∈ R.toList, K.IsRing r) (i : ℕ) :
+    let S := K.assignRadicals.setAromaticity R
     let KR := K.assignRadicals
     S.kindsAt i ∈ Loc.marks (K.kindsAt i) ∧
       S.isAromaticAtom i = (S.kindsAt i).any (· == .aromatic) ∧
@@ -994,11 +994,6 @@ theorem perceived_atom {n : ℕ} {m : Molecule n} {K : Work}
           ((S.kindsAt i).zip (K.kindsAt i)).all fun sk ↦ sk.1 == .aromatic || !isSD sk.2) ∧
         ∃ rbs len, KR.isAromaticCandidate i (KR.ringDonor rbs len i) = true) := by
   intro S KR
-  set P := prepare m with hP
-  set R := P.relevantCycles with hR
-  have hKP := kekulize_kindsRel hK
-  have hna := kekulize_noArom hK
-  have hsKP : SameSkel K P := hKP.sameSkel
   have hsKRK : SameSkel KR K := (afterRel_assignRadicals (w := K)).sameSkel
   have hsSKR : SameSkel S KR := (afterRel_setAromaticity KR R).sameSkel
   have hKRk : KR.kindsAt i = K.kindsAt i := by
@@ -1073,11 +1068,10 @@ theorem perceived_atom {n : ℕ} {m : Molecule n} {K : Work}
   have hlS : (S.kindsAt i).length = (KR.bondsOf i).length := by
     simp only [kindsAt, List.length_map, hsSKR.bondsOf]
   refine ⟨?_, ?_, ?_, ?_, ?_, ⟨rbs, len, hc⟩⟩
-  · have hIs : P.IsRing ring := isRing_of_mem_relevantCycles P (by simpa [hR] using hring)
-    obtain ⟨k₁, k₂, hne, -, -, hk₁, hk₂⟩ := hIs.two_bonds hir
+  · obtain ⟨k₁, k₂, hne, -, -, hk₁, hk₂⟩ := (hringsK ring hring).two_bonds hir
     have := two_le_length_of_ne hne hk₁ hk₂
-    have hl : (S.kindsAt i).length = (P.bondsOf i).length := by
-      simp only [kindsAt, List.length_map, hsSKR.bondsOf, hsKRK.bondsOf, hsKP.bondsOf]
+    have hl : (S.kindsAt i).length = (K.bondsOf i).length := by
+      simp only [kindsAt, List.length_map, hsSKR.bondsOf, hsKRK.bondsOf]
     omega
   · rw [← hKRk, ← countAtomElec_eq_loc]
     exact countAtomElec_nonneg_of_cand KR hc
@@ -1093,8 +1087,7 @@ theorem perceived_atom {n : ℕ} {m : Molecule n} {K : Work}
   · intro h2
     have hdeg : (KR.bondsOf i).length = 2 := by omega
     have hrings : ∀ r ∈ R.toList, KR.IsRing r := fun r hr ↦
-      IsRing.of_sameSkel (hsKRK.trans hsKP)
-        (isRing_of_mem_relevantCycles P (by simpa [hR] using hr))
+      IsRing.of_sameSkel hsKRK (hringsK r hr)
     rw [← hKRk]
     unfold kindsAt
     rw [hsSKR.bondsOf, zip_map_map, List.all_map, List.all_eq_true]
@@ -1105,6 +1098,24 @@ theorem perceived_atom {n : ℕ} {m : Molecule n} {K : Work}
     by_cases hsd : isSD (KR.bonds[k']! : WBond).kind = true
     · simp [hmem', hsd]
     · simp [hsd]
+
+/-- **What perception leaves at an atom of the kekulized copy** (`perceived_atom_of_noArom`). -/
+theorem perceived_atom {n : ℕ} {m : Molecule n} {K : Work}
+    (hK : (prepare m).kekulize (prepare m).relevantCycles = .ok K) (i : ℕ) :
+    let S := K.assignRadicals.setAromaticity (prepare m).relevantCycles
+    let KR := K.assignRadicals
+    S.kindsAt i ∈ Loc.marks (K.kindsAt i) ∧
+      S.isAromaticAtom i = (S.kindsAt i).any (· == .aromatic) ∧
+      ((S.kindsAt i).any (· == .aromatic) = true →
+        2 ≤ (S.kindsAt i).length ∧ 0 ≤ Loc.elec KR.atoms[i]! (K.kindsAt i) ∧
+        Loc.cand KR.atoms[i]! (K.kindsAt i) = true ∧
+        Loc.donorOk KR.atoms[i]! (K.kindsAt i) = true ∧
+        ((S.kindsAt i).length = 2 →
+          ((S.kindsAt i).zip (K.kindsAt i)).all fun sk ↦ sk.1 == .aromatic || !isSD sk.2) ∧
+        ∃ rbs len, KR.isAromaticCandidate i (KR.ringDonor rbs len i) = true) :=
+  perceived_atom_of_noArom (kekulize_noArom hK) (fun r hr ↦
+    IsRing.of_sameSkel (kekulize_kindsRel hK).sameSkel
+      (isRing_of_mem_relevantCycles _ (by simpa using hr))) i
 
 /-! ### Small facts for the witness -/
 
