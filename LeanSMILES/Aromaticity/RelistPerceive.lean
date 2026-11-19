@@ -263,4 +263,174 @@ lemma length_filter_contains_map {f : ℕ → ℕ} {l₁ l₂ : List ℕ} {N : �
 
 end Relisted
 
+section SecondPass
+
+variable {N : ℕ} {π : ℕ → ℕ} {rb rb' : Array (List ℕ)}
+
+/-- `rb'` is `rb` with every bond renumbered by `π`, injective below `N`. -/
+structure RbMap (N : ℕ) (π : ℕ → ℕ) (rb rb' : Array (List ℕ)) : Prop where
+  size : rb'.size = rb.size
+  get : ∀ j : ℕ, rb'[j]! = (rb[j]! : List ℕ).map π
+  lt : ∀ j : ℕ, ∀ x ∈ (rb[j]! : List ℕ), x < N
+  inj : ∀ a < N, ∀ b < N, π a = π b → a = b
+
+lemma RbMap.fusedNbrs (h : RbMap N π rb rb') : Work.fusedNbrs rb' = Work.fusedNbrs rb := by
+  have hp : ∀ i j, fusedPair rb' i j = fusedPair rb i j := fun i j ↦ by
+    unfold fusedPair
+    rw [h.get, h.get, List.length_map, List.length_map,
+      Relisted.length_filter_contains_map (h.lt i) (h.lt j) h.inj]
+  rw [fusedNbrs_eq_pairs, fusedNbrs_eq_pairs, h.size]
+  congr 1
+  funext nbrs q
+  simp only [fusedStep, hp]
+
+lemma RbMap.flat (h : RbMap N π rb rb') (cur : List ℕ) :
+    cur.flatMap (rb'[·]!) = (cur.flatMap (rb[·]!)).map π := by
+  rw [List.map_flatMap]
+  exact flatMap_congr_mem cur fun j _ ↦ h.get j
+
+lemma RbMap.flat_lt (h : RbMap N π rb rb') (cur : List ℕ) :
+    ∀ x ∈ cur.flatMap (rb[·]!), x < N := fun x hx ↦ by
+  obtain ⟨j, -, hx⟩ := List.mem_flatMap.1 hx
+  exact h.lt j x hx
+
+lemma mem_groupBonds_sub {numAtoms : ℕ} {rb C : Array (List ℕ)} {d : Array Donor}
+    {nbrs : Array (List ℕ)} {cur : List ℕ} {b : ℕ}
+    (hb : b ∈ Work.groupBonds numAtoms rb C d nbrs cur) : b ∈ cur.flatMap (rb[·]!) := by
+  unfold groupBonds at hb
+  dsimp only at hb
+  split at hb
+  · cases hb
+  · split at hb
+    · simp only [List.mem_filter, List.mem_mergeSort, List.mem_eraseDups] at hb
+      exact hb.1
+    · cases hb
+
+/-- **A group's bonds, renumbered.** -/
+lemma RbMap.groupBonds (h : RbMap N π rb rb') {numAtoms : ℕ} {C : Array (List ℕ)}
+    {d : Array Donor} {nbrs : Array (List ℕ)} (cur : List ℕ) (b' : ℕ) :
+    b' ∈ Work.groupBonds numAtoms rb' C d nbrs cur ↔
+      ∃ b ∈ Work.groupBonds numAtoms rb C d nbrs cur, π b = b' := by
+  unfold Work.groupBonds
+  dsimp only
+  split
+  · simp
+  split
+  · rw [h.flat]
+    simp only [List.mem_filter, List.mem_mergeSort, List.mem_eraseDups, beq_iff_eq]
+    have hl := h.flat_lt cur
+    constructor
+    · rintro ⟨hb, hc⟩
+      obtain ⟨b, hbm, rfl⟩ := List.mem_map.1 hb
+      exact ⟨b, ⟨hbm, by rw [← Relisted.count_map_inj hl h.inj (hl b hbm)]; exact hc⟩, rfl⟩
+    · rintro ⟨b, ⟨hbm, hc⟩, rfl⟩
+      exact ⟨List.mem_map_of_mem hbm, by rw [Relisted.count_map_inj hl h.inj (hl b hbm)]; exact hc⟩
+  · simp
+
+lemma eraseDups_map_length (h : RbMap N π rb rb') (l : List ℕ) (hl : ∀ x ∈ l, x < N) :
+    (l.map π).eraseDups.length = l.eraseDups.length := by
+  have hp : (l.map π).eraseDups.Perm (l.eraseDups.map π) :=
+    (List.perm_ext_iff_of_nodup (eraseDups_nodup _) ((eraseDups_nodup l).map_on fun a ha b hb e ↦
+      h.inj a (hl a (List.mem_eraseDups.1 ha)) b (hl b (List.mem_eraseDups.1 hb)) e)).2 fun x ↦ by
+      simp only [List.mem_eraseDups, List.mem_map]
+  rw [hp.length_eq, List.length_map]
+
+/-- **A fused system's bonds, renumbered.** -/
+lemma RbMap.systemBonds (h : RbMap N π rb rb') {numAtoms : ℕ} {C : Array (List ℕ)}
+    {d : Array Donor} {nbrs : Array (List ℕ)} (F : List ℕ) (b' : ℕ) :
+    b' ∈ systemBonds numAtoms rb' C d nbrs F ↔
+      ∃ b ∈ systemBonds numAtoms rb C d nbrs F, π b = b' := by
+  have hnew : ∀ size x', x' ∈ (combinations F.length size).flatMap
+        (fun comb ↦ Work.groupBonds numAtoms rb' C d nbrs (comb.map (F[·]!))) ↔
+      ∃ x ∈ (combinations F.length size).flatMap
+        (fun comb ↦ Work.groupBonds numAtoms rb C d nbrs (comb.map (F[·]!))), π x = x' := by
+    intro size x'
+    simp only [List.mem_flatMap, h.groupBonds]
+    constructor
+    · rintro ⟨c, hc, x, hx, rfl⟩; exact ⟨x, ⟨c, hc, hx⟩, rfl⟩
+    · rintro ⟨x, ⟨c, hc, hx⟩, rfl⟩; exact ⟨c, hc, x, hx, rfl⟩
+  have hnewlt : ∀ size x, x ∈ (combinations F.length size).flatMap
+      (fun comb ↦ Work.groupBonds numAtoms rb C d nbrs (comb.map (F[·]!))) → x < N := by
+    intro size x hx
+    obtain ⟨c, -, hx⟩ := List.mem_flatMap.1 hx
+    exact h.flat_lt _ x (mem_groupBonds_sub hx)
+  have hall : (F.flatMap (rb'[·]!)).eraseDups.length = (F.flatMap (rb[·]!)).eraseDups.length := by
+    rw [h.flat]; exact eraseDups_map_length h _ (h.flat_lt F)
+  unfold Work.systemBonds
+  dsimp only
+  rw [hall]
+  set step := fun (r : Array (List ℕ)) (st : List ℕ × List ℕ × Bool) (size : ℕ) ↦
+    let (out, doneBonds, stop) := st
+    if stop || (size == 3 && 300 < F.length) ||
+        (F.flatMap (rb[·]!)).eraseDups.length ≤ doneBonds.length then
+      (out, doneBonds, true)
+    else
+      let new := (combinations F.length size).flatMap fun comb : List ℕ ↦
+        Work.groupBonds numAtoms r C d nbrs (comb.map (F[·]!))
+      (out ++ new, new.foldl (fun d b ↦ if d.contains b then d else d ++ [b]) doneBonds, false)
+    with hstep
+  have key : ∀ (sizes : List ℕ) (st st' : List ℕ × List ℕ × Bool),
+      (∀ x', x' ∈ st'.1 ↔ ∃ x ∈ st.1, π x = x') → (∀ x', x' ∈ st'.2.1 ↔ ∃ x ∈ st.2.1, π x = x') →
+      st.2.1.Nodup → st'.2.1.Nodup → (∀ x ∈ st.2.1, x < N) → st'.2.2 = st.2.2 →
+      ∀ x', x' ∈ (sizes.foldl (step rb') st').1 ↔ ∃ x ∈ (sizes.foldl (step rb) st).1, π x = x' := by
+    intro sizes
+    induction sizes with
+    | nil => intro st st' h1 _ _ _ _ _ x; exact h1 x
+    | cons size sizes ih =>
+      intro st st' h1 h2 hn hn' hl h3
+      obtain ⟨o, dn, sp⟩ := st
+      obtain ⟨o', dn', sp'⟩ := st'
+      simp only at h1 h2 hn hn' hl h3
+      subst h3
+      have hdl : dn'.length = dn.length := by
+        have hp : dn'.Perm (dn.map π) := (List.perm_ext_iff_of_nodup hn' (hn.map_on
+          fun a ha b hb e ↦ h.inj a (hl a ha) b (hl b hb) e)).2 fun x ↦ by
+          rw [h2 x, List.mem_map]
+        rw [hp.length_eq, List.length_map]
+      rw [List.foldl_cons, List.foldl_cons]
+      simp only [hstep, hdl]
+      split
+      · exact ih _ _ h1 h2 hn hn' hl rfl
+      · obtain ⟨n1, m1⟩ := addDone_spec ((combinations F.length size).flatMap fun comb ↦
+          Work.groupBonds numAtoms rb C d nbrs (comb.map (F[·]!))) dn hn
+        obtain ⟨n2, m2⟩ := addDone_spec ((combinations F.length size).flatMap fun comb ↦
+          Work.groupBonds numAtoms rb' C d nbrs (comb.map (F[·]!))) dn' hn'
+        refine ih _ _ (fun x ↦ ?_) (fun x ↦ ?_) n1 n2 (fun x hx ↦ ?_) rfl
+        · simp only [List.mem_append, h1 x, hnew size x]
+          constructor
+          · rintro (⟨y, hy, rfl⟩ | ⟨y, hy, rfl⟩)
+            · exact ⟨y, .inl hy, rfl⟩
+            · exact ⟨y, .inr hy, rfl⟩
+          · rintro ⟨y, hy | hy, rfl⟩
+            · exact .inl ⟨y, hy, rfl⟩
+            · exact .inr ⟨y, hy, rfl⟩
+        · rw [m2, h2 x, hnew size x]
+          simp only [m1]
+          constructor
+          · rintro (⟨y, hy, rfl⟩ | ⟨y, hy, rfl⟩)
+            · exact ⟨y, .inl hy, rfl⟩
+            · exact ⟨y, .inr hy, rfl⟩
+          · rintro ⟨y, hy | hy, rfl⟩
+            · exact .inl ⟨y, hy, rfl⟩
+            · exact .inr ⟨y, hy, rfl⟩
+        · rcases (m1 x).1 hx with hx | hx
+          · exact hl x hx
+          · exact hnewlt size x hx
+  exact key _ ([], [], false) ([], [], false) (fun _ ↦ by simp) (fun _ ↦ by simp)
+    List.nodup_nil List.nodup_nil (by simp) rfl b'
+
+/-- **The fused systems' bonds, renumbered.** -/
+lemma RbMap.fusedBonds (h : RbMap N π rb rb') {numAtoms : ℕ} {C : Array (List ℕ)}
+    {d : Array Donor} (b' : ℕ) :
+    b' ∈ Work.fusedBonds numAtoms rb' C d ↔ ∃ b ∈ Work.fusedBonds numAtoms rb C d, π b = b' := by
+  unfold Work.fusedBonds
+  dsimp only
+  rw [h.fusedNbrs]
+  simp only [List.mem_flatMap, h.systemBonds]
+  constructor
+  · rintro ⟨F, hF, b, hb, rfl⟩; exact ⟨b, ⟨F, hF, hb⟩, rfl⟩
+  · rintro ⟨b, ⟨F, hF, hb⟩, rfl⟩; exact ⟨F, hF, b, hb, rfl⟩
+
+end SecondPass
+
 end LeanSMILES.Aromaticity.Work
