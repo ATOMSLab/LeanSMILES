@@ -62,4 +62,38 @@ theorem Molecule.aromatizeOutput_relabel {n : ℕ} (m : Molecule n) {W : Work} (
     exact withKinds_relabel m W σ
   · rfl
 
+namespace Aromaticity.Work
+
+lemma bondBetween?_eq_of_ends {w w' : Work} (hs : w'.bonds.size = w.bonds.size)
+    (he : ∀ k : ℕ, w'.bonds[k]?.map (fun b : WBond ↦ (b.src, b.dst)) =
+      w.bonds[k]?.map (fun b : WBond ↦ (b.src, b.dst))) : w'.bondBetween? = w.bondBetween? := by
+  have hsrc : ∀ k, (w'.bonds[k]! : WBond).src = (w.bonds[k]! : WBond).src :=
+    fun k ↦ (ends_getElem! hs he k).1
+  have hdst : ∀ k, (w'.bonds[k]! : WBond).dst = (w.bonds[k]! : WBond).dst :=
+    fun k ↦ (ends_getElem! hs he k).2
+  have hB : w'.numBonds = w.numBonds := hs
+  funext u v
+  simp only [bondBetween?, hB, hsrc, hdst]
+
+lemma ringBonds_eq_of_ends {w w' : Work} (hs : w'.bonds.size = w.bonds.size)
+    (he : ∀ k : ℕ, w'.bonds[k]?.map (fun b : WBond ↦ (b.src, b.dst)) =
+      w.bonds[k]?.map (fun b : WBond ↦ (b.src, b.dst))) : w'.ringBonds = w.ringBonds := by
+  funext r
+  rw [ringBonds_eq_filterMap, ringBonds_eq_filterMap, bondBetween?_eq_of_ends hs he]
+
+lemma kind?_relabelW (w : Work) (σ ψ : ℕ → ℕ) (k : ℕ) : (w.relabelW σ ψ).kind? k = w.kind? k := by
+  simp only [kind?, getElem?_relabelW_bonds, Option.map_map]
+  rfl
+
+lemma ends_relabelW {w w' : Work} (σ ψ : ℕ → ℕ)
+    (he : ∀ k : ℕ, w'.bonds[k]?.map (fun b : WBond ↦ (b.src, b.dst)) =
+      w.bonds[k]?.map (fun b : WBond ↦ (b.src, b.dst))) (k : ℕ) :
+    (w'.relabelW σ ψ).bonds[k]?.map (fun b : WBond ↦ (b.src, b.dst)) =
+      (w.relabelW σ ψ).bonds[k]?.map (fun b : WBond ↦ (b.src, b.dst)) := by
+  rw [getElem?_relabelW_bonds, getElem?_relabelW_bonds, Option.map_map, Option.map_map]
+  have := congrArg (Option.map fun p : ℕ × ℕ ↦ (σ p.1, σ p.2)) (he k)
+  simpa [Option.map_map, Function.comp_def] using this
+
+end Aromaticity.Work
+
 end LeanSMILES

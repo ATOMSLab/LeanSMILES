@@ -13,6 +13,7 @@ public import LeanSMILES.Aromaticity.HsRestoreK
 public import LeanSMILES.Aromaticity.DonorFacts
 public import LeanSMILES.Aromaticity.PerceiveAgree
 public import LeanSMILES.Aromaticity.PerceiveFacts
+public import LeanSMILES.Aromaticity.RelabelOutput
 public import LeanSMILES.SMILES.Canonicity
 public import LeanSMILES.SMILES.KekuleClass
 
@@ -4698,6 +4699,191 @@ theorem canonicalSmiles_aromatize_of_isKekuleSpellingOf {m k k₂ a a' : Molecul
   refine ⟨a₂, h₂', ?_⟩
   rw [canonicalSmiles_eq_of_sameBonds_relabel σ ha hst' hb',
     aromatize_of_isKekuleSpellingOf h hc hk hs h' hc' hvm]
+
+/-! ### Relabeling, for molecules with aromatic bonds as written -/
+
+/-- Aromatic bonds stay as written under relabeling. -/
+lemma AromaticWritten.relabel {m : Molecule n} (hw : m.AromaticWritten) (σ : Equiv.Perm (Fin n)) :
+    (m.relabel σ).AromaticWritten := by
+  have hat : ∀ i, (m.relabel σ).atom i = m.atom (σ.symm i) := fun i ↦ by
+    have := Molecule.atom_relabel m σ (σ.symm i)
+    rwa [Equiv.apply_symm_apply] at this
+  have hlen : ∀ (p : Bond n → Bool) (i : Fin n),
+      ((m.relabel σ).bonds.filter fun b ↦ b.touches i && p b).length =
+        (m.bonds.filter fun b ↦ b.touches (σ.symm i) && p (b.map σ σ.injective)).length := by
+    intro p i
+    simp only [Molecule.relabel, List.filter_map, List.length_map]
+    congr 1
+    apply List.filter_congr
+    intro b _
+    simp only [Function.comp_apply]
+    congr 1
+    rw [← Equiv.apply_symm_apply σ i, Bond.touches_map, Equiv.apply_symm_apply]
+  refine ⟨fun i hi ↦ ?_, fun b' hb' hk ↦ ?_⟩
+  · rw [hat] at hi
+    obtain ⟨h1, h2⟩ := hw.1 _ hi
+    refine ⟨?_, ?_⟩
+    · have := hlen (fun b ↦ b.kind == .aromatic) i
+      simp only [Bond.map] at this
+      rw [this]; exact h1
+    · have := hlen (fun _ ↦ true) i
+      simp only [Bool.and_true] at this
+      rw [this]; simpa using h2
+  · simp only [Molecule.relabel, List.mem_map] at hb'
+    obtain ⟨b, hb, rfl⟩ := hb'
+    obtain ⟨h1, h2⟩ := hw.2 b hb hk
+    simp only [Bond.map, hat, Equiv.symm_apply_apply]
+    exact ⟨h1, h2⟩
+
+open Aromaticity Aromaticity.Work in
+lemma wf_of_afterRel {o w : Work} (hwf : WF o) (h : AfterRel o w) : WF w := by
+  intro k hk
+  have hk' : k < o.bonds.size := h.bonds_size ▸ hk
+  have e := congrArg (Option.map fun b : WBond ↦ (b.src, b.dst)) (h.bonds k)
+  simp only [Option.map_map, Function.comp_def] at e
+  rw [Array.getElem?_eq_getElem hk, Array.getElem?_eq_getElem hk'] at e
+  simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at e
+  have := hwf k hk'
+  rw [getElem!_pos o.bonds k hk'] at this
+  rw [getElem!_pos w.bonds k hk]
+  simp only [numAtoms, h.atoms_size, e.1, e.2] at this ⊢
+  exact this
+
+open Aromaticity Aromaticity.Work in
+/-- **`aromatize` commutes with relabeling**, for a molecule with its aromatic bonds as written
+(`AromaticWritten`): if `m` aromatizes to `a` keeping its charges and every bond written aromatic,
+and the relabeled molecule aromatizes at all, it aromatizes to `a` relabeled.  The ring set of
+the relabeled copy is the relabeled ring set (`Work.WorkIso.relevantCycles`); its kekulization
+is the relabeled kekulization with single and double bonds swapped
+(`Work.kekulize_relabel_swapped`), which perception erases since every swapped bond becomes
+aromatic; and the passes commute with relabeling (`Work.finish_relabelW`,
+`Molecule.aromatizeOutput_relabel`). -/
+theorem aromatize_relabel_of_aromaticWritten {m a a' : Molecule n} (h : m.aromatize = .ok a)
+    (hc : m.ChargesKept a) (hk : m.AromaticKept a) (hw : m.AromaticWritten)
+    (σ : Equiv.Perm (Fin n)) (h' : (m.relabel σ).aromatize = .ok a') : a' = a.relabel σ := by
+  obtain ⟨K, hK, ha⟩ := aromatize_eq_ok.mp h
+  obtain ⟨K', hK', ha'⟩ := aromatize_eq_ok.mp h'
+  have hcl := hc.cleanUp_eq_of_kekulize hK ha
+  have hwf0 := ofMolecule_wf m
+  have hn0 : (Work.ofMolecule m).atoms.size = n := by simp [Work.ofMolecule]
+  have hb0 : IdxBij (Work.ofMolecule m).numAtoms (finPermFun σ) (finPermFun σ.symm) := by
+    rw [numAtoms, hn0]; exact idxBij_finPermFun σ
+  have hwfF0 : WF (Work.ofMolecule m).freezeHs :=
+    wf_of_bonds (w₂ := Work.ofMolecule m) rfl (by simp [freezeHs, numAtoms]) hwf0
+  have hbF0 : IdxBij (Work.ofMolecule m).freezeHs.numAtoms (finPermFun σ) (finPermFun σ.symm) := by
+    rw [numAtoms]; simpa [freezeHs, numAtoms] using hb0
+  have hcl' : ((Work.ofMolecule m).freezeHs.relabelW (finPermFun σ) (finPermFun σ.symm)).cleanUp =
+      (Work.ofMolecule m).freezeHs.relabelW (finPermFun σ) (finPermFun σ.symm) :=
+    cleanUp_eq_of_quiet _ (quiet_relabelW hwfF0 hbF0 (quiet_of_cleanUp_eq _ hcl))
+  have hP : Work.prepare m = (Work.ofMolecule m).freezeHs.cacheValences := by
+    simp only [Work.prepare, hcl]
+  have hP' : Work.prepare (m.relabel σ) =
+      (Work.prepare m).relabelW (finPermFun σ) (finPermFun σ.symm) := by
+    rw [hP, ← cacheValences_relabelW hwfF0 hbF0, ← hcl', ← freezeHs_relabelW hwf0 hb0,
+      ← ofMolecule_relabel]
+    rfl
+  obtain ⟨hwfP, -⟩ := wf_nbrsDistinct_prepare m
+  have hnP : (Work.prepare m).atoms.size = n := size_prepare_atoms m
+  have hbP : IdxBij (Work.prepare m).numAtoms (finPermFun σ) (finPermFun σ.symm) := by
+    rw [numAtoms, hnP]; exact idxBij_finPermFun σ
+  have hd : KekData (Work.prepare m) K := kekulize_prepare_correct hw.1 hw.2 hK
+  have hw' := hw.relabel σ
+  have hd'0 := kekulize_prepare_correct hw'.1 hw'.2 hK'
+  rw [hP'] at hd'0 hK' ha'
+  have hsw := kekulize_relabel_swapped hwfP hbP hK hK' hd hd'0
+  have hI := workIso_relabelW hwfP hbP
+  set P := Work.prepare m with hPdef
+  set R := P.relevantCycles with hRdef
+  set R' := (P.relabelW (finPermFun σ) (finPermFun σ.symm)).relevantCycles with hR'def
+  have hKR := kekulize_kindsRel hK
+  have hwfK : WF K := wf_of_kindsRel hwfP hKR
+  have hnK : K.atoms.size = n := by rw [hKR.atoms_size, hnP]
+  have hbK : IdxBij K.numAtoms (finPermFun σ) (finPermFun σ.symm) := by
+    rw [numAtoms, hnK]; exact idxBij_finPermFun σ
+  have hRlt : ∀ r ∈ R.toList, ∀ x ∈ r, x < K.atoms.size := fun r hr x hx ↦ by
+    rw [hnK, ← hnP]
+    exact WorkIso.IsRing.lt hwfP (relevantCycles_isRing P r hr) x hx
+  -- the ends of `K`, its radicals copy, and `P` agree
+  have hsKP : K.bonds.size = P.bonds.size := size_of_kindsRel hKR
+  have heKP := ends_of_kindsRel hKR
+  have hsAK : K.assignRadicals.bonds.size = P.bonds.size := by
+    rw [Work.assignRadicals_bonds, hsKP]
+  have heAK : ∀ k, K.assignRadicals.bonds[k]?.map (fun b : WBond ↦ (b.src, b.dst)) =
+      P.bonds[k]?.map (fun b : WBond ↦ (b.src, b.dst)) := fun k ↦ by
+    rw [Work.assignRadicals_bonds]; exact heKP k
+  have hbb : ((K.relabelW (finPermFun σ) (finPermFun σ.symm)).assignRadicals).bondBetween? =
+      (P.relabelW (finPermFun σ) (finPermFun σ.symm)).bondBetween? := by
+    rw [assignRadicals_relabelW hwfK hbK]
+    exact bondBetween?_eq_of_ends (by simp [hsAK]) (ends_relabelW _ _ heAK)
+  -- every bond written aromatic is aromatic after perception on `K`
+  have hAK : ∀ k, P.kekWa k = true →
+      (K.assignRadicals.setAromaticity R).kind? k = some .aromatic := by
+    intro k hk'
+    obtain ⟨hks, hka⟩ := kekWa_iff.1 hk'
+    have hsP : P.bonds.size = m.bonds.length := by
+      rw [hP]; simp [cacheValences, freezeHs, Work.ofMolecule]
+    have hkl : k < m.bonds.length := hsP ▸ hks
+    have hmk : m.bonds[k].kind = .aromatic := by
+      have e : (P.bonds[k]! : WBond) = ((Work.ofMolecule m).bonds[k]! : WBond) := by
+        rw [hP]; rfl
+      rw [e, Work.ofMolecule_bond m hkl] at hka
+      exact hka
+    have hak : (a.bonds[k]'(by rw [← (sameSkeleton_aromatize h).length_eq]; exact hkl)).kind =
+        .aromatic :=
+      (List.forall₂_iff_get.1 hk).2 k hkl _ hmk
+    have hsF : (K.finish R).bonds.size = m.bonds.length := by
+      rw [(K.afterRel_finish R).bonds_size, hsKP, hsP]
+    have e2 := getElem?_withKinds m (K.finish R) k
+    rw [← aromatizeOutput_bonds, ha, List.getElem?_eq_getElem hkl,
+      List.getElem?_eq_getElem (by rw [← (sameSkeleton_aromatize h).length_eq]; exact hkl),
+      Array.getElem?_eq_getElem (by rw [hsF]; exact hkl)] at e2
+    simp only [Option.map_some, Option.getD_some, Option.some.injEq] at e2
+    have e3 := congrArg Bond.kind e2
+    rw [hak] at e3
+    have : (K.finish R).kind? k = some .aromatic := by
+      rw [kind?_eq_of_lt _ (by rw [hsF]; exact hkl), getElem!_pos _ k (by rw [hsF]; exact hkl)]
+      exact congrArg some e3.symm
+    simpa [Work.finish, Work.kind?, Work.finalizeHs_bonds] using this
+  have hA : ∀ k, P.kekWa k = true →
+      ((K.relabelW (finPermFun σ) (finPermFun σ.symm)).assignRadicals.setAromaticity R').kind? k =
+        some .aromatic := fun k hk' ↦ by
+    rw [hI.setAromaticity_relevantCycles hwfP (wf_relabelW hwfP hbP) hbb,
+      assignRadicals_relabelW hwfK hbK]
+    have hsA : K.assignRadicals.atoms.size = K.atoms.size := atomStep_radicalStep.foldl_size _ _
+    have hwfA : WF K.assignRadicals := wf_of_bonds (Work.assignRadicals_bonds K) hsA hwfK
+    have hbA : IdxBij K.assignRadicals.numAtoms (finPermFun σ) (finPermFun σ.symm) := by
+      rw [numAtoms, hsA]; exact hbK
+    rw [setAromaticity_relabelW hwfA hbA (fun r hr x hx ↦ by
+      rw [hsA]; exact hRlt r hr x hx), kind?_relabelW]
+    exact hAK k hk'
+  have hF : ∀ k, P.kekWa k = true →
+      k ∈ R'.toList.flatMap (K.relabelW (finPermFun σ) (finPermFun σ.symm)).ringBonds := by
+    intro k hk'
+    have h0 : K.assignRadicals.kind? k ≠ some .aromatic := by
+      intro e
+      rw [Work.kind?, Work.assignRadicals_bonds, Option.map_eq_some_iff] at e
+      obtain ⟨x, hx, hxk⟩ := e
+      exact (kekulize_noArom hK).2 x (Array.mem_of_getElem? hx) hxk
+    obtain ⟨-, -, hmem, -⟩ := Work.of_kind?_setAromaticity _ R (hAK k hk') h0
+    rw [ringBonds_eq_of_ends hsAK heAK] at hmem
+    have hR'eq := hI.relevantCycles hwfP (wf_relabelW hwfP hbP)
+    rw [ringBonds_eq_of_ends (by simp [hsKP]) (ends_relabelW _ _ heKP),
+      RingsEquiv.mem_flatMap_ringBonds _ hR'eq, List.flatMap_map]
+    obtain ⟨r, hr, hkr⟩ := List.mem_flatMap.1 hmem
+    exact List.mem_flatMap.2 ⟨r, hr, by
+      rw [ringBonds_relabelW hwfP hbP (fun x hx ↦ by
+        rw [← hKR.atoms_size]; exact hRlt r hr x hx)]
+      exact hkr⟩
+  have hfin : K'.finish R' = (K.relabelW (finPermFun σ) (finPermFun σ.symm)).finish R' :=
+    hsw.finish_eq R' hF hA
+  have hfin2 : (K.relabelW (finPermFun σ) (finPermFun σ.symm)).finish R' =
+      (K.relabelW (finPermFun σ) (finPermFun σ.symm)).finish (R.map (List.map (finPermFun σ))) := by
+    simp only [Work.finish]
+    rw [hI.setAromaticity_relevantCycles hwfP (wf_relabelW hwfP hbP) hbb]
+  have hfin3 := finish_relabelW hwfK hbK hRlt
+  have hwfFin : WF (K.finish R) := wf_of_afterRel hwfK (K.afterRel_finish R)
+  have hnFin : (K.finish R).atoms.size = n := by rw [(K.afterRel_finish R).atoms_size, hnK]
+  rw [← ha', hfin, hfin2, hfin3, Molecule.aromatizeOutput_relabel m hwfFin hnFin σ, ha]
 
 end Molecule
 
