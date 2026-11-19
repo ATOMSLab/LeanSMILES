@@ -184,6 +184,208 @@ lemma radicalCount_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) {i : ℕ
     (hi : i < w.atoms.size) : (w.relabelW σ ψ).radicalCount (σ i) = w.radicalCount i := by
   simp only [radicalCount, kekuleValence_relabelW hwf hb hi, atom_relabelW hb hi]
 
+/-! ### Passes that work atom by atom -/
+
+lemma ext_work {w₁ w₂ : Work} (ha : w₁.atoms = w₂.atoms) (hb : w₁.bonds = w₂.bonds) : w₁ = w₂ := by
+  cases w₁; cases w₂; simp_all
+
+lemma getElem!_rangeMap {α : Type} [Inhabited α] (f : ℕ → α) {N j : ℕ} (hj : j < N) :
+    ((List.range N).toArray.map f)[j]! = f j := by
+  rw [getElem!_pos _ j (by simpa using hj)]
+  simp
+
+lemma kindsAt_of_bonds {w₁ w₂ : Work} (h : w₁.bonds = w₂.bonds) : w₁.kindsAt = w₂.kindsAt := by
+  funext i
+  simp only [kindsAt, bondsOf, numBonds, h]
+
+/-- What a step that works on one atom needs: it keeps the bonds and the other atoms, and the
+new atom is read off the atom and the kinds of its bonds. -/
+structure AtomStep (S : Work → ℕ → Work) : Prop where
+  bonds : ∀ w j, (S w j).bonds = w.bonds
+  size : ∀ w j, (S w j).atoms.size = w.atoms.size
+  off : ∀ w j i, i ≠ j → ((S w j).atoms[i]! : WAtom) = w.atoms[i]!
+  loc : ∀ w w' j j', j < w.atoms.size → j' < w'.atoms.size →
+    (w.atoms[j]! : WAtom) = w'.atoms[j']! → w.kindsAt j = w'.kindsAt j' →
+    ((S w j).atoms[j]! : WAtom) = (S w' j').atoms[j']!
+
+lemma AtomStep.foldl_bonds {S : Work → ℕ → Work} (hS : AtomStep S) :
+    ∀ (l : List ℕ) (w : Work), (l.foldl S w).bonds = w.bonds
+  | [], _ => rfl
+  | x :: l, w => by rw [List.foldl_cons, hS.foldl_bonds l, hS.bonds]
+
+lemma AtomStep.foldl_size {S : Work → ℕ → Work} (hS : AtomStep S) :
+    ∀ (l : List ℕ) (w : Work), (l.foldl S w).atoms.size = w.atoms.size
+  | [], _ => rfl
+  | x :: l, w => by rw [List.foldl_cons, hS.foldl_size l, hS.size]
+
+lemma AtomStep.foldl_atom {S : Work → ℕ → Work} (hS : AtomStep S) :
+    ∀ (l : List ℕ) (w : Work) (i : ℕ), l.Nodup → i < w.atoms.size →
+      ((l.foldl S w).atoms[i]! : WAtom) = if i ∈ l then (S w i).atoms[i]! else w.atoms[i]!
+  | [], _, _, _, _ => by simp
+  | x :: l, w, i, hnd, hi => by
+    rw [List.foldl_cons, hS.foldl_atom l _ i (List.nodup_cons.1 hnd).2 (by rw [hS.size]; exact hi)]
+    by_cases hix : i = x
+    · subst hix
+      rw [if_neg (List.nodup_cons.1 hnd).1, if_pos List.mem_cons_self]
+    · rw [hS.off w x i hix]
+      by_cases hil : i ∈ l
+      · rw [if_pos hil, if_pos (List.mem_cons_of_mem _ hil)]
+        exact hS.loc _ _ i i (by rw [hS.size]; exact hi) hi (hS.off w x i hix)
+          (by rw [kindsAt_of_bonds (hS.bonds w x)])
+      · rw [if_neg hil, if_neg (by simp [hix, hil])]
+
+/-- **A pass over all atoms, atom by atom, commutes with renumbering.** -/
+lemma AtomStep.foldl_relabelW {S : Work → ℕ → Work} (hS : AtomStep S) (hwf : w.WF)
+    (hb : IdxBij w.numAtoms σ ψ) :
+    (List.range w.numAtoms).foldl S (w.relabelW σ ψ) =
+      ((List.range w.numAtoms).foldl S w).relabelW σ ψ := by
+  apply ext_work
+  · apply array_ext_of_getElem! (n := w.atoms.size) (by rw [hS.foldl_size]; simp)
+      (by simp [hS.foldl_size])
+    intro j hj
+    have hpj := hb.lt' j hj
+    rw [hS.foldl_atom _ _ j List.nodup_range (by simpa using hj),
+      if_pos (List.mem_range.2 hj : j ∈ List.range w.numAtoms),
+      atom_relabelW' (by rw [hS.foldl_size]; exact hj),
+      hS.foldl_atom _ _ _ List.nodup_range hpj,
+      if_pos (List.mem_range.2 hpj : ψ j ∈ List.range w.numAtoms)]
+    conv_lhs => rw [← hb.right j hj]
+    exact hS.loc _ _ _ _ (by simpa using hb.lt _ hpj) hpj (atom_relabelW hb hpj)
+      (kindsAt_relabelW hwf hb hpj)
+  · rw [hS.foldl_bonds]
+    simp only [relabelW, hS.foldl_bonds]
+
+lemma relabelW_numAtoms_eq : (List.range (w.relabelW σ ψ).numAtoms) = List.range w.numAtoms := by
+  simp
+
+lemma wf_of_bonds {w₁ w₂ : Work} (hb : w₁.bonds = w₂.bonds) (ha : w₁.atoms.size = w₂.atoms.size)
+    (h : w₂.WF) : w₁.WF := by
+  intro k hk
+  simp only [numBonds, numAtoms, hb, ha] at hk ⊢
+  exact h k hk
+
+lemma getElem!_listRangeMap {α : Type} [Inhabited α] (f : ℕ → α) {N j : ℕ} (hj : j < N) :
+    ((List.range N).map f)[j]! = f j := by
+  rw [getElem!_pos _ j (by simpa using hj)]
+  simp
+
+/-- `freezeHs` commutes with renumbering. -/
+lemma freezeHs_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) :
+    (w.relabelW σ ψ).freezeHs = w.freezeHs.relabelW σ ψ := by
+  apply ext_work
+  · apply array_ext_of_getElem! (n := w.atoms.size) (by simp [freezeHs, numAtoms])
+      (by simp [freezeHs, numAtoms])
+    intro j hj
+    have hpj := hb.lt' j hj
+    rw [atom_relabelW' (w := w.freezeHs) (by simpa [freezeHs, numAtoms] using hj)]
+    simp only [freezeHs]
+    rw [getElem!_rangeMap _ (by simpa [numAtoms] using hj),
+      getElem!_rangeMap _ (by simpa [numAtoms] using hpj), atom_relabelW' hj]
+    conv_lhs => rw [← hb.right j hj]
+    rw [totalHs_relabelW hwf hb hpj, hb.right j hj]
+  · rfl
+
+/-- `cacheValences` commutes with renumbering. -/
+lemma cacheValences_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) :
+    (w.relabelW σ ψ).cacheValences = w.cacheValences.relabelW σ ψ := by
+  apply ext_work
+  · apply array_ext_of_getElem! (n := w.atoms.size) (by simp [cacheValences, numAtoms])
+      (by simp [cacheValences, numAtoms])
+    intro j hj
+    have hpj := hb.lt' j hj
+    rw [atom_relabelW' (w := w.cacheValences) (by simpa [cacheValences, numAtoms] using hj)]
+    simp only [cacheValences]
+    rw [getElem!_rangeMap _ (by simpa [numAtoms] using hj),
+      getElem!_rangeMap _ (by simpa [numAtoms] using hpj), atom_relabelW' hj]
+    conv_lhs => rw [← hb.right j hj]
+    rw [explicitValence_relabelW hwf hb hpj, implicitHs_relabelW hwf hb hpj,
+      isAromaticAtom_relabelW hwf hb hpj, hb.right j hj]
+  · rfl
+
+lemma radicalCount_congr {w₁ w₂ : Work} {j j' : ℕ} (ha : (w₁.atoms[j]! : WAtom) = w₂.atoms[j']!)
+    (hk : w₁.kindsAt j = w₂.kindsAt j') : w₁.radicalCount j = w₂.radicalCount j' := by
+  simp only [radicalCount, kekuleValence, bondHalfSum_eq_loc, ha, hk]
+
+lemma atomStep_radicalStep : AtomStep radicalStep := by
+  refine ⟨fun w j ↦ ?_, fun w j ↦ ?_, fun w j i hij ↦ ?_, fun w w' j j' hj hj' ha hk ↦ ?_⟩
+  · unfold radicalStep; dsimp only; split <;> rfl
+  · unfold radicalStep; dsimp only; split
+    · rfl
+    · simp [modifyAtom]
+  · unfold radicalStep; dsimp only; split
+    · rfl
+    · exact modifyAtom_atom_of_ne _ (Ne.symm hij) _
+  · unfold radicalStep
+    dsimp only
+    rw [ha]
+    split
+    · exact ha
+    · rw [modifyAtom_atom_self, modifyAtom_atom_self, if_pos hj, if_pos hj', ha,
+        radicalCount_congr ha hk]
+
+/-- `assignRadicals` commutes with renumbering. -/
+lemma assignRadicals_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) :
+    (w.relabelW σ ψ).assignRadicals = w.assignRadicals.relabelW σ ψ := by
+  unfold assignRadicals
+  rw [numAtoms_relabelW]
+  exact atomStep_radicalStep.foldl_relabelW hwf hb
+
+lemma atomStep_adjustHsStep : AtomStep adjustHsStep := by
+  refine ⟨fun w j ↦ ?_, fun w j ↦ ?_, fun w j i hij ↦ ?_, fun w w' j j' hj hj' ha hk ↦ ?_⟩
+  · unfold adjustHsStep; dsimp only; split
+    · split <;> rfl
+    · rfl
+  · unfold adjustHsStep; dsimp only; split
+    · split
+      · simp [modifyAtom]
+      · rfl
+    · rfl
+  · unfold adjustHsStep; dsimp only; split
+    · split
+      · exact modifyAtom_atom_of_ne _ (Ne.symm hij) _
+      · rfl
+    · rfl
+  · have hiA : w.isAromaticAtom j = w'.isAromaticAtom j' := by
+      rw [isAromaticAtom_eq_loc, isAromaticAtom_eq_loc, ha, hk]
+    have hiH : w.implicitHs j = w'.implicitHs j' := by
+      rw [implicitHs_eq_loc, implicitHs_eq_loc, ha, hiA, bondHalfSum_eq_loc, bondHalfSum_eq_loc,
+        hk]
+    unfold adjustHsStep
+    dsimp only
+    rw [ha, hiA, hiH]
+    split
+    · split
+      · rw [modifyAtom_atom_self, modifyAtom_atom_self, if_pos hj, if_pos hj', ha]
+      · exact ha
+    · exact ha
+
+/-- `finalizeHs` commutes with renumbering. -/
+lemma finalizeHs_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) :
+    (w.relabelW σ ψ).finalizeHs = w.finalizeHs.relabelW σ ψ := by
+  have h1 := atomStep_adjustHsStep.foldl_relabelW hwf hb
+  set w1 := (List.range w.numAtoms).foldl adjustHsStep w with hw1
+  have hsz : w1.atoms.size = w.atoms.size := atomStep_adjustHsStep.foldl_size _ _
+  have hwf1 : w1.WF := wf_of_bonds (atomStep_adjustHsStep.foldl_bonds _ _) hsz hwf
+  have hb1 : IdxBij w1.numAtoms σ ψ := by rw [numAtoms, hsz]; exact hb
+  unfold finalizeHs
+  dsimp only
+  rw [numAtoms_relabelW, h1, ← hw1]
+  apply ext_work
+  · apply array_ext_of_getElem! (n := w.atoms.size) (by simp [numAtoms, hsz])
+      (by simp [numAtoms, hsz])
+    intro j hj
+    have hpj := hb.lt' j hj
+    have hpj1 : ψ j < w1.atoms.size := by rw [hsz]; exact hpj
+    rw [atom_relabelW' (w := { w1 with atoms := _ }) (by simpa [numAtoms, hsz] using hj)]
+    rw [getElem!_rangeMap _ (by simpa [numAtoms, hsz] using hj),
+      getElem!_rangeMap _ (by simpa [numAtoms, hsz] using hpj),
+      getElem!_listRangeMap _ (by simpa [numAtoms, hsz] using hj),
+      getElem!_listRangeMap _ (by simpa [numAtoms, hsz] using hpj),
+      atom_relabelW' (w := w1) (by rw [hsz]; exact hj)]
+    conv_lhs => rw [← hb.right j hj]
+    rw [implicitHs_relabelW hwf1 hb1 hpj1, hb.right j hj]
+  · rfl
+
 end Work
 
 end LeanSMILES.Aromaticity
