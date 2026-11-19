@@ -2040,6 +2040,59 @@ theorem fusedBonds_renumber {numAtoms : ℕ} {rb rb' C C' : Array (List ℕ)} {d
       rw [systemBonds_map hb H hrb hC ((components_spec hlt' hsym').2.2.1 F hF)]
       exact (systemBonds_perm hsym (hp.trans hDD) b).1 hbD
 
+lemma getElem!_eq_toList {α : Type} [Inhabited α] (X : Array α) (i : ℕ) :
+    X[i]! = X.toList[i]! := by
+  by_cases h : i < X.size
+  · rw [getElem!_pos X i h, getElem!_pos X.toList i (by simpa using h)]
+    simp
+  · rw [getElem!_neg X i h, getElem!_neg X.toList i (by simpa using h)]
+
+lemma getElem!_map_of_lt {α β : Type} [Inhabited α] [Inhabited β] (X : Array α) (f : α → β)
+    {i : ℕ} (h : i < X.size) : (X.map f)[i]! = f X[i]! := by
+  rw [getElem!_pos _ i (by simpa using h), getElem!_pos X i h, Array.getElem_map]
+
+/-- **Perception reads only the ring set**: rings listed in any order (by size), each started
+anywhere and run either way, make the same bonds and atoms aromatic, when no ring repeats a
+bond. -/
+theorem setAromaticity_equiv (w : Work) {R R' : Array (List ℕ)}
+    (h : RingsEquiv R.toList R'.toList) (hs : R.toList.Pairwise (·.length ≤ ·.length))
+    (hs' : R'.toList.Pairwise (·.length ≤ ·.length))
+    (hnd : ∀ r ∈ R.toList, (w.ringBonds r).Nodup) :
+    w.setAromaticity R' = w.setAromaticity R := by
+  obtain ⟨-, -, hdon, L, hf, hp⟩ := donorData_equiv w h hs hs'
+  unfold setAromaticity aromaticBondList
+  dsimp only
+  apply foldl_markAromatic_congr
+  intro b
+  rw [hdon]
+  set C := (w.donorData R).candRings with hCdef
+  set C' := (w.donorData R').candRings
+  set d := (w.donorData R).donor
+  have e1 : fusedBonds w.numAtoms (L.toArray.map w.ringBonds) L.toArray d =
+      fusedBonds w.numAtoms (C.map w.ringBonds) C d := fusedBonds_ringEq (C' := L.toArray) hf
+  rw [← e1]
+  obtain ⟨σ, ψ, hb, he⟩ := perm_index hp
+  have hlen : L.length = C'.size := by rw [hp.length_eq, Array.length_toList]
+  have hA : L.toArray.size = L.length := List.size_toArray
+  have hC : ∀ i < L.toArray.size, C'[i]! = L.toArray[σ i]! := fun i hi ↦ by
+    rw [getElem!_eq_toList, getElem!_eq_toList L.toArray, List.toList_toArray]
+    exact he i (hA ▸ hi)
+  have hsub : ∀ r ∈ C.toList, r ∈ R.toList := fun r hr ↦ by
+    rw [(donorData_inv w R).candRings] at hr
+    exact (List.mem_filter.1 hr).1
+  apply fusedBonds_renumber (σ := σ) (ψ := ψ) (by rw [hA, hlen]) (by simp) (by simp [hA, hlen])
+    (hA ▸ hb)
+  · intro i hi
+    rw [getElem!_map_of_lt _ _ (by rw [← hlen, ← hA]; exact hi),
+      getElem!_map_of_lt _ _ (by rw [hA]; exact hb.lt i (hA ▸ hi)), hC i hi]
+  · exact hC
+  · intro i hi
+    rw [getElem!_map_of_lt _ _ hi, getElem!_eq_toList, List.toList_toArray]
+    have hiL : i < L.length := hA ▸ hi
+    rw [getElem!_pos L i hiL]
+    obtain ⟨c, hc, hrc⟩ := forall₂_exists_right hf (List.getElem_mem hiL)
+    exact (hrc.ringBonds w).nodup_iff.2 (hnd c (hsub c hc))
+
 end Work
 
 end LeanSMILES.Aromaticity
