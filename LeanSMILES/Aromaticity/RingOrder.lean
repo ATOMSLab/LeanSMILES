@@ -1659,6 +1659,77 @@ lemma dfsComp_reach {nbrs : Array (List ℕ)} {n : ℕ} (hlt : ∀ i : ℕ, ∀ 
         simp only [List.mem_append, List.mem_cons] at hx ⊢
         tauto
 
+/-- The depth-first search keeps the size of its seen array. -/
+lemma dfsComp_size {nbrs : Array (List ℕ)} {n : ℕ} (hlt : ∀ i : ℕ, ∀ j ∈ nbrs[i]!, j < n) :
+    ∀ (fuel : ℕ) (seen : Array Bool) (comp stack : List ℕ), seen.size = n →
+      (dfsComp nbrs fuel (seen, comp, stack)).1.size = n
+  | 0, _, _, _, h => by unfold dfsComp; exact h
+  | _ + 1, _, _, [], h => by unfold dfsComp; exact h
+  | fuel + 1, seen, comp, u :: rest, hsz => by
+    unfold dfsComp
+    obtain ⟨sn', new, he, -, hsz', -⟩ := pushNbrs_spec (nbrs[u]!) seen rest
+      (fun v hv ↦ hsz ▸ hlt u v hv)
+    rw [he]
+    exact dfsComp_size hlt fuel sn' (u :: comp) (new ++ rest) (hsz'.trans hsz)
+
+/-- **Each component is repeat-free, and reached from one of its vertices.** -/
+lemma components_reach {n : ℕ} {nbrs : Array (List ℕ)} (hlt : ∀ i : ℕ, ∀ j ∈ nbrs[i]!, j < n) :
+    ∀ C ∈ components n nbrs, C.Nodup ∧ ∃ r, ∀ x ∈ C, NbrReach nbrs r x := by
+  have key : ∀ (l : List ℕ) (st : Array Bool × List (List ℕ)), (∀ s ∈ l, s < n) →
+      st.1.size = n → (∀ C ∈ st.2, C.Nodup ∧ ∃ r, ∀ x ∈ C, NbrReach nbrs r x) →
+      (l.foldl (componentsStep n nbrs) st).1.size = n ∧
+        ∀ C ∈ (l.foldl (componentsStep n nbrs) st).2,
+          C.Nodup ∧ ∃ r, ∀ x ∈ C, NbrReach nbrs r x := by
+    intro l
+    induction l with
+    | nil => exact fun st _ h1 h2 ↦ ⟨h1, h2⟩
+    | cons s l ih =>
+      rintro ⟨seen, comps⟩ hl hsz hc
+      rw [List.foldl_cons]
+      apply ih _ (fun s hs ↦ hl s (List.mem_cons_of_mem _ hs))
+      all_goals
+        have hs : s < n := hl s List.mem_cons_self
+        have hsn : s < seen.size := hsz ▸ hs
+        have hsz1 : (seen.set! s true).size = n := by rw [size_set!_any, hsz]
+        obtain ⟨h1, h2⟩ := dfsComp_reach hlt (root := s) n (seen.set! s true) [] [s] hsz1
+          (by simp) (by simp [hsn]) (by simp [NbrReach, Relation.ReflTransGen.refl])
+        have h3 := dfsComp_size hlt n (seen.set! s true) [] [s] hsz1
+        unfold componentsStep
+        dsimp only
+        generalize dfsComp nbrs n (seen.set! s true, [], [s]) = res at h1 h2 h3
+        obtain ⟨seen', comp'⟩ := res
+        dsimp only at h1 h2 h3
+        split
+      · exact hsz
+      · exact h3
+      · exact hc
+      · intro C hC
+        rcases List.mem_append.1 hC with hC | hC
+        · exact hc C hC
+        · rw [List.mem_singleton] at hC
+          subst hC
+          exact ⟨(List.mergeSort_perm _ _).nodup_iff.2 h1,
+            s, fun x hx ↦ h2 x (List.mem_mergeSort.1 hx)⟩
+  unfold components
+  exact (key (List.range n) _ (fun s hs ↦ List.mem_range.1 hs) (by simp) (by simp)).2
+
+/-- On a symmetric graph, reachability is symmetric. -/
+lemma NbrReach.symm {nbrs : Array (List ℕ)} (hsym : ∀ i j : ℕ, j ∈ nbrs[i]! → i ∈ nbrs[j]!)
+    {x y : ℕ} (h : NbrReach nbrs x y) : NbrReach nbrs y x :=
+  Relation.ReflTransGen.symmetric (fun a b hab ↦ hsym a b hab) h
+
+/-- **A component is exactly what its vertices reach** (on a symmetric graph in range). -/
+theorem mem_components_iff {n : ℕ} {nbrs : Array (List ℕ)} (hlt : ∀ i : ℕ, ∀ j ∈ nbrs[i]!, j < n)
+    (hsym : ∀ i j : ℕ, j ∈ nbrs[i]! → i ∈ nbrs[j]!) {C : List ℕ} (hC : C ∈ components n nbrs)
+    {x : ℕ} (hx : x ∈ C) (y : ℕ) : y ∈ C ↔ NbrReach nbrs x y := by
+  obtain ⟨-, r, hr⟩ := components_reach hlt C hC
+  constructor
+  · exact fun hy ↦ (NbrReach.symm hsym (hr x hx)).trans (hr y hy)
+  · intro h
+    induction h with
+    | refl => exact hx
+    | tail _ hbc ih => exact (components_spec hlt hsym).2.2.2 C hC _ ih _ hbc
+
 end Work
 
 end LeanSMILES.Aromaticity
