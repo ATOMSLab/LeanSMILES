@@ -265,7 +265,7 @@ lemma ringBonds_reverse (w : Work) (r : List ℕ) :
 
 /-! ### The same ring set -/
 
-lemma forall₂_exists_left {α β : Type*} {P : α → β → Prop} {l₁ : List α} {l₂ : List β}
+lemma forall₂_mem_left {α β : Type*} {P : α → β → Prop} {l₁ : List α} {l₂ : List β}
     (h : List.Forall₂ P l₁ l₂) {a : α} (ha : a ∈ l₁) : ∃ b ∈ l₂, P a b := by
   induction h with
   | nil => cases ha
@@ -275,7 +275,7 @@ lemma forall₂_exists_left {α β : Type*} {P : α → β → Prop} {l₁ : Lis
     · obtain ⟨b, hb, h⟩ := ih ha
       exact ⟨b, List.mem_cons_of_mem _ hb, h⟩
 
-lemma forall₂_exists_right {α β : Type*} {P : α → β → Prop} {l₁ : List α} {l₂ : List β}
+lemma forall₂_mem_right {α β : Type*} {P : α → β → Prop} {l₁ : List α} {l₂ : List β}
     (h : List.Forall₂ P l₁ l₂) {b : β} (hb : b ∈ l₂) : ∃ a ∈ l₁, P a b := by
   induction h with
   | nil => cases hb
@@ -309,14 +309,14 @@ lemma RingsEquiv.forall_exists {R R' : List (List ℕ)} (h : RingsEquiv R R') :
     ∀ r' ∈ R', ∃ r ∈ R, RingEq r r' := by
   obtain ⟨L, hf, hp⟩ := h
   intro r' hr'
-  obtain ⟨r, hr, hrr⟩ := forall₂_exists_right hf (hp.mem_iff.2 hr')
+  obtain ⟨r, hr, hrr⟩ := forall₂_mem_right hf (hp.mem_iff.2 hr')
   exact ⟨r, hr, hrr⟩
 
 lemma RingsEquiv.exists_forall {R R' : List (List ℕ)} (h : RingsEquiv R R') :
     ∀ r ∈ R, ∃ r' ∈ R', RingEq r r' := by
   obtain ⟨L, hf, hp⟩ := h
   intro r hr
-  obtain ⟨r', hr', hrr⟩ := forall₂_exists_left hf hr
+  obtain ⟨r', hr', hrr⟩ := forall₂_mem_left hf hr
   exact ⟨r', hp.mem_iff.1 hr', hrr⟩
 
 lemma RingsEquiv.filter {R R' : List (List ℕ)} (h : RingsEquiv R R') (p : List ℕ → Bool)
@@ -371,7 +371,7 @@ def firstCand (w : Work) (B : List ℕ) (L : List (List ℕ)) (i : ℕ) : Bool :
   | none => false
 
 /-- What `donorData`'s first pass has done after the rings `L`. -/
-structure DonorInv (w : Work) (B : List ℕ) (L : List (List ℕ)) (s : DonorState) : Prop where
+structure DonorOrdInv (w : Work) (B : List ℕ) (L : List (List ℕ)) (s : DonorState) : Prop where
   seen_size : s.seen.size = w.numAtoms
   cand_size : s.cand.size = w.numAtoms
   donor_size : s.donor.size = w.numAtoms
@@ -416,7 +416,7 @@ lemma firstCand_append_of_mem {L : List (List ℕ)} {r : List ℕ} {w : Work} {B
   rfl
 
 /-- What the first pass has done partway through ring `r`, after its atoms `rp`. -/
-structure DonorInnerInv (w : Work) (B : List ℕ) (L : List (List ℕ)) (r rp : List ℕ)
+structure DonorOrdInnerInv (w : Work) (B : List ℕ) (L : List (List ℕ)) (r rp : List ℕ)
     (s : DonorState) (a : Bool) : Prop where
   seen_size : s.seen.size = w.numAtoms
   cand_size : s.cand.size = w.numAtoms
@@ -451,8 +451,8 @@ lemma firstCand_of_not_any {w : Work} {B : List ℕ} {L : List (List ℕ)} {r : 
   rw [find?_append_singleton_of_not_any hL, if_pos (by simpa using hr)]
 
 lemma donorAtomStep_inv {w : Work} {B : List ℕ} {L : List (List ℕ)} {r rp : List ℕ}
-    {s : DonorState} {a : Bool} {x : ℕ} (hx : x ∈ r) (hi : DonorInnerInv w B L r rp s a) :
-    DonorInnerInv w B L r (rp ++ [x]) (w.donorAtomStep B r.length (s, a) x).1
+    {s : DonorState} {a : Bool} {x : ℕ} (hx : x ∈ r) (hi : DonorOrdInnerInv w B L r rp s a) :
+    DonorOrdInnerInv w B L r (rp ++ [x]) (w.donorAtomStep B r.length (s, a) x).1
       (w.donorAtomStep B r.length (s, a) x).2 := by
   have hne : ∀ i, i ≠ x → (L.any (·.contains i) || (rp ++ [x]).contains i) =
       (L.any (·.contains i) || rp.contains i) := fun i h ↦ by
@@ -524,8 +524,8 @@ lemma donorAtomStep_inv {w : Work} {B : List ℕ} {L : List (List ℕ)} {r rp : 
 
 lemma donorAtoms_inv (w : Work) (B : List ℕ) (L : List (List ℕ)) (r : List ℕ) :
     ∀ (rest rp : List ℕ) (s : DonorState) (a : Bool), rp ++ rest = r →
-      DonorInnerInv w B L r rp s a →
-      DonorInnerInv w B L r r (rest.foldl (w.donorAtomStep B r.length) (s, a)).1
+      DonorOrdInnerInv w B L r rp s a →
+      DonorOrdInnerInv w B L r r (rest.foldl (w.donorAtomStep B r.length) (s, a)).1
         (rest.foldl (w.donorAtomStep B r.length) (s, a)).2 := by
   intro rest
   induction rest with
@@ -537,9 +537,9 @@ lemma donorAtoms_inv (w : Work) (B : List ℕ) (L : List (List ℕ)) (r : List �
     exact ih (rp ++ [x]) _ _ (by rw [← h]; simp) (donorAtomStep_inv hx hi)
 
 lemma donorRingStep_inv {w : Work} {B : List ℕ} {L : List (List ℕ)} {r : List ℕ}
-    {s : DonorState} (hi : DonorInv w B L s) :
-    DonorInv w B (L ++ [r]) (w.donorRingStep B s r) := by
-  have h0 : DonorInnerInv w B L r [] s true := by
+    {s : DonorState} (hi : DonorOrdInv w B L s) :
+    DonorOrdInv w B (L ++ [r]) (w.donorRingStep B s r) := by
+  have h0 : DonorOrdInnerInv w B L r [] s true := by
     refine ⟨hi.seen_size, hi.cand_size, hi.donor_size, fun i hin ↦ ?_, fun i hin ↦ ?_,
       fun i hin ↦ ?_, by simp, hi.candRings⟩
     · rw [hi.seen i hin]; simp
@@ -598,7 +598,7 @@ lemma donorRingStep_inv {w : Work} {B : List ℕ} {L : List (List ℕ)} {r : Lis
     rw [Bool.eq_iff_iff, List.all_eq_true, List.all_eq_true]
     exact forall₂_congr fun i hi₀ ↦ by rw [hold r₀ hr₀ i hi₀]
   have hcr : ∀ st' : DonorState, st'.seen = st.1.seen → st'.cand = st.1.cand →
-      st'.donor = st.1.donor → DonorInv w B (L ++ [r]) st' ∨ True := fun _ _ _ _ ↦ .inr trivial
+      st'.donor = st.1.donor → DonorOrdInv w B (L ++ [r]) st' ∨ True := fun _ _ _ _ ↦ .inr trivial
   clear hcr
   split
   · rename_i hA
@@ -643,12 +643,12 @@ lemma donorRingStep_inv {w : Work} {B : List ℕ} {L : List (List ℕ)} {r : Lis
 /-- **`donorData`, characterized**: each atom's donor type and candidacy are those the first
 ring containing it gives, and a ring is a candidate when all its atoms are. -/
 lemma donorData_inv (w : Work) (R : Array (List ℕ)) :
-    DonorInv w ((R.toList.flatMap w.ringBonds).eraseDups) R.toList (w.donorData R) := by
+    DonorOrdInv w ((R.toList.flatMap w.ringBonds).eraseDups) R.toList (w.donorData R) := by
   unfold donorData
   dsimp only
   have key : ∀ (l L : List (List ℕ)) (s : DonorState),
-      DonorInv w ((R.toList.flatMap w.ringBonds).eraseDups) L s →
-      DonorInv w ((R.toList.flatMap w.ringBonds).eraseDups) (L ++ l)
+      DonorOrdInv w ((R.toList.flatMap w.ringBonds).eraseDups) L s →
+      DonorOrdInv w ((R.toList.flatMap w.ringBonds).eraseDups) (L ++ l)
         (l.foldl (w.donorRingStep ((R.toList.flatMap w.ringBonds).eraseDups)) s) := by
     intro l
     induction l with
@@ -2090,7 +2090,7 @@ theorem setAromaticity_equiv (w : Work) {R R' : Array (List ℕ)}
     rw [getElem!_map_of_lt _ _ hi, getElem!_eq_toList, List.toList_toArray]
     have hiL : i < L.length := hA ▸ hi
     rw [getElem!_pos L i hiL]
-    obtain ⟨c, hc, hrc⟩ := forall₂_exists_right hf (List.getElem_mem hiL)
+    obtain ⟨c, hc, hrc⟩ := forall₂_mem_right hf (List.getElem_mem hiL)
     exact (hrc.ringBonds w).nodup_iff.2 (hnd c (hsub c hc))
 
 end Work
