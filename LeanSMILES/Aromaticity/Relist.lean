@@ -236,6 +236,64 @@ lemma workIso (h : Relisted w w' π ρ) (hwf : w.WF) (hnd : w.NbrsDistinct)
     by simp [numAtoms, h.atoms], by simp [numBonds, h.size],
     fun u v _ _ ↦ h.bondBetween? hwf hnd hnd' u v⟩
 
+/-- Changing only the atoms, alike on both sides, keeps the relisting. -/
+lemma of_atoms (h : Relisted w w' π ρ) {v v' : Work} (hb : v.bonds = w.bonds)
+    (hb' : v'.bonds = w'.bonds) (ha : v'.atoms = v.atoms) : Relisted v v' π ρ :=
+  ⟨ha, by rw [hb, hb', h.size], hb ▸ h.bij, fun k hk ↦ by rw [hb, hb']; exact h.kind k (hb ▸ hk),
+    fun k hk ↦ by rw [hb, hb']; exact h.ends k (hb ▸ hk)⟩
+
+lemma freezeHs (h : Relisted w w' π ρ) : Relisted w.freezeHs w'.freezeHs π ρ := by
+  refine h.of_atoms rfl rfl ?_
+  simp only [Work.freezeHs, numAtoms, h.atoms, h.totalHs]
+
+lemma cacheValences (h : Relisted w w' π ρ) : Relisted w.cacheValences w'.cacheValences π ρ := by
+  refine h.of_atoms rfl rfl ?_
+  simp only [Work.cacheValences, numAtoms, h.atoms, h.explicitValence, h.implicitHs,
+    h.isAromaticAtom]
+
+lemma radicalStep (h : Relisted w w' π ρ) (j : ℕ) :
+    Relisted (Work.radicalStep w j) (Work.radicalStep w' j) π ρ := by
+  unfold Work.radicalStep
+  dsimp only
+  rw [h.atom j, h.radicalCount j]
+  split
+  · exact h
+  · exact h.of_atoms rfl rfl (by simp only [modifyAtom, h.atoms])
+
+lemma assignRadicals (h : Relisted w w' π ρ) : Relisted w.assignRadicals w'.assignRadicals π ρ := by
+  unfold Work.assignRadicals
+  rw [show w'.numAtoms = w.numAtoms by simp [numAtoms, h.atoms]]
+  generalize List.range w.numAtoms = l
+  induction l generalizing w w' with
+  | nil => exact h
+  | cons j l ih => exact ih (h.radicalStep j)
+
+lemma adjustHsStep (h : Relisted w w' π ρ) (j : ℕ) :
+    Relisted (Work.adjustHsStep w j) (Work.adjustHsStep w' j) π ρ := by
+  unfold Work.adjustHsStep
+  dsimp only
+  rw [h.atom j, h.isAromaticAtom j, h.implicitHs j]
+  split
+  · split
+    · exact h.of_atoms rfl rfl (by simp only [modifyAtom, h.atoms])
+    · exact h
+  · exact h
+
+lemma finalizeHs (h : Relisted w w' π ρ) : Relisted w.finalizeHs w'.finalizeHs π ρ := by
+  unfold Work.finalizeHs
+  dsimp only
+  rw [show w'.numAtoms = w.numAtoms by simp [numAtoms, h.atoms]]
+  have h1 : Relisted ((List.range w.numAtoms).foldl Work.adjustHsStep w)
+      ((List.range w.numAtoms).foldl Work.adjustHsStep w') π ρ := by
+    generalize List.range w.numAtoms = l
+    induction l generalizing w w' with
+    | nil => exact h
+    | cons j l ih => exact ih (h.adjustHsStep j)
+  generalize (List.range w.numAtoms).foldl Work.adjustHsStep w = u at h1
+  generalize (List.range w.numAtoms).foldl Work.adjustHsStep w' = u' at h1
+  refine h1.of_atoms rfl rfl ?_
+  simp only [numAtoms, h1.atoms, h1.implicitHs]
+
 end Relisted
 
 end LeanSMILES.Aromaticity.Work
