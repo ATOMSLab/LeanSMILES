@@ -343,7 +343,8 @@ lemma getElem?_relabelW_bonds (k : ℕ) :
       w.bonds[k]?.map fun b : WBond ↦ { b with src := σ b.src, dst := σ b.dst } := by
   simp [relabelW]
 
-lemma getElem!_eq_getD {α : Type} [Inhabited α] (a : Array α) (j : ℕ) : a[j]! = a[j]?.getD default := by
+lemma getElem!_eq_getD {α : Type} [Inhabited α] (a : Array α) (j : ℕ) :
+    a[j]! = a[j]?.getD default := by
   by_cases h : j < a.size
   · rw [getElem!_pos a j h, Array.getElem?_eq_getElem h]; rfl
   · rw [getElem!_neg a j h, Array.getElem?_eq_none (Nat.le_of_not_lt h)]; rfl
@@ -361,7 +362,8 @@ lemma markAromatic_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) {b : ℕ
       (by unfold markAromatic; dsimp only; split <;> simp [modifyAtom, setKind])
       (by simp [hsz])
     intro j hj
-    rw [atom_relabelW' (by rw [hsz]; exact hj), getElem!_eq_getD, getElem!_eq_getD (w.markAromatic b).atoms,
+    rw [atom_relabelW' (by rw [hsz]; exact hj), getElem!_eq_getD,
+      getElem!_eq_getD (w.markAromatic b).atoms,
       getElem?_markAromatic_atoms', getElem?_markAromatic_atoms', hk, bond_relabelW hbn]
     have hw := hwf b hbn
     have e : ∀ x < w.numAtoms, (σ x = j) ↔ (x = ψ j) := fun x hx ↦
@@ -371,7 +373,8 @@ lemma markAromatic_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) {b : ℕ
       rw [Array.getElem?_eq_getElem (by simpa using hj), ← getElem!_pos _ j (by simpa using hj),
         atom_relabelW' hj]
     have hwj : w.atoms[ψ j]? = some w.atoms[ψ j]! := by
-      rw [Array.getElem?_eq_getElem (hb.lt' j hj), ← getElem!_pos w.atoms (ψ j) (hb.lt' j hj)]
+      rw [Array.getElem?_eq_getElem (hb.lt' j hj),
+        ← getElem!_pos w.atoms (ψ j) (hb.lt' j hj)]
     rw [hrj, hwj]
   · apply Array.ext'
     apply List.ext_getElem?
