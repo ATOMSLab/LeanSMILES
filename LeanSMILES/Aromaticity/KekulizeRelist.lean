@@ -54,12 +54,12 @@ lemma touches (h : WalkRel Q π ρ m m') {k : ℕ} (hk : k < m.bonds.size) (x : 
 
 /-- Changing the kinds alike keeps the relation. -/
 lemma of_skel (h : WalkRel Q π ρ m m') {r r' : Work} (hs : SameSkel m r) (hs' : SameSkel m' r')
-    (ha : r.atoms = m.atoms) (ha' : r'.atoms = m'.atoms) {Q' : ℕ → Prop}
+    (ha : r'.atoms = r.atoms) {Q' : ℕ → Prop}
     (hk : ∀ k < m.bonds.size, Q' k → (r'.bonds[π k]! : WBond).kind = (r.bonds[k]! : WBond).kind) :
     WalkRel Q' π ρ r r' := by
   have e : r.bonds.size = m.bonds.size := hs.numBonds.symm
   have e' : r'.bonds.size = m'.bonds.size := hs'.numBonds.symm
-  refine ⟨by rw [ha', ha, h.atoms], by rw [e, e', h.size], e ▸ h.bij, fun k hk' ↦ ?_,
+  refine ⟨ha, by rw [e, e', h.size], e ▸ h.bij, fun k hk' ↦ ?_,
     fun u v ↦ ?_, fun u ↦ ?_, fun k hk' hq ↦ hk k (e ▸ hk') hq⟩
   · rw [e] at hk'
     rw [← hs.src, ← hs.dst, ← hs'.src, ← hs'.dst]
@@ -72,7 +72,7 @@ lemma of_skel (h : WalkRel Q π ρ m m') {r r' : Work} (hs : SameSkel m r) (hs' 
 /-- Setting the kind of a bond, alike on both sides. -/
 lemma setKind (h : WalkRel Q π ρ m m') {k : ℕ} (hk : k < m.bonds.size) (o : BondKind) :
     WalkRel Q π ρ (m.setKind k o) (m'.setKind (π k) o) := by
-  refine h.of_skel (skel_setKind _ _ _) (skel_setKind _ _ _) rfl rfl fun j hj hq ↦ ?_
+  refine h.of_skel (skel_setKind _ _ _) (skel_setKind _ _ _) h.atoms fun j hj hq ↦ ?_
   rw [kind_setKind, kind_setKind, h.size]
   by_cases hjk : k = j
   · subst hjk
@@ -316,7 +316,7 @@ lemma backTrack (h : StRel Q π ρ N p p' s s') {lo : ℕ} (hlo : lo ∈ s.lastO
   obtain ⟨sk', as', cs'⟩ := foldl_undoAdds_skel keep (List.range N) s'.m s'.adds s'.cands
   have hlt : ∀ j < N, j < s.m.bonds.size := fun j hj ↦ h.sz ▸ hj
   have hπ : ∀ j < N, π j < N := fun j hj ↦ h.sz ▸ h.m.bij.lt j (hlt j hj)
-  refine ⟨h.m.of_skel sk sk' (foldl_undoAdds_atoms _ _ _ _ _) (foldl_undoAdds_atoms _ _ _ _ _)
+  refine ⟨h.m.of_skel sk sk' (by rw [foldl_undoAdds_atoms, foldl_undoAdds_atoms, h.m.atoms])
     fun j hj hq ↦ ?_, ?_, ?_, fun j hj ↦ ?_, as.trans h.asz, as'.trans h.asz',
     by rw [h.queue], h.options, h.lastOpt, h.btMoves, by rw [h.numBt], h.perm,
     ⟨t.take (t.idxOf lo), hkp.symm, rfl, fun x hx ↦ ht x (List.mem_of_mem_take hx)⟩,
@@ -706,7 +706,7 @@ theorem kekSys_rel {Q : ℕ → Prop} {π ρ : ℕ → ℕ} {out out' : Work}
       simp only [SabSet, hat.mem_iff, h.atoms, h.mem_bondsOf hk, hwa k hk]
     have hm0 : WalkRel (fun k ↦ Q k ∨ SabSet wa out atoms k) π ρ
         (atoms.foldl (singleAromaticBonds wa) out) (atoms'.foldl (singleAromaticBonds wa') out') :=
-      h.of_skel sk sk' sa sa' fun k hk hq ↦ by
+      h.of_skel sk sk' (by rw [sa', sa, h.atoms]) fun k hk hq ↦ by
         rw [skind, skind']
         by_cases hs : SabSet wa out atoms k
         · rw [if_pos hs, if_pos ((hS k hk).2 hs)]
@@ -728,5 +728,202 @@ theorem kekSys_rel {Q : ℕ → Prop} {π ρ : ℕ → ℕ} {out out' : Work}
     · cases hw
     · cases hw
     · cases hw; assumption
+
+
+/-! ### Results alike -/
+
+lemma ExRel.bind {α β γ δ : Type} {R : α → β → Prop} {S : γ → δ → Prop} {x : Except String α}
+    {x' : Except String β} (h : ExRel R x x') {f : α → Except String γ}
+    {f' : β → Except String δ} (hf : ∀ a a', R a a' → ExRel S (f a) (f' a')) :
+    ExRel S (x.bind f) (x'.bind f') := by
+  rcases x with e | a <;> rcases x' with e' | a'
+  · exact h
+  · exact h.elim
+  · exact h.elim
+  · exact hf a a' h
+
+lemma ExRel.imp {α β : Type} {R S : α → β → Prop} {x : Except String α} {x' : Except String β}
+    (h : ExRel R x x') (hRS : ∀ a a', x = .ok a → x' = .ok a' → R a a' → S a a') :
+    ExRel S x x' := by
+  rcases x with e | a <;> rcases x' with e' | a'
+  · exact h
+  · exact h.elim
+  · exact h.elim
+  · exact hRS a a' rfl rfl h
+
+lemma ExRel.foldlM {α β γ : Type} {R : α → β → Prop} {f : α → γ → Except String α}
+    {f' : β → γ → Except String β} (hf : ∀ a a' c, R a a' → ExRel R (f a c) (f' a' c)) :
+    ∀ (l : List γ) (a : α) (a' : β), R a a' → ExRel R (l.foldlM f a) (l.foldlM f' a')
+  | [], _, _, h => h
+  | c :: l, a, a', h => by
+    rw [List.foldlM_cons, List.foldlM_cons]
+    exact ExRel.bind (hf a a' c h) fun b b' hb ↦ ExRel.foldlM hf l b b' hb
+
+/-! ### Kekulization of a relisted copy, the same rings -/
+
+lemma kekulize_eq (m : Work) (rings : Array (List ℕ)) :
+    m.kekulize rings =
+      if ((List.range m.numBonds).filter (m.bonds[·]!.kind == .aromatic)).isEmpty &&
+          !m.atoms.any (·.aromatic) then .ok m
+      else ((components rings.size (m.kekFusedNbrs rings)).foldlM
+          (kekulizeSystem m.kekWa m.kekEv0 rings) m).bind fun out ↦
+        ((List.range out.numAtoms).foldlM (clearAromatic rings.toList.flatten.eraseDups)
+          out).bind fun out ↦ if out.bonds.any (·.kind == .aromatic) then
+            .error "aromatic bond left after kekulization" else .ok out := rfl
+
+namespace WalkRel
+
+variable {Q : ℕ → Prop} {π ρ : ℕ → ℕ} {m m' : Work}
+
+lemma modifyAtom (h : WalkRel Q π ρ m m') (i : ℕ) (f : WAtom → WAtom) :
+    WalkRel Q π ρ (m.modifyAtom i f) (m'.modifyAtom i f) :=
+  h.of_skel (skel_modifyAtom _ _ _) (skel_modifyAtom _ _ _)
+    (by simp only [Work.modifyAtom, h.atoms]) fun k hk hq ↦ h.kind k hk hq
+
+lemma exists_arom (h : WalkRel (fun _ ↦ True) π ρ m m') :
+    (∃ k < m'.bonds.size, (m'.bonds[k]! : WBond).kind = .aromatic) ↔
+      ∃ k < m.bonds.size, (m.bonds[k]! : WBond).kind = .aromatic := by
+  constructor
+  · rintro ⟨k', hk', e⟩
+    have hk's : k' < m.bonds.size := h.size ▸ hk'
+    refine ⟨ρ k', h.bij.lt' k' hk's, ?_⟩
+    have := h.kind (ρ k') (h.bij.lt' k' hk's) trivial
+    rw [h.bij.right k' hk's] at this
+    rw [← this, e]
+  · rintro ⟨k, hk, e⟩
+    exact ⟨π k, h.size ▸ h.bij.lt k hk, by rw [h.kind k hk trivial, e]⟩
+
+end WalkRel
+
+lemma bonds_any_arom (m : Work) :
+    m.bonds.any (·.kind == .aromatic) = true ↔
+      ∃ k < m.bonds.size, (m.bonds[k]! : WBond).kind = .aromatic := by
+  rw [Array.any_eq_true]
+  constructor
+  · rintro ⟨k, hk, e⟩
+    exact ⟨k, hk, by rw [getElem!_pos m.bonds k hk]; simpa using e⟩
+  · rintro ⟨k, hk, e⟩
+    exact ⟨k, hk, by rw [getElem!_pos m.bonds k hk] at e; simp [e]⟩
+
+lemma filter_arom_isEmpty (m : Work) :
+    ((List.range m.numBonds).filter (m.bonds[·]!.kind == .aromatic)).isEmpty =
+      !(m.bonds.any (·.kind == .aromatic)) := by
+  rw [Bool.eq_iff_iff, Bool.not_eq_true', ← Bool.not_eq_true, bonds_any_arom, List.isEmpty_iff,
+    List.filter_eq_nil_iff]
+  simp [numBonds]
+
+lemma any_contains_map {π : ℕ → ℕ} {N : ℕ} (hinj : ∀ i < N, ∀ j < N, π i = π j → i = j)
+    {A B : List ℕ} (hA : ∀ x ∈ A, x < N) (hB : ∀ x ∈ B, x < N) :
+    (A.map π).any (B.map π).contains = A.any B.contains := by
+  rw [Bool.eq_iff_iff]
+  simp only [List.any_eq_true, List.mem_map, List.contains_iff_mem]
+  constructor
+  · rintro ⟨_, ⟨a, ha, rfl⟩, b, hb, e⟩
+    exact ⟨a, ha, by rwa [← hinj b (hB b hb) a (hA a ha) e]⟩
+  · rintro ⟨a, ha, hb⟩
+    exact ⟨π a, ⟨a, ha, rfl⟩, a, hb, rfl⟩
+
+lemma WalkRel.ringBonds {Q : ℕ → Prop} {π ρ : ℕ → ℕ} {m m' : Work} (h : WalkRel Q π ρ m m') :
+    m'.ringBonds = fun r ↦ (m.ringBonds r).map π := by
+  funext r
+  rw [ringBonds_eq_filterMap, ringBonds_eq_filterMap, List.map_filterMap]
+  simp only [h.bb]
+
+lemma WalkRel.kekFusedNbrs {Q : ℕ → Prop} {π ρ : ℕ → ℕ} {m m' : Work} (h : WalkRel Q π ρ m m')
+    (rings : Array (List ℕ)) : m'.kekFusedNbrs rings = m.kekFusedNbrs rings := by
+  have hget : ∀ t : ℕ, ((rings.map m'.ringBonds)[t]! : List ℕ) =
+      ((rings.map m.ringBonds)[t]! : List ℕ).map π := by
+    intro t
+    by_cases ht : t < rings.size
+    · rw [getElem!_pos _ t (by simpa using ht), getElem!_pos _ t (by simpa using ht)]
+      simp [h.ringBonds]
+    · rw [getElem!_neg _ t (by simpa using ht), getElem!_neg _ t (by simpa using ht)]
+      rfl
+  have hlt : ∀ t : ℕ, ∀ x ∈ ((rings.map m.ringBonds)[t]! : List ℕ), x < m.bonds.size := by
+    intro t x hx
+    by_cases ht : t < rings.size
+    · rw [getElem!_pos _ t (by simpa using ht)] at hx
+      simp only [Array.getElem_map] at hx
+      exact lt_of_mem_ringBonds hx
+    · rw [getElem!_neg _ t (by simpa using ht)] at hx
+      cases hx
+  unfold Work.kekFusedNbrs
+  dsimp only
+  congr 1
+  funext i
+  congr 1
+  funext j
+  rw [hget i, hget j, any_contains_map (fun a ha b hb e ↦ h.bij.inj ha hb e) (hlt i) (hlt j)]
+
+lemma modify2 {π ρ : ℕ → ℕ} {X X' : Work} (hX : WalkRel (fun _ ↦ True) π ρ X X') (i : ℕ) :
+    WalkRel (fun _ ↦ True) π ρ (X.modifyAtom i ({ · with cachedImplicit := X.implicitHs i }))
+      (X'.modifyAtom i ({ · with cachedImplicit := X'.implicitHs i })) := by
+  rw [hX.relisted.implicitHs]
+  exact hX.modifyAtom _ _
+
+lemma WalkRel.clearAromatic {π ρ : ℕ → ℕ} {out out' : Work}
+    (h : WalkRel (fun _ ↦ True) π ρ out out') (ra : List ℕ) (i : ℕ) :
+    ExRel (WalkRel (fun _ ↦ True) π ρ) (clearAromatic ra out i) (clearAromatic ra out' i) := by
+  have hR := h.relisted
+  unfold Work.clearAromatic
+  have ha : (out'.atoms[i]! : WAtom) = out.atoms[i]! := by rw [h.atoms]
+  have hev : (out'.bondsOf i).foldl (fun s k ↦ s + halfOrder (out'.bonds[k]! : WBond).kind) 0 =
+      (out.bondsOf i).foldl (fun s k ↦ s + halfOrder (out.bonds[k]! : WBond).kind) 0 := by
+    rw [foldl_halfOrder, foldl_halfOrder]
+    congr 1
+    refine (((h.bondsOf_perm i).map _).trans ?_).sum_eq
+    rw [List.map_map]
+    exact List.Perm.of_eq (List.map_congr_left fun k hk ↦ by
+      simp only [Function.comp_apply, h.kind k (WalkRel.lt_of_mem_bondsOf' hk) trivial])
+  simp only [ha, hev]
+  split_ifs
+  · exact h
+  · rfl
+  · exact modify2 (h.modifyAtom i _) i
+  · exact h.modifyAtom _ _
+
+/-- **Kekulization of a relisted copy, over the same rings**: both fail alike, or both succeed
+on relisted copies. -/
+theorem kekulize_walkRel {m m' : Work} {π ρ : ℕ → ℕ} (h : WalkRel (fun _ ↦ True) π ρ m m')
+    (hwf : WF m) (hnd : m.NbrsDistinct) (rings : Array (List ℕ)) :
+    ExRel (WalkRel (fun _ ↦ True) π ρ) (m.kekulize rings) (m'.kekulize rings) := by
+  have hR := h.relisted
+  have hwa : ∀ k < m.bonds.size, m'.kekWa (π k) = m.kekWa k := fun k hk ↦ by
+    rw [Bool.eq_iff_iff, kekWa_iff, kekWa_iff, h.kind k hk trivial, h.size]
+    simp [hk, h.bij.lt k hk]
+  have hev : m'.kekEv0 = m.kekEv0 := by
+    simp only [kekEv0, numAtoms, h.atoms]
+    congr 1
+    funext i
+    exact hR.explicitValence i
+  rw [kekulize_eq, kekulize_eq, h.kekFusedNbrs, filter_arom_isEmpty, filter_arom_isEmpty]
+  have hc : m'.bonds.any (·.kind == .aromatic) = m.bonds.any (·.kind == .aromatic) := by
+    rw [Bool.eq_iff_iff, bonds_any_arom, bonds_any_arom, h.exists_arom]
+  rw [hc, h.atoms]
+  split
+  · exact h
+  · refine ExRel.bind (R := fun out out' ↦ WalkRel (fun _ ↦ True) π ρ out out' ∧ SameSkel m out)
+      (ExRel.foldlM (fun out out' C hr ↦ ?_) _ m m' ⟨h, SameSkel.refl m⟩) fun out out' hr ↦ ?_
+    · rw [kekulizeSystem_eq, kekulizeSystem_eq]
+      have hsz : out.bonds.size = m.bonds.size := hr.2.numBonds.symm
+      have hk := kekSys_rel hr.1 (wa := m.kekWa) (wa' := m'.kekWa) (fun k hk ↦ hwa k (hsz ▸ hk))
+        (ev0 := m.kekEv0) (ev0' := m'.kekEv0) (List.Perm.refl
+          ((C.flatMap (rings[·]!)).eraseDups)) fun x _ _ ↦ by
+          rw [hev]
+          exact hr.1.needsDoubleBond (fun k hk ↦ hwa k (hsz ▸ hk)) (fun _ _ _ ↦ trivial) _ x
+      refine hk.imp fun a a' ha _ hrel ↦ ⟨hrel.mono fun _ _ ↦ .inl trivial, ?_⟩
+      have := kekulizeSystem_correct (hr.2.wf hwf) (hr.2.nbrsDistinct hnd)
+        (by rw [kekulizeSystem_eq]; exact ha)
+      exact hr.2.trans this.2.1
+    · have hna : out'.numAtoms = out.numAtoms := by simp [numAtoms, hr.1.atoms]
+      rw [hna]
+      refine ExRel.bind (ExRel.foldlM (fun o o' i ho ↦ ho.clearAromatic _ i) _ _ _ hr.1)
+        fun o o' ho ↦ ?_
+      have hc' : o'.bonds.any (·.kind == .aromatic) = o.bonds.any (·.kind == .aromatic) := by
+        rw [Bool.eq_iff_iff, bonds_any_arom, bonds_any_arom, ho.exists_arom]
+      rw [hc']
+      split
+      · rfl
+      · exact ho
 
 end LeanSMILES.Aromaticity.Work
