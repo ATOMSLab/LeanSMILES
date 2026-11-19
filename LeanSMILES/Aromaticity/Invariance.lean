@@ -14,6 +14,7 @@ public import LeanSMILES.Aromaticity.DonorFacts
 public import LeanSMILES.Aromaticity.PerceiveAgree
 public import LeanSMILES.Aromaticity.PerceiveFacts
 public import LeanSMILES.Aromaticity.RelabelOutput
+public import LeanSMILES.Aromaticity.RelistPerceive
 public import LeanSMILES.SMILES.Canonicity
 public import LeanSMILES.SMILES.KekuleClass
 
@@ -50,8 +51,12 @@ canonical (`Work.WorkIso.relevantCycles`, `Aromaticity/RingSetIso.lean`), every 
 gets exactly one double bond so two kekulizations differ by a swap
 (`Work.kekulize_relabel_swapped`), and the passes commute with relabeling
 (`Aromaticity/WorkRelabel.lean`, `RelabelPerceive.lean`, `RelabelPipeline.lean`,
-`RelabelOutput.lean`).  Still `sorry`: `aromatize_of_sameBonds` (the ring set part is done; the
-passes must still be carried along a relisting of the bonds),
+`RelabelOutput.lean`).  `IsKekule.aromatize_of_sameBonds` (relisting the bonds of a Kekulé
+structure) is proved too (`Work.Relisted`, `Aromaticity/Relist.lean`, `RelistPerceive.lean`), so
+the headline `canonicalSmiles_aromatize_eq` rests on no `sorry`.  Still `sorry`:
+`aromatize_of_sameBonds` for input with aromatic bonds (kekulization's walk then runs, and the
+relisted run must be shown to succeed: the walk would have to be followed step by step, and the
+ring set may list two rings with the same atoms in either order),
 `aromatize_aromatize` and `aromatize_of_isKekuleSpellingOf` (its core,
 `aromatize_of_spelling_core`, is proved from two facts about the kekulized copy; see its
 docstring).
@@ -3461,6 +3466,154 @@ theorem IsKekule.aromatize_relabel {m a : Molecule n} (hk : m.IsKekule)
   obtain ⟨a', h'⟩ := (hk.relabel σ).exists_aromatize
   rw [h', Molecule.aromatize_relabel h hc (hk.aromaticKept h) σ h']
 
+open Aromaticity Aromaticity.Work in
+/-- The outputs from relisted working copies of relisted molecules: the same atoms, the same
+bonds. -/
+lemma aromatizeOutput_relist {m m' : Molecule n} {W W' : Work} {σ ψ : ℕ → ℕ}
+    (hat : m'.atoms = m.atoms) (hbij : IdxBij m.bonds.length σ ψ)
+    (hlen : m'.bonds.length = m.bonds.length)
+    (hedge : ∀ i (hi : i < m.bonds.length),
+      m.bonds[i].edge = (m'.bonds[σ i]'(hlen ▸ hbij.lt i hi)).edge)
+    (hW : Relisted W W' σ ψ) (hWs : W.bonds.size = m.bonds.length) :
+    (m'.aromatizeOutput W').atoms = (m.aromatizeOutput W).atoms ∧
+      (m'.aromatizeOutput W').SameBonds (m.aromatizeOutput W) := by
+  have hlk : ∀ (x : Molecule n) (y : Work), (Aromaticity.withKinds x y).length = x.bonds.length :=
+    fun x y ↦ by simp [Aromaticity.withKinds]
+  have hsb : ((Aromaticity.withKinds m' W').map fun b ↦ (b.edge, b.kind)).Perm
+      ((Aromaticity.withKinds m W).map fun b ↦ (b.edge, b.kind)) := by
+    refine perm_of_index? (σ := σ) (ψ := ψ) (by simpa [hlk] using hbij)
+      (by simp [hlk, hlen]) fun i hi ↦ ?_
+    have hi' : i < m.bonds.length := by simpa [hlk] using hi
+    have hσ : σ i < m'.bonds.length := hlen ▸ hbij.lt i hi'
+    have hWi : i < W.bonds.size := hWs ▸ hi'
+    have hWσ : σ i < W'.bonds.size := by rw [hW.size]; exact hW.bij.lt i hWi
+    rw [List.getElem?_map, List.getElem?_map, getElem?_withKinds, getElem?_withKinds,
+      List.getElem?_eq_getElem hi', List.getElem?_eq_getElem hσ, Array.getElem?_eq_getElem hWi,
+      Array.getElem?_eq_getElem hWσ]
+    simp only [Option.map_some, Option.getD_some, Option.some.injEq, Prod.mk.injEq]
+    refine ⟨hedge i hi', ?_⟩
+    have := hW.kind i hWi
+    rw [getElem!_pos W'.bonds _ hWσ, getElem!_pos W.bonds _ hWi] at this
+    exact this.symm
+  have hat' : (Vector.ofFn (m'.outAtom W')) = Vector.ofFn (m.outAtom W) := by
+    congr 1
+    funext i
+    have hmi : m'.atom i = m.atom i := by simp [Molecule.atom, hat]
+    simp only [Molecule.outAtom, hmi, hW.atom, hW.implicitHs, hW.isAromaticAtom]
+  unfold Molecule.aromatizeOutput
+  exact ⟨SameBonds.atoms_normalizeBrackets hat' hsb, SameBonds.normalizeBrackets hsb⟩
+
+open Aromaticity Aromaticity.Work in
+/-- **For a Kekulé structure, `aromatize` does not depend on how the bonds are listed.**  If the
+Kekulé structure `m` aromatizes to `a` keeping its charges, a molecule with the same atoms,
+configurations and bonds — in any order, each in either orientation — aromatizes too, to the
+same atoms and configurations and the same bonds.  Kekulization does nothing to a Kekulé
+structure; the ring set is the same rings (`Work.WorkIso.relevantCycles`); and every pass reads an
+atom's bonds only up to order (`Work.Relisted`), perception included
+(`Work.Relisted.setAromaticity`). -/
+theorem IsKekule.aromatize_of_sameBonds {m m' a : Molecule n} (hk : m.IsKekule)
+    (h : m.aromatize = .ok a) (hc : m.ChargesKept a) (hat : m'.atoms = m.atoms)
+    (hst : m'.stereo = m.stereo) (hb : m'.SameBonds m) :
+    ∃ a', m'.aromatize = .ok a' ∧ a'.atoms = a.atoms ∧ a'.stereo = a.stereo ∧
+      a'.SameBonds a := by
+  obtain ⟨K, hK, ha⟩ := aromatize_eq_ok.mp h
+  rw [hk.kekulize_prepare] at hK
+  cases hK
+  -- the bonds of `m` renumbered
+  have hb' : (m'.bonds.map fun b ↦ some (b.edge, b.kind)).Perm
+      (m.bonds.map fun b ↦ some (b.edge, b.kind)) := by
+    have := hb.map some
+    simpa [List.map_map, Function.comp_def] using this
+  have hlen : m'.bonds.length = m.bonds.length := by simpa using hb'.length_eq
+  obtain ⟨σ, ψ, hbij0, hidx0⟩ := perm_index hb'
+  have hbij : IdxBij m.bonds.length σ ψ := by simpa [hlen] using hbij0
+  have hcorr : ∀ i (hi : i < m.bonds.length), m.bonds[i].edge =
+      (m'.bonds[σ i]'(hlen ▸ hbij.lt i hi)).edge ∧
+      m.bonds[i].kind = (m'.bonds[σ i]'(hlen ▸ hbij.lt i hi)).kind := fun i hi ↦ by
+    have := hidx0 i (by simpa [hlen] using hi)
+    rw [getElem!_pos _ i (by simpa using hi),
+      getElem!_pos _ (σ i) (by simpa [hlen] using hbij.lt i hi)] at this
+    simp only [List.getElem_map, Option.some.injEq, Prod.mk.injEq] at this
+    exact ⟨this.1, this.2⟩
+  -- the working copies
+  have hR0 : Relisted (Work.ofMolecule m) (Work.ofMolecule m') σ ψ := by
+    refine ⟨by simp [Work.ofMolecule, Molecule.atom, hat], by simp [Work.ofMolecule, hlen],
+      by simpa [Work.ofMolecule] using hbij, fun k hk' ↦ ?_, fun k hk' ↦ ?_⟩
+    · have hk'' : k < m.bonds.length := by simpa [Work.ofMolecule] using hk'
+      rw [Work.ofMolecule_bond m' (hlen ▸ hbij.lt k hk''), Work.ofMolecule_bond m hk'']
+      exact (hcorr k hk'').2.symm
+    · have hk'' : k < m.bonds.length := by simpa [Work.ofMolecule] using hk'
+      rw [Work.ofMolecule_bond m' (hlen ▸ hbij.lt k hk''), Work.ofMolecule_bond m hk'']
+      have e := (hcorr k hk'').1
+      simp only [Bond.edge, Sym2.eq_iff] at e
+      simp only
+      rcases e with ⟨e1, e2⟩ | ⟨e1, e2⟩
+      · exact .inl ⟨by rw [e1], by rw [e2]⟩
+      · exact .inr ⟨by rw [e2], by rw [e1]⟩
+  have hwf0 := ofMolecule_wf m
+  have hcl := hc.cleanUp_eq _ (.refl _) _ ha
+  have hwfF0 : WF (Work.ofMolecule m).freezeHs :=
+    wf_of_bonds (w₂ := Work.ofMolecule m) rfl (by simp [freezeHs, numAtoms]) hwf0
+  have hRF := hR0.freezeHs
+  have hcl' := cleanUp_eq_of_quiet _ (hRF.quiet hwfF0 (quiet_of_cleanUp_eq _ hcl))
+  have hRP : Relisted (Work.prepare m) (Work.prepare m') σ ψ := by
+    simp only [Work.prepare, hcl, hcl']
+    exact hRF.cacheValences
+  obtain ⟨hwfP, hndP⟩ := wf_nbrsDistinct_prepare m
+  obtain ⟨hwfP', hndP'⟩ := wf_nbrsDistinct_prepare m'
+  have hk' : m'.IsKekule := by
+    refine ⟨fun i ↦ by simp only [Molecule.atom, hat]; exact hk.1 i, fun b hbm hba ↦ ?_⟩
+    have : some (b.edge, b.kind) ∈ m.bonds.map fun b ↦ some (b.edge, b.kind) :=
+      hb'.mem_iff.1 (List.mem_map_of_mem hbm)
+    obtain ⟨b0, hb0, e⟩ := List.mem_map.1 this
+    simp only [Option.some.injEq, Prod.mk.injEq] at e
+    exact hk.2 b0 hb0 (e.2.trans hba)
+  -- the ring sets list the same rings
+  have hI := hRP.workIso hwfP hndP hndP'
+  have hRE : RingsEquiv (Work.prepare m).relevantCycles.toList
+      (Work.prepare m').relevantCycles.toList := by
+    have := hI.relevantCycles hwfP hwfP'
+    simpa using this
+  -- perception
+  have hAb := Work.assignRadicals_bonds (Work.prepare m)
+  have hAb' := Work.assignRadicals_bonds (Work.prepare m')
+  have hRA := hRP.assignRadicals
+  have hwfA : WF (Work.prepare m).assignRadicals :=
+    wf_of_bonds hAb (atomStep_radicalStep.foldl_size _ _) hwfP
+  have hRring : ∀ r ∈ (Work.prepare m).relevantCycles.toList,
+      (Work.prepare m).assignRadicals.IsRing r :=
+    fun r hr ↦ isRing_of_bonds hAb (relevantCycles_isRing _ r hr)
+  have hseq : (Work.prepare m').assignRadicals.setAromaticity (Work.prepare m').relevantCycles =
+      (Work.prepare m').assignRadicals.setAromaticity (Work.prepare m).relevantCycles := by
+    refine setAromaticity_equiv _ hRE (relevantCycles_pairwise _) (relevantCycles_pairwise _)
+      fun r hr ↦ ?_
+    rw [Work.ringBonds_of_bonds_eq hAb']
+    have := hI.isRing hwfP hwfP' (relevantCycles_isRing _ r hr)
+    rw [List.map_id] at this
+    exact this.ringBonds_nodup
+  have hW := (hRA.setAromaticity hwfA (nbrsDistinct_of_bonds hAb hndP)
+    (nbrsDistinct_of_bonds hAb' hndP') hRring).finalizeHs
+  have hfin' : (Work.prepare m').finish (Work.prepare m').relevantCycles =
+      ((Work.prepare m').assignRadicals.setAromaticity (Work.prepare m).relevantCycles).finalizeHs :=
+    by rw [Work.finish, hseq]
+  have hfin : (Work.prepare m).finish (Work.prepare m).relevantCycles =
+      ((Work.prepare m).assignRadicals.setAromaticity (Work.prepare m).relevantCycles).finalizeHs :=
+    rfl
+  have hWs : ((Work.prepare m).assignRadicals.setAromaticity
+      (Work.prepare m).relevantCycles).finalizeHs.bonds.size = m.bonds.length := by
+    rw [← hfin, ((Work.prepare m).afterRel_finish _).bonds_size]
+    have e : (Work.prepare m).bonds = (Work.ofMolecule m).bonds := by
+      simp only [Work.prepare, hcl]; rfl
+    rw [e]
+    simp [Work.ofMolecule]
+  obtain ⟨o1, o2⟩ := aromatizeOutput_relist hat hbij hlen (fun i hi ↦ (hcorr i hi).1) hW hWs
+  rw [hfin] at ha
+  refine ⟨_, aromatize_eq_ok.2 ⟨_, hk'.kekulize_prepare, rfl⟩, ?_, ?_, ?_⟩
+  all_goals rw [hfin', ← ha]
+  · exact o1
+  · simp [hst]
+  · exact o2
+
 /-! ### 4. The canonical string -/
 
 /-- Renumbering the atoms does not change the canonical SMILES of the aromatized molecule.
@@ -3491,7 +3644,7 @@ theorem canonicalSmiles_aromatize_aromatize {m a a' : Molecule n} (h : m.aromati
 renumber its atoms by any `σ`, and list the renumbered bonds in any order and orientation: the
 result `m₂` aromatizes, and to the canonical SMILES of `a`.  From
 `aromatize_of_kekuleVariant_of_chargesKept`, `IsKekule.aromatize_relabel`,
-`aromatize_of_sameBonds` and
+`IsKekule.aromatize_of_sameBonds` and
 `canonicalSmiles_eq_of_sameBonds_relabel`. -/
 theorem canonicalSmiles_aromatize_eq {m m₁ m₂ a : Molecule n} (hk : m.IsKekule)
     (h : m.aromatize = .ok a) (hc : m.ChargesKept a) (hv : KekuleVariant a m m₁)
@@ -3501,7 +3654,8 @@ theorem canonicalSmiles_aromatize_eq {m m₁ m₂ a : Molecule n} (hk : m.IsKeku
   have h₁ := aromatize_of_kekuleVariant_of_chargesKept hk h hc hv
   have h₂ := (hv.isKekule hk).aromatize_relabel h₁ (hv.chargesKept hc) σ
   obtain ⟨a₂, h₂', ha, hs, hb'⟩ :=
-    aromatize_of_sameBonds h₂ ((hv.chargesKept hc).relabel σ) hat hst hb
+    ((hv.isKekule hk).relabel σ).aromatize_of_sameBonds h₂ ((hv.chargesKept hc).relabel σ) hat
+      hst hb
   exact ⟨a₂, h₂', canonicalSmiles_eq_of_sameBonds_relabel σ ha hs hb'⟩
 
 /-! ### 5. A lowercase molecule and a Kekulé spelling of it
@@ -4924,7 +5078,8 @@ theorem canonicalSmiles_aromatize_of_isKekuleSpellingOf {m k k₂ a a' : Molecul
     (hst : k₂.stereo = (k.relabel σ).stereo) (hb : k₂.SameBonds (k.relabel σ)) :
     ∃ a₂, k₂.aromatize = .ok a₂ ∧ a₂.canonicalSmiles = a.canonicalSmiles := by
   have h₂ := hs.kekule.aromatize_relabel h' hc' σ
-  obtain ⟨a₂, h₂', ha, hst', hb'⟩ := aromatize_of_sameBonds h₂ (hc'.relabel σ) hat hst hb
+  obtain ⟨a₂, h₂', ha, hst', hb'⟩ :=
+    (hs.kekule.relabel σ).aromatize_of_sameBonds h₂ (hc'.relabel σ) hat hst hb
   refine ⟨a₂, h₂', ?_⟩
   rw [canonicalSmiles_eq_of_sameBonds_relabel σ ha hst' hb',
     aromatize_of_isKekuleSpellingOf h hc hk hs h' hc' hvm]

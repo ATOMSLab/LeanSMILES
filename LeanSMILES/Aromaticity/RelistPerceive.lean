@@ -586,4 +586,16 @@ lemma perm_of_index {α : Type} [Inhabited α] {l l' : List α} {σ ψ : ℕ →
   conv_rhs => rw [e1, e3]
   exact (hp.map _).symm
 
+/-- `perm_of_index` without a default element. -/
+lemma perm_of_index? {α : Type} {l l' : List α} {σ ψ : ℕ → ℕ}
+    (hb : IdxBij l.length σ ψ) (hlen : l'.length = l.length)
+    (h : ∀ i < l.length, l[i]? = l'[σ i]?) : l'.Perm l := by
+  have e : ∀ (x : List α) (i : ℕ), (x.map some)[i]! = x[i]? := fun x i ↦ by
+    by_cases hi : i < x.length
+    · rw [getElem!_pos _ i (by simpa using hi), List.getElem_map, List.getElem?_eq_getElem hi]
+    · rw [getElem!_neg _ i (by simpa using hi), List.getElem?_eq_none (by omega)]; rfl
+  have := perm_of_index (l := l.map some) (l' := l'.map some) (by simpa using hb)
+    (by simp [hlen]) (fun i hi ↦ by rw [e, e]; exact h i (by simpa using hi))
+  exact (List.map_perm_map_iff (Option.some_injective _)).1 this
+
 end LeanSMILES.Aromaticity.Work
