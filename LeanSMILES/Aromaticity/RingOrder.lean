@@ -1173,6 +1173,106 @@ lemma connRound_spec (S : List ℕ) (nbrs : Array (List ℕ)) {seen : List ℕ} 
   rw [connRound_eq]
   exact connOuter_spec S nbrs seen seen hn
 
+/-- `v` is reached from `a` through rings of `S`, by neighbour steps. -/
+def GroupReach (S : List ℕ) (nbrs : Array (List ℕ)) (a v : ℕ) : Prop :=
+  Relation.ReflTransGen (fun x y ↦ y ∈ S ∧ y ∈ nbrs[x]!) a v
+
+/-- What `k` sweeps from `[first]` have: no repeat, all in `S`, all reached, `first` kept, and
+either nothing more to add or at least `k + 1` rings. -/
+lemma connRounds_spec (S : List ℕ) (nbrs : Array (List ℕ)) {first : ℕ} (hf : first ∈ S) :
+    ∀ k : ℕ, let seen := (List.range k).foldl (fun sn _ ↦ connRound S nbrs sn) [first]
+      seen.Nodup ∧ (∀ v ∈ seen, v ∈ S ∧ GroupReach S nbrs first v) ∧ first ∈ seen ∧
+      ((∀ r ∈ seen, ∀ v ∈ nbrs[r]!, v ∈ S → v ∈ seen) ∨ k + 1 ≤ seen.length)
+  | 0 => by
+    simp only [List.range_zero, List.foldl_nil, List.nodup_singleton, List.mem_singleton,
+      forall_eq, List.length_singleton, zero_add, le_refl, or_true, and_true, true_and]
+    exact ⟨hf, .refl⟩
+  | k + 1 => by
+    intro seen
+    obtain ⟨hnd, hin, hfirst, hclo⟩ := connRounds_spec S nbrs hf k
+    set s0 := (List.range k).foldl (fun sn _ ↦ connRound S nbrs sn) [first] with hs0
+    have hseen : seen = connRound S nbrs s0 := by
+      simp only [seen, List.range_succ, List.foldl_append, List.foldl_cons, List.foldl_nil, hs0]
+    rw [hseen]
+    obtain ⟨⟨e, he⟩, hnd', hmem', hall'⟩ := connRound_spec S nbrs hnd
+    refine ⟨hnd', fun v hv ↦ ?_, by rw [he]; exact List.mem_append_left _ hfirst, ?_⟩
+    · rcases hmem' v hv with h | ⟨hvS, r, hr, hv'⟩
+      · exact hin v h
+      · exact ⟨hvS, (hin r hr).2.tail ⟨hvS, hv'⟩⟩
+    · by_cases he0 : e = []
+      · subst he0
+        rw [List.append_nil] at he
+        left
+        intro r hr v hv hvS
+        exact hall' r (he ▸ hr) v hv hvS
+      · rcases hclo with hc | hc
+        · -- closed already: nothing could be added
+          exfalso
+          obtain ⟨x, hx⟩ := List.exists_mem_of_ne_nil e he0
+          have hxr : x ∈ connRound S nbrs s0 := by rw [he]; exact List.mem_append_right _ hx
+          have hxs : x ∈ s0 := by
+            rcases hmem' x hxr with h | ⟨hxS, r, hr, h⟩
+            · exact h
+            · exact hc r hr x h hxS
+          rw [he] at hnd'
+          exact (List.nodup_append.1 hnd').2.2 x hxs x hx rfl
+        · right
+          rw [he, List.length_append]
+          have : 1 ≤ e.length := List.length_pos_iff.2 he0
+          omega
+
+/-- **The connectivity test of a group of rings**: it passes exactly when the group has no
+repeat and every ring of it is reached from the first through rings of the group. -/
+theorem isConnectedSet_iff (rids : List ℕ) (nbrs : Array (List ℕ)) :
+    isConnectedSet rids nbrs = true ↔ ∀ first, rids.head? = some first →
+      rids.Nodup ∧ ∀ v ∈ rids, GroupReach rids nbrs first v := by
+  rw [isConnectedSet_eq]
+  cases h : rids.head? with
+  | none => simp
+  | some first =>
+    have hf : first ∈ rids := List.mem_of_mem_head? h
+    have hk : List.foldl (fun sn _ ↦ connRound rids nbrs sn) [first] rids =
+        (List.range rids.length).foldl (fun sn _ ↦ connRound rids nbrs sn) [first] := by
+      have : ∀ (l l' : List ℕ), l.length = l'.length → ∀ s : List ℕ,
+          l.foldl (fun sn _ ↦ connRound rids nbrs sn) s =
+            l'.foldl (fun sn _ ↦ connRound rids nbrs sn) s := by
+        intro l
+        induction l with
+        | nil => intro l' hl s; rw [List.length_eq_zero_iff.1 hl.symm]
+        | cons x l ih =>
+          intro l' hl s
+          obtain ⟨y, l'', rfl⟩ := List.exists_cons_of_length_eq_add_one hl.symm
+          rw [List.foldl_cons, List.foldl_cons]
+          exact ih l'' (by simpa using hl) _
+      exact this _ _ (by simp) _
+    dsimp only
+    rw [hk]
+    obtain ⟨hnd, hin, hfirst, hclo⟩ := connRounds_spec rids nbrs hf rids.length
+    set seen := (List.range rids.length).foldl (fun sn _ ↦ connRound rids nbrs sn) [first]
+      with hseen
+    have hsub : seen ⊆ rids := fun v hv ↦ (hin v hv).1
+    have hle : seen.length ≤ rids.length := by
+      have := (List.subperm_of_subset hnd hsub).length_le
+      exact this
+    have hclosed : ∀ r ∈ seen, ∀ v ∈ nbrs[r]!, v ∈ rids → v ∈ seen := by
+      rcases hclo with hc | hc
+      · exact hc
+      · omega
+    have hreach : ∀ v, GroupReach rids nbrs first v → v ∈ seen := by
+      intro v hv
+      induction hv with
+      | refl => exact hfirst
+      | tail _ hstep ih => exact hclosed _ ih _ hstep.2 hstep.1
+    simp only [beq_iff_eq, Option.some.injEq, forall_eq']
+    constructor
+    · intro hlen
+      have hp : seen.Perm rids := (List.subperm_of_subset hnd hsub).perm_of_length_le (by omega)
+      refine ⟨hp.nodup_iff.1 hnd, fun v hv ↦ (hin v (hp.mem_iff.2 hv)).2⟩
+    · rintro ⟨hrn, hall⟩
+      have hp : rids.Perm seen :=
+        (List.subperm_of_subset hrn fun v hv ↦ hreach v (hall v hv)).perm_of_length_le hle
+      exact hp.length_eq.symm
+
 end Work
 
 end LeanSMILES.Aromaticity
