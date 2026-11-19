@@ -888,6 +888,44 @@ theorem fusedBonds_ringEq {numAtoms : ℕ} {w : Work} {C C' : Array (List ℕ)} 
     funext fun F ↦ systemBonds_ringEq hC hR F
   rw [e]
 
+/-! ### Fused systems: rings reordered -/
+
+/-- Whether candidate rings `i` and `j` are fused (`fusedNbrs`). -/
+def fusedPair (rb : Array (List ℕ)) (i j : ℕ) : Bool :=
+  (rb[i]!).length ≤ 24 && (rb[j]!).length ≤ 24 && ((rb[i]!).filter (rb[j]!).contains).length == 1
+
+lemma forIn_ite_yield {β : Type} (l : List ℕ) (b : β) (c : ℕ → Prop) [DecidablePred c]
+    (g : ℕ → β → β) :
+    (forIn l b (fun a r ↦ if c a then pure (ForInStep.yield (g a r))
+      else pure (ForInStep.yield r)) : Id β) = l.foldl (fun r a ↦ if c a then g a r else r) b := by
+  induction l generalizing b with
+  | nil => rfl
+  | cons x l ih =>
+    rw [List.forIn_cons, List.foldl_cons]
+    by_cases hc : c x
+    · simp only [if_pos hc]; exact ih _
+    · simp only [if_neg hc]; exact ih _
+
+lemma foldlM_id {β : Type} (l : List ℕ) (b : β) (f : β → ℕ → Id β) :
+    (l.foldlM f b).run = l.foldl (fun r a ↦ (f r a).run) b := by
+  induction l generalizing b with
+  | nil => rfl
+  | cons x l ih => rw [List.foldlM_cons, List.foldl_cons]; exact ih _
+
+lemma fusedNbrs_eq_foldl (rb : Array (List ℕ)) :
+    fusedNbrs rb = (List.range rb.size).foldl (fun nbrs i ↦
+      (List.range' (i + 1) (rb.size - (i + 1))).foldl (fun nbrs j ↦
+        if fusedPair rb i j then (nbrs.modify i (· ++ [j])).modify j (· ++ [i]) else nbrs) nbrs)
+      (Array.replicate rb.size []) := by
+  simp only [fusedNbrs, Bool.and_eq_true, decide_eq_true_eq, beq_iff_eq, bind_pure_comp,
+    map_pure, Std.Legacy.Range.forIn_eq_forIn_range', Std.Legacy.Range.size,
+    add_tsub_cancel_right, Nat.div_one, tsub_zero, List.forIn_yield_eq_foldlM, id_map', bind_pure,
+    fusedPair, List.range_eq_range']
+  rw [foldlM_id]
+  congr 1
+  funext nbrs i
+  exact forIn_ite_yield _ _ _ _
+
 end Work
 
 end LeanSMILES.Aromaticity
