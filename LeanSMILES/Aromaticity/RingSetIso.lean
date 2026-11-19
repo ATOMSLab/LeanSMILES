@@ -362,6 +362,120 @@ lemma ringsEquiv_of_match {R1 R2 : List (List ℕ)} (P : List ℕ → List ℕ �
       obtain ⟨x, hx, hP⟩ := hsurj y hy
       exact List.mem_map.2 ⟨x, hx, hfun x hx _ (hf x hx).1 y hy (hf x hx).2 hP⟩
 
+/-- The ring set is sorted by size. -/
+lemma relevantCycles_pairwise (m : Work) :
+    m.relevantCycles.toList.Pairwise (·.length ≤ ·.length) := by
+  rw [relevantCycles_toList, List.pairwise_map]
+  refine ((pairwise_mergeSort_relevantCmp _).sublist List.filter_sublist).imp_of_mem
+    fun ha hb h ↦ ?_
+  rw [← popcount_of_mem_candidateCycles m (List.mem_mergeSort.1 (List.mem_filter.1 ha).1),
+    ← popcount_of_mem_candidateCycles m (List.mem_mergeSort.1 (List.mem_filter.1 hb).1)]
+  exact h
+
+lemma relevantCycles_isRing (m : Work) : ∀ c ∈ m.relevantCycles.toList, m.IsRing c :=
+  fun _ hc ↦ isRing_of_mem_relevantCycles m (Array.mem_def.2 hc)
+
+namespace WorkIso
+
+variable {w w' : Work} {σ ψ π ρ : ℕ → ℕ}
+
+/-- A candidate is determined by its atoms renamed. -/
+lemma cand_eq_of_map (I : WorkIso w w' σ ψ π ρ) (hwf : w.WF) {e d : ℕ × List ℕ}
+    (he : e ∈ w.candidateCycles.toList) (hd : d ∈ w.candidateCycles.toList)
+    (h : e.2.map σ = d.2.map σ) : e = d := by
+  have hl : ∀ c ∈ w.candidateCycles.toList, (c.2.map σ).map ψ = c.2 := fun c hc ↦ by
+    rw [List.map_map]
+    conv_rhs => rw [← List.map_id c.2]
+    exact List.map_congr_left fun a ha ↦ I.atoms.left a
+      (IsRing.lt hwf (isRing_of_mem_candidateCycles w (Array.mem_def.2 hc)) a ha)
+  have h2 : e.2 = d.2 := by rw [← hl e he, h, hl d hd]
+  have h1 : e.1 = d.1 := by
+    rw [((candidateCycles_spec w).2.1 e he).1, ((candidateCycles_spec w).2.1 d hd).1, h2]
+  exact Prod.ext h1 h2
+
+lemma cand_eq_of_snd {m : Work} {e d : ℕ × List ℕ} (he : e ∈ m.candidateCycles.toList)
+    (hd : d ∈ m.candidateCycles.toList) (h : e.2 = d.2) : e = d := by
+  refine Prod.ext ?_ h
+  rw [((candidateCycles_spec m).2.1 e he).1, ((candidateCycles_spec m).2.1 d hd).1, h]
+
+open Classical in
+/-- **The ring set follows the renumbering**: the renamed copy's ring set is the original's with
+the atoms renamed, up to order and to where each ring starts and which way it runs. -/
+theorem relevantCycles (I : WorkIso w w' σ ψ π ρ) (hwf : w.WF) (hwf' : w'.WF) :
+    RingsEquiv (w.relevantCycles.toList.map (List.map σ)) w'.relevantCycles.toList := by
+  rw [relevantCycles_toList, relevantCycles_toList, List.map_map]
+  set S := w.candidateCycles.toList.mergeSort relevantCmp
+  set S' := w'.candidateCycles.toList.mergeSort relevantCmp
+  have hS : ∀ e, e ∈ S ↔ e ∈ w.candidateCycles.toList := fun e ↦ List.mem_mergeSort
+  have hS' : ∀ e, e ∈ S' ↔ e ∈ w'.candidateCycles.toList := fun e ↦ List.mem_mergeSort
+  have hinv : ∀ {e d : ℕ × List ℕ}, e ∈ w.candidateCycles.toList → d ∈ w.candidateCycles.toList →
+      bitMap π w.numBonds e.1 = bitMap π w.numBonds d.1 → e = d := by
+    intro e d he hd h
+    have hlt : ∀ c ∈ w.candidateCycles.toList, c.1 < 2 ^ w.numBonds := fun c hc ↦ by
+      rw [((candidateCycles_spec w).2.1 c hc).1]; exact cycleMask_lt w _
+    have := congrArg (bitMap ρ w.numBonds) h
+    rw [bitMap_bitMap I.bonds (hlt e he), bitMap_bitMap I.bonds (hlt d hd)] at this
+    exact List.inj_on_of_nodup_map (candidateCycles_spec w).1 he hd this
+  let P : List ℕ → List ℕ → Prop := fun x y ↦ ∃ e ∈ w.candidateCycles.toList,
+    ∃ e' ∈ w'.candidateCycles.toList, x = e.2.map σ ∧ y = e'.2 ∧ e'.1 = bitMap π w.numBonds e.1
+  apply ringsEquiv_of_match P
+  · refine (List.Nodup.filter _ ?_).map_on fun e he d hd h ↦ ?_
+    · exact ((candidateCycles_spec w).1.of_map _).perm (List.mergeSort_perm _ _).symm
+    · exact I.cand_eq_of_map hwf ((hS e).1 (List.mem_filter.1 he).1)
+        ((hS d).1 (List.mem_filter.1 hd).1) h
+  · refine (List.Nodup.filter _ ?_).map_on fun e he d hd h ↦ ?_
+    · exact ((candidateCycles_spec w').1.of_map _).perm (List.mergeSort_perm _ _).symm
+    · exact cand_eq_of_snd ((hS' e).1 (List.mem_filter.1 he).1)
+        ((hS' d).1 (List.mem_filter.1 hd).1) h
+  · intro x hx
+    obtain ⟨e, he, rfl⟩ := List.mem_map.1 hx
+    obtain ⟨he, hr⟩ := List.mem_filter.1 he
+    have he := (hS e).1 he
+    obtain ⟨e', he', -, hm⟩ := I.candidate hwf hwf' he
+    refine ⟨e'.2, List.mem_map.2 ⟨e', List.mem_filter.2 ⟨(hS' e').2 he', ?_⟩, rfl⟩,
+      e, he, e', he', rfl, rfl, hm⟩
+    simp only [decide_eq_true_eq] at hr ⊢
+    exact (I.relevant_iff hwf hwf' he he' hm).2 hr
+  · intro y hy
+    obtain ⟨e', he', rfl⟩ := List.mem_map.1 hy
+    obtain ⟨he', hr⟩ := List.mem_filter.1 he'
+    have he' := (hS' e').1 he'
+    obtain ⟨e, he, hm⟩ := I.matched_of_mem' hwf hwf' he'
+    refine ⟨e.2.map σ, List.mem_map.2 ⟨e, List.mem_filter.2 ⟨(hS e).2 he, ?_⟩, rfl⟩,
+      e, he, e', he', rfl, rfl, hm⟩
+    simp only [decide_eq_true_eq] at hr ⊢
+    exact (I.relevant_iff hwf hwf' he he' hm).1 hr
+  · rintro x - x' - y - ⟨e, he, e', he', rfl, rfl, hm⟩ ⟨d, hd, d', hd', rfl, hy, hm'⟩
+    have : e' = d' := cand_eq_of_snd he' hd' hy
+    subst this
+    rw [hinv he hd (hm.symm.trans hm')]
+  · rintro x - y - y' - ⟨e, he, e', he', rfl, rfl, hm⟩ ⟨d, hd, d', hd', hx, rfl, hm'⟩
+    have : e = d := I.cand_eq_of_map hwf he hd hx
+    subst this
+    rw [List.inj_on_of_nodup_map (candidateCycles_spec w').1 he' hd' (hm.trans hm'.symm)]
+  · rintro x - y - ⟨e, he, e', he', rfl, rfl, hm⟩
+    exact (I.matched hwf hwf' he he' hm).1
+
+/-- **Perception over the renamed copy's ring set** is perception over the original ring set
+renamed, on any copy with the renamed copy's bonds. -/
+theorem setAromaticity_relevantCycles (I : WorkIso w w' σ ψ π ρ) (hwf : w.WF) (hwf' : w'.WF)
+    {u : Work} (hbb : u.bondBetween? = w'.bondBetween?) :
+    u.setAromaticity w'.relevantCycles = u.setAromaticity (w.relevantCycles.map (List.map σ)) := by
+  apply setAromaticity_equiv u
+  · rw [Array.toList_map]; exact I.relevantCycles hwf hwf'
+  · rw [Array.toList_map, List.pairwise_map]
+    exact (relevantCycles_pairwise w).imp fun h ↦ by simpa using h
+  · exact relevantCycles_pairwise w'
+  · intro r hr
+    rw [Array.toList_map] at hr
+    obtain ⟨c, hc, rfl⟩ := List.mem_map.1 hr
+    have : u.ringBonds (c.map σ) = w'.ringBonds (c.map σ) := by
+      rw [ringBonds_eq_filterMap, ringBonds_eq_filterMap, hbb]
+    rw [this]
+    exact (I.isRing hwf hwf' (relevantCycles_isRing w c hc)).ringBonds_nodup
+
+end WorkIso
+
 end Work
 
 end LeanSMILES.Aromaticity
