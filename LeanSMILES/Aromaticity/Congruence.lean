@@ -537,23 +537,28 @@ lemma ringBonds_of_bonds_eq {w w' : Work} (h : w'.bonds = w.bonds) :
 
 namespace Swapped
 
+/-- Perception marks the swapped copy as it marks the first: the two come out the same. -/
+theorem setAromaticity_eq (h : Swapped F w w') (rings : Array (List ℕ))
+    (hF : ∀ k, F k = true → k ∈ rings.toList.flatMap w.ringBonds)
+    (hA : ∀ k, F k = true → (w.assignRadicals.setAromaticity rings).kind? k = some .aromatic) :
+    w'.assignRadicals.setAromaticity rings = w.assignRadicals.setAromaticity rings := by
+  have h1 := h.assignRadicals
+  have hF1 : ∀ k, F k = true → k ∈ rings.toList.flatMap w.assignRadicals.ringBonds := by
+    rw [ringBonds_of_bonds_eq (assignRadicals_bonds w)]
+    exact hF
+  unfold Work.setAromaticity
+  rw [h1.aromaticBondList_eq rings hF1]
+  refine KindRel.eq_of_aromatic ?_ hA
+  exact foldl_sim (KindRel F) _ _ _ _ _ h1.kindRel fun _ _ b _ hb ↦ hb.markAromatic b
+
 /-- **Two Kekulé structures over the bonds `F` are perceived alike**, if `setAromaticity` makes
 every bond of `F` aromatic in one of them: the finished copies are equal. -/
 theorem finish_eq (h : Swapped F w w') (rings : Array (List ℕ))
     (hF : ∀ k, F k = true → k ∈ rings.toList.flatMap w.ringBonds)
     (hA : ∀ k, F k = true → (w.assignRadicals.setAromaticity rings).kind? k = some .aromatic) :
     w'.finish rings = w.finish rings := by
-  have h1 := h.assignRadicals
-  have hF1 : ∀ k, F k = true → k ∈ rings.toList.flatMap w.assignRadicals.ringBonds := by
-    rw [ringBonds_of_bonds_eq (assignRadicals_bonds w)]
-    exact hF
-  have hs : w'.assignRadicals.setAromaticity rings = w.assignRadicals.setAromaticity rings := by
-    unfold Work.setAromaticity
-    rw [h1.aromaticBondList_eq rings hF1]
-    refine KindRel.eq_of_aromatic ?_ hA
-    exact foldl_sim (KindRel F) _ _ _ _ _ h1.kindRel fun _ _ b _ hb ↦ hb.markAromatic b
   unfold Work.finish
-  rw [hs]
+  rw [h.setAromaticity_eq rings hF hA]
 
 end Swapped
 

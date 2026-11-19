@@ -3957,6 +3957,704 @@ theorem aromatize_of_hydrogenSpelling {x y ax ay : Molecule n} (hx : x.IsKekule)
     rw [atom_aromatizeOutput, charge_normalizeBracket] at this
     simpa [Molecule.outAtom] using this
 
+open Aromaticity in
+/-- **When the charges are kept, `cleanUp` did nothing**, from the kekulized copy: kekulization
+keeps the atoms and their charges. -/
+lemma ChargesKept.cleanUp_eq_of_kekulize {m a : Molecule n} {K : Work}
+    (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K)
+    (ha : m.aromatizeOutput (K.finish (Work.prepare m).relevantCycles) = a)
+    (hc : m.ChargesKept a) :
+    (Work.ofMolecule m).freezeHs.cleanUp = (Work.ofMolecule m).freezeHs := by
+  have hKR := Work.kekulize_kindsRel hK
+  have hF := K.afterRel_finish (Work.prepare m).relevantCycles
+  apply Work.cleanUp_eq_self_of_charge
+  intro j
+  by_cases hj : j < n
+  · have hsize : j < (K.finish (Work.prepare m).relevantCycles).atoms.size := by
+      rw [hF.atoms_size, hKR.atoms_size]
+      simp [Work.prepare, (Work.cleanRel_cleanUp _).atoms_size, hj]
+    have h1 : some ((m.aromatizeOutput (K.finish (Work.prepare m).relevantCycles)).atom
+        ⟨j, hj⟩).charge = (Work.ofMolecule m).freezeHs.cleanUp.charge? j := by
+      rw [charge_aromatizeOutput, ← Work.charge?_eq_of_lt _ hsize, hF.charge, hKR.charge]
+      simp [Work.prepare]
+    rw [ha, hc ⟨j, hj⟩] at h1
+    rw [← h1, Work.charge?_freezeHs, Work.charge?_ofMolecule m ⟨j, hj⟩]
+  · have h2 : ¬ j < (Work.ofMolecule m).freezeHs.cleanUp.atoms.size := by
+      simpa [(Work.cleanRel_cleanUp _).atoms_size] using hj
+    have h3 : ¬ j < (Work.ofMolecule m).freezeHs.atoms.size := by simpa using hj
+    rw [← Work.charge?_isSome_iff, Bool.not_eq_true, Option.isSome_eq_false_iff,
+      Option.isNone_iff_eq_none] at h2 h3
+    rw [h2, h3]
+
+open Aromaticity in
+/-- **The kekulized copy with a spelling's bonds is a bond swap of it** (`Work.Swapped`) over the
+bonds `m` writes aromatic, when the two give every atom the same bond-order sum. -/
+lemma swapped_spelling {m k a : Molecule n} {K : Work}
+    (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K)
+    (ha : m.aromatizeOutput (K.finish (Work.prepare m).relevantCycles) = a)
+    (hc : m.ChargesKept a) (hw : m.AromaticWritten) (hs : k.IsKekuleSpellingOf m)
+    (hqk : (Work.ofMolecule k).freezeHs.cleanUp = (Work.ofMolecule k).freezeHs)
+    (hsum : ∀ i, (Work.prepare k).bondHalfSum i = K.bondHalfSum i) :
+    Work.Swapped (fun j ↦ (m.bonds[j]?.map (·.kind == .aromatic)).getD false) K
+      { K with bonds := (Work.prepare k).bonds } := by
+  have hqm := hc.cleanUp_eq_of_kekulize hK ha
+  have hPm : Work.prepare m = (Work.ofMolecule m).freezeHs.cacheValences := by
+    simp only [Work.prepare, hqm]
+  have hPk : Work.prepare k = (Work.ofMolecule k).freezeHs.cacheValences := by
+    simp only [Work.prepare, hqk]
+  have hbPm : (Work.prepare m).bonds = (Work.ofMolecule m).bonds := by
+    rw [hPm, Work.cacheValences_bonds, Work.freezeHs_bonds]
+  have hbPk : (Work.prepare k).bonds = (Work.ofMolecule k).bonds := by
+    rw [hPk, Work.cacheValences_bonds, Work.freezeHs_bonds]
+  have hKR := Work.kekulize_kindsRel hK
+  have hlen : k.bonds.length = m.bonds.length := hs.bonds.length_eq
+  have endsK : ∀ j, K.bonds[j]?.map (fun b : WBond ↦ (b.src, b.dst)) =
+      m.bonds[j]?.map (fun b : Bond n ↦ (b.src.val, b.dst.val)) := fun j ↦ by
+    have := congrArg (Option.map fun b : WBond ↦ (b.src, b.dst)) (hKR.bonds j)
+    simp only [Option.map_map, Function.comp_def] at this
+    rw [this, hbPm, Work.getElem?_ofMolecule_bonds, Option.map_map]
+    rfl
+  have endsk : ∀ j, (Work.prepare k).bonds[j]?.map (fun b : WBond ↦ (b.src, b.dst)) =
+      m.bonds[j]?.map (fun b : Bond n ↦ (b.src.val, b.dst.val)) := fun j ↦ by
+    rw [hbPk, Work.getElem?_ofMolecule_bonds, Option.map_map]
+    rcases hs.bonds.getElem? j with ⟨h1, h2⟩ | ⟨x, y, hx, hy, hxy⟩
+    · rw [h1, h2]; rfl
+    · rw [hx, hy]
+      simp [hxy.1, hxy.2.1]
+  obtain ⟨D, hkind, -, -, -⟩ := Work.kekulize_prepare_correct hw.1 hw.2 hK
+  refine ⟨rfl, ?_, fun j ↦ ?_, fun j hj ↦ ?_, fun j hj ↦ ?_, fun i ↦ ?_⟩
+  · change (Work.prepare k).bonds.size = K.bonds.size
+    rw [size_kekulized hK, hbPk]
+    simp [Work.ofMolecule, hlen]
+  · change (Work.prepare k).bonds[j]?.map _ = _
+    rw [endsk, endsK]
+  · change (Work.prepare k).kind? j = K.kind? j
+    have hnot : (Work.prepare m).kind? j ≠ some .aromatic := by
+      rw [Work.kind?, hbPm, Work.getElem?_ofMolecule_bonds, Option.map_map]
+      intro e
+      cases hmj : m.bonds[j]? with
+      | none => rw [hmj] at e; cases e
+      | some b =>
+        rw [hmj] at e hj
+        simp only [Option.map_some, Option.getD_some, beq_eq_false_iff_ne, ne_eq] at hj
+        simp only [Option.map_some, Function.comp_apply, Option.some.injEq] at e
+        exact hj e
+    rw [Work.kekulize_kind_of_not_aromatic hK hnot, Work.kind?, Work.kind?, hbPk, hbPm,
+      Work.getElem?_ofMolecule_bonds, Work.getElem?_ofMolecule_bonds, Option.map_map,
+      Option.map_map]
+    rcases hs.bonds.getElem? j with ⟨h1, h2⟩ | ⟨x, y, hx, hy, hxy⟩
+    · rw [h1, h2]
+    · rw [hx, hy]
+      rw [hy] at hj
+      simp only [Option.map_some, Option.getD_some, beq_eq_false_iff_ne, ne_eq] at hj
+      obtain ⟨-, -, -, hif⟩ := hxy
+      rw [if_neg hj] at hif
+      simp [hif]
+  · cases hmj : m.bonds[j]? with
+    | none => rw [hmj] at hj; cases hj
+    | some b =>
+      rw [hmj] at hj
+      simp only [Option.map_some, Option.getD_some, beq_iff_eq] at hj
+      have hjl : j < m.bonds.length := (List.getElem?_eq_some_iff.mp hmj).1
+      have hjK : j < K.bonds.size := by rw [size_kekulized hK]; exact hjl
+      have hjP : j < (Work.prepare m).bonds.size := by
+        rw [hbPm]; simpa [Work.ofMolecule] using hjl
+      have hwa : (Work.prepare m).kekWa j = true := by
+        rw [Work.kekWa_iff]
+        refine ⟨hjP, ?_⟩
+        rw [getElem!_pos _ j hjP]
+        have e := Work.getElem?_ofMolecule_bonds m j
+        rw [← hbPm, hmj, Array.getElem?_eq_getElem hjP] at e
+        simp only [Option.map_some, Option.some.injEq] at e
+        rw [e, hj]
+      refine ⟨⟨(K.bonds[j]! : WBond).kind, ?_, ?_⟩, ?_⟩
+      · rw [Work.kind?, Array.getElem?_eq_getElem hjK, ← getElem!_pos K.bonds j hjK]; rfl
+      · rw [hkind j, hwa]
+        split
+        · exact .inr rfl
+        · exact .inl rfl
+      · rcases hs.bonds.getElem? j with ⟨-, h2⟩ | ⟨x, y, hx, hy, hxy⟩
+        · rw [h2] at hmj; cases hmj
+        · rw [hmj] at hy
+          cases hy
+          obtain ⟨-, -, -, hif⟩ := hxy
+          rw [if_pos hj] at hif
+          refine ⟨x.kind, ?_, hif⟩
+          change (Work.prepare k).kind? j = _
+          rw [Work.kind?, hbPk, Work.getElem?_ofMolecule_bonds, hx]
+          rfl
+  · change Work.bondHalfSum { K with bonds := (Work.prepare k).bonds } i = _
+    rw [← hsum i]
+    rfl
+
+/-- Two atoms equal but for the aromatic flag and the hydrogen fields are equal once those and the
+charge are set alike. -/
+lemma atom_eq_of_eraseAH {a b : Atom}
+    (h : ({ a with aromatic := false, explicitH := none, implicitH := 0 } : Atom) =
+      { b with aromatic := false, explicitH := none, implicitH := 0 }) (ar : Bool) (c : ℤ)
+    (e : Option ℕ) (k : ℕ) :
+    ({ a with aromatic := ar, charge := c, explicitH := e, implicitH := k } : Atom) =
+      { b with aromatic := ar, charge := c, explicitH := e, implicitH := k } := by
+  cases a; cases b
+  simp only [Atom.mk.injEq] at h ⊢
+  simp_all
+
+open Aromaticity in
+/-- **Two inputs spelled differently give the same output** from final working copies that agree
+(`OutAgree`): the same skeleton (the bond kinds and aromatic flags are the working copy's), atoms
+equal but for the aromatic flag and the hydrogen fields, and every atom whose hydrogens the two
+write differently written bare in one of them, and writable so. -/
+lemma aromatizeOutput_respell {x y : Molecule n} {Fx Fy : Work} (hO : OutAgree n Fx Fy)
+    (hFs : Fx.bonds.size = x.bonds.length)
+    (hb : List.Forall₂ (fun b b' : Bond n ↦ b.src = b'.src ∧ b.dst = b'.dst ∧ b.dir = b'.dir)
+      y.bonds x.bonds)
+    (hst : y.stereo = x.stereo)
+    (hat : ∀ i, ({ y.atom i with aromatic := false, explicitH := none, implicitH := 0 } : Atom) =
+      { x.atom i with aromatic := false, explicitH := none, implicitH := 0 })
+    (hE : ∀ i, (y.atom i).explicitH = (x.atom i).explicitH ∨ (y.atom i).explicitH = none ∨
+      (x.atom i).explicitH = none)
+    (hbx : x.BareWritable) (hby : y.BareWritable)
+    (hcx : ∀ i : Fin n, (Fx.atoms[i.val]! : WAtom).charge = (x.atom i).charge) :
+    y.aromatizeOutput Fy = x.aromatizeOutput Fx := by
+  have hbonds : withKinds y Fy = withKinds x Fx := by
+    apply List.ext_getElem?
+    intro j
+    rw [getElem?_withKinds, getElem?_withKinds, hO.bonds]
+    rcases hb.getElem? j with ⟨h1, h2⟩ | ⟨u, v, hu, hv, huv⟩
+    · rw [h1, h2]
+    · rw [hu, hv]
+      have hjl : j < Fx.bonds.size := hFs ▸ (List.getElem?_eq_some_iff.mp hv).1
+      simp only [Option.map_some, Array.getElem?_eq_getElem hjl, Option.getD_some,
+        Option.some.injEq]
+      obtain ⟨s, d, kd, dir, ne⟩ := u
+      obtain ⟨s', d', kd', dir', ne'⟩ := v
+      simp only at huv
+      obtain ⟨rfl, rfl, rfl⟩ := huv
+      rfl
+  refine Molecule.ext (Vector.ext fun j hj ↦ ?_) (by simp [hbonds]) (by simp [hst])
+  change (y.aromatizeOutput Fy).atom ⟨j, hj⟩ = (x.aromatizeOutput Fx).atom ⟨j, hj⟩
+  set i : Fin n := ⟨j, hj⟩
+  have hsum : (y.aromatizeOutput Fy).bondOrderSum i = (x.aromatizeOutput Fx).bondOrderSum i := by
+    simp only [bondOrderSum, bondsAt, aromatizeOutput_bonds, hbonds]
+  rw [atom_aromatizeOutput, atom_aromatizeOutput, hsum]
+  have hbase := atom_eq_of_eraseAH (hat i)
+  have hcy : (Fy.atoms[i.val]! : WAtom).charge = (y.atom i).charge := by
+    rw [hO.charge i, hcx i]
+    have := congrArg Atom.charge (hat i)
+    simpa using this.symm
+  have hbeq : ({ y.outAtom Fy i with explicitH := none, implicitH := 0 } : Atom) =
+      { x.outAtom Fx i with explicitH := none, implicitH := 0 } := by
+    simp only [Molecule.outAtom, hO.aromatic i, hO.charge i]
+    exact hbase _ _ _ _
+  rcases hE i with he | hn | hn
+  · have : y.outAtom Fy i = x.outAtom Fx i := by
+      simp only [Molecule.outAtom, hO.aromatic i, hO.charge i, hO.hs i, he]
+      exact hbase _ _ _ _
+    rw [this]
+  · refine normalizeBracket_congr_bare _ hbeq (by rw [totalH_outAtom, totalH_outAtom, hO.hs i]) ?_
+    have hcb := (hby i hn).1
+    simp only [Atom.canBeBare, Bool.and_eq_true, beq_iff_eq] at hcb ⊢
+    simp only [Molecule.outAtom, hcy]
+    exact ⟨⟨⟨⟨⟨rfl, hcb.1.1.1.1.2⟩, hcb.1.1.1.2⟩, hcb.1.1.2⟩, hcb.1.2⟩, hcb.2⟩
+  · refine normalizeBracket_congr_bare _ hbeq (by rw [totalH_outAtom, totalH_outAtom, hO.hs i]) ?_
+    rw [hbeq]
+    have hcb := (hbx i hn).1
+    simp only [Atom.canBeBare, Bool.and_eq_true, beq_iff_eq] at hcb ⊢
+    simp only [Molecule.outAtom, hcx]
+    exact ⟨⟨⟨⟨⟨rfl, hcb.1.1.1.1.2⟩, hcb.1.1.1.2⟩, hcb.1.1.2⟩, hcb.1.2⟩, hcb.2⟩
+
+open Aromaticity in
+/-- An input's hydrogen count: its written hydrogens and RDKit's implicit count. -/
+lemma sanitizedH_eq (x : Molecule n) (i : Fin n) :
+    x.sanitizedH i = (x.atom i).explicitH.getD 0 + (Work.ofMolecule x).implicitHs i := by
+  unfold sanitizedH Work.totalHs
+  rw [Work.ofMolecule_atom]
+  rfl
+
+open Aromaticity in
+/-- `freezeHs` changes no valence and no implicit count. -/
+lemma freezeHs_explicitValence_implicitHs (x : Molecule n) (i : Fin n) :
+    (Work.ofMolecule x).freezeHs.explicitValence i = (Work.ofMolecule x).explicitValence i ∧
+      (Work.ofMolecule x).freezeHs.implicitHs i = (Work.ofMolecule x).implicitHs i := by
+  have hfa := Work.freezeHs_ofMolecule_atom x i
+  have hoa := Work.ofMolecule_atom x i
+  have hk : (Work.ofMolecule x).freezeHs.kindsAt i = (Work.ofMolecule x).kindsAt i := by
+    simp only [Work.kindsAt, Work.bondsOf, Work.numBonds, Work.freezeHs_bonds]
+  have har : (Work.ofMolecule x).freezeHs.isAromaticAtom i =
+      (Work.ofMolecule x).isAromaticAtom i := by
+    rw [Work.isAromaticAtom_eq_loc, Work.isAromaticAtom_eq_loc, hk, hfa, hoa]
+  constructor
+  · rw [Work.explicitValence_eq_loc, Work.explicitValence_eq_loc, Work.bondHalfSum_eq_loc,
+      Work.bondHalfSum_eq_loc, hk, har, hfa, hoa]
+    exact Loc.ev_congr rfl rfl rfl _ _
+  · rw [Work.implicitHs_eq_loc, Work.implicitHs_eq_loc, Work.bondHalfSum_eq_loc,
+      Work.bondHalfSum_eq_loc, hk, har, hfa, hoa]
+    exact Loc.impl_congr rfl rfl rfl rfl _ _
+
+open Aromaticity in
+/-- A Kekulé input's valence is its bond-order sum and its written hydrogens. -/
+lemma IsKekule.explicitValence {x : Molecule n} (hx : x.IsKekule) (i : Fin n) :
+    (Work.ofMolecule x).explicitValence i =
+      (x.atom i).explicitH.getD 0 + (Work.ofMolecule x).bondHalfSum i / 2 := by
+  have hna := Work.noArom_ofMolecule x hx.1 hx.2
+  have hk : ((Work.ofMolecule x).kindsAt i).any (· == .aromatic) = false := by
+    rw [List.any_eq_false]
+    intro y hy
+    obtain ⟨k, hk, rfl⟩ := List.mem_map.1 hy
+    have hlt := Work.lt_of_mem_bondsOf hk
+    rw [getElem!_pos _ k hlt]
+    simpa using hna.2 _ (Array.getElem_mem hlt)
+  have har : (Work.ofMolecule x).isAromaticAtom i = false := by
+    rw [Work.isAromaticAtom_eq_loc, hk, Work.ofMolecule_atom]
+    simpa using hx.1 i
+  have he := Work.bhs_even_of_noArom hk
+  have hev : ∀ (a : WAtom) (h : ℕ), Loc.ev a h false = (2 * a.explicitHs + h + 1) / 2 := by
+    intro a h
+    unfold Loc.ev
+    simp only [Id.run, Bool.and_false]
+    split <;> rfl
+  rw [Work.explicitValence_eq_loc, har, Work.bondHalfSum_eq_loc, hev, Work.ofMolecule_atom]
+  simp only
+  omega
+
+set_option maxHeartbeats 4000000 in -- the two runs, atom by atom
+open Aromaticity in
+/-- **The run on `m` and the run on a Kekulé spelling of it give the same output**, when
+kekulization gives every atom the bond-order sum the spelling does and the hydrogen count `m`
+has.  The kekulized copy with the spelling's bonds is a bond swap of it, perceived alike
+(`swapped_spelling`, `Work.Swapped.finish_eq`); its records and the spelling's copy's are equal
+or swap written for implied hydrogens at RDKit's count (`Work.readAlike_of_swap`); both get
+their hydrogens back; and the outputs are written alike (`aromatizeOutput_respell`). -/
+theorem aromatize_of_spelling_core {m k a a' : Molecule n} {K : Work}
+    (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K)
+    (ha : m.aromatizeOutput (K.finish (Work.prepare m).relevantCycles) = a)
+    (hc : m.ChargesKept a) (hk : m.AromaticKept a) (hs : k.IsKekuleSpellingOf m)
+    (h' : k.aromatize = .ok a') (hc' : k.ChargesKept a')
+    (hw : m.AromaticWritten) (hbw : m.BareWritable) (hbk : k.BareWritable)
+    (hsum : ∀ i, (Work.prepare k).bondHalfSum i = K.bondHalfSum i)
+    (htotK : ∀ i : Fin n, K.cachedTotalHs i = m.sanitizedH i) : a' = a := by
+  obtain ⟨Kk, hKk, hak⟩ := aromatize_eq_ok.mp h'
+  rw [hs.kekule.kekulize_prepare] at hKk
+  cases hKk
+  have hqm := hc.cleanUp_eq_of_kekulize hK ha
+  have hqk := hc'.cleanUp_eq _ (.refl _) _ hak
+  have hPm : Work.prepare m = (Work.ofMolecule m).freezeHs.cacheValences := by
+    simp only [Work.prepare, hqm]
+  have hPk : Work.prepare k = (Work.ofMolecule k).freezeHs.cacheValences := by
+    simp only [Work.prepare, hqk]
+  have hbPm : (Work.prepare m).bonds = (Work.ofMolecule m).bonds := by
+    rw [hPm, Work.cacheValences_bonds, Work.freezeHs_bonds]
+  have hbPk : (Work.prepare k).bonds = (Work.ofMolecule k).bonds := by
+    rw [hPk, Work.cacheValences_bonds, Work.freezeHs_bonds]
+  have hsw := swapped_spelling hK ha hc hw hs hqk hsum
+  have hKR := Work.kekulize_kindsRel hK
+  have hnK : K.atoms.size = n := by rw [hKR.atoms_size, size_prepare_atoms]
+  have hnPk : (Work.prepare k).atoms.size = n := size_prepare_atoms k
+  have hna := Work.kekulize_noArom hK
+  -- the same rings
+  have hR1 : (Work.prepare k).relevantCycles =
+      ({ K with bonds := (Work.prepare k).bonds } : Work).relevantCycles :=
+    Work.relevantCycles_eq_of_ends (by change _ = K.atoms.size; rw [hnPk, hnK]) rfl (fun _ ↦ rfl)
+  have hR3 : K.relevantCycles = (Work.prepare m).relevantCycles :=
+    Work.relevantCycles_eq_of_ends hKR.atoms_size hKR.bonds_size (fun j ↦ by
+      have := congrArg (Option.map fun b : WBond ↦ (b.src, b.dst)) (hKR.bonds j)
+      simpa [Option.map_map, Function.comp_def] using this)
+  have hR : (Work.prepare k).relevantCycles = (Work.prepare m).relevantCycles :=
+    hR1.trans (hsw.relevantCycles_eq.trans hR3)
+  rw [hR] at hak
+  set R := (Work.prepare m).relevantCycles with hRdef
+  set Pk := Work.prepare k with hPkdef
+  set K' : Work := { K with bonds := Pk.bonds } with hK'
+  -- the bonds `m` writes aromatic come out aromatic
+  set Fs : ℕ → Bool := fun j ↦ (m.bonds[j]?.map (·.kind == .aromatic)).getD false with hFs
+  have hFsize : (K.finish R).bonds.size = m.bonds.length := by
+    rw [Work.finish, Work.finalizeHs_bonds, (Work.afterRel_setAromaticity _ R).bonds_size,
+      Work.assignRadicals_bonds, size_kekulized hK]
+  have hA : ∀ j, Fs j = true → (K.assignRadicals.setAromaticity R).kind? j = some .aromatic := by
+    intro j hj
+    cases hmj : m.bonds[j]? with
+    | none => simp [hFs, hmj] at hj
+    | some b =>
+      simp only [hFs, hmj, Option.map_some, Option.getD_some, beq_iff_eq] at hj
+      rcases hk.getElem? j with ⟨h1, -⟩ | ⟨x, y, hx, hy, hxy⟩
+      · rw [h1] at hmj; cases hmj
+      · rw [hmj] at hx
+        cases hx
+        have hya := hxy hj
+        rw [← ha, aromatizeOutput_bonds, getElem?_withKinds, hmj] at hy
+        have hjl : j < (K.finish R).bonds.size := by
+          rw [hFsize]; exact (List.getElem?_eq_some_iff.mp hmj).1
+        simp only [Option.map_some, Array.getElem?_eq_getElem hjl, Option.getD_some,
+          Option.some.injEq] at hy
+        rw [← hy] at hya
+        simp only at hya
+        have e : (K.finish R).kind? j = some .aromatic := by
+          simp [Work.kind?, Array.getElem?_eq_getElem hjl, hya]
+        simpa [Work.finish, Work.kind?, Work.finalizeHs_bonds] using e
+  have h0 : ∀ j, K.assignRadicals.kind? j ≠ some .aromatic := by
+    intro j e
+    rw [Work.kind?, Work.assignRadicals_bonds, Option.map_eq_some_iff] at e
+    obtain ⟨x, hx, hxk⟩ := e
+    exact hna.2 x (Array.mem_of_getElem? hx) hxk
+  have hF : ∀ j, Fs j = true → j ∈ R.toList.flatMap K.ringBonds := by
+    intro j hj
+    obtain ⟨-, -, hmem, -⟩ := Work.of_kind?_setAromaticity _ R (hA j hj) (h0 j)
+    rwa [Work.ringBonds_of_bonds_eq (Work.assignRadicals_bonds _)] at hmem
+  have hFin := hsw.finish_eq R hF hA
+  have hSet := hsw.setAromaticity_eq R hF hA
+  -- the inputs, atom by atom
+  have hel : ∀ i, (k.atom i).element = (m.atom i).element := fun i ↦ by
+    have := congrArg Atom.element (hs.atoms i); simpa using this
+  have hch : ∀ i, (k.atom i).charge = (m.atom i).charge := fun i ↦ by
+    have := congrArg Atom.charge (hs.atoms i); simpa using this
+  have hzn : ∀ i, (k.atom i).atomicNumber = (m.atom i).atomicNumber := fun i ↦ by
+    simp [Atom.atomicNumber, hel i]
+  have hCl : Work.cleaned m = (Work.ofMolecule m).freezeHs := hqm
+  have hCc : ∀ i : Fin n, ((Work.cleaned m).atoms[i.val]! : WAtom).charge = (m.atom i).charge :=
+    fun i ↦ by rw [hCl, Work.freezeHs_ofMolecule_atom]
+  have hKz : ∀ j : ℕ, (K'.atoms[j]! : WAtom) = (K.atoms[j]! : WAtom) := fun _ ↦ rfl
+  have hbK' : ∀ j : ℕ, K'.bondHalfSum j = Pk.bondHalfSum j := fun j ↦
+    congrFun (Work.bondHalfSum_congr (rfl : K'.bonds = Pk.bonds)) j
+  have hkP : ∀ j : ℕ, K'.kindsAt j = Pk.kindsAt j := fun _ ↦ rfl
+  have hzz : ∀ j : ℕ, (Pk.atoms[j]! : WAtom).z = (K'.atoms[j]! : WAtom).z := fun j ↦ by
+    by_cases hj : j < n
+    · rw [hKz, (hs.kekule.prepare_record hqk ⟨j, hj⟩).1,
+        (kekulize_record hK hw hbw hj).2.1, hzn]
+    · rw [getElem!_neg _ j (by omega), getElem!_neg K'.atoms j
+        (by change ¬ j < K.atoms.size; omega)]
+  have hcc : ∀ j : ℕ, (Pk.atoms[j]! : WAtom).charge = (K'.atoms[j]! : WAtom).charge := fun j ↦ by
+    by_cases hj : j < n
+    · rw [hKz, (hs.kekule.prepare_record hqk ⟨j, hj⟩).2.1,
+        (kekulize_record hK hw hbw hj).2.2.1, hCc ⟨j, hj⟩, hch]
+    · rw [getElem!_neg _ j (by omega), getElem!_neg K'.atoms j
+        (by change ¬ j < K.atoms.size; omega)]
+  have htot : ∀ j : ℕ, Pk.cachedTotalHs j = K'.cachedTotalHs j := fun j ↦ by
+    by_cases hj : j < n
+    · rw [(hs.kekule.prepare_record hqk ⟨j, hj⟩).2.2.2.2.2.2, hs.hydrogens]
+      exact (htotK ⟨j, hj⟩).symm
+    · simp only [Work.cachedTotalHs]
+      rw [getElem!_neg _ j (by omega), getElem!_neg K'.atoms j
+        (by change ¬ j < K.atoms.size; omega)]
+  have hr0 : ∀ j : ℕ, (K'.atoms[j]! : WAtom).radicals = 0 := fun j ↦ by
+    by_cases hj : j < n
+    · exact (kekulize_record hK hw hbw hj).1
+    · rw [getElem!_neg K'.atoms j
+        (by change ¬ j < K.atoms.size; omega)]; rfl
+  have hr0' : ∀ j : ℕ, (Pk.atoms[j]! : WAtom).radicals = 0 := fun j ↦ by
+    by_cases hj : j < n
+    · exact (hs.kekule.prepare_record hqk ⟨j, hj⟩).2.2.2.2.1
+    · rw [getElem!_neg _ j (by omega)]; rfl
+  -- the valence the copy with the spelling's bonds caches is its bond-order sum
+  have hval : ∀ i : Fin n, ((Work.cleaned m).explicitValence i : ℤ) - (m.atom i).explicitH.getD 0 =
+      ((Pk.bondHalfSum i / 2 : ℕ) : ℤ) := by
+    intro i
+    have e1 := (freezeHs_explicitValence_implicitHs m i).1
+    have e2 := hs.valence i
+    have e3 := hs.hydrogens i
+    rw [sanitizedH_eq, sanitizedH_eq] at e3
+    unfold sanitizedValence at e2
+    rw [hs.kekule.explicitValence] at e2
+    have e4 : Pk.bondHalfSum i = (Work.ofMolecule k).bondHalfSum i := by
+      rw [Work.bondHalfSum_congr hbPk]
+    rw [hCl, e1, e4]
+    omega
+  have hkek : ∀ j : ℕ, (K'.assignRadicals.cachedValence j : ℤ) -
+      (K'.assignRadicals.atoms[j]! : WAtom).explicitHs = ((K'.bondHalfSum j / 2 : ℕ) : ℤ) := by
+    intro j
+    rw [Work.cachedValence_assignRadicals, Work.explicitHs_assignRadicals, hbK']
+    unfold Work.cachedValence
+    rw [hKz]
+    by_cases hj : j < n
+    · rcases (kekulize_record hK hw hbw hj).2.2.2 with ⟨he, -, -, hv, -, -⟩ |
+        ⟨-, -, he, -, -, hv, -⟩
+      · rw [hv, he, Option.getD_some]
+        exact hval ⟨j, hj⟩
+      · rw [hv, he, Option.getD_some, ← hsum]
+        simp
+    · rw [getElem!_neg K.atoms j (by omega)]
+      simp only [Work.kekuleValence, hbK']
+      change ((Option.none : Option ℕ).getD _ : ℤ) - 0 = _
+      simp only [Option.getD_none]
+      rw [hKz, getElem!_neg K.atoms j (by omega)]
+      simp
+  have hkek' : ∀ j : ℕ, (Pk.assignRadicals.cachedValence j : ℤ) -
+      (Pk.assignRadicals.atoms[j]! : WAtom).explicitHs = ((Pk.bondHalfSum j / 2 : ℕ) : ℤ) := by
+    intro j
+    have hk' := Work.cachedValence_sub_of_noArom
+      (Work.noArom_freezeHs (Work.noArom_ofMolecule k hs.kekule.1 hs.kekule.2)) j
+    rw [← hPk, Work.bondHalfSum_congr (Work.assignRadicals_bonds _)] at hk'
+    exact hk'
+  -- written alike, or swapped at RDKit's count
+  have hcls : ∀ i : Fin n,
+      ((Pk.atoms[i.val]! : WAtom).explicitHs = (K'.atoms[i.val]! : WAtom).explicitHs ∧
+        (Pk.atoms[i.val]! : WAtom).noImplicit = (K'.atoms[i.val]! : WAtom).noImplicit) ∨
+      ∃ e ∈ Loc.organic, (K'.atoms[i.val]! : WAtom).z = e.atomicNumber ∧
+        (K'.atoms[i.val]! : WAtom).charge = 0 ∧
+        K'.cachedTotalHs i.val = Loc.rdCount e.atomicNumber 0 (Loc.bhs (K'.kindsAt i.val)) ∧
+        (((K'.atoms[i.val]! : WAtom).explicitHs = 0 ∧
+            (K'.atoms[i.val]! : WAtom).noImplicit = false ∧
+            (Pk.atoms[i.val]! : WAtom).explicitHs = K'.cachedTotalHs i.val ∧
+            (Pk.atoms[i.val]! : WAtom).noImplicit = true) ∨
+          ((Pk.atoms[i.val]! : WAtom).explicitHs = 0 ∧
+            (Pk.atoms[i.val]! : WAtom).noImplicit = false ∧
+            (K'.atoms[i.val]! : WAtom).explicitHs = K'.cachedTotalHs i.val ∧
+            (K'.atoms[i.val]! : WAtom).noImplicit = true)) := by
+    intro i
+    obtain ⟨yz, yc, ye, yn, -, yci, -⟩ := hs.kekule.prepare_record hqk i
+    obtain ⟨-, kz, kc, hrec⟩ := kekulize_record hK hw hbw i.isLt
+    have hT := htot i.val
+    have hTx : K'.cachedTotalHs i.val = (K'.atoms[i.val]! : WAtom).explicitHs +
+        (K'.atoms[i.val]! : WAtom).cachedImplicit := rfl
+    have hTy : Pk.cachedTotalHs i.val = (Pk.atoms[i.val]! : WAtom).explicitHs +
+        (Pk.atoms[i.val]! : WAtom).cachedImplicit := rfl
+    have hbhs : Loc.bhs (K.kindsAt i.val) = Loc.bhs (K'.kindsAt i.val) := by
+      rw [← Work.bondHalfSum_eq_loc, ← Work.bondHalfSum_eq_loc, hbK', hsum]
+    rw [← hPkdef] at yz yc ye yn yci
+    rw [← hkP] at yci
+    have hyc0 : (Pk.atoms[i.val]! : WAtom).noImplicit = true →
+        (Pk.atoms[i.val]! : WAtom).cachedImplicit = 0 := fun h ↦ by
+      rw [yci]; exact Loc.impl_of_noImplicit h _ _
+    -- the spelling's atom bare: RDKit's count on its bonds
+    have hyBare : ∀ e, (k.atom i).explicitH = none → (k.atom i).element = some e →
+        e ∈ Loc.organic ∧ (k.atom i).charge = 0 ∧
+        Pk.cachedTotalHs i.val = Loc.rdCount e.atomicNumber 0 (Loc.bhs (K'.kindsAt i.val)) := by
+      intro e hn he
+      obtain ⟨hcb, -⟩ := hbk i hn
+      have hcb' := hcb
+      simp only [Atom.canBeBare, hn, he, Option.isNone_none, Bool.true_and,
+        Bool.and_eq_true, beq_iff_eq] at hcb'
+      obtain ⟨⟨⟨⟨-, hch0⟩, -⟩, -⟩, horg⟩ := hcb'
+      refine ⟨Loc.mem_organic e (by simpa using horg), hch0, ?_⟩
+      rw [hTy, ye, hn, Option.getD_none, Nat.zero_add, yci]
+      apply Loc.impl_congr
+      · rw [yz]; simp [Atom.atomicNumber, he]
+      · rw [yc, hch0]
+      · rw [ye, hn]; rfl
+      · rw [yn, hn, he]; rfl
+    rcases hrec with ⟨ke, kn, kci, -, kC0, kMN⟩ | ⟨hm1, kc0, ke0, kn0, kci, -, kz7⟩
+    · cases hme : (m.atom i).explicitH with
+      | some a =>
+        have hxn : (K'.atoms[i.val]! : WAtom).noImplicit = true := by
+          rw [hKz, kn, hme]; rfl
+        have hxci : (K'.atoms[i.val]! : WAtom).cachedImplicit = 0 := by
+          rw [hKz, kci]; exact kC0 (by simp [hme])
+        cases hke : (k.atom i).explicitH with
+        | some b =>
+          have hyn : (Pk.atoms[i.val]! : WAtom).noImplicit = true := by rw [yn, hke]; rfl
+          left
+          refine ⟨?_, by rw [hxn, hyn]⟩
+          have := hyc0 hyn
+          omega
+        | none =>
+          cases hel' : (k.atom i).element with
+          | none =>
+            have hyn : (Pk.atoms[i.val]! : WAtom).noImplicit = true := by
+              rw [yn, hke, hel']; rfl
+            left
+            refine ⟨?_, by rw [hxn, hyn]⟩
+            have := hyc0 hyn
+            have hy0 : (Pk.atoms[i.val]! : WAtom).explicitHs = 0 := by rw [ye, hke]; rfl
+            omega
+          | some e =>
+            obtain ⟨horg, hch0, hTr⟩ := hyBare e hke hel'
+            right
+            have hyn : (Pk.atoms[i.val]! : WAtom).noImplicit = false := by
+              rw [yn, hke, hel']; rfl
+            have hy0 : (Pk.atoms[i.val]! : WAtom).explicitHs = 0 := by rw [ye, hke]; rfl
+            refine ⟨e, horg, ?_, ?_, by rw [← hT, hTr], .inr ⟨hy0, hyn, by omega, hxn⟩⟩
+            · rw [hKz, kz, ← hzn]; simp [Atom.atomicNumber, hel']
+            · rw [hKz, kc, hCc i, ← hch]; exact hch0
+      | none =>
+        cases hme' : (m.atom i).element with
+        | none =>
+          have hxn : (K'.atoms[i.val]! : WAtom).noImplicit = true := by
+            rw [hKz, kn, hme, hme']; rfl
+          have hxci : (K'.atoms[i.val]! : WAtom).cachedImplicit = 0 := by
+            rw [hKz, kci]; exact kC0 (by simp [hme'])
+          have hx0 : (K'.atoms[i.val]! : WAtom).explicitHs = 0 := by rw [hKz, ke, hme]; rfl
+          have hyn : (Pk.atoms[i.val]! : WAtom).noImplicit = true := by
+            rw [yn, hel, hme']; simp
+          left
+          refine ⟨?_, by rw [hxn, hyn]⟩
+          have := hyc0 hyn
+          omega
+        | some e =>
+          obtain ⟨hcb, -⟩ := hbw i hme
+          have hcb' := hcb
+          simp only [Atom.canBeBare, hme, hme', Option.isNone_none, Bool.true_and,
+            Bool.and_eq_true, beq_iff_eq] at hcb'
+          obtain ⟨⟨⟨⟨-, hch0⟩, -⟩, -⟩, horg⟩ := hcb'
+          have hxn : (K'.atoms[i.val]! : WAtom).noImplicit = false := by
+            rw [hKz, kn, hme, hme']; rfl
+          have hx0 : (K'.atoms[i.val]! : WAtom).explicitHs = 0 := by rw [hKz, ke, hme]; rfl
+          have hz : (K'.atoms[i.val]! : WAtom).z = e.atomicNumber := by
+            rw [hKz, kz]; simp [Atom.atomicNumber, hme']
+          have hc0 : (K'.atoms[i.val]! : WAtom).charge = 0 := by rw [hKz, kc, hCc i]; exact hch0
+          have hTr : K'.cachedTotalHs i.val =
+              Loc.rdCount e.atomicNumber 0 (Loc.bhs (K'.kindsAt i.val)) := by
+            rw [hTx, hx0, Nat.zero_add, hKz, kci, kMN hme e hme', ← hbhs, hCc i, hch0]
+            simp [Atom.atomicNumber, hme']
+          cases hke : (k.atom i).explicitH with
+          | none =>
+            left
+            refine ⟨by rw [ye, hke, hx0]; rfl, by rw [yn, hke, hel, hxn, hme']; rfl⟩
+          | some b =>
+            right
+            have hyn : (Pk.atoms[i.val]! : WAtom).noImplicit = true := by rw [yn, hke]; rfl
+            have := hyc0 hyn
+            refine ⟨e, Loc.mem_organic e (by simpa using horg), hz, hc0, hTr,
+              .inl ⟨hx0, hxn, by omega, hyn⟩⟩
+    · -- the `[nH]`/`[pH]` rewrite
+      have hxn : (K'.atoms[i.val]! : WAtom).noImplicit = false := by rw [hKz]; exact kn0
+      have hx0 : (K'.atoms[i.val]! : WAtom).explicitHs = 0 := by rw [hKz]; exact ke0
+      obtain ⟨e, he, hez⟩ : ∃ e ∈ Loc.organic, (K'.atoms[i.val]! : WAtom).z = e.atomicNumber := by
+        rw [hKz]
+        rcases kz7 with h | h
+        · exact ⟨.N, by decide, h⟩
+        · exact ⟨.P, by decide, h⟩
+      have hTr : K'.cachedTotalHs i.val =
+          Loc.rdCount e.atomicNumber 0 (Loc.bhs (K'.kindsAt i.val)) := by
+        rw [hTx, hx0, Nat.zero_add, hKz, kci, ← hbhs, ← hKz, hez]
+      cases hke : (k.atom i).explicitH with
+      | some b =>
+        right
+        have hyn : (Pk.atoms[i.val]! : WAtom).noImplicit = true := by rw [yn, hke]; rfl
+        have := hyc0 hyn
+        refine ⟨e, he, hez, by rw [hKz]; exact kc0, hTr, .inl ⟨hx0, hxn, by omega, hyn⟩⟩
+      | none =>
+        left
+        refine ⟨by rw [ye, hke, hx0]; rfl, ?_⟩
+        rw [yn, hke, hxn, hel]
+        have hzm : (m.atom i).atomicNumber ≠ 0 := by
+          rw [← kz]; rcases kz7 with h | h <;> omega
+        cases hme' : (m.atom i).element with
+        | none => simp [Atom.atomicNumber, hme'] at hzm
+        | some _ => rfl
+  -- perception reads the two copies alike
+  have hbR : Pk.assignRadicals.bonds = K'.assignRadicals.bonds := by
+    rw [Work.assignRadicals_bonds, Work.assignRadicals_bonds]
+  have hzR : ∀ j : ℕ, (Pk.assignRadicals.atoms[j]! : WAtom).z =
+      (K'.assignRadicals.atoms[j]! : WAtom).z := fun j ↦ by
+    have e1 := congrArg WAtom.z
+      (Work.getElem!_eq_of_map_radicals (Work.getElem?_assignRadicals_atoms K') j)
+    have e2 := congrArg WAtom.z
+      (Work.getElem!_eq_of_map_radicals (Work.getElem?_assignRadicals_atoms Pk) j)
+    simp only at e1 e2
+    rw [e1, e2, hzz]
+  have hcR : ∀ j : ℕ, (Pk.assignRadicals.atoms[j]! : WAtom).charge =
+      (K'.assignRadicals.atoms[j]! : WAtom).charge := fun j ↦ by
+    have e1 := congrArg WAtom.charge
+      (Work.getElem!_eq_of_map_radicals (Work.getElem?_assignRadicals_atoms K') j)
+    have e2 := congrArg WAtom.charge
+      (Work.getElem!_eq_of_map_radicals (Work.getElem?_assignRadicals_atoms Pk) j)
+    simp only at e1 e2
+    rw [e1, e2, hcc]
+  have hnoarP := hs.kekule.noArom_prepare
+  have hRA : ∀ ring ∈ R.toList, ∀ i ∈ ring, ∀ (rbs : List ℕ) (big : Bool),
+      Loc.readAlike (K'.assignRadicals.atoms[i]! : WAtom) (Pk.assignRadicals.atoms[i]! : WAtom)
+        (K'.assignRadicals.kindsAt i) (K'.assignRadicals.whoS rbs i)
+        (K'.assignRadicals.pullsB rbs i) (K'.assignRadicals.ringMultB rbs i) big = true := by
+    intro ring hring i hir rbs big
+    by_cases hi : i < n
+    · have hlen : 2 ≤ (K'.kindsAt i).length := by
+        have hIs := Work.isRing_of_mem_relevantCycles Pk (by rw [hR]; simpa using hring)
+        obtain ⟨k₁, k₂, hne, -, -, hk₁, hk₂⟩ := hIs.two_bonds hir
+        rw [hkP]
+        simp only [Work.kindsAt, List.length_map]
+        exact Work.two_le_length_of_ne hne hk₁ hk₂
+      have hnoar : (K'.kindsAt i).any (· == .aromatic) = false := by
+        rw [hkP, List.any_eq_false]
+        intro y' hy'
+        obtain ⟨j, hj, rfl⟩ := List.mem_map.1 hy'
+        have hlt := Work.lt_of_mem_bondsOf hj
+        rw [getElem!_pos _ j hlt]
+        simpa using hnoarP.2 _ (Array.getElem_mem hlt)
+      exact Work.readAlike_of_swap (w := K') (w' := Pk) rfl (by change i < K.atoms.size; omega)
+        (by omega) hlen hnoar
+        (hzz i) (hcc i) (htot i) (hkek i) (hkek' i) (hr0 i) (hr0' i) (hcls ⟨i, hi⟩) rbs big
+    · rw [getElem!_neg _ i (by
+          rw [Work.size_atoms_assignRadicals]; change ¬ i < K.atoms.size; omega),
+        getElem!_neg _ i (by rw [Work.size_atoms_assignRadicals]; omega)]
+      exact Loc.readAlike_self _ _ _ _ _ _
+  have beq : ∀ d d' : Donor, (d == d') = true → d = d' := by
+    intro d d' h
+    cases d <;> cases d' <;> first | rfl | exact absurd h (by decide)
+  have loc : ∀ rbs i len, Pk.assignRadicals.ringDonor rbs len i =
+        Loc.ringDonorL (Pk.assignRadicals.atoms[i]! : WAtom) (K'.assignRadicals.kindsAt i)
+          (K'.assignRadicals.whoS rbs i) (K'.assignRadicals.pullsB rbs i)
+          (K'.assignRadicals.ringMultB rbs i) (decide (9 ≤ len)) ∧
+      ∀ d, Pk.assignRadicals.isAromaticCandidate i d =
+        Loc.candD (Pk.assignRadicals.atoms[i]! : WAtom) (K'.assignRadicals.kindsAt i) d := by
+    intro rbs i len
+    have hk : Pk.assignRadicals.kindsAt i = K'.assignRadicals.kindsAt i := by
+      simp only [Work.kindsAt, Work.bondsOf, Work.numBonds, hbR]
+    refine ⟨?_, fun d ↦ ?_⟩
+    · rw [Work.ringDonor_eq_loc, hk, Work.whoS_congr hbR, Work.pullsB_congr hbR hzR,
+        Work.ringMultB_congr hbR]
+    · rw [Work.isAromaticCandidate_eq_candD, hk]
+  have hnK' : K'.atoms.size = n := hnK
+  set rbs0 := (R.toList.flatMap K'.assignRadicals.ringBonds).eraseDups with hrbs0
+  have hp : Work.PerceiveAgree R K'.assignRadicals Pk.assignRadicals := by
+    refine ⟨hbR, by rw [Work.size_atoms_assignRadicals, Work.size_atoms_assignRadicals, hnK',
+        hnPk], hzR, hcR, fun j ↦ ?_, fun j ↦ ?_, fun j ↦ ?_, ?_, fun ring hring i hir len ↦ ?_,
+      fun ring hring i hir len hcd ↦ ?_⟩
+    · rw [Work.cachedTotalHs_assignRadicals, Work.cachedTotalHs_assignRadicals, htot]
+    · rw [hkek, hkek', hbK']
+    · rw [Work.bondHalfSum_congr (Work.assignRadicals_bonds _)]; exact hkek j
+    · rw [Work.assignRadicals_bonds]
+      exact hnoarP.2
+    · have h := hRA ring hring i hir rbs0 (decide (9 ≤ len))
+      rw [(loc rbs0 i len).2, (loc rbs0 i len).1, Work.isAromaticCandidate_eq_candD,
+        Work.ringDonor_eq_loc]
+      unfold Loc.readAlike at h
+      rw [Bool.and_eq_true] at h
+      exact (beq_iff_eq.1 h.1).symm
+    · have h := hRA ring hring i hir rbs0 (decide (9 ≤ len))
+      rw [Work.isAromaticCandidate_eq_candD, Work.ringDonor_eq_loc] at hcd
+      rw [(loc rbs0 i len).1, Work.ringDonor_eq_loc]
+      unfold Loc.readAlike at h
+      rw [Bool.and_eq_true, hcd, Bool.not_true, Bool.false_or] at h
+      exact (beq _ _ h.2).symm
+  have hm : Work.SameMarks K'.assignRadicals Pk.assignRadicals := by
+    refine ⟨hbR, fun j ↦ ?_⟩
+    rw [Work.getElem?_assignRadicals_map _ _ (fun _ ↦ rfl),
+      Work.getElem?_assignRadicals_map _ _ (fun _ ↦ rfl)]
+    by_cases hj : j < n
+    · rw [Array.getElem?_eq_getElem (by omega), Array.getElem?_eq_getElem (by omega)]
+      simp only [Option.map_some, Option.some.injEq]
+      rw [hnoarP.1 _ (Array.getElem_mem _), hna.1 _ (Array.getElem_mem _)]
+    · rw [Array.getElem?_eq_none (by omega), Array.getElem?_eq_none (by omega)]
+  have hr : ∀ i < n, Work.HsRestored (K'.assignRadicals.setAromaticity R) i := fun i hi ↦ by
+    rw [hSet]; exact Work.hsRestored_kekulize hw.1 hw.2 hbw hK ⟨i, hi⟩
+  have hr' : ∀ i < n, Work.HsRestored (Pk.assignRadicals.setAromaticity R) i := fun i hi ↦ by
+    have := hs.kekule.hsRestored hbk hqk hi
+    rw [hR] at this
+    exact this
+  have hO := outAgree_finish hnK' hp hm hr hr'
+  rw [hFin] at hO
+  -- the outputs
+  subst ha hak
+  refine aromatizeOutput_respell hO hFsize (hs.bonds.imp fun _ _ h ↦ ⟨h.1, h.2.1, h.2.2.1⟩)
+    hs.stereo hs.atoms ?_ hbw hbk ?_
+  · intro i
+    cases hxe : (m.atom i).explicitH with
+    | none => exact .inr (.inr rfl)
+    | some a =>
+      cases hye : (k.atom i).explicitH with
+      | none => exact .inr (.inl rfl)
+      | some b =>
+        left
+        have h0 : ∀ x : Molecule n, ∀ c, (x.atom i).explicitH = some c → x.sanitizedH i = c := by
+          intro x c hxc
+          rw [sanitizedH_eq, hxc, Work.implicitHs_eq_loc, Work.ofMolecule_atom,
+            Loc.impl_of_noImplicit (by simp [hxc])]
+          rfl
+        rw [← h0 m a hxe, ← h0 k b hye, hs.hydrogens]
+  · intro i
+    have := hc i
+    rw [atom_aromatizeOutput, charge_normalizeBracket] at this
+    simpa [Molecule.outAtom] using this
+
 /-- **A Kekulé spelling of a molecule aromatizes to what the molecule does.**  If `m`
 aromatizes to `a` keeping its charges and every bond written aromatic, and a Kekulé spelling `k`
 of `m` aromatizes keeping its charges, and `m`'s valences are allowed, the two outputs are
