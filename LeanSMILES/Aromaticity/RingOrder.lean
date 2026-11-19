@@ -1948,6 +1948,98 @@ lemma systemBonds_map {numAtoms n : ℕ} {σ ψ : ℕ → ℕ} {rb rb' C C' : Ar
   unfold systemBonds
   simp only [List.length_map, hall, hnew]
 
+lemma nbrReach_map {n : ℕ} {σ : ℕ → ℕ} {nbrs nbrs' : Array (List ℕ)}
+    (H : GraphIso n σ nbrs nbrs') {x y : ℕ} (h : NbrReach nbrs' x y) :
+    NbrReach nbrs (σ x) (σ y) := by
+  induction h with
+  | refl => exact .refl
+  | tail _ hs ih => exact ih.tail ((H _ _).1 hs).2.2
+
+lemma nbrReach_of_map {n : ℕ} {σ ψ : ℕ → ℕ} {nbrs nbrs' : Array (List ℕ)}
+    (hb : IdxBij n σ ψ) (H : GraphIso n σ nbrs nbrs') (hlt : ∀ i : ℕ, ∀ j ∈ nbrs[i]!, j < n)
+    {x : ℕ} (hx : x < n) {w : ℕ} (h : NbrReach nbrs (σ x) w) :
+    ∃ y < n, σ y = w ∧ NbrReach nbrs' x y := by
+  induction h with
+  | refl => exact ⟨x, hx, rfl, .refl⟩
+  | @tail w c _ hwc ih =>
+    obtain ⟨y, hy, rfl, hr⟩ := ih
+    have hc : c < n := hlt _ c hwc
+    refine ⟨ψ c, hb.lt' c hc, hb.right c hc, hr.tail ((H y (ψ c)).2 ⟨hy, hb.lt' c hc, ?_⟩)⟩
+    rw [hb.right c hc]
+    exact hwc
+
+/-- **A renumbered component is a component.** -/
+lemma components_map {n : ℕ} {σ ψ : ℕ → ℕ} {nbrs nbrs' : Array (List ℕ)}
+    (hb : IdxBij n σ ψ) (H : GraphIso n σ nbrs nbrs')
+    (hlt : ∀ i : ℕ, ∀ j ∈ nbrs[i]!, j < n) (hlt' : ∀ i : ℕ, ∀ j ∈ nbrs'[i]!, j < n)
+    (hsym : ∀ i j : ℕ, j ∈ nbrs[i]! → i ∈ nbrs[j]!)
+    (hsym' : ∀ i j : ℕ, j ∈ nbrs'[i]! → i ∈ nbrs'[j]!)
+    {C' : List ℕ} (hC' : C' ∈ components n nbrs') {x : ℕ} (hx : x ∈ C') :
+    ∃ D ∈ components n nbrs, (C'.map σ).Perm D := by
+  have hCl := (components_spec hlt' hsym').2.2.1 C' hC'
+  obtain ⟨D, hD, hxD⟩ := (components_spec hlt hsym).1 (σ x) (hb.lt x (hCl x hx))
+  refine ⟨D, hD, (List.perm_ext_iff_of_nodup ?_ (components_reach hlt D hD).1).2 fun z ↦ ?_⟩
+  · exact (components_reach hlt' C' hC').1.map_on
+      fun a ha c hc e ↦ hb.inj (hCl a ha) (hCl c hc) e
+  · rw [mem_components_iff hlt hsym hD hxD z, List.mem_map]
+    constructor
+    · rintro ⟨y, hy, rfl⟩
+      exact nbrReach_map H ((mem_components_iff hlt' hsym' hC' hx y).1 hy)
+    · intro h
+      obtain ⟨y, -, rfl, hr⟩ := nbrReach_of_map hb H hlt (hCl x hx) h
+      exact ⟨y, (mem_components_iff hlt' hsym' hC' hx y).2 hr, rfl⟩
+
+lemma systemBonds_nil {numAtoms : ℕ} {rb C : Array (List ℕ)} {d : Array Donor}
+    {nbrs : Array (List ℕ)} : systemBonds numAtoms rb C d nbrs [] = [] := by
+  unfold systemBonds
+  simp
+
+/-- **Renumbered candidate rings make the same bonds aromatic**, when no ring repeats a bond. -/
+theorem fusedBonds_renumber {numAtoms : ℕ} {rb rb' C C' : Array (List ℕ)} {d : Array Donor}
+    {σ ψ : ℕ → ℕ} (hs : C'.size = C.size) (hrs : rb.size = C.size) (hrs' : rb'.size = C.size)
+    (hb : IdxBij C.size σ ψ) (hrb : ∀ i < C.size, rb'[i]! = rb[σ i]!)
+    (hC : ∀ i < C.size, C'[i]! = C[σ i]!) (hnd : ∀ i < C.size, (rb[i]!).Nodup) (b : ℕ) :
+    b ∈ fusedBonds numAtoms rb' C' d ↔ b ∈ fusedBonds numAtoms rb C d := by
+  have H : GraphIso C.size σ (fusedNbrs rb) (fusedNbrs rb') := by
+    intro i j
+    have := fusedNbrs_renumber (hrs'.trans hrs.symm) (by rw [hrs]; exact hb)
+      (by rw [hrs]; exact hrb) (by rw [hrs]; exact hnd) i j
+    rwa [hrs] at this
+  have hlt : ∀ i : ℕ, ∀ j ∈ (fusedNbrs rb)[i]!, j < C.size :=
+    fun i j h ↦ hrs ▸ fusedNbrs_lt rb i j h
+  have hlt' : ∀ i : ℕ, ∀ j ∈ (fusedNbrs rb')[i]!, j < C.size :=
+    fun i j h ↦ hrs' ▸ fusedNbrs_lt rb' i j h
+  have hsym := fusedNbrs_symm rb
+  have hsym' := fusedNbrs_symm rb'
+  unfold fusedBonds
+  dsimp only
+  rw [hs]
+  simp only [List.mem_flatMap]
+  constructor
+  · rintro ⟨F, hF, hbF⟩
+    rw [systemBonds_map hb H hrb hC ((components_spec hlt' hsym').2.2.1 F hF)] at hbF
+    cases F with
+    | nil => simp [systemBonds_nil] at hbF
+    | cons x F' =>
+      obtain ⟨D, hD, hp⟩ := components_map hb H hlt hlt' hsym hsym' hF List.mem_cons_self
+      exact ⟨D, hD, (systemBonds_perm hsym hp b).2 hbF⟩
+  · rintro ⟨D, hD, hbD⟩
+    cases D with
+    | nil => simp [systemBonds_nil] at hbD
+    | cons z D' =>
+      have hz : z < C.size := (components_spec hlt hsym).2.2.1 _ hD z List.mem_cons_self
+      obtain ⟨F, hF, hxF⟩ := (components_spec hlt' hsym').1 (ψ z) (hb.lt' z hz)
+      obtain ⟨D2, hD2, hp⟩ := components_map hb H hlt hlt' hsym hsym' hF hxF
+      have hzD2 : z ∈ D2 := hp.mem_iff.1 (List.mem_map.2 ⟨ψ z, hxF, hb.right z hz⟩)
+      have hDD : D2.Perm (z :: D') :=
+        (List.perm_ext_iff_of_nodup (components_reach hlt D2 hD2).1
+          (components_reach hlt _ hD).1).2 fun w ↦ by
+          rw [mem_components_iff hlt hsym hD2 hzD2, mem_components_iff hlt hsym hD
+            List.mem_cons_self]
+      refine ⟨F, hF, ?_⟩
+      rw [systemBonds_map hb H hrb hC ((components_spec hlt' hsym').2.2.1 F hF)]
+      exact (systemBonds_perm hsym (hp.trans hDD) b).1 hbD
+
 end Work
 
 end LeanSMILES.Aromaticity
