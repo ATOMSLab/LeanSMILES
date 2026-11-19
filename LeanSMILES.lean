@@ -49,6 +49,7 @@ public import LeanSMILES.Aromaticity.RingBasis
 public import LeanSMILES.Aromaticity.RingCanon
 public import LeanSMILES.Aromaticity.RingSearch
 public import LeanSMILES.Aromaticity.RingCands
+public import LeanSMILES.Aromaticity.RingIso
 public import LeanSMILES.Aromaticity.Invariance
 public import LeanSMILES.Aromaticity.Resonance
 public import LeanSMILES.Aromaticity.KekuleSim
