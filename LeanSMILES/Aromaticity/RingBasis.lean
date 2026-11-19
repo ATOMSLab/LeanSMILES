@@ -485,4 +485,95 @@ theorem relevantFold_eq {sorted : List (ℕ × List ℕ)}
       simp only [decide_eq_true_eq] at h; exact h.1 (hall c hc)]
     rfl
 
+lemma listLt_trans : ∀ {a b c : List ℕ}, listLt a b = true → listLt b c = true →
+    listLt a c = true
+  | [], [], _, h, _ => by simp [listLt] at h
+  | [], _ :: _, [], _, h => by simp [listLt] at h
+  | [], _ :: _, _ :: _, _, _ => rfl
+  | _ :: _, [], _, h, _ => by simp [listLt] at h
+  | _ :: _, _ :: _, [], _, h => by simp [listLt] at h
+  | x :: as, y :: bs, z :: cs, h1, h2 => by
+    simp only [listLt, Bool.or_eq_true, decide_eq_true_eq, Bool.and_eq_true, beq_iff_eq]
+      at h1 h2 ⊢
+    rcases h1 with h1 | ⟨rfl, h1⟩ <;> rcases h2 with h2 | ⟨rfl, h2⟩
+    · left; omega
+    · left; exact h1
+    · left; exact h2
+    · right; exact ⟨rfl, listLt_trans h1 h2⟩
+
+lemma listLt_total : ∀ a b : List ℕ, listLt a b = true ∨ a = b ∨ listLt b a = true
+  | [], [] => .inr (.inl rfl)
+  | [], _ :: _ => .inl rfl
+  | _ :: _, [] => .inr (.inr rfl)
+  | x :: as, y :: bs => by
+    rcases lt_trichotomy x y with h | rfl | h
+    · left; simp [listLt, h]
+    · rcases listLt_total as bs with h | rfl | h
+      · left; simp [listLt, h]
+      · right; left; rfl
+      · right; right; simp [listLt, h]
+    · right; right; simp [listLt, h]
+
+/-- The order `relevantCycles` sorts candidates by: size, then sorted atoms. -/
+def relevantCmp (a b : ℕ × List ℕ) : Bool :=
+  popcount a.1 < popcount b.1 || (popcount a.1 == popcount b.1 &&
+    (listLt (a.2.mergeSort (· ≤ ·)) (b.2.mergeSort (· ≤ ·)) ||
+      a.2.mergeSort (· ≤ ·) == b.2.mergeSort (· ≤ ·)))
+
+lemma relevantCmp_trans (a b c : ℕ × List ℕ) (h1 : relevantCmp a b = true)
+    (h2 : relevantCmp b c = true) : relevantCmp a c = true := by
+  unfold relevantCmp at *
+  generalize a.2.mergeSort (· ≤ ·) = sa at *
+  generalize b.2.mergeSort (· ≤ ·) = sb at *
+  generalize c.2.mergeSort (· ≤ ·) = sc at *
+  simp only [Bool.or_eq_true, decide_eq_true_eq, Bool.and_eq_true, beq_iff_eq] at h1 h2 ⊢
+  rcases h1 with h1 | ⟨e1, h1⟩ <;> rcases h2 with h2 | ⟨e2, h2⟩
+  · left; omega
+  · left; omega
+  · left; omega
+  · right
+    refine ⟨e1.trans e2, ?_⟩
+    rcases h1 with h1 | rfl <;> rcases h2 with h2 | rfl
+    · exact .inl (listLt_trans h1 h2)
+    · exact .inl h1
+    · exact .inl h2
+    · exact .inr rfl
+
+lemma relevantCmp_total (a b : ℕ × List ℕ) : (relevantCmp a b || relevantCmp b a) = true := by
+  unfold relevantCmp
+  generalize a.2.mergeSort (· ≤ ·) = sa
+  generalize b.2.mergeSort (· ≤ ·) = sb
+  simp only [Bool.or_eq_true, decide_eq_true_eq, Bool.and_eq_true, beq_iff_eq]
+  rcases lt_trichotomy (popcount a.1) (popcount b.1) with h | h | h
+  · exact .inl (.inl h)
+  · rcases listLt_total sa sb with h' | rfl | h'
+    · exact .inl (.inr ⟨h, .inl h'⟩)
+    · exact .inl (.inr ⟨h, .inr rfl⟩)
+    · exact .inr (.inr ⟨h.symm, .inl h'⟩)
+  · exact .inr (.inl h)
+
+/-- `relevantCycles` with its sort named. -/
+lemma Work.relevantCycles_eq_fold (m : Work) : m.relevantCycles =
+    ((((m.candidateCycles.toList.mergeSort relevantCmp).map (popcount ·.1)).eraseDups.foldl
+      (relevantStep (m.candidateCycles.toList.mergeSort relevantCmp)) ([], #[])).2) := by
+  unfold Work.relevantCycles
+  rfl
+
+/-- The candidates sorted for `relevantCycles` are in order of size. -/
+lemma pairwise_mergeSort_relevantCmp (l : List (ℕ × List ℕ)) :
+    (l.mergeSort relevantCmp).Pairwise fun a b ↦ popcount a.1 ≤ popcount b.1 :=
+  (List.pairwise_mergeSort relevantCmp_trans relevantCmp_total l).imp fun h ↦ by
+    unfold relevantCmp at h
+    simp only [Bool.or_eq_true, decide_eq_true_eq, Bool.and_eq_true, beq_iff_eq] at h
+    omega
+
+open Classical in
+/-- **The ring set is the relevant candidates**: `relevantCycles` lists, in its sorted order, the
+candidate cycles whose mask is not a sum of masks of strictly smaller candidates. -/
+theorem Work.relevantCycles_toList (m : Work) : m.relevantCycles.toList =
+    ((m.candidateCycles.toList.mergeSort relevantCmp).filter fun c ↦
+      decide (Relevant (m.candidateCycles.toList.mergeSort relevantCmp) c)).map (·.2) := by
+  rw [Work.relevantCycles_eq_fold]
+  exact relevantFold_eq (pairwise_mergeSort_relevantCmp _)
+
 end LeanSMILES.Aromaticity
