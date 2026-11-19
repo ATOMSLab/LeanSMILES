@@ -906,6 +906,19 @@ lemma forIn_ite_yield {β : Type} (l : List ℕ) (b : β) (c : ℕ → Prop) [De
     · simp only [if_pos hc]; exact ih _
     · simp only [if_neg hc]; exact ih _
 
+lemma forIn_ite_yield' {β : Type} (l : List ℕ) (b : β) (c : ℕ → β → Bool)
+    (g : ℕ → β → β) :
+    (forIn l b (fun a r ↦ if c a r = true then pure (ForInStep.yield (g a r))
+      else pure (ForInStep.yield r)) : Id β) =
+      l.foldl (fun r a ↦ if c a r = true then g a r else r) b := by
+  induction l generalizing b with
+  | nil => rfl
+  | cons x l ih =>
+    rw [List.forIn_cons, List.foldl_cons]
+    by_cases hc : c x b = true
+    · simp only [if_pos hc]; exact ih _
+    · simp only [if_neg hc]; exact ih _
+
 lemma foldlM_id {β : Type} (l : List ℕ) (b : β) (f : β → ℕ → Id β) :
     (l.foldlM f b).run = l.foldl (fun r a ↦ (f r a).run) b := by
   induction l generalizing b with
@@ -1042,6 +1055,123 @@ lemma mem_fusedNbrs (rb : Array (List ℕ)) (i j : ℕ) :
   · rw [getElem!_neg _ i (by rw [size_foldl_fusedStep]; simpa using hi)]
     simp only [hi, false_and, iff_false]
     exact List.not_mem_nil
+
+/-! ### The connectivity test of a group of rings -/
+
+/-- One sweep of `isConnectedSet`: every neighbour in `S` of the rings seen at its start is
+added once. -/
+def connRound (S : List ℕ) (nbrs : Array (List ℕ)) (seen : List ℕ) : List ℕ :=
+  seen.foldl (fun sn r ↦ (nbrs[r]!).foldl (fun sn v ↦
+    if S.contains v && !sn.contains v then sn ++ [v] else sn) sn) seen
+
+lemma isConnectedSet_eq (rids : List ℕ) (nbrs : Array (List ℕ)) :
+    isConnectedSet rids nbrs = match rids.head? with
+      | none => true
+      | some first => (rids.foldl (fun sn _ ↦ connRound rids nbrs sn) [first]).length ==
+          rids.length := by
+  unfold isConnectedSet
+  cases h : rids.head? with
+  | none => rfl
+  | some first =>
+    simp only [Id.run, bind_pure_comp, map_pure, List.forIn_yield_eq_foldlM, id_map']
+    change ((List.foldlM _ [first] rids : Id (List ℕ)).run.length == rids.length) = _
+    rw [foldlM_id]
+    congr 2
+    congr 1
+    funext sn _
+    rw [foldlM_id]
+    unfold connRound
+    congr 1
+    funext sn' r
+    exact forIn_ite_yield' _ _ (fun v sn ↦ rids.contains v && !sn.contains v) (fun v sn ↦ sn ++ [v])
+
+/-- One ring's neighbours in a sweep. -/
+def connInner (S : List ℕ) (vs sn : List ℕ) : List ℕ :=
+  vs.foldl (fun sn v ↦ if S.contains v && !sn.contains v then sn ++ [v] else sn) sn
+
+lemma connInner_spec (S : List ℕ) :
+    ∀ (vs sn : List ℕ), sn.Nodup →
+      (∃ e, connInner S vs sn = sn ++ e) ∧ (connInner S vs sn).Nodup ∧
+      (∀ v ∈ connInner S vs sn, v ∈ sn ∨ (v ∈ S ∧ v ∈ vs)) ∧
+      ∀ v ∈ vs, v ∈ S → v ∈ connInner S vs sn
+  | [], sn, hn => ⟨⟨[], by simp [connInner]⟩, hn, fun v hv ↦ .inl hv, by simp⟩
+  | x :: vs, sn, hn => by
+    have hstep : ∃ sn', (if S.contains x && !sn.contains x then sn ++ [x] else sn) = sn' ∧
+        (∃ e, sn' = sn ++ e) ∧ sn'.Nodup ∧ (∀ v ∈ sn', v ∈ sn ∨ (v ∈ S ∧ v = x)) ∧
+        (x ∈ S → x ∈ sn') := by
+      split
+      · rename_i hc
+        rw [Bool.and_eq_true] at hc
+        have hxS : x ∈ S := List.contains_iff_mem.1 hc.1
+        have hxn : x ∉ sn := fun h ↦ by
+          have := List.contains_iff_mem.2 h
+          rw [this] at hc
+          simp at hc
+        refine ⟨_, rfl, ⟨[x], rfl⟩, ?_, fun v hv ↦ ?_, fun _ ↦ by simp⟩
+        · refine List.nodup_append.2 ⟨hn, by simp, fun a ha b hb ↦ ?_⟩
+          rw [List.mem_singleton] at hb
+          subst hb
+          exact fun h ↦ hxn (h ▸ ha)
+        · rcases List.mem_append.1 hv with h | h
+          · exact .inl h
+          · rw [List.mem_singleton] at h
+            subst h
+            exact .inr ⟨hxS, rfl⟩
+      · rename_i hc
+        refine ⟨_, rfl, ⟨[], by simp⟩, hn, fun v hv ↦ .inl hv, fun hx ↦ ?_⟩
+        simp only [Bool.and_eq_true, Bool.not_eq_true', not_and,
+          Bool.not_eq_false, List.contains_eq_mem, decide_eq_true_eq] at hc
+        by_contra h
+        exact absurd (hc hx) (by simpa using h)
+    obtain ⟨sn', hsn', ⟨e1, he1⟩, hnd', hmem', hx'⟩ := hstep
+    have hc : connInner S (x :: vs) sn = connInner S vs sn' := by
+      unfold connInner; rw [List.foldl_cons, hsn']
+    obtain ⟨⟨e2, he2⟩, hnd, hmem, hall⟩ := connInner_spec S vs sn' hnd'
+    rw [hc]
+    refine ⟨⟨e1 ++ e2, by rw [he2, he1, List.append_assoc]⟩, hnd, fun v hv ↦ ?_, fun v hv hvS ↦ ?_⟩
+    · rcases hmem v hv with h | ⟨h1, h2⟩
+      · rcases hmem' v h with h | ⟨h1, rfl⟩
+        · exact .inl h
+        · exact .inr ⟨h1, List.mem_cons_self⟩
+      · exact .inr ⟨h1, List.mem_cons_of_mem _ h2⟩
+    · rcases List.mem_cons.1 hv with rfl | hv
+      · rw [he2]; exact List.mem_append_left _ (hx' hvS)
+      · exact hall v hv hvS
+
+lemma connOuter_spec (S : List ℕ) (nbrs : Array (List ℕ)) :
+    ∀ (L sn : List ℕ), sn.Nodup →
+      (∃ e, L.foldl (fun sn r ↦ connInner S (nbrs[r]!) sn) sn = sn ++ e) ∧
+      (L.foldl (fun sn r ↦ connInner S (nbrs[r]!) sn) sn).Nodup ∧
+      (∀ v ∈ L.foldl (fun sn r ↦ connInner S (nbrs[r]!) sn) sn,
+        v ∈ sn ∨ (v ∈ S ∧ ∃ r ∈ L, v ∈ nbrs[r]!)) ∧
+      ∀ r ∈ L, ∀ v ∈ nbrs[r]!, v ∈ S → v ∈ L.foldl (fun sn r ↦ connInner S (nbrs[r]!) sn) sn
+  | [], sn, hn => ⟨⟨[], by simp⟩, hn, fun v hv ↦ .inl hv, by simp⟩
+  | r :: L, sn, hn => by
+    obtain ⟨⟨e1, he1⟩, hnd1, hmem1, hall1⟩ := connInner_spec S (nbrs[r]!) sn hn
+    obtain ⟨⟨e2, he2⟩, hnd2, hmem2, hall2⟩ := connOuter_spec S nbrs L _ hnd1
+    rw [List.foldl_cons]
+    refine ⟨⟨e1 ++ e2, by rw [he2, he1, List.append_assoc]⟩, hnd2, fun v hv ↦ ?_,
+      fun r' hr' v hv hvS ↦ ?_⟩
+    · rcases hmem2 v hv with h | ⟨h1, r', hr', h2⟩
+      · rcases hmem1 v h with h | ⟨h1, h2⟩
+        · exact .inl h
+        · exact .inr ⟨h1, r, List.mem_cons_self, h2⟩
+      · exact .inr ⟨h1, r', List.mem_cons_of_mem _ hr', h2⟩
+    · rcases List.mem_cons.1 hr' with rfl | hr'
+      · rw [he2]; exact List.mem_append_left _ (hall1 v hv hvS)
+      · exact hall2 r' hr' v hv hvS
+
+lemma connRound_eq (S : List ℕ) (nbrs : Array (List ℕ)) (seen : List ℕ) :
+    connRound S nbrs seen = seen.foldl (fun sn r ↦ connInner S (nbrs[r]!) sn) seen := rfl
+
+/-- **One sweep of the connectivity test**: it appends, adds no repeat, adds only neighbours in
+`S` of the rings seen at its start, and adds all of them. -/
+lemma connRound_spec (S : List ℕ) (nbrs : Array (List ℕ)) {seen : List ℕ} (hn : seen.Nodup) :
+    (∃ e, connRound S nbrs seen = seen ++ e) ∧ (connRound S nbrs seen).Nodup ∧
+      (∀ v ∈ connRound S nbrs seen, v ∈ seen ∨ (v ∈ S ∧ ∃ r ∈ seen, v ∈ nbrs[r]!)) ∧
+      ∀ r ∈ seen, ∀ v ∈ nbrs[r]!, v ∈ S → v ∈ connRound S nbrs seen := by
+  rw [connRound_eq]
+  exact connOuter_spec S nbrs seen seen hn
 
 end Work
 
