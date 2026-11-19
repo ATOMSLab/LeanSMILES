@@ -138,4 +138,87 @@ theorem kekulize_atom_branch {m K : Work} {rings : Array (List ℕ)}
   · exact absurd h (hnc hbr)
   · exact h
 
+/-! ### Bond-order sums after kekulization -/
+
+/-- An atom's bond-order sum with the bonds written aromatic made single. -/
+def kekBase (m : Work) (x : ℕ) : ℕ :=
+  ((m.bondsOf x).map fun k ↦ if m.kekWa k then 2 else halfOrder (m.bonds[k]! : WBond).kind).sum
+
+lemma bondsOf_of_kindsRel {o w : Work} (h : KindsRel o w) : w.bondsOf = o.bondsOf := by
+  have hs : w.bonds.size = o.bonds.size := by
+    have := h.bonds
+    by_contra hne
+    rcases Nat.lt_or_gt_of_ne hne with hlt | hlt
+    · have := this w.bonds.size
+      rw [Array.getElem?_eq_none (le_refl _), Array.getElem?_eq_getElem hlt] at this
+      simp at this
+    · have := this o.bonds.size
+      rw [Array.getElem?_eq_none (le_refl _), Array.getElem?_eq_getElem hlt] at this
+      simp at this
+  funext x
+  unfold bondsOf
+  rw [show w.numBonds = o.numBonds from hs]
+  apply List.filter_congr
+  intro k hk
+  have hk' : k < o.bonds.size := List.mem_range.1 hk
+  have := h.bonds k
+  rw [Array.getElem?_eq_getElem (hs ▸ hk'), Array.getElem?_eq_getElem hk'] at this
+  simp only [Option.map_some, Option.some.injEq, WBond.mk.injEq] at this
+  rw [getElem!_pos _ k (hs ▸ hk'), getElem!_pos _ k hk']
+  simp only [WBond.touches, this.1, this.2.1]
+
+lemma sum_ite_two (l : List ℕ) (D : ℕ → Bool) :
+    (l.map fun k ↦ if D k = true then 2 else 0).sum = 2 * (l.filter D).length := by
+  induction l with
+  | nil => rfl
+  | cons a l ih =>
+    rw [List.map_cons, List.sum_cons, ih, List.filter_cons]
+    split <;> simp [*] <;> omega
+
+/-- **An atom's bond-order sum after kekulization**: the base, plus one double bond if it is a
+candidate. -/
+theorem bondHalfSum_of_matching {m K : Work} (hwf : WF m) (hKR : KindsRel m K) {D : ℕ → Bool}
+    (hkind : ∀ k, (K.bonds[k]! : WBond).kind = if D k = true then .double else
+        if m.kekWa k = true then .single else (m.bonds[k]! : WBond).kind)
+    (hdok : ∀ k, D k = true → k < m.bonds.size ∧ m.kekWa k = true ∧
+        ∀ x, (m.bonds[k]! : WBond).touches x = true → candOf m m.kekWa m.kekEv0 x = true)
+    (hmatch : ∀ k₁ k₂ x, D k₁ = true → D k₂ = true → (m.bonds[k₁]! : WBond).touches x = true →
+        (m.bonds[k₂]! : WBond).touches x = true → k₁ = k₂)
+    (hcover : ∀ x < m.atoms.size, candOf m m.kekWa m.kekEv0 x = true →
+        ∃ k, D k = true ∧ (m.bonds[k]! : WBond).touches x = true) (x : ℕ) :
+    K.bondHalfSum x = kekBase m x +
+      if x < m.atoms.size ∧ candOf m m.kekWa m.kekEv0 x = true then 2 else 0 := by
+  unfold bondHalfSum kekBase
+  rw [bondsOf_of_kindsRel hKR]
+  have e : ∀ k ∈ m.bondsOf x, halfOrder (K.bonds[k]! : WBond).kind =
+      (if m.kekWa k = true then 2 else halfOrder (m.bonds[k]! : WBond).kind) +
+        if D k = true then 2 else 0 := fun k _ ↦ by
+    rw [hkind k]
+    by_cases hD : D k = true
+    · rw [if_pos hD, if_pos (hdok k hD).2.1, if_pos hD]; rfl
+    · rw [if_neg hD, if_neg hD]
+      split <;> rfl
+  rw [List.map_congr_left e, List.sum_map_add, sum_ite_two]
+  congr 1
+  have hmem : ∀ k, k ∈ m.bondsOf x ↔ k < m.bonds.size ∧ (m.bonds[k]! : WBond).touches x = true :=
+    fun k ↦ by simp [bondsOf, numBonds]
+  split
+  · rename_i hc
+    obtain ⟨k, hk, ht⟩ := hcover x hc.1 hc.2
+    rw [length_filter_eq_one (show (m.bondsOf x).Nodup from List.nodup_range.filter _)
+      (fun a ha b hb hpa hpb ↦ hmatch a b x hpa hpb ((hmem a).1 ha).2 ((hmem b).1 hb).2)
+      ⟨k, (hmem k).2 ⟨(hdok k hk).1, ht⟩, hk⟩]
+  · rename_i hc
+    suffices ((m.bondsOf x).filter D).length = 0 by rw [this]
+    rw [List.length_eq_zero_iff, List.filter_eq_nil_iff]
+    intro k hk hD
+    obtain ⟨hks, ht⟩ := (hmem k).1 hk
+    apply hc
+    refine ⟨?_, (hdok k hD).2.2 x ht⟩
+    have := hwf k hks
+    simp only [WBond.touches, Bool.or_eq_true, beq_iff_eq] at ht
+    rcases ht with rfl | rfl
+    · exact this.1
+    · exact this.2.1
+
 end LeanSMILES.Aromaticity.Work
