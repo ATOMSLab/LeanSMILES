@@ -234,6 +234,134 @@ lemma cycleMask_lt (m : Work) (c : List ℕ) : m.cycleMask c < 2 ^ m.numBonds :=
     obtain ⟨t, -, ht⟩ := hj
     exact bondBetween?_lt ht
 
+/-! ### Matching the candidates -/
+
+lemma popcount_of_mem_candidateCycles (m : Work) {e : ℕ × List ℕ}
+    (he : e ∈ m.candidateCycles.toList) : popcount e.1 = e.2.length := by
+  rw [((candidateCycles_spec m).2.1 e he).1]
+  exact (isRing_of_mem_candidateCycles m (Array.mem_def.2 he)).popcount_cycleMask
+
+lemma mem_ringBonds_iff_testBit (m : Work) (c : List ℕ) (j : ℕ) :
+    j ∈ m.ringBonds c ↔ (m.cycleMask c).testBit j = true := by
+  rw [testBit_cycleMask, decide_eq_true_eq]
+
+lemma lt_of_mem_ringBonds {m : Work} {c : List ℕ} {k : ℕ} (hk : k ∈ m.ringBonds c) :
+    k < m.numBonds := by
+  rw [ringBonds_eq_filterMap, List.mem_filterMap] at hk
+  obtain ⟨t, -, ht⟩ := hk
+  exact bondBetween?_lt ht
+
+namespace WorkIso
+
+variable {w w' : Work} {σ ψ π ρ : ℕ → ℕ}
+
+/-- **Each candidate matches one of the renamed copy**: the same ring up to start and direction,
+its mask's bits renamed. -/
+theorem candidate (I : WorkIso w w' σ ψ π ρ) (hwf : w.WF) (hwf' : w'.WF) {e : ℕ × List ℕ}
+    (he : e ∈ w.candidateCycles.toList) :
+    ∃ e' ∈ w'.candidateCycles.toList, RingEq (e.2.map σ) e'.2 ∧
+      e'.1 = bitMap π w.numBonds e.1 := by
+  obtain ⟨-, hspec, -⟩ := candidateCycles_spec w
+  obtain ⟨hm, r, hr, hc⟩ := hspec e he
+  obtain ⟨c', hc', hreq⟩ := I.cyclesFrom hwf hwf' hr hc
+  obtain ⟨-, hspec', hcov'⟩ := candidateCycles_spec w'
+  obtain ⟨e', he', hm'⟩ := hcov' (σ r) (I.natoms ▸ I.atoms.lt r hr) c' hc'
+  have hring := isRing_of_mem_candidateCycles w (Array.mem_def.2 he)
+  have hring' := isRing_of_mem_candidateCycles w' (Array.mem_def.2 he')
+  have hσ := I.isRing hwf hwf' hring
+  have hset : ∀ j, j ∈ w'.ringBonds e'.2 ↔ j ∈ w'.ringBonds (e.2.map σ) := fun j ↦ by
+    rw [mem_ringBonds_iff_testBit, ← (hspec' e' he').1, hm', ← mem_ringBonds_iff_testBit]
+    exact (hreq.ringBonds w').mem_iff
+  refine ⟨e', he', hσ.ringEq_of_ringBonds hring' fun k ↦ (hset k).symm, ?_⟩
+  apply Nat.eq_of_testBit_eq
+  intro j
+  rw [(hspec' e' he').1, testBit_cycleMask, testBit_bitMap, hm, Bool.eq_iff_iff,
+    decide_eq_true_eq, decide_eq_true_eq, hset, I.ringBonds hwf hring, List.mem_map]
+  constructor
+  · rintro ⟨k, hk, rfl⟩
+    exact ⟨k, lt_of_mem_ringBonds hk, rfl, (mem_ringBonds_iff_testBit w _ k).1 hk⟩
+  · rintro ⟨k, -, rfl, hk⟩
+    exact ⟨k, (mem_ringBonds_iff_testBit w _ k).2 hk, rfl⟩
+
+/-- Matched candidates: the mask renamed is the other's mask. -/
+lemma matched (I : WorkIso w w' σ ψ π ρ) (hwf : w.WF) (hwf' : w'.WF) {e e' : ℕ × List ℕ}
+    (he : e ∈ w.candidateCycles.toList) (he' : e' ∈ w'.candidateCycles.toList)
+    (h : e'.1 = bitMap π w.numBonds e.1) :
+    RingEq (e.2.map σ) e'.2 ∧ popcount e'.1 = popcount e.1 := by
+  obtain ⟨e'', he'', hreq, hm⟩ := I.candidate hwf hwf' he
+  have : e'' = e' := List.inj_on_of_nodup_map (candidateCycles_spec w').1 he'' he' (hm.trans h.symm)
+  subst this
+  refine ⟨hreq, ?_⟩
+  rw [popcount_of_mem_candidateCycles w' he', popcount_of_mem_candidateCycles w he, hreq.length,
+    List.length_map]
+
+/-- Every candidate of the renamed copy is matched. -/
+lemma matched_of_mem' (I : WorkIso w w' σ ψ π ρ) (hwf : w.WF) (hwf' : w'.WF) {e' : ℕ × List ℕ}
+    (he' : e' ∈ w'.candidateCycles.toList) :
+    ∃ e ∈ w.candidateCycles.toList, e'.1 = bitMap π w.numBonds e.1 := by
+  obtain ⟨e, he, -, hm⟩ := I.symm.candidate hwf' hwf he'
+  refine ⟨e, he, ?_⟩
+  rw [hm, I.nbonds, bitMap_bitMap I.bonds.symm]
+  rw [((candidateCycles_spec w').2.1 e' he').1, ← I.nbonds]
+  exact cycleMask_lt w' _
+
+/-- **Relevance is kept by the matching.** -/
+lemma relevant_iff (I : WorkIso w w' σ ψ π ρ) (hwf : w.WF) (hwf' : w'.WF) {e e' : ℕ × List ℕ}
+    (he : e ∈ w.candidateCycles.toList) (he' : e' ∈ w'.candidateCycles.toList)
+    (h : e'.1 = bitMap π w.numBonds e.1) :
+    Relevant (w'.candidateCycles.toList.mergeSort relevantCmp) e' ↔
+      Relevant (w.candidateCycles.toList.mergeSort relevantCmp) e := by
+  have hpe := (I.matched hwf hwf' he he' h).2
+  have hlt : ∀ d ∈ w.candidateCycles.toList, d.1 < 2 ^ w.numBonds := fun d hd ↦ by
+    rw [((candidateCycles_spec w).2.1 d hd).1]; exact cycleMask_lt w _
+  unfold Relevant
+  apply not_congr
+  rw [hpe, h, ← xspan_bitMap_iff I.bonds (S := (List.filter
+    (fun d ↦ decide (popcount d.1 < popcount e.1))
+    (w.candidateCycles.toList.mergeSort relevantCmp)).map (·.1))
+    (fun x hx ↦ by
+      obtain ⟨d, hd, rfl⟩ := List.mem_map.1 hx
+      exact hlt d (List.mem_mergeSort.1 (List.mem_filter.1 hd).1)) (hlt e he)]
+  apply XSpan.congr
+  intro x
+  simp only [List.mem_map, List.mem_filter, List.mem_mergeSort, decide_eq_true_eq]
+  constructor
+  · rintro ⟨d', ⟨hd', hlt'⟩, rfl⟩
+    obtain ⟨d, hd, hm⟩ := I.matched_of_mem' hwf hwf' hd'
+    have := (I.matched hwf hwf' hd hd' hm).2
+    exact ⟨d.1, ⟨d, ⟨hd, by omega⟩, rfl⟩, hm.symm⟩
+  · rintro ⟨_, ⟨d, ⟨hd, hlt'⟩, rfl⟩, rfl⟩
+    obtain ⟨d', hd', -, hm⟩ := I.candidate hwf hwf' hd
+    have := (I.matched hwf hwf' hd hd' hm).2
+    exact ⟨d', ⟨hd', by omega⟩, hm⟩
+
+end WorkIso
+
+/-- Two lists of rings matched one to one, matched rings equal up to start and direction, list the
+same rings. -/
+lemma ringsEquiv_of_match {R1 R2 : List (List ℕ)} (P : List ℕ → List ℕ → Prop) (h1 : R1.Nodup)
+    (h2 : R2.Nodup) (hex : ∀ x ∈ R1, ∃ y ∈ R2, P x y) (hsurj : ∀ y ∈ R2, ∃ x ∈ R1, P x y)
+    (huniq : ∀ x ∈ R1, ∀ x' ∈ R1, ∀ y ∈ R2, P x y → P x' y → x = x')
+    (hfun : ∀ x ∈ R1, ∀ y ∈ R2, ∀ y' ∈ R2, P x y → P x y' → y = y')
+    (hRE : ∀ x ∈ R1, ∀ y ∈ R2, P x y → RingEq x y) : RingsEquiv R1 R2 := by
+  classical
+  let f : List ℕ → List ℕ := fun x ↦ if h : ∃ y ∈ R2, P x y then Classical.choose h else x
+  have hf : ∀ x ∈ R1, f x ∈ R2 ∧ P x (f x) := fun x hx ↦ by
+    have h := hex x hx
+    simp only [f, dif_pos h]
+    exact Classical.choose_spec h
+  refine ⟨R1.map f, List.forall₂_map_right_iff.2 (List.forall₂_same.2 fun x hx ↦
+    hRE x hx _ (hf x hx).1 (hf x hx).2), ?_⟩
+  refine (List.perm_ext_iff_of_nodup (h1.map_on fun x hx x' hx' e ↦ ?_) h2).2 fun y ↦ ?_
+  · exact huniq x hx x' hx' _ (hf x hx).1 (hf x hx).2 (e ▸ (hf x' hx').2)
+  · constructor
+    · intro hy
+      obtain ⟨x, hx, rfl⟩ := List.mem_map.1 hy
+      exact (hf x hx).1
+    · intro hy
+      obtain ⟨x, hx, hP⟩ := hsurj y hy
+      exact List.mem_map.2 ⟨x, hx, hfun x hx _ (hf x hx).1 y hy (hf x hx).2 hP⟩
+
 end Work
 
 end LeanSMILES.Aromaticity
