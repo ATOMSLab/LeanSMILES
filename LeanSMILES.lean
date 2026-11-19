@@ -52,6 +52,7 @@ public import LeanSMILES.Aromaticity.RingCands
 public import LeanSMILES.Aromaticity.RingIso
 public import LeanSMILES.Aromaticity.RingSetIso
 public import LeanSMILES.Aromaticity.WorkRelabel
+public import LeanSMILES.Aromaticity.RelabelPerceive
 public import LeanSMILES.Aromaticity.Invariance
 public import LeanSMILES.Aromaticity.Resonance
 public import LeanSMILES.Aromaticity.KekuleSim
