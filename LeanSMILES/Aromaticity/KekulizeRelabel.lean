@@ -173,7 +173,7 @@ lemma sum_ite_two (l : List ℕ) (D : ℕ → Bool) :
   | nil => rfl
   | cons a l ih =>
     rw [List.map_cons, List.sum_cons, ih, List.filter_cons]
-    split <;> simp [*] <;> omega
+    split <;> simp [*]; omega
 
 /-- **An atom's bond-order sum after kekulization**: the base, plus one double bond if it is a
 candidate. -/

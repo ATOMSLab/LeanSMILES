@@ -138,7 +138,7 @@ lemma phosphorusScan_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) {i : �
   rw [atom_relabelW hb hj, degree_relabelW hwf hb hj, kind_relabelW]
   split_ifs <;> simp_all
 
-lemma cleanUpStep_eq_iff' {i : ℕ} (hi : i < w.atoms.size) :
+lemma cleanUpStep_eq_iff' {i : ℕ} :
     cleanUpStep w i = w ↔
       ((w.atoms[i]! : WAtom).z = 15 → w.phosphorusCleanup i = w) ∧
       ((w.atoms[i]! : WAtom).z ≠ 15 →
@@ -184,8 +184,8 @@ theorem quiet_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) (hq : w.Quiet
     exact this y hy
   · obtain ⟨i, hi, rfl⟩ := hσ i' hi'
     have hi'' : σ i < (w.relabelW σ ψ).atoms.size := hi'
-    obtain ⟨c1, c2⟩ := (cleanUpStep_eq_iff' hi).1 (q3 i hi)
-    rw [cleanUpStep_eq_iff' hi'', atom_relabelW hb hi]
+    obtain ⟨c1, c2⟩ := cleanUpStep_eq_iff'.1 (q3 i hi)
+    rw [cleanUpStep_eq_iff', atom_relabelW hb hi]
     refine ⟨fun hz ↦ ?_, fun hz hz' ↦ ?_⟩
     · have := (phosphorusCleanup_eq_iff w hi).1 (c1 hz)
       rw [phosphorusCleanup_eq_iff _ hi'']

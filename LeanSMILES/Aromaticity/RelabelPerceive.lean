@@ -379,8 +379,8 @@ lemma markAromatic_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) {b : ℕ
   · apply Array.ext'
     apply List.ext_getElem?
     intro k
-    rw [Array.getElem?_toList, Array.getElem?_toList, getElem?_markAromatic_bonds', hk, getElem?_relabelW_bonds,
-      getElem?_relabelW_bonds, getElem?_markAromatic_bonds']
+    rw [Array.getElem?_toList, Array.getElem?_toList, getElem?_markAromatic_bonds', hk,
+      getElem?_relabelW_bonds, getElem?_relabelW_bonds, getElem?_markAromatic_bonds']
     split
     · simp only [Option.map_map]; rfl
     · rfl
