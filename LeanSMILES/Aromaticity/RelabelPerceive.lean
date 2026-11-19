@@ -301,6 +301,130 @@ lemma groupBonds_relabel (hb : IdxBij w.numAtoms σ ψ) {rb C : Array (List ℕ)
     exact (List.map_congr_left fun x hx ↦ hd x (hA x hx)) ▸ List.Perm.refl _
   rw [hh]
 
+lemma fusedBonds_relabel (hb : IdxBij w.numAtoms σ ψ) {rb C : Array (List ℕ)}
+    {d d' : Array Donor} (hC : ∀ r ∈ C.toList, ∀ a ∈ r, a < w.atoms.size)
+    (hd : ∀ a < w.atoms.size, d'[σ a]! = d[a]!) :
+    fusedBonds w.numAtoms rb (C.map (List.map σ)) d' = fusedBonds w.numAtoms rb C d := by
+  have hg : ∀ nbrs, groupBonds w.numAtoms rb (C.map (List.map σ)) d' nbrs =
+      groupBonds w.numAtoms rb C d nbrs := fun nbrs ↦ funext (groupBonds_relabel hb hC hd nbrs)
+  have hs : ∀ nbrs, systemBonds w.numAtoms rb (C.map (List.map σ)) d' nbrs =
+      systemBonds w.numAtoms rb C d nbrs := fun nbrs ↦ by
+    funext F
+    unfold systemBonds
+    rw [hg]
+  unfold fusedBonds
+  dsimp only
+  rw [Array.size_map, hs]
+
+/-- **Perception marks the same bonds** on the renumbered copy over the renamed rings. -/
+theorem aromaticBondList_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ)
+    {R : Array (List ℕ)} (hR : ∀ r ∈ R.toList, ∀ a ∈ r, a < w.atoms.size) :
+    (w.relabelW σ ψ).aromaticBondList (R.map (List.map σ)) = w.aromaticBondList R := by
+  obtain ⟨hd, -, hc⟩ := donorData_relabelW hwf hb hR
+  have hCR : ∀ r ∈ (w.donorData R).candRings.toList, ∀ a ∈ r, a < w.atoms.size := fun r hr ↦ by
+    rw [(donorData_inv w R).candRings] at hr
+    exact hR r (List.mem_filter.1 hr).1
+  have hc' : ((w.relabelW σ ψ).donorData (R.map (List.map σ))).candRings =
+      (w.donorData R).candRings.map (List.map σ) := by
+    apply Array.ext'
+    rw [hc, Array.toList_map]
+  have hrb : ((w.donorData R).candRings.map (List.map σ)).map (w.relabelW σ ψ).ringBonds =
+      (w.donorData R).candRings.map w.ringBonds := by
+    apply Array.ext'
+    rw [Array.toList_map, Array.toList_map, Array.toList_map, List.map_map]
+    exact List.map_congr_left fun r hr ↦ ringBonds_relabelW hwf hb (hCR r hr)
+  unfold aromaticBondList
+  dsimp only
+  rw [hc', hrb, numAtoms_relabelW]
+  exact fusedBonds_relabel hb hCR hd
+
+lemma getElem?_relabelW_bonds (k : ℕ) :
+    (w.relabelW σ ψ).bonds[k]? =
+      w.bonds[k]?.map fun b : WBond ↦ { b with src := σ b.src, dst := σ b.dst } := by
+  simp [relabelW]
+
+lemma getElem!_eq_getD {α : Type} [Inhabited α] (a : Array α) (j : ℕ) : a[j]! = a[j]?.getD default := by
+  by_cases h : j < a.size
+  · rw [getElem!_pos a j h, Array.getElem?_eq_getElem h]; rfl
+  · rw [getElem!_neg a j h, Array.getElem?_eq_none (Nat.le_of_not_lt h)]; rfl
+
+/-- **Marking a bond aromatic commutes with renumbering.** -/
+lemma markAromatic_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) {b : ℕ}
+    (hbn : b < w.bonds.size) :
+    (w.relabelW σ ψ).markAromatic b = (w.markAromatic b).relabelW σ ψ := by
+  have hk : ((w.relabelW σ ψ).bonds[b]! : WBond).kind = (w.bonds[b]! : WBond).kind :=
+    kind_relabelW b
+  have hsz : (w.markAromatic b).atoms.size = w.atoms.size := by
+    unfold markAromatic; dsimp only; split <;> simp [modifyAtom, setKind]
+  apply ext_work
+  · apply array_ext_of_getElem! (n := w.atoms.size)
+      (by unfold markAromatic; dsimp only; split <;> simp [modifyAtom, setKind])
+      (by simp [hsz])
+    intro j hj
+    rw [atom_relabelW' (by rw [hsz]; exact hj), getElem!_eq_getD, getElem!_eq_getD (w.markAromatic b).atoms,
+      getElem?_markAromatic_atoms', getElem?_markAromatic_atoms', hk, bond_relabelW hbn]
+    have hw := hwf b hbn
+    have e : ∀ x < w.numAtoms, (σ x = j) ↔ (x = ψ j) := fun x hx ↦
+      ⟨fun h ↦ by rw [← h, hb.left x hx], fun h ↦ by rw [h, hb.right j hj]⟩
+    simp only [e _ hw.1, e _ hw.2.1]
+    have hrj : (w.relabelW σ ψ).atoms[j]? = some w.atoms[ψ j]! := by
+      rw [Array.getElem?_eq_getElem (by simpa using hj), ← getElem!_pos _ j (by simpa using hj),
+        atom_relabelW' hj]
+    have hwj : w.atoms[ψ j]? = some w.atoms[ψ j]! := by
+      rw [Array.getElem?_eq_getElem (hb.lt' j hj), ← getElem!_pos w.atoms (ψ j) (hb.lt' j hj)]
+    rw [hrj, hwj]
+  · apply Array.ext'
+    apply List.ext_getElem?
+    intro k
+    rw [Array.getElem?_toList, Array.getElem?_toList, getElem?_markAromatic_bonds', hk, getElem?_relabelW_bonds,
+      getElem?_relabelW_bonds, getElem?_markAromatic_bonds']
+    split
+    · simp only [Option.map_map]; rfl
+    · rfl
+
+lemma wf_markAromatic (hwf : w.WF) (b : ℕ) : (w.markAromatic b).WF := by
+  intro k hk
+  have hs : (w.markAromatic b).bonds.size = w.bonds.size := by
+    unfold markAromatic; dsimp only; split <;> simp [modifyAtom, setKind]
+  have ha : (w.markAromatic b).atoms.size = w.atoms.size := by
+    unfold markAromatic; dsimp only; split <;> simp [modifyAtom, setKind]
+  simp only [numBonds, numAtoms, hs, ha] at hk ⊢
+  have e := getElem?_markAromatic_bonds' w b k
+  rw [Array.getElem?_eq_getElem (by rw [hs]; exact hk), Array.getElem?_eq_getElem hk] at e
+  rw [getElem!_pos _ k (by rw [hs]; exact hk)]
+  have := hwf k hk
+  rw [getElem!_pos _ k hk] at this
+  split at e
+  · simp only [Option.map_some, Option.some.injEq] at e; rw [e]; exact this
+  · simp only [Option.some.injEq] at e; rw [e]; exact this
+
+/-- **Perception commutes with renumbering**: on the renumbered copy over the renamed rings it
+marks the renamed atoms of the same bonds. -/
+theorem setAromaticity_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ)
+    {R : Array (List ℕ)} (hR : ∀ r ∈ R.toList, ∀ a ∈ r, a < w.atoms.size) :
+    (w.relabelW σ ψ).setAromaticity (R.map (List.map σ)) =
+      (w.setAromaticity R).relabelW σ ψ := by
+  unfold setAromaticity
+  rw [aromaticBondList_relabelW hwf hb hR]
+  have hlt := fun b hb' ↦ lt_of_mem_aromaticBondList w R (b := b) hb'
+  generalize w.aromaticBondList R = L at hlt
+  suffices ∀ (L : List ℕ) (u : Work), u.WF → u.atoms.size = w.atoms.size →
+      (∀ b ∈ L, b < u.bonds.size) → L.foldl markAromatic (u.relabelW σ ψ) =
+        (L.foldl markAromatic u).relabelW σ ψ from this L w hwf rfl hlt
+  intro L
+  induction L with
+  | nil => intro _ _ _ _; rfl
+  | cons b L ih =>
+    intro u hu hus hL
+    have hbu : IdxBij u.numAtoms σ ψ := by rw [numAtoms, hus]; exact hb
+    rw [List.foldl_cons, List.foldl_cons, markAromatic_relabelW hu hbu (hL b List.mem_cons_self)]
+    have hs : (u.markAromatic b).bonds.size = u.bonds.size := by
+      unfold markAromatic; dsimp only; split <;> simp [modifyAtom, setKind]
+    have ha : (u.markAromatic b).atoms.size = u.atoms.size := by
+      unfold markAromatic; dsimp only; split <;> simp [modifyAtom, setKind]
+    exact ih _ (wf_markAromatic hu b) (ha.trans hus)
+      fun c hc ↦ hs ▸ hL c (List.mem_cons_of_mem _ hc)
+
 end Work
 
 end LeanSMILES.Aromaticity
