@@ -1730,6 +1730,224 @@ theorem mem_components_iff {n : ℕ} {nbrs : Array (List ℕ)} (hlt : ∀ i : �
     | refl => exact hx
     | tail _ hbc ih => exact (components_spec hlt hsym).2.2.2 C hC _ ih _ hbc
 
+/-! ### Candidate rings renumbered -/
+
+/-- `σ` and `ψ` are inverse renumberings of `[0, n)`. -/
+structure IdxBij (n : ℕ) (σ ψ : ℕ → ℕ) : Prop where
+  lt : ∀ i < n, σ i < n
+  lt' : ∀ i < n, ψ i < n
+  left : ∀ i < n, ψ (σ i) = i
+  right : ∀ i < n, σ (ψ i) = i
+
+lemma IdxBij.symm {n : ℕ} {σ ψ : ℕ → ℕ} (h : IdxBij n σ ψ) : IdxBij n ψ σ :=
+  ⟨h.lt', h.lt, h.right, h.left⟩
+
+lemma IdxBij.inj {n : ℕ} {σ ψ : ℕ → ℕ} (h : IdxBij n σ ψ) {i j : ℕ} (hi : i < n) (hj : j < n)
+    (e : σ i = σ j) : i = j := by
+  rw [← h.left i hi, ← h.left j hj, e]
+
+lemma IdxBij.comp {n : ℕ} {σ ψ σ' ψ' : ℕ → ℕ} (h : IdxBij n σ ψ) (h' : IdxBij n σ' ψ') :
+    IdxBij n (σ ∘ σ') (ψ' ∘ ψ) :=
+  ⟨fun i hi ↦ h.lt _ (h'.lt i hi), fun i hi ↦ h'.lt' _ (h.lt' i hi),
+    fun i hi ↦ by simp only [Function.comp, h.left _ (h'.lt i hi), h'.left i hi],
+    fun i hi ↦ by simp only [Function.comp, h'.right _ (h.lt' i hi), h.right i hi]⟩
+
+/-- **A permuted list is the list renumbered.** -/
+lemma perm_index {α : Type} [Inhabited α] {l l' : List α} (h : l.Perm l') :
+    ∃ σ ψ, IdxBij l.length σ ψ ∧ ∀ i < l.length, l'[i]! = l[σ i]! := by
+  induction h with
+  | nil => exact ⟨id, id, ⟨fun _ h ↦ h, fun _ h ↦ h, fun _ _ ↦ rfl, fun _ _ ↦ rfl⟩, by simp⟩
+  | @cons x l l' _ ih =>
+    obtain ⟨σ, ψ, hb, he⟩ := ih
+    refine ⟨fun i ↦ if i = 0 then 0 else σ (i - 1) + 1,
+      fun i ↦ if i = 0 then 0 else ψ (i - 1) + 1, ⟨?_, ?_, ?_, ?_⟩, ?_⟩ <;>
+      intro i hi <;> rcases i with _ | i <;> simp only [List.length_cons] at hi <;>
+      try (simp; done)
+    · simpa using hb.lt i (by omega)
+    · simpa using hb.lt' i (by omega)
+    · simpa using hb.left i (by omega)
+    · simpa using hb.right i (by omega)
+    · simpa using he i (by omega)
+  | swap x y l =>
+    refine ⟨fun i ↦ if i = 0 then 1 else if i = 1 then 0 else i,
+      fun i ↦ if i = 0 then 1 else if i = 1 then 0 else i, ⟨?_, ?_, ?_, ?_⟩, ?_⟩ <;>
+      intro i hi <;> rcases i with _ | _ | i <;> simp only [List.length_cons] at hi <;> simp <;>
+      omega
+  | @trans l1 l2 l3 h1 _ ih1 ih2 =>
+    obtain ⟨σ1, ψ1, b1, e1⟩ := ih1
+    obtain ⟨σ2, ψ2, b2, e2⟩ := ih2
+    have hl : l1.length = l2.length := h1.length_eq
+    rw [← hl] at b2
+    refine ⟨σ1 ∘ σ2, ψ2 ∘ ψ1, b1.comp b2, fun i hi ↦ ?_⟩
+    rw [e2 i (hl ▸ hi), e1 _ (b2.lt i hi)]
+    rfl
+
+lemma length_filter_contains_comm {l1 l2 : List ℕ} (h1 : l1.Nodup) (h2 : l2.Nodup) :
+    (l1.filter l2.contains).length = (l2.filter l1.contains).length := by
+  apply List.Perm.length_eq
+  rw [List.perm_ext_iff_of_nodup (h1.filter _) (h2.filter _)]
+  intro x
+  simp only [List.mem_filter, List.contains_iff_mem]
+  exact and_comm
+
+/-- Fusion of two candidate rings with no repeated bond is symmetric. -/
+lemma fusedPair_comm {rb : Array (List ℕ)} {i j : ℕ} (hi : (rb[i]!).Nodup) (hj : (rb[j]!).Nodup) :
+    fusedPair rb i j = fusedPair rb j i := by
+  unfold fusedPair
+  rw [length_filter_contains_comm hi hj]
+  generalize decide ((rb[i]!).length ≤ 24) = a
+  generalize decide ((rb[j]!).length ≤ 24) = b
+  cases a <;> cases b <;> rfl
+
+lemma fusedNbrs_symm (rb : Array (List ℕ)) :
+    ∀ i j : ℕ, j ∈ (fusedNbrs rb)[i]! → i ∈ (fusedNbrs rb)[j]! := by
+  intro i j h
+  rw [mem_fusedNbrs] at h ⊢
+  obtain ⟨a, b, c⟩ := h
+  exact ⟨b, a, c.symm⟩
+
+lemma fusedNbrs_lt (rb : Array (List ℕ)) : ∀ i : ℕ, ∀ j ∈ (fusedNbrs rb)[i]!, j < rb.size :=
+  fun i j h ↦ ((mem_fusedNbrs rb i j).1 h).2.1
+
+lemma mem_fusedNbrs_of_nodup {rb : Array (List ℕ)} (hnd : ∀ i < rb.size, (rb[i]!).Nodup)
+    (i j : ℕ) : j ∈ (fusedNbrs rb)[i]! ↔
+      i < rb.size ∧ j < rb.size ∧ i ≠ j ∧ fusedPair rb i j = true := by
+  rw [mem_fusedNbrs]
+  constructor
+  · rintro ⟨hi, hj, ⟨h, e⟩ | ⟨h, e⟩⟩
+    · exact ⟨hi, hj, by omega, e⟩
+    · exact ⟨hi, hj, by omega, by rw [fusedPair_comm (hnd i hi) (hnd j hj)]; exact e⟩
+  · rintro ⟨hi, hj, hne, e⟩
+    rcases Nat.lt_or_gt_of_ne hne with h | h
+    · exact ⟨hi, hj, .inl ⟨h, e⟩⟩
+    · exact ⟨hi, hj, .inr ⟨h, by rw [fusedPair_comm (hnd j hj) (hnd i hi)]; exact e⟩⟩
+
+/-- **Renumbered rings give renumbered neighbours.** -/
+lemma fusedNbrs_renumber {rb rb' : Array (List ℕ)} {σ ψ : ℕ → ℕ} (hs : rb'.size = rb.size)
+    (hb : IdxBij rb.size σ ψ) (hrb : ∀ i < rb.size, rb'[i]! = rb[σ i]!)
+    (hnd : ∀ i < rb.size, (rb[i]!).Nodup) (i j : ℕ) :
+    j ∈ (fusedNbrs rb')[i]! ↔ i < rb.size ∧ j < rb.size ∧ σ j ∈ (fusedNbrs rb)[σ i]! := by
+  have hnd' : ∀ i < rb'.size, (rb'[i]!).Nodup := fun i hi ↦ by
+    rw [hrb i (hs ▸ hi)]; exact hnd _ (hb.lt i (hs ▸ hi))
+  rw [mem_fusedNbrs_of_nodup hnd', mem_fusedNbrs_of_nodup hnd, hs]
+  constructor
+  · rintro ⟨hi, hj, hne, e⟩
+    refine ⟨hi, hj, hb.lt _ hi, hb.lt _ hj, fun h ↦ hne (hb.inj hi hj h), ?_⟩
+    unfold fusedPair at e ⊢
+    rwa [← hrb i hi, ← hrb j hj]
+  · rintro ⟨hi, hj, -, -, hne, e⟩
+    refine ⟨hi, hj, fun h ↦ hne (h ▸ rfl), ?_⟩
+    unfold fusedPair at e ⊢
+    rwa [hrb i hi, hrb j hj]
+
+/-- A renumbering of a graph on `[0, n)`: `nbrs'` is `nbrs` with vertex `i` called `σ i`. -/
+def GraphIso (n : ℕ) (σ : ℕ → ℕ) (nbrs nbrs' : Array (List ℕ)) : Prop :=
+  ∀ i j : ℕ, j ∈ nbrs'[i]! ↔ i < n ∧ j < n ∧ σ j ∈ nbrs[σ i]!
+
+lemma groupReach_map {n : ℕ} {σ : ℕ → ℕ} {nbrs nbrs' : Array (List ℕ)}
+    (H : GraphIso n σ nbrs nbrs') {cur : List ℕ} {a v : ℕ} (h : GroupReach cur nbrs' a v) :
+    GroupReach (cur.map σ) nbrs (σ a) (σ v) := by
+  induction h with
+  | refl => exact .refl
+  | tail _ hs ih => exact ih.tail ⟨List.mem_map_of_mem hs.1, ((H _ _).1 hs.2).2.2⟩
+
+lemma groupReach_of_map {n : ℕ} {σ : ℕ → ℕ} {nbrs nbrs' : Array (List ℕ)}
+    (H : GraphIso n σ nbrs nbrs') {cur : List ℕ} (hcur : ∀ x ∈ cur, x < n)
+    {a : ℕ} (ha : a ∈ cur) {w : ℕ} (h : GroupReach (cur.map σ) nbrs (σ a) w) :
+    ∃ v ∈ cur, σ v = w ∧ GroupReach cur nbrs' a v := by
+  induction h with
+  | refl => exact ⟨a, ha, rfl, .refl⟩
+  | tail _ hs ih =>
+    obtain ⟨v, hv, rfl, hr⟩ := ih
+    obtain ⟨y, hy, rfl⟩ := List.mem_map.1 hs.1
+    exact ⟨y, hy, rfl, hr.tail ⟨hy, (H v y).2 ⟨hcur v hv, hcur y hy, hs.2⟩⟩⟩
+
+/-- **The connectivity test commutes with renumbering.** -/
+lemma isConnectedSet_map {n : ℕ} {σ ψ : ℕ → ℕ} {nbrs nbrs' : Array (List ℕ)}
+    (hb : IdxBij n σ ψ) (H : GraphIso n σ nbrs nbrs') {cur : List ℕ} (hcur : ∀ x ∈ cur, x < n) :
+    isConnectedSet cur nbrs' = isConnectedSet (cur.map σ) nbrs := by
+  have hinj : ∀ x ∈ cur, ∀ y ∈ cur, σ x = σ y → x = y :=
+    fun x hx y hy e ↦ hb.inj (hcur x hx) (hcur y hy) e
+  rw [Bool.eq_iff_iff, isConnectedSet_iff, isConnectedSet_iff, List.head?_map]
+  cases hh : cur.head? with
+  | none => simp
+  | some f =>
+    have hf : f ∈ cur := List.mem_of_mem_head? hh
+    simp only [Option.map_some, Option.some.injEq, forall_eq']
+    constructor
+    · rintro ⟨hnd, hr⟩
+      refine ⟨hnd.map_on hinj, fun w hw ↦ ?_⟩
+      obtain ⟨v, hv, rfl⟩ := List.mem_map.1 hw
+      exact groupReach_map H (hr v hv)
+    · rintro ⟨hnd, hr⟩
+      refine ⟨hnd.of_map σ, fun v hv ↦ ?_⟩
+      obtain ⟨v', hv', e, h⟩ := groupReach_of_map H hcur hf (hr _ (List.mem_map_of_mem hv))
+      rwa [hinj v' hv' v hv e] at h
+
+lemma foldl_congr_mem {α β : Type} {f g : β → α → β} :
+    ∀ (l : List α) (b : β), (∀ x ∈ l, ∀ b, f b x = g b x) → l.foldl f b = l.foldl g b
+  | [], _, _ => rfl
+  | x :: l, b, h => by
+    rw [List.foldl_cons, List.foldl_cons, h x List.mem_cons_self]
+    exact foldl_congr_mem l _ fun y hy ↦ h y (List.mem_cons_of_mem _ hy)
+
+lemma flatMap_congr_mem {α β : Type} {f g : α → List β} :
+    ∀ (l : List α), (∀ x ∈ l, f x = g x) → l.flatMap f = l.flatMap g
+  | [], _ => rfl
+  | x :: l, h => by
+    rw [List.flatMap_cons, List.flatMap_cons, h x List.mem_cons_self,
+      flatMap_congr_mem l fun y hy ↦ h y (List.mem_cons_of_mem _ hy)]
+
+/-- **A group of renumbered rings makes the same bonds aromatic.** -/
+lemma groupBonds_map {numAtoms n : ℕ} {σ ψ : ℕ → ℕ} {rb rb' C C' : Array (List ℕ)}
+    {d : Array Donor} {nbrs nbrs' : Array (List ℕ)} (hb : IdxBij n σ ψ)
+    (H : GraphIso n σ nbrs nbrs') (hrb : ∀ i < n, rb'[i]! = rb[σ i]!)
+    (hC : ∀ i < n, C'[i]! = C[σ i]!) {cur : List ℕ} (hcur : ∀ x ∈ cur, x < n) :
+    groupBonds numAtoms rb' C' d nbrs' cur = groupBonds numAtoms rb C d nbrs (cur.map σ) := by
+  unfold groupBonds
+  rw [isConnectedSet_map hb H hcur]
+  have hcount : cur.foldl (fun acc r ↦ C'[r]!.foldl (fun acc a ↦ acc.modify a (· + 1)) acc)
+      (Array.replicate numAtoms 0) =
+      (cur.map σ).foldl (fun acc r ↦ C[r]!.foldl (fun acc a ↦ acc.modify a (· + 1)) acc)
+      (Array.replicate numAtoms 0) := by
+    rw [List.foldl_map]
+    exact foldl_congr_mem cur _ fun x hx _ ↦ by rw [hC x (hcur x hx)]
+  have hall : cur.flatMap (rb'[·]!) = (cur.map σ).flatMap (rb[·]!) := by
+    rw [List.flatMap_map]
+    exact flatMap_congr_mem cur fun x hx ↦ hrb x (hcur x hx)
+  simp only [hcount, hall]
+
+/-- **A renumbered fused system makes the same bonds aromatic.** -/
+lemma systemBonds_map {numAtoms n : ℕ} {σ ψ : ℕ → ℕ} {rb rb' C C' : Array (List ℕ)}
+    {d : Array Donor} {nbrs nbrs' : Array (List ℕ)} (hb : IdxBij n σ ψ)
+    (H : GraphIso n σ nbrs nbrs') (hrb : ∀ i < n, rb'[i]! = rb[σ i]!)
+    (hC : ∀ i < n, C'[i]! = C[σ i]!) {F : List ℕ} (hF : ∀ x ∈ F, x < n) :
+    systemBonds numAtoms rb' C' d nbrs' F = systemBonds numAtoms rb C d nbrs (F.map σ) := by
+  have hFk : ∀ k < F.length, (F.map σ)[k]! = σ (F[k]!) := fun k hk ↦ by
+    rw [getElem!_pos _ k (by simpa using hk), getElem!_pos F k hk, List.getElem_map]
+  have hnew : ∀ size, (combinations F.length size).flatMap
+        (fun comb ↦ groupBonds numAtoms rb' C' d nbrs' (comb.map (F[·]!))) =
+      (combinations (F.map σ).length size).flatMap
+        (fun comb ↦ groupBonds numAtoms rb C d nbrs (comb.map ((F.map σ)[·]!))) := by
+    intro size
+    rw [List.length_map]
+    apply flatMap_congr_mem
+    intro comb hc
+    obtain ⟨-, -, hlt⟩ := mem_combinations.1 hc
+    have hin : ∀ x ∈ comb.map (F[·]!), x < n := by
+      intro x hx
+      obtain ⟨k, hk, rfl⟩ := List.mem_map.1 hx
+      exact hF _ (by rw [getElem!_pos F k (hlt k hk)]; exact List.getElem_mem _)
+    rw [groupBonds_map hb H hrb hC hin, List.map_map]
+    congr 1
+    exact List.map_congr_left fun k hk ↦ (hFk k (hlt k hk)).symm
+  have hall : (F.flatMap (rb'[·]!)).eraseDups = ((F.map σ).flatMap (rb[·]!)).eraseDups := by
+    rw [List.flatMap_map]
+    congr 1
+    exact flatMap_congr_mem F fun x hx ↦ hrb x (hF x hx)
+  unfold systemBonds
+  simp only [List.length_map, hall, hnew]
+
 end Work
 
 end LeanSMILES.Aromaticity
