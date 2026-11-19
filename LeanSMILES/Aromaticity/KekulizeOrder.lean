@@ -493,4 +493,25 @@ theorem kekulize_ringsEquiv {m : Work} {R R' : Array (List ℕ)} (hwf : WF m)
         exact ⟨r', hr', (hrr.mem x).2 hx⟩
     rw [e1, e2, clearAromatic_congr hra]
 
+/-! ### Bridges to the pipeline -/
+
+/-- A relisting, with no two bonds between the same atoms, relates the walks. -/
+lemma Relisted.walkRel {w w' : Work} {π ρ : ℕ → ℕ} (h : Relisted w w' π ρ) (hwf : w.WF)
+    (hnd : w.NbrsDistinct) (hnd' : w'.NbrsDistinct) : WalkRel (fun _ ↦ True) π ρ w w' :=
+  ⟨h.atoms, h.size, h.bij, h.ends, fun u v ↦ h.bondBetween? hwf hnd hnd' u v,
+    fun u ↦ by simpa [List.map_map, Function.comp_def] using (h.neighbors_perm hwf u).map Prod.snd,
+    fun k hk _ ↦ h.kind k hk⟩
+
+/-- Kekulization keeps which atoms each bond joins. -/
+lemma skel_of_kindsRel {o w : Work} (h : KindsRel o w) : SameSkel o w :=
+  ⟨by simp [numAtoms, h.atoms_size], by simp [numBonds, size_of_kindsRel h],
+    fun k ↦ (ends_getElem! (size_of_kindsRel h) (ends_of_kindsRel h) k).1.symm,
+    fun k ↦ (ends_getElem! (size_of_kindsRel h) (ends_of_kindsRel h) k).2.symm⟩
+
+lemma SameSkel.isRing {x y : Work} (hs : SameSkel x y) {c : List ℕ} (hc : x.IsRing c) :
+    y.IsRing c := by
+  have ha : ∀ u v, y.Adj u v ↔ x.Adj u v := fun u v ↦ by simp only [Adj, hs.neighbors]
+  refine ⟨hc.nodup, hc.three, hc.chain.imp fun a b h' ↦ (ha a b).2 h', fun a ha' b hb ↦ ?_⟩
+  exact (ha _ _).2 (hc.close a ha' b hb)
+
 end LeanSMILES.Aromaticity.Work
