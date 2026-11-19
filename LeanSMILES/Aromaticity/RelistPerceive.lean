@@ -187,6 +187,80 @@ lemma ringDonor (h : Relisted w w' π ρ) (hwf : w.WF) (hnd : w.NbrsDistinct)
   simp only [Work.ringDonor, h.donorType hwf hnd hnd' hL hr hi, h.atom, h.degree,
     h.hasMultipleBond]
 
+lemma firstDonor (h : Relisted w w' π ρ) (hwf : w.WF) (hnd : w.NbrsDistinct)
+    (hnd' : w'.NbrsDistinct) {L : List (List ℕ)} (hL : ∀ r ∈ L, w.IsRing r) (i : ℕ) :
+    Work.firstDonor w' (rbs w' L) L i = Work.firstDonor w (rbs w L) L i := by
+  unfold Work.firstDonor
+  cases hf : L.find? (·.contains i) with
+  | none => rfl
+  | some r =>
+    have hr := List.mem_of_find?_eq_some hf
+    have hi : i ∈ r := by
+      have h1 := List.find?_some hf
+      exact List.contains_iff_mem.1 h1
+    exact h.ringDonor hwf hnd hnd' hL hr hi _
+
+lemma firstCand (h : Relisted w w' π ρ) (hwf : w.WF) (hnd : w.NbrsDistinct)
+    (hnd' : w'.NbrsDistinct) {L : List (List ℕ)} (hL : ∀ r ∈ L, w.IsRing r) (i : ℕ) :
+    Work.firstCand w' (rbs w' L) L i = Work.firstCand w (rbs w L) L i := by
+  unfold Work.firstCand
+  cases hf : L.find? (·.contains i) with
+  | none => rfl
+  | some r =>
+    have hr := List.mem_of_find?_eq_some hf
+    have hi : i ∈ r := by
+      have h1 := List.find?_some hf
+      exact List.contains_iff_mem.1 h1
+    simp only [h.ringDonor hwf hnd hnd' hL hr hi, h.isAromaticCandidate]
+
+/-- **The first pass agrees on a relisted copy**: the same donor types and candidate rings. -/
+theorem donorData (h : Relisted w w' π ρ) (hwf : w.WF) (hnd : w.NbrsDistinct)
+    (hnd' : w'.NbrsDistinct) {R : Array (List ℕ)} (hR : ∀ r ∈ R.toList, w.IsRing r) :
+    (w'.donorData R).donor = (w.donorData R).donor ∧
+      (w'.donorData R).candRings = (w.donorData R).candRings := by
+  have I := donorData_inv w R
+  have I' := donorData_inv w' R
+  have hN : w'.numAtoms = w.numAtoms := by simp [numAtoms, h.atoms]
+  refine ⟨array_ext_of_getElem! (n := w.numAtoms) (by rw [I'.donor_size, hN]) I.donor_size
+    fun i hi ↦ ?_, Array.ext' ?_⟩
+  · rw [I'.donor i (by rw [hN]; exact hi), I.donor i hi]
+    exact h.firstDonor hwf hnd hnd' hR i
+  · rw [I'.candRings, I.candRings, hN]
+    apply List.filter_congr
+    intro r hr
+    rw [Bool.eq_iff_iff, List.all_eq_true, List.all_eq_true]
+    refine forall₂_congr fun i _ ↦ ?_
+    rw [h.firstCand hwf hnd hnd' hR i]
+
+/-! ### The second pass -/
+
+lemma count_map_inj {f : ℕ → ℕ} {l : List ℕ} {N : ℕ} (hl : ∀ x ∈ l, x < N)
+    (hf : ∀ a < N, ∀ b < N, f a = f b → a = b) {x : ℕ} (hx : x < N) :
+    (l.map f).count (f x) = l.count x := by
+  induction l with
+  | nil => rfl
+  | cons a l ih =>
+    rw [List.map_cons, List.count_cons, List.count_cons,
+      ih fun y hy ↦ hl y (List.mem_cons_of_mem _ hy)]
+    have ha := hl a List.mem_cons_self
+    congr 1
+    by_cases e : a = x
+    · subst e; simp
+    · have : f a ≠ f x := fun h' ↦ e (hf a ha x hx h')
+      simp [e, this]
+
+lemma length_filter_contains_map {f : ℕ → ℕ} {l₁ l₂ : List ℕ} {N : ℕ}
+    (h₁ : ∀ x ∈ l₁, x < N) (h₂ : ∀ x ∈ l₂, x < N) (hf : ∀ a < N, ∀ b < N, f a = f b → a = b) :
+    ((l₁.map f).filter (l₂.map f).contains).length = (l₁.filter l₂.contains).length := by
+  rw [List.filter_map, List.length_map]
+  congr 1
+  apply List.filter_congr
+  intro x hx
+  show (l₂.map f).contains (f x) = l₂.contains x
+  rw [Bool.eq_iff_iff, List.contains_iff_mem, List.contains_iff_mem, List.mem_map]
+  exact ⟨fun ⟨y, hy, e⟩ ↦ hf y (h₂ y hy) x (h₁ x hx) e ▸ hy, fun hx' ↦ ⟨x, hx', rfl⟩⟩
+
+
 end Relisted
 
 end LeanSMILES.Aromaticity.Work
