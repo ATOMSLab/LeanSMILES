@@ -1345,6 +1345,111 @@ lemma groupBonds_perm {numAtoms : ℕ} {rb C : Array (List ℕ)} {d : Array Dono
   have hall : (cur'.flatMap (rb[·]!)).Perm (cur.flatMap (rb[·]!)) := hp.symm.flatMap_right _
   simp only [hcount, mergeSort_eraseDups_perm hall, hall.count_eq]
 
+/-! ### Groups of rings of one size -/
+
+lemma pairwise_lt_range_n (n : ℕ) : (List.range n).Pairwise (· < ·) := by
+  rw [List.range_eq_range']
+  exact List.pairwise_lt_range' 1 (by omega)
+
+/-- A list is a sublist of `[0, n)` exactly when it is strictly increasing with entries below
+`n`. -/
+lemma sublist_range_iff {n : ℕ} {l : List ℕ} :
+    l.Sublist (List.range n) ↔ l.Pairwise (· < ·) ∧ ∀ x ∈ l, x < n := by
+  constructor
+  · intro h
+    exact ⟨(pairwise_lt_range_n n).sublist h, fun x hx ↦ List.mem_range.1 (h.subset hx)⟩
+  · rintro ⟨hp, hl⟩
+    refine List.sublist_of_subperm_of_pairwise (r := (· < ·)) ?_ hp (pairwise_lt_range_n n)
+    exact List.subperm_of_subset (hp.imp Nat.ne_of_lt) fun x hx ↦ List.mem_range.2 (hl x hx)
+
+/-- **`combinations n k` lists the strictly increasing lists of `k` entries below `n`.** -/
+lemma mem_combinations {n : ℕ} : ∀ {k : ℕ} {c : List ℕ},
+    c ∈ combinations n k ↔ c.length = k ∧ c.Pairwise (· < ·) ∧ ∀ x ∈ c, x < n
+  | 0, c => by
+    simp only [combinations, List.mem_singleton]
+    constructor
+    · rintro rfl; simp
+    · rintro ⟨h, -, -⟩; exact List.eq_nil_of_length_eq_zero h
+  | k + 1, c => by
+    simp only [combinations, List.mem_flatMap, List.mem_map, List.mem_range]
+    constructor
+    · rintro ⟨c0, hc0, d, hd, rfl⟩
+      obtain ⟨hl, hp, hlt⟩ := mem_combinations.1 hc0
+      -- the new entry is past every entry of `c0`
+      have hgt : ∀ y ∈ c0, y < (match c0.getLast? with | some x => x + 1 | none => 0) + d := by
+        intro y hy
+        cases hlast : c0.getLast? with
+        | none => rw [List.getLast?_eq_none_iff] at hlast; subst hlast; cases hy
+        | some z =>
+          have hz : z ∈ c0 := List.mem_of_getLast? hlast
+          have hyz : y ≤ z := by
+            obtain ⟨c1, rfl⟩ := List.getLast?_eq_some_iff.1 hlast
+            rcases List.mem_append.1 hy with hy | hy
+            · exact Nat.le_of_lt (List.pairwise_append.1 hp |>.2.2 y hy z (by simp))
+            · simp at hy; omega
+          simp only
+          omega
+      refine ⟨by simp [hl], List.pairwise_append.2 ⟨hp, by simp, fun a ha b hb ↦ ?_⟩,
+        fun x hx ↦ ?_⟩
+      · rw [List.mem_singleton] at hb; subst hb; exact hgt a ha
+      · rcases List.mem_append.1 hx with hx | hx
+        · exact hlt x hx
+        · rw [List.mem_singleton] at hx; subst hx
+          cases hlast : c0.getLast? <;> simp only [hlast] at hd ⊢ <;> omega
+    · rintro ⟨hl, hp, hlt⟩
+      obtain ⟨c0, x, rfl⟩ : ∃ c0 x, c = c0 ++ [x] := by
+        rcases List.eq_nil_or_concat c with h | ⟨c0, x, h⟩
+        · subst h; simp at hl
+        · exact ⟨c0, x, by rw [h, List.concat_eq_append]⟩
+      rw [List.pairwise_append] at hp
+      have hx : x < n := hlt x (by simp)
+      refine ⟨c0, mem_combinations.2 ⟨by simpa using hl, hp.1,
+        fun y hy ↦ hlt y (by simp [hy])⟩, ?_⟩
+      cases hlast : c0.getLast? with
+      | none =>
+        refine ⟨x, by simp only; omega, by simp⟩
+      | some z =>
+        have hzx : z < x := hp.2.2 z (List.mem_of_getLast? hlast) x (by simp)
+        refine ⟨x - (z + 1), by simp only; omega, ?_⟩
+        simp only
+        congr 2
+        omega
+
+/-- Picking positions out of `F` by a sublist of `[0, |F|)`, and every sublist of `F` so. -/
+lemma sublist_iff_positions (F : List ℕ) (G : List ℕ) :
+    G.Sublist F ↔ ∃ c : List ℕ, c.Sublist (List.range F.length) ∧ c.map (F[·]!) = G := by
+  constructor
+  · intro h
+    induction h with
+    | slnil => exact ⟨[], by simp, rfl⟩
+    | @cons l₁ l₂ a _ ih =>
+      obtain ⟨c, hc, hcG⟩ := ih
+      refine ⟨c.map (· + 1), ?_, ?_⟩
+      · rw [List.length_cons, List.range_succ_eq_map]
+        exact (hc.map _).cons _
+      · rw [List.map_map, ← hcG]
+        apply List.map_congr_left
+        intro x _
+        simp
+    | @cons_cons l₁ l₂ a _ ih =>
+      obtain ⟨c, hc, hcG⟩ := ih
+      refine ⟨0 :: c.map (· + 1), ?_, ?_⟩
+      · rw [List.length_cons, List.range_succ_eq_map]
+        exact (hc.map _).cons_cons _
+      · rw [List.map_cons, List.map_map, ← hcG]
+        simp only [getElem!_pos (a :: l₂) 0 (by simp), List.getElem_cons_zero, List.cons.injEq,
+          true_and]
+        apply List.map_congr_left
+        intro x _
+        simp
+  · rintro ⟨c, hc, rfl⟩
+    have hF : (List.range F.length).map (F[·]!) = F := by
+      apply List.ext_getElem (by simp)
+      intro i h1 h2
+      simp [getElem!_def, List.getElem?_eq_getElem h2]
+    have := hc.map (F[·]!)
+    rwa [hF] at this
+
 end Work
 
 end LeanSMILES.Aromaticity
