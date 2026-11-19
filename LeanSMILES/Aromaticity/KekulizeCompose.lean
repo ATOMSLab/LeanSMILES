@@ -100,7 +100,8 @@ lemma SysInv.kind_of_not_wa {P : ℕ → Prop} {out : Work} {D : ℕ → Bool}
 /-- **One more system.** -/
 lemma sysInv_step (hwf : WF m) (hnd : m.NbrsDistinct) {rings : Array (List ℕ)}
     {P : ℕ → Prop} {out w : Work} {D : ℕ → Bool} (hi : SysInv m wa ev0 P out D) {C : List ℕ}
-    (huniq : ∀ x, P x → x ∈ systemAtoms rings C → (m.atoms[x]! : WAtom).aromatic = true → False)
+    (huniq : ∀ x, P x → x ∈ systemAtoms rings C → (m.atoms[x]! : WAtom).aromatic = true →
+      (∃ k ∈ m.bondsOf x, wa k = true) → False)
     (hw : kekulizeSystem wa ev0 rings out C = .ok w) :
     ∃ D', SysInv m wa ev0 (fun x ↦ P x ∨ x ∈ systemAtoms rings C) w D' := by
   obtain ⟨hatoms, hskel, DS, hkS, hdS, hmS, hcS⟩ :=
@@ -120,7 +121,9 @@ lemma sysInv_step (hwf : WF m) (hnd : m.NbrsDistinct) {rings : Array (List ℕ)}
     intro k x hk ht hx
     obtain ⟨hp, hc⟩ := (hi.dOk k hk).2.2 x ht
     simp only [candOf, Bool.and_eq_true] at hc
-    exact huniq x hp hx hc.1
+    refine huniq x hp hx hc.1 ⟨k, ?_, (hi.dOk k hk).2.1⟩
+    simp only [bondsOf, List.mem_filter, List.mem_range, numBonds]
+    exact ⟨(hi.dOk k hk).1, ht⟩
   refine ⟨fun k ↦ D k || DS[k]!, ⟨hatoms.trans hi.atoms, hi.skel.trans hskel, fun k ↦ ?_,
     fun k hk ↦ ?_, fun k₁ k₂ x h₁ h₂ t₁ t₂ ↦ ?_, fun x hx hc hlt ↦ ?_⟩⟩
   · -- kinds
@@ -175,9 +178,11 @@ lemma sysInv_step (hwf : WF m) (hnd : m.NbrsDistinct) {rings : Array (List ℕ)}
     · obtain ⟨k, hk, ht⟩ := hcS x hx (by beta_reduce; rw [hcand]; exact hc) (hasz ▸ hlt)
       exact ⟨k, by simp [hk], by rw [← htch]; exact ht⟩
 
-/-- **All the systems**, an aromatic atom with at most three bonds being in at most one. -/
+/-- **All the systems**, an aromatic atom with a bond written aromatic having at most three bonds,
+so being in at most one. -/
 lemma sysInv_foldlM (hwf : WF m) (hnd : m.NbrsDistinct) {rings : Array (List ℕ)}
-    (hdeg : ∀ x, (m.atoms[x]! : WAtom).aromatic = true → (m.bondsOf x).length ≤ 3) :
+    (hdeg : ∀ x, (m.atoms[x]! : WAtom).aromatic = true → (∃ k ∈ m.bondsOf x, wa k = true) →
+      (m.bondsOf x).length ≤ 3) :
     ∀ (l : List (List ℕ)) (P : ℕ → Prop) (out w : Work) (D : ℕ → Bool),
       l.Pairwise (fun C E ↦ ∀ x, x ∈ systemAtoms rings C → x ∈ systemAtoms rings E →
         3 < (m.bondsOf x).length) →
@@ -197,7 +202,8 @@ lemma sysInv_foldlM (hwf : WF m) (hnd : m.NbrsDistinct) {rings : Array (List ℕ
     | ok v =>
       rw [hx] at hw
       obtain ⟨D₁, h₁⟩ := sysInv_step hwf hnd hi
-        (fun x hp hxC ha ↦ by have := hP C List.mem_cons_self x hp hxC; have := hdeg x ha; omega)
+        (fun x hp hxC ha hk ↦ by
+          have := hP C List.mem_cons_self x hp hxC; have := hdeg x ha hk; omega)
         hx
       obtain ⟨hhead, htail⟩ := List.pairwise_cons.1 hpw
       obtain ⟨D₂, h₂⟩ := sysInv_foldlM hwf hnd hdeg l _ v w D₁ htail
@@ -265,9 +271,8 @@ of bonds written aromatic, double, the other bonds written aromatic single, the 
 `D` is a matching of atoms that are aromatic and need a double bond, covering every such atom. -/
 theorem kekulize_correct {m K : Work} {rings : Array (List ℕ)} (hwf : WF m)
     (hnd : m.NbrsDistinct) (hr : ∀ ring ∈ rings, m.IsRing ring)
-    (hdeg : ∀ x, (m.atoms[x]! : WAtom).aromatic = true → (m.bondsOf x).length ≤ 3)
-    (hab : ∀ k < m.bonds.size, (m.bonds[k]! : WBond).kind = .aromatic →
-      (m.atoms[(m.bonds[k]! : WBond).src]! : WAtom).aromatic = true)
+    (hdeg : ∀ x, (m.atoms[x]! : WAtom).aromatic = true → (∃ k ∈ m.bondsOf x, m.kekWa k = true) →
+      (m.bondsOf x).length ≤ 3)
     (hK : m.kekulize rings = .ok K) :
     ∃ D : ℕ → Bool,
       (∀ k, (K.bonds[k]! : WBond).kind = if D k = true then .double else
@@ -312,7 +317,8 @@ theorem kekulize_correct {m K : Work} {rings : Array (List ℕ)} (hwf : WF m)
       · rename_i out2 h2
         split at hK
         · cases hK
-        · cases hK
+        · rename_i hleft
+          cases hK
           obtain ⟨hcov, hpw⟩ := fusedSystems_spec m hr
           obtain ⟨D, hi⟩ := sysInv_foldlM (wa := m.kekWa) (ev0 := m.kekEv0) hwf hnd hdeg
             (components rings.size (m.kekFusedNbrs rings)) (fun _ ↦ False) m out1
@@ -346,14 +352,20 @@ theorem kekulize_correct {m K : Work} {rings : Array (List ℕ)} (hwf : WF m)
             · simp [hD]
             rw [if_neg hD, if_neg hD]
             by_cases hw : m.kekWa k = true
-            · rw [if_pos hw, if_pos]
-              refine ⟨hw, (m.bonds[k]! : WBond).src, ?_⟩
-              obtain ⟨hk, hka⟩ := kekWa_iff.1 hw
-              have hs := hab k hk hka
-              refine ⟨hP _ hs, hs, ?_⟩
-              simp only [bondsOf, List.mem_filter, List.mem_range, WBond.touches,
-                Bool.or_eq_true, beq_iff_eq, true_or, and_true]
-              exact hk
+            · rw [if_pos hw]
+              split
+              · rfl
+              · -- a bond written aromatic not made single would be left aromatic
+                rename_i hno
+                exfalso
+                obtain ⟨hk, hka⟩ := kekWa_iff.1 hw
+                have hko : (out1.bonds[k]! : WBond).kind = .aromatic := by
+                  rw [hi.kinds k, if_neg hD, if_neg hno, hka]
+                apply hleft
+                rw [hb, Array.any_eq_true]
+                have hk1 : k < out1.bonds.size := by
+                  have := hi.skel.numBonds; simp only [numBonds] at this; omega
+                exact ⟨k, hk1, by rw [← getElem!_pos out1.bonds k hk1, hko]; rfl⟩
             · rw [if_neg hw, if_neg (fun h ↦ hw h.1)]
           · obtain ⟨h1, h2, h3⟩ := hi.dOk k hk
             exact ⟨h1, h2, fun x hx ↦ (h3 x hx).2⟩

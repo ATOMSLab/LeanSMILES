@@ -1302,7 +1302,7 @@ theorem kekuleWitness_totals {m a : Molecule n} {K : Work}
   set S := KR.setAromaticity R with hS
   set F := K.finish R with hF
   obtain ⟨hmarks, harS, hperc⟩ := Work.perceived_atom hK i
-  have hkek := Work.kindsAt_kekulize_mem hw.1 hw.2 hK i'
+  have hkek := Work.kindsAt_kekulize_mem hw.1 hK i'
   have hnS : i < S.atoms.size := by
     rw [(Work.afterRel_setAromaticity KR R).atoms_size,
       (Work.afterRel_assignRadicals (w := K)).atoms_size, hnK]; exact hi
@@ -1895,7 +1895,7 @@ theorem kekulize_record {m : Molecule n} {K : Work}
   set i' : Fin n := ⟨i, hi⟩ with hi'
   set P := Work.prepare m with hP
   set R := P.relevantCycles with hR
-  have hkek := Work.kindsAt_kekulize_mem hw.1 hw.2 hK i'
+  have hkek := Work.kindsAt_kekulize_mem hw.1 hK i'
   set T := K.cachedTotalHs i with hT
   set C := Work.cleaned m with hC
   have hPa : (P.atoms[i'.val]! : WAtom) =
@@ -2180,7 +2180,7 @@ theorem kekuleWitness_swap {m a : Molecule n} {K : Work}
   set S := KR.setAromaticity R with hS
   set F := K.finish R with hF
   obtain ⟨hmarks, harS, hperc⟩ := Work.perceived_atom hK i
-  have hkek := Work.kindsAt_kekulize_mem hw.1 hw.2 hK i'
+  have hkek := Work.kindsAt_kekulize_mem hw.1 hK i'
   have hnS : i < S.atoms.size := by
     rw [(Work.afterRel_setAromaticity KR R).atoms_size,
       (Work.afterRel_assignRadicals (w := K)).atoms_size, hnK]; exact hi
@@ -3313,9 +3313,9 @@ theorem aromatize_relabel_of_aromaticWritten {m a a' : Molecule n} (h : m.aromat
   have hnP : (Work.prepare m).atoms.size = n := size_prepare_atoms m
   have hbP : IdxBij (Work.prepare m).numAtoms (finPermFun σ) (finPermFun σ.symm) := by
     rw [numAtoms, hnP]; exact idxBij_finPermFun σ
-  have hd : KekData (Work.prepare m) K := kekulize_prepare_correct hw.1 hw.2 hK
+  have hd : KekData (Work.prepare m) K := kekulize_prepare_correct hw.1 hK
   have hw' := hw.relabel σ
-  have hd'0 := kekulize_prepare_correct hw'.1 hw'.2 hK'
+  have hd'0 := kekulize_prepare_correct hw'.1 hK'
   rw [hP'] at hd'0 hK' ha'
   have hsw := kekulize_relabel_swapped hwfP hbP hK hK' hd hd'0
   have hI := workIso_relabelW hwfP hbP
@@ -4218,7 +4218,7 @@ lemma swapped_spelling {m k a : Molecule n} {K : Work}
     · rw [h1, h2]; rfl
     · rw [hx, hy]
       simp [hxy.1, hxy.2.1]
-  obtain ⟨D, hkind, -, -, -⟩ := Work.kekulize_prepare_correct hw.1 hw.2 hK
+  obtain ⟨D, hkind, -, -, -⟩ := Work.kekulize_prepare_correct hw.1 hK
   refine ⟨rfl, ?_, fun j ↦ ?_, fun j hj ↦ ?_, fun j hj ↦ ?_, fun i ↦ ?_⟩
   · change (Work.prepare k).bonds.size = K.bonds.size
     rw [size_kekulized hK, hbPk]

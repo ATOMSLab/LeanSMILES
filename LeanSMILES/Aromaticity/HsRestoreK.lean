@@ -70,14 +70,12 @@ lemma kindsAt_prepare_counts {n : ℕ} (m : Molecule n) (i : Fin n) :
     · have ho : o ≠ .aromatic := fun h ↦ hp (hpo.2 h)
       simp [hp, ho, ih]
 
-/-- `kekulize_correct` for `aromatize`'s working copy, when aromatic bonds are written as
-`Molecule.AromaticWritten` asks. -/
+/-- `kekulize_correct` for `aromatize`'s working copy, when every aromatic atom has at most three
+bonds, as `Molecule.AromaticWritten` asks. -/
 theorem kekulize_prepare_correct {n : ℕ} {m : Molecule n} {K : Work}
     (hw1 : ∀ i, (m.atom i).aromatic = true →
       2 ≤ (m.bonds.filter fun b ↦ b.touches i && b.kind == .aromatic).length ∧
         (m.bonds.filter (·.touches i)).length ≤ 3)
-    (hw2 : ∀ b ∈ m.bonds, b.kind = .aromatic →
-      (m.atom b.src).aromatic = true ∧ (m.atom b.dst).aromatic = true)
     (hK : (prepare m).kekulize (prepare m).relevantCycles = .ok K) :
     ∃ D : ℕ → Bool,
       (∀ k, (K.bonds[k]! : WBond).kind = if D k = true then .double else
@@ -90,31 +88,17 @@ theorem kekulize_prepare_correct {n : ℕ} {m : Molecule n} {K : Work}
       ∀ x < (prepare m).atoms.size, candOf (prepare m) (prepare m).kekWa (prepare m).kekEv0 x =
         true → ∃ k, D k = true ∧ ((prepare m).bonds[k]! : WBond).touches x = true := by
   obtain ⟨hwf, hnd⟩ := wf_nbrsDistinct_prepare m
-  refine kekulize_correct hwf hnd (fun ring hr ↦ isRing_of_mem_relevantCycles _ hr) ?_ ?_ hK
-  · intro x hx
-    by_cases hxn : x < n
-    · rw [aromatic_prepare m ⟨x, hxn⟩] at hx
-      have := (hw1 ⟨x, hxn⟩ hx).2
-      have hl : ((prepare m).bondsOf x).length = ((prepare m).kindsAt x).length := by
-        simp [kindsAt]
-      rw [hl]
-      exact (kindsAt_prepare_counts m ⟨x, hxn⟩).1 ▸ this
-    · rw [aromatic_prepare_of_ge m (by omega)] at hx
-      cases hx
-  · intro k hk ha
-    have hkl : k < m.bonds.length := by
-      have := (sameSkel_prepare m).numBonds
-      simp only [numBonds, ofMolecule, List.size_toArray, Array.size_map] at this
-      omega
-    have hO : ((ofMolecule m).bonds[k]! : WBond).kind = .aromatic := by
-      have := (cleanFine_cleaned m).arom k
-      rw [prepare_eq, cacheValences_bonds] at ha
-      exact this.1 ha
-    rw [ofMolecule_bond m hkl] at hO
-    have hs := (sameSkel_prepare m).src k
-    rw [ofMolecule_bond m hkl] at hs
-    rw [hs]
-    exact (aromatic_prepare m m.bonds[k].src).trans (hw2 _ (List.getElem_mem hkl) hO).1
+  refine kekulize_correct hwf hnd (fun ring hr ↦ isRing_of_mem_relevantCycles _ hr) ?_ hK
+  intro x hx _
+  by_cases hxn : x < n
+  · rw [aromatic_prepare m ⟨x, hxn⟩] at hx
+    have := (hw1 ⟨x, hxn⟩ hx).2
+    have hl : ((prepare m).bondsOf x).length = ((prepare m).kindsAt x).length := by
+      simp [kindsAt]
+    rw [hl]
+    exact (kindsAt_prepare_counts m ⟨x, hxn⟩).1 ▸ this
+  · rw [aromatic_prepare_of_ge m (by omega)] at hx
+    cases hx
 
 lemma length_filter_eq_one {l : List ℕ} {p : ℕ → Bool} (hnd : l.Nodup)
     (hu : ∀ a ∈ l, ∀ b ∈ l, p a = true → p b = true → a = b) (he : ∃ a ∈ l, p a = true) :
@@ -150,12 +134,10 @@ theorem kindsAt_kekulize_mem {n : ℕ} {m : Molecule n} {K : Work}
     (hw1 : ∀ i, (m.atom i).aromatic = true →
       2 ≤ (m.bonds.filter fun b ↦ b.touches i && b.kind == .aromatic).length ∧
         (m.bonds.filter (·.touches i)).length ≤ 3)
-    (hw2 : ∀ b ∈ m.bonds, b.kind = .aromatic →
-      (m.atom b.src).aromatic = true ∧ (m.atom b.dst).aromatic = true)
     (hK : (prepare m).kekulize (prepare m).relevantCycles = .ok K) (i : Fin n) :
     K.kindsAt i ∈ Loc.kekAll (candOf (prepare m) (prepare m).kekWa (prepare m).kekEv0 i)
       ((prepare m).kindsAt i) := by
-  obtain ⟨D, hkind, hdok, hmatch, hcover⟩ := kekulize_prepare_correct hw1 hw2 hK
+  obtain ⟨D, hkind, hdok, hmatch, hcover⟩ := kekulize_prepare_correct hw1 hK
   have hsk : SameSkel K (prepare m) := (kekulize_kindsRel hK).sameSkel
   set P := prepare m with hP
   have hrel : ∀ k ∈ P.bondsOf i, Loc.KekRel (P.bonds[k]! : WBond).kind (K.bonds[k]! : WBond).kind ∧
@@ -517,7 +499,7 @@ theorem hsRestored_kekulize {n : ℕ} {m : Molecule n} {K : Work}
       refine ⟨rfl, ?_⟩
       simpa [isSD] using h.2
     · left; rfl
-  have hkek := kindsAt_kekulize_mem hw1 hw2 hK i
+  have hkek := kindsAt_kekulize_mem hw1 hK i
   -- K has no aromatic bond, so `KR`'s flags are all down
   have hKnoar : ∀ k : ℕ, (K.bonds[k]! : WBond).kind ≠ .aromatic := by
     intro k
