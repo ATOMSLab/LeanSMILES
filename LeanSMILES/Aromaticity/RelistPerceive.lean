@@ -433,4 +433,113 @@ lemma RbMap.fusedBonds (h : RbMap N π rb rb') {numAtoms : ℕ} {C : Array (List
 
 end SecondPass
 
+namespace Relisted
+
+variable {w w' : Work} {π ρ : ℕ → ℕ}
+
+/-- **The bonds perception marks on a relisted copy are the same bonds, renumbered.** -/
+theorem mem_aromaticBondList (h : Relisted w w' π ρ) (hwf : w.WF) (hnd : w.NbrsDistinct)
+    (hnd' : w'.NbrsDistinct) {R : Array (List ℕ)} (hR : ∀ r ∈ R.toList, w.IsRing r) (b' : ℕ) :
+    b' ∈ w'.aromaticBondList R ↔ ∃ b ∈ w.aromaticBondList R, π b = b' := by
+  obtain ⟨hd, hc⟩ := h.donorData hwf hnd hnd' hR
+  have hCR : ∀ r ∈ (w.donorData R).candRings.toList, w.IsRing r := fun r hr ↦ by
+    rw [(donorData_inv w R).candRings] at hr
+    exact hR r (List.mem_filter.1 hr).1
+  have hN : w'.numAtoms = w.numAtoms := by simp [numAtoms, h.atoms]
+  have hm : RbMap w.bonds.size π ((w.donorData R).candRings.map w.ringBonds)
+      ((w.donorData R).candRings.map w'.ringBonds) := by
+    refine ⟨by simp, fun j ↦ ?_, fun j x hx ↦ ?_, fun a ha c hc e ↦ h.bij.inj ha hc e⟩
+    · rw [getElem!_map_list _ _ (by rw [ringBonds_eq_filterMap]; rfl),
+        getElem!_map_list _ _ (by rw [ringBonds_eq_filterMap]; rfl)]
+      by_cases hj : j < (w.donorData R).candRings.size
+      · rw [getElem!_pos _ j hj]
+        exact h.ringBonds hwf hnd hnd' (hCR _ (Array.getElem_mem_toList hj))
+      · rw [getElem!_neg _ j hj]; rfl
+    · rw [getElem!_map_list _ _ (by rw [ringBonds_eq_filterMap]; rfl)] at hx
+      exact lt_of_mem_ringBonds hx
+  unfold aromaticBondList
+  dsimp only
+  rw [hd, hc, hN]
+  exact hm.fusedBonds b'
+
+lemma markAromatic_bond (x : Work) (c k : ℕ) (hk : k < x.bonds.size) :
+    ((x.markAromatic c).bonds[k]! : WBond) =
+      if k = c ∧ isSD (x.bonds[c]! : WBond).kind = true then
+        { (x.bonds[k]! : WBond) with kind := .aromatic } else x.bonds[k]! := by
+  rw [getElem!_eq_getD, getElem?_markAromatic_bonds', Array.getElem?_eq_getElem hk,
+    ← getElem!_pos x.bonds k hk]
+  split <;> rfl
+
+lemma markAromatic_sizes (x : Work) (c : ℕ) :
+    (x.markAromatic c).bonds.size = x.bonds.size ∧ (x.markAromatic c).atoms.size = x.atoms.size := by
+  unfold Work.markAromatic; dsimp only; split <;> simp [modifyAtom, setKind]
+
+lemma markAromatic (h : Relisted w w' π ρ) {b : ℕ} (hb : b < w.bonds.size) :
+    Relisted (w.markAromatic b) (w'.markAromatic (π b)) π ρ := by
+  have hk := h.kind b hb
+  have hs := (markAromatic_sizes w b).1
+  have hs' := (markAromatic_sizes w' (π b)).1
+  have hπ : ∀ k < w.bonds.size, π k < w'.bonds.size := fun k hk' ↦ by
+    rw [h.size]; exact h.bij.lt k hk'
+  have heq : ∀ k < w.bonds.size, (π k = π b ↔ k = b) := fun k hk' ↦
+    ⟨fun e ↦ h.bij.inj hk' hb e, fun e ↦ e ▸ rfl⟩
+  refine ⟨?_, by rw [hs, hs', h.size], hs ▸ h.bij, fun k hk' ↦ ?_, fun k hk' ↦ ?_⟩
+  · apply Array.ext'
+    apply List.ext_getElem?
+    intro j
+    rw [Array.getElem?_toList, Array.getElem?_toList, getElem?_markAromatic_atoms',
+      getElem?_markAromatic_atoms', hk, h.atoms]
+    have e : ((w'.bonds[π b]! : WBond).src = j ∨ (w'.bonds[π b]! : WBond).dst = j) ↔
+        ((w.bonds[b]! : WBond).src = j ∨ (w.bonds[b]! : WBond).dst = j) := by
+      rcases h.ends b hb with ⟨e1, e2⟩ | ⟨e1, e2⟩ <;> rw [e1, e2] <;> tauto
+    by_cases hc : isSD (w.bonds[b]! : WBond).kind = true ∧
+        ((w.bonds[b]! : WBond).src = j ∨ (w.bonds[b]! : WBond).dst = j)
+    · rw [if_pos hc, if_pos ⟨hc.1, e.2 hc.2⟩]
+    · rw [if_neg hc, if_neg fun h' ↦ hc ⟨h'.1, e.1 h'.2⟩]
+  · rw [hs] at hk'
+    rw [markAromatic_bond _ _ _ (hπ k hk'), markAromatic_bond _ _ _ hk', hk]
+    by_cases e : k = b
+    · subst e
+      by_cases hsd : isSD (w.bonds[k]! : WBond).kind = true
+      · rw [if_pos ⟨rfl, hsd⟩, if_pos ⟨rfl, hsd⟩]
+      · rw [if_neg (fun h' ↦ hsd h'.2), if_neg (fun h' ↦ hsd h'.2)]
+        exact h.kind k hk'
+    · rw [if_neg (fun h' ↦ e ((heq k hk').1 h'.1)), if_neg (fun h' ↦ e h'.1)]
+      exact h.kind k hk'
+  · rw [hs] at hk'
+    rw [markAromatic_bond _ _ _ (hπ k hk'), markAromatic_bond _ _ _ hk', hk]
+    have := h.ends k hk'
+    by_cases e : k = b
+    · subst e
+      by_cases hsd : isSD (w.bonds[k]! : WBond).kind = true
+      · rw [if_pos ⟨rfl, hsd⟩, if_pos ⟨rfl, hsd⟩]
+        dsimp only
+        exact this
+      · rw [if_neg (fun h' ↦ hsd h'.2), if_neg (fun h' ↦ hsd h'.2)]
+        exact this
+    · rw [if_neg (fun h' ↦ e ((heq k hk').1 h'.1)), if_neg (fun h' ↦ e h'.1)]
+      exact this
+
+lemma foldl_markAromatic (L : List ℕ) : ∀ {w w' : Work}, Relisted w w' π ρ →
+    (∀ b ∈ L, b < w.bonds.size) →
+    Relisted (L.foldl Work.markAromatic w) ((L.map π).foldl Work.markAromatic w') π ρ := by
+  induction L with
+  | nil => exact fun h _ ↦ h
+  | cons b L ih =>
+    intro w w' h hL
+    rw [List.map_cons, List.foldl_cons, List.foldl_cons]
+    exact ih (h.markAromatic (hL b List.mem_cons_self))
+      fun c hc ↦ by rw [(markAromatic_sizes w b).1]; exact hL c (List.mem_cons_of_mem _ hc)
+
+/-- **Perception keeps the relisting**, over the same rings. -/
+theorem setAromaticity (h : Relisted w w' π ρ) (hwf : w.WF) (hnd : w.NbrsDistinct)
+    (hnd' : w'.NbrsDistinct) {R : Array (List ℕ)} (hR : ∀ r ∈ R.toList, w.IsRing r) :
+    Relisted (w.setAromaticity R) (w'.setAromaticity R) π ρ := by
+  unfold Work.setAromaticity
+  rw [foldl_markAromatic_congr (l := w'.aromaticBondList R) (l' := (w.aromaticBondList R).map π)
+    (fun b' ↦ by rw [h.mem_aromaticBondList hwf hnd hnd' hR, List.mem_map]) w']
+  exact foldl_markAromatic _ h fun b hb' ↦ lt_of_mem_aromaticBondList w R hb'
+
+end Relisted
+
 end LeanSMILES.Aromaticity.Work
