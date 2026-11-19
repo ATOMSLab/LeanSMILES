@@ -670,6 +670,123 @@ lemma donorData_inv (w : Work) (R : Array (List ℕ)) :
       fun i hin ↦ by simp [hin, firstCand], by simp⟩
   simpa using this
 
+/-- In a list sorted by length, the first ring containing `i` is as short as any. -/
+lemma find?_length_le {L : List (List ℕ)} (hs : L.Pairwise (·.length ≤ ·.length)) {i : ℕ}
+    {r : List ℕ} (hr : L.find? (·.contains i) = some r) :
+    ∀ r₀ ∈ L, i ∈ r₀ → r.length ≤ r₀.length := by
+  obtain ⟨-, as, bs, rfl, has⟩ := List.find?_eq_some_iff_append.1 hr
+  intro r₀ hr₀ hi
+  rw [List.mem_append, List.mem_cons] at hr₀
+  rcases hr₀ with hr₀ | rfl | hr₀
+  · exact absurd (by simpa using hi) (by simpa using has r₀ hr₀)
+  · exact le_rfl
+  · rw [List.pairwise_append, List.pairwise_cons] at hs
+    exact hs.2.1.1 r₀ hr₀
+
+/-- Equivalent ring lists sorted by length: the first ring containing an atom has the same
+length in both. -/
+lemma RingsEquiv.find?_length {R R' : List (List ℕ)} (h : RingsEquiv R R')
+    (hs : R.Pairwise (·.length ≤ ·.length)) (hs' : R'.Pairwise (·.length ≤ ·.length)) (i : ℕ) :
+    (R'.find? (·.contains i)).map List.length = (R.find? (·.contains i)).map List.length := by
+  cases hf : R.find? (·.contains i) with
+  | none =>
+    rw [List.find?_eq_none] at hf
+    have : R'.find? (·.contains i) = none := by
+      rw [List.find?_eq_none]
+      intro r' hr' hc
+      obtain ⟨r, hr, hrr⟩ := h.forall_exists r' hr'
+      exact hf r hr (by simpa [hrr.mem] using hc)
+    rw [this]
+  | some r =>
+    have hri : i ∈ r := by simpa using List.find?_some hf
+    obtain ⟨r', hr', hrr⟩ := h.exists_forall r (List.mem_of_find?_eq_some hf)
+    cases hf' : R'.find? (·.contains i) with
+    | none =>
+      rw [List.find?_eq_none] at hf'
+      exact absurd (by simpa using (hrr.mem i).2 hri) (hf' r' hr')
+    | some q =>
+      have hqi : i ∈ q := by simpa using List.find?_some hf'
+      obtain ⟨q₀, hq₀, hqq⟩ := h.forall_exists q (List.mem_of_find?_eq_some hf')
+      have h1 := find?_length_le hs hf q₀ hq₀ ((hqq.mem i).1 hqi)
+      have h2 := find?_length_le hs' hf' r' hr' ((hrr.mem i).2 hri)
+      rw [← hqq.length] at h1
+      rw [hrr.length] at h2
+      have : q.length = r.length := by omega
+      simp [this]
+
+lemma firstDonor_eq_of_length {w : Work} {B B' : List ℕ} {L L' : List (List ℕ)} {i : ℕ}
+    (hB : ∀ k, k ∈ B ↔ k ∈ B')
+    (hl : (L'.find? (·.contains i)).map List.length = (L.find? (·.contains i)).map List.length) :
+    firstDonor w B' L' i = firstDonor w B L i ∧ firstCand w B' L' i = firstCand w B L i := by
+  unfold firstDonor firstCand
+  cases h1 : L'.find? (·.contains i) with
+  | none =>
+    cases h2 : L.find? (·.contains i) with
+    | none => exact ⟨rfl, rfl⟩
+    | some r => rw [h1, h2] at hl; cases hl
+  | some r' =>
+    cases h2 : L.find? (·.contains i) with
+    | none => rw [h1, h2] at hl; cases hl
+    | some r =>
+      rw [h1, h2] at hl
+      simp only [Option.map_some, Option.some.injEq] at hl
+      dsimp only
+      rw [hl, ringDonor_congr w hB]
+      exact ⟨rfl, rfl⟩
+
+lemma array_ext_of_getElem! {α : Type} [Inhabited α] {a b : Array α} {n : ℕ} (ha : a.size = n)
+    (hb : b.size = n) (h : ∀ i < n, a[i]! = b[i]!) : a = b := by
+  apply Array.ext (by rw [ha, hb])
+  intro i hi hi'
+  have := h i (by omega)
+  rwa [getElem!_pos a i hi, getElem!_pos b i hi'] at this
+
+/-- **The first pass of perception reads only the ring set**: for two ring lists sorted by
+length that list the same rings, each written any way, the donor types and candidacies agree,
+and the candidate rings are again the same rings. -/
+theorem donorData_equiv (w : Work) {R R' : Array (List ℕ)} (h : RingsEquiv R.toList R'.toList)
+    (hs : R.toList.Pairwise (·.length ≤ ·.length))
+    (hs' : R'.toList.Pairwise (·.length ≤ ·.length)) :
+    (w.donorData R').seen = (w.donorData R).seen ∧ (w.donorData R').cand = (w.donorData R).cand ∧
+      (w.donorData R').donor = (w.donorData R).donor ∧
+      RingsEquiv (w.donorData R).candRings.toList (w.donorData R').candRings.toList := by
+  have I := donorData_inv w R
+  have I' := donorData_inv w R'
+  have hB : ∀ k, k ∈ (R.toList.flatMap w.ringBonds).eraseDups ↔
+      k ∈ (R'.toList.flatMap w.ringBonds).eraseDups := fun k ↦ by
+    rw [List.mem_eraseDups, List.mem_eraseDups]
+    exact (h.mem_flatMap_ringBonds w k).symm
+  have hfc : ∀ i, firstDonor w ((R'.toList.flatMap w.ringBonds).eraseDups) R'.toList i =
+        firstDonor w ((R.toList.flatMap w.ringBonds).eraseDups) R.toList i ∧
+      firstCand w ((R'.toList.flatMap w.ringBonds).eraseDups) R'.toList i =
+        firstCand w ((R.toList.flatMap w.ringBonds).eraseDups) R.toList i := fun i ↦
+    firstDonor_eq_of_length hB (h.find?_length hs hs' i)
+  have hany : ∀ i, R'.toList.any (·.contains i) = R.toList.any (·.contains i) := fun i ↦ by
+    rw [Bool.eq_iff_iff, List.any_eq_true, List.any_eq_true]
+    constructor
+    · rintro ⟨r', hr', hc⟩
+      obtain ⟨r, hr, hrr⟩ := h.forall_exists r' hr'
+      exact ⟨r, hr, by simpa [hrr.mem] using hc⟩
+    · rintro ⟨r, hr, hc⟩
+      obtain ⟨r', hr', hrr⟩ := h.exists_forall r hr
+      exact ⟨r', hr', by simpa [hrr.mem] using hc⟩
+  refine ⟨array_ext_of_getElem! I'.seen_size I.seen_size fun i hi ↦ ?_,
+    array_ext_of_getElem! I'.cand_size I.cand_size fun i hi ↦ ?_,
+    array_ext_of_getElem! I'.donor_size I.donor_size fun i hi ↦ ?_, ?_⟩
+  · rw [I'.seen i hi, I.seen i hi, hany]
+  · rw [I'.cand i hi, I.cand i hi, (hfc i).2]
+  · rw [I'.donor i hi, I.donor i hi, (hfc i).1]
+  · rw [I.candRings, I'.candRings]
+    have hp : (fun r : List ℕ ↦ r.all fun i ↦ decide (i < w.numAtoms) &&
+        firstCand w ((R'.toList.flatMap w.ringBonds).eraseDups) R'.toList i) =
+        fun r : List ℕ ↦ r.all fun i ↦ decide (i < w.numAtoms) &&
+          firstCand w ((R.toList.flatMap w.ringBonds).eraseDups) R.toList i := by
+      funext r; simp only [(hfc _).2]
+    rw [hp]
+    refine h.filter _ fun r r' hrr ↦ ?_
+    rw [Bool.eq_iff_iff, List.all_eq_true, List.all_eq_true]
+    exact ⟨fun H i hi ↦ H i ((hrr.mem i).2 hi), fun H i hi ↦ H i ((hrr.mem i).1 hi)⟩
+
 end Work
 
 end LeanSMILES.Aromaticity
