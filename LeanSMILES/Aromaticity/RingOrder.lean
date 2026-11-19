@@ -926,6 +926,123 @@ lemma fusedNbrs_eq_foldl (rb : Array (List ℕ)) :
   funext nbrs i
   exact forIn_ite_yield _ _ _ _
 
+/-- One step of `fusedNbrs` on the pair `(i, j)`. -/
+def fusedStep (rb : Array (List ℕ)) (nbrs : Array (List ℕ)) (p : ℕ × ℕ) : Array (List ℕ) :=
+  if fusedPair rb p.1 p.2 then (nbrs.modify p.1 (· ++ [p.2])).modify p.2 (· ++ [p.1]) else nbrs
+
+/-- The pairs `fusedNbrs` visits: `(i, j)` with `i < j < n`. -/
+def fusedPairs (n : ℕ) : List (ℕ × ℕ) :=
+  (List.range n).flatMap fun i ↦ (List.range' (i + 1) (n - (i + 1))).map fun j ↦ (i, j)
+
+lemma mem_fusedPairs {n : ℕ} {p : ℕ × ℕ} : p ∈ fusedPairs n ↔ p.1 < p.2 ∧ p.2 < n := by
+  obtain ⟨a, b⟩ := p
+  simp only [fusedPairs, List.mem_flatMap, List.mem_range, List.mem_map, List.mem_range'_1,
+    Prod.mk.injEq]
+  constructor
+  · rintro ⟨i, hi, j, ⟨hj1, hj2⟩, rfl, rfl⟩; omega
+  · rintro ⟨h1, h2⟩; exact ⟨a, by omega, b, ⟨by omega, by omega⟩, rfl, rfl⟩
+
+lemma getElem!_modify_list (a : Array (List ℕ)) (k : ℕ) (f : List ℕ → List ℕ) {i : ℕ}
+    (hi : i < a.size) : (a.modify k f)[i]! = if k = i then f a[i]! else a[i]! := by
+  rw [getElem!_pos (a.modify k f) i (by simpa using hi), getElem!_pos a i hi,
+    Array.getElem_modify]
+
+lemma fusedNbrs_eq_pairs (rb : Array (List ℕ)) :
+    fusedNbrs rb = (fusedPairs rb.size).foldl (fusedStep rb) (Array.replicate rb.size []) := by
+  rw [fusedNbrs_eq_foldl, fusedPairs, List.foldl_flatMap]
+  congr 1
+  funext nbrs i
+  rw [List.foldl_map]
+  rfl
+
+lemma size_foldl_fusedStep (rb : Array (List ℕ)) :
+    ∀ (P : List (ℕ × ℕ)) (nbrs : Array (List ℕ)), (P.foldl (fusedStep rb) nbrs).size = nbrs.size
+  | [], _ => rfl
+  | p :: P, nbrs => by
+    rw [List.foldl_cons, size_foldl_fusedStep rb P]
+    unfold fusedStep; split <;> simp
+
+lemma mem_foldl_fusedStep (rb : Array (List ℕ)) {n : ℕ} :
+    ∀ (P : List (ℕ × ℕ)) (nbrs : Array (List ℕ)), nbrs.size = n →
+      (∀ p ∈ P, p.1 < n ∧ p.2 < n ∧ p.1 ≠ p.2) → ∀ i < n, ∀ j,
+        j ∈ (P.foldl (fusedStep rb) nbrs)[i]! ↔ j ∈ nbrs[i]! ∨
+          ∃ p ∈ P, fusedPair rb p.1 p.2 = true ∧ ((p.1 = i ∧ p.2 = j) ∨ (p.2 = i ∧ p.1 = j))
+  | [], nbrs, _, _, i, _, j => by simp
+  | p :: P, nbrs, hn, hP, i, hi, j => by
+    rw [List.foldl_cons]
+    obtain ⟨hp1, hp2, hp12⟩ := hP p List.mem_cons_self
+    have hstep : ∀ i < n, ∀ j, j ∈ (fusedStep rb nbrs p)[i]! ↔ j ∈ nbrs[i]! ∨
+        (fusedPair rb p.1 p.2 = true ∧ ((p.1 = i ∧ p.2 = j) ∨ (p.2 = i ∧ p.1 = j))) := by
+      intro i hi j
+      unfold fusedStep
+      split
+      · rename_i hf
+        rw [getElem!_modify_list _ _ _ (by simpa [hn] using hi),
+          getElem!_modify_list _ _ _ (by omega)]
+        by_cases h1 : p.1 = i <;> by_cases h2 : p.2 = i
+        · omega
+        · simp only [if_pos h1, if_neg h2, List.mem_append, List.mem_singleton]
+          constructor
+          · rintro (h | rfl)
+            · exact .inl (h1 ▸ h)
+            · exact .inr ⟨hf, .inl ⟨h1, rfl⟩⟩
+          · rintro (h | ⟨-, ⟨-, rfl⟩ | ⟨h, -⟩⟩)
+            · exact .inl (h1 ▸ h)
+            · exact .inr rfl
+            · exact absurd h h2
+        · simp only [if_neg h1, if_pos h2, List.mem_append, List.mem_singleton]
+          constructor
+          · rintro (h | rfl)
+            · exact .inl (h2 ▸ h)
+            · exact .inr ⟨hf, .inr ⟨h2, rfl⟩⟩
+          · rintro (h | ⟨-, ⟨h, -⟩ | ⟨-, rfl⟩⟩)
+            · exact .inl (h2 ▸ h)
+            · exact absurd h h1
+            · exact .inr rfl
+        · simp only [if_neg h1, if_neg h2]
+          constructor
+          · exact .inl
+          · rintro (h | ⟨-, ⟨h, -⟩ | ⟨h, -⟩⟩)
+            · exact h
+            · exact absurd h h1
+            · exact absurd h h2
+      · rename_i hf
+        simp [hf]
+    rw [mem_foldl_fusedStep rb P _ (by unfold fusedStep; split <;> simp [hn])
+      (fun q hq ↦ hP q (List.mem_cons_of_mem _ hq)) i hi j, hstep i hi j]
+    constructor
+    · rintro ((h | h) | ⟨q, hq, hq'⟩)
+      · exact .inl h
+      · exact .inr ⟨p, List.mem_cons_self, h⟩
+      · exact .inr ⟨q, List.mem_cons_of_mem _ hq, hq'⟩
+    · rintro (h | ⟨q, hq, hq'⟩)
+      · exact .inl (.inl h)
+      · rcases List.mem_cons.1 hq with rfl | hq
+        · exact .inl (.inr hq')
+        · exact .inr ⟨q, hq, hq'⟩
+
+/-- **The fused-neighbour graph**: `j` neighbours `i` when both are rings, different, and fused
+(read from the smaller index). -/
+lemma mem_fusedNbrs (rb : Array (List ℕ)) (i j : ℕ) :
+    j ∈ (fusedNbrs rb)[i]! ↔ i < rb.size ∧ j < rb.size ∧
+      ((i < j ∧ fusedPair rb i j = true) ∨ (j < i ∧ fusedPair rb j i = true)) := by
+  rw [fusedNbrs_eq_pairs]
+  by_cases hi : i < rb.size
+  · rw [mem_foldl_fusedStep rb (fusedPairs rb.size) _ (by simp)
+      (fun p hp ↦ by rw [mem_fusedPairs] at hp; omega) i hi j]
+    rw [getElem!_pos _ i (by simpa using hi), Array.getElem_replicate]
+    simp only [List.not_mem_nil, false_or, mem_fusedPairs]
+    constructor
+    · rintro ⟨⟨a, b⟩, ⟨hab, hb⟩, hf, (⟨rfl, rfl⟩ | ⟨rfl, rfl⟩)⟩
+      · exact ⟨hi, hb, .inl ⟨hab, hf⟩⟩
+      · exact ⟨hi, by omega, .inr ⟨hab, hf⟩⟩
+    · rintro ⟨-, hj, (⟨hij, hf⟩ | ⟨hji, hf⟩)⟩
+      · exact ⟨(i, j), ⟨hij, hj⟩, hf, .inl ⟨rfl, rfl⟩⟩
+      · exact ⟨(j, i), ⟨hji, hi⟩, hf, .inr ⟨rfl, rfl⟩⟩
+  · rw [getElem!_neg _ i (by rw [size_foldl_fusedStep]; simpa using hi)]
+    simp only [hi, false_and, iff_false]
+    exact List.not_mem_nil
+
 end Work
 
 end LeanSMILES.Aromaticity
