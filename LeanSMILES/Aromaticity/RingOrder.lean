@@ -6,6 +6,7 @@ Authors: Samiha Sharlin
 module
 
 public import LeanSMILES.Aromaticity.KekuleSim
+public import LeanSMILES.Aromaticity.RingFacts
 
 /-!
 # LeanSMILES.Aromaticity.RingOrder
@@ -162,12 +163,6 @@ lemma foldl_markAromatic_congr {l l' : List ℕ} (h : ∀ b, b ∈ l ↔ b ∈ l
   foldl_congr_of_comm_idem markAromatic markAromatic_comm markAromatic_idem h w
 
 /-! ### A ring's bonds do not depend on where its atom list starts or which way it runs -/
-
-lemma bondBetween?_comm (w : Work) (i j : ℕ) : w.bondBetween? i j = w.bondBetween? j i := by
-  unfold bondBetween?
-  congr 1
-  funext k
-  rw [Bool.or_comm]
 
 lemma ringBonds_eq_filterMap (w : Work) (r : List ℕ) :
     w.ringBonds r = (List.range r.length).filterMap fun t ↦
@@ -1568,6 +1563,101 @@ lemma systemBonds_perm {numAtoms : ℕ} {rb C : Array (List ℕ)} {d : Array Don
   have := key (List.range' 1 (min F.length 6)) ([], [], false) ([], [], false)
     (fun _ ↦ Iff.rfl) (fun _ ↦ Iff.rfl) List.nodup_nil List.nodup_nil rfl b
   exact this
+
+/-! ### Connected components -/
+
+/-- One step along the neighbour lists. -/
+def NbrReach (nbrs : Array (List ℕ)) : ℕ → ℕ → Prop :=
+  Relation.ReflTransGen fun a b ↦ b ∈ nbrs[a]!
+
+lemma pushNbrs_spec : ∀ (L : List ℕ) (sn : Array Bool) (st : List ℕ),
+    (∀ v ∈ L, v < sn.size) →
+    ∃ sn' new, L.foldl pushNbr (sn, st) = (sn', new ++ st) ∧ new.Nodup ∧ sn'.size = sn.size ∧
+      (∀ x ∈ new, x ∈ L ∧ sn[x]! = false) ∧ (∀ x : ℕ, sn[x]! = true → sn'[x]! = true) ∧
+      (∀ x ∈ new, sn'[x]! = true)
+  | [], sn, st, _ => ⟨sn, [], rfl, List.nodup_nil, rfl, by simp, fun _ h ↦ h, by simp⟩
+  | v :: L, sn, st, hL => by
+    have hvs : v < sn.size := hL v List.mem_cons_self
+    rw [List.foldl_cons]
+    unfold pushNbr
+    dsimp only
+    split
+    · rename_i hv
+      simp only [Bool.not_eq_eq_eq_not, Bool.not_true] at hv
+      obtain ⟨sn', new, he, hnd, hsz, hnew, hmono, hmark⟩ := pushNbrs_spec L (sn.set! v true)
+        (v :: st) (fun x hx ↦ by simpa using hL x (List.mem_cons_of_mem _ hx))
+      have hv1 : (sn.set! v true)[v]! = true := by
+        rw [getElem!_set!_gen, if_pos ⟨rfl, hvs⟩]
+      refine ⟨sn', new ++ [v], he.trans (by simp), ?_, by rw [hsz]; simp, fun x hx ↦ ?_,
+        fun x hx ↦ ?_, fun x hx ↦ ?_⟩
+      · refine List.nodup_append.2 ⟨hnd, by simp, fun a ha b hb ↦ ?_⟩
+        rw [List.mem_singleton] at hb; subst hb
+        intro e; subst e
+        rw [(hnew a ha).2] at hv1; cases hv1
+      · rcases List.mem_append.1 hx with hx | hx
+        · obtain ⟨h1, h2⟩ := hnew x hx
+          refine ⟨List.mem_cons_of_mem _ h1, ?_⟩
+          rw [getElem!_set!_gen] at h2
+          split at h2
+          · cases h2
+          · exact h2
+        · rw [List.mem_singleton] at hx; subst hx; exact ⟨List.mem_cons_self, hv⟩
+      · apply hmono
+        rw [getElem!_set!_gen]
+        split
+        · rfl
+        · exact hx
+      · rcases List.mem_append.1 hx with hx | hx
+        · exact hmark x hx
+        · rw [List.mem_singleton] at hx; subst hx; exact hmono _ hv1
+    · obtain ⟨sn', new, he, hnd, hsz, hnew, hmono, hmark⟩ := pushNbrs_spec L sn st
+        (fun x hx ↦ hL x (List.mem_cons_of_mem _ hx))
+      exact ⟨sn', new, he, hnd, hsz,
+        fun x hx ↦ ⟨List.mem_cons_of_mem _ (hnew x hx).1, (hnew x hx).2⟩, hmono, hmark⟩
+
+/-- **The depth-first search of one component**: no repeat, and everything reached from the
+start. -/
+lemma dfsComp_reach {nbrs : Array (List ℕ)} {n : ℕ} (hlt : ∀ i : ℕ, ∀ j ∈ nbrs[i]!, j < n)
+    {root : ℕ} : ∀ (fuel : ℕ) (seen : Array Bool) (comp stack : List ℕ), seen.size = n →
+      (comp ++ stack).Nodup → (∀ x ∈ comp ++ stack, seen[x]! = true) →
+      (∀ x ∈ comp ++ stack, NbrReach nbrs root x) →
+      (dfsComp nbrs fuel (seen, comp, stack)).2.Nodup ∧
+        ∀ x ∈ (dfsComp nbrs fuel (seen, comp, stack)).2, NbrReach nbrs root x
+  | 0, seen, comp, stack, _, hnd, _, hr => by
+    unfold dfsComp
+    exact ⟨hnd.sublist (List.sublist_append_left _ _), fun x hx ↦ hr x (List.mem_append_left _ hx)⟩
+  | fuel + 1, seen, comp, [], _, hnd, _, hr => by
+    unfold dfsComp
+    exact ⟨by simpa using hnd, fun x hx ↦ hr x (by simpa using hx)⟩
+  | fuel + 1, seen, comp, u :: rest, hsz, hnd, hseen, hr => by
+    unfold dfsComp
+    obtain ⟨sn', new, he, hndn, hsz', hnew, hmono, hmark⟩ := pushNbrs_spec (nbrs[u]!) seen rest
+      (fun v hv ↦ hsz ▸ hlt u v hv)
+    rw [he]
+    dsimp only
+    have hdisj : ∀ x ∈ new, x ∉ comp ++ u :: rest := fun x hx hx' ↦ by
+      have := hseen x hx'
+      rw [(hnew x hx).2] at this
+      cases this
+    apply dfsComp_reach hlt fuel sn' (u :: comp) (new ++ rest) (hsz'.trans hsz)
+    · have h1 : (new ++ (comp ++ u :: rest)).Nodup :=
+        List.nodup_append.2 ⟨hndn, hnd, fun a ha b hb e ↦ hdisj a ha (e ▸ hb)⟩
+      refine (List.perm_iff_count.2 fun a ↦ ?_).nodup_iff.1 h1
+      simp only [List.count_append, List.count_cons]
+      omega
+    · intro x hx
+      by_cases hxn : x ∈ new
+      · exact hmark x hxn
+      · apply hmono
+        apply hseen
+        simp only [List.mem_append, List.mem_cons] at hx ⊢
+        tauto
+    · intro x hx
+      by_cases hxn : x ∈ new
+      · exact (hr u (by simp)).tail (hnew x hxn).1
+      · apply hr
+        simp only [List.mem_append, List.mem_cons] at hx ⊢
+        tauto
 
 end Work
 
