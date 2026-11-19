@@ -250,4 +250,239 @@ theorem addToBasis_spec {B : List (ℕ × ℕ)} (hE : Echelon B) (c : ℕ × Lis
     refine ⟨hE, fun v ↦ ?_⟩
     rw [XSpan.cons_iff, XSpan.xor_iff hc, or_self]
 
+lemma XSpan.congr_span {S T : List ℕ} (h : ∀ x ∈ S, XSpan T x) (h' : ∀ x ∈ T, XSpan S x)
+    (v : ℕ) : XSpan S v ↔ XSpan T v :=
+  ⟨XSpan.of_span h, XSpan.of_span h'⟩
+
+/-- Adding cycles one by one: the basis stays echelon and spans them with the old basis. -/
+lemma foldl_addToBasis_spec : ∀ (l : List (ℕ × List ℕ)) (B : List (ℕ × ℕ)), Echelon B →
+    Echelon (l.foldl addToBasis B) ∧
+      ∀ v, XSpan ((l.foldl addToBasis B).map (·.2)) v ↔ XSpan (l.map (·.1) ++ B.map (·.2)) v
+  | [], B, h => ⟨h, by simp⟩
+  | c :: l, B, h => by
+    obtain ⟨h1, h2⟩ := addToBasis_spec h c
+    obtain ⟨i1, i2⟩ := foldl_addToBasis_spec l _ h1
+    refine ⟨i1, fun v ↦ ?_⟩
+    rw [List.foldl_cons, i2, List.map_cons, List.cons_append]
+    refine XSpan.congr_span (fun x hx ↦ ?_) (fun x hx ↦ ?_) v
+    · rcases List.mem_append.1 hx with hx | hx
+      · exact .mem (List.mem_cons_of_mem _ (List.mem_append_left _ hx))
+      · refine ((h2 x).1 (.mem hx)).mono fun y hy ↦ ?_
+        rcases List.mem_cons.1 hy with rfl | hy
+        · exact List.mem_cons_self
+        · exact List.mem_cons_of_mem _ (List.mem_append_right _ hy)
+    · have hA : ∀ y ∈ c.1 :: B.map (·.2), XSpan (l.map (·.1) ++ (addToBasis B c).map (·.2)) y :=
+        fun y hy ↦ ((h2 y).2 (.mem hy)).mono fun z hz ↦ List.mem_append_right _ hz
+      rcases List.mem_cons.1 hx with rfl | hx
+      · exact hA _ List.mem_cons_self
+      · rcases List.mem_append.1 hx with hx | hx
+        · exact .mem (List.mem_append_left _ hx)
+        · exact hA x (List.mem_cons_of_mem _ hx)
+
+/-- A candidate cycle (mask, atoms) of `sorted` is **relevant** when its mask is not a sum of
+the masks of strictly smaller candidates. -/
+def Relevant (sorted : List (ℕ × List ℕ)) (c : ℕ × List ℕ) : Prop :=
+  ¬ XSpan ((sorted.filter fun d ↦ decide (popcount d.1 < popcount c.1)).map (·.1)) c.1
+
+/-- In a list ordered by `f`, the members below `k` come before those at `k`. -/
+lemma filter_or_of_sorted {α : Type} (f : α → ℕ) (k : ℕ) (P Q : α → Bool) :
+    ∀ {l : List α}, l.Pairwise (fun a b ↦ f a ≤ f b) → (∀ x ∈ l, P x = true → f x < k) →
+      (∀ x ∈ l, Q x = true → f x = k) →
+      l.filter (fun x ↦ P x || Q x) = l.filter P ++ l.filter Q
+  | [], _, _, _ => rfl
+  | x :: l, hl, hP, hQ => by
+    have hl' := (List.pairwise_cons.1 hl).2
+    have ih := filter_or_of_sorted f k P Q hl' (fun y hy ↦ hP y (List.mem_cons_of_mem _ hy))
+      (fun y hy ↦ hQ y (List.mem_cons_of_mem _ hy))
+    by_cases hpx : P x = true
+    · have hqx : Q x = false := by
+        by_contra h
+        have := hQ x List.mem_cons_self (by simpa using h)
+        have := hP x List.mem_cons_self hpx
+        omega
+      simp only [List.filter_cons, hpx, hqx, Bool.true_or, if_true, ih, List.cons_append,
+        Bool.false_eq_true, if_false]
+    · by_cases hqx : Q x = true
+      · have hnil : l.filter P = [] := List.filter_eq_nil_iff.2 fun y hy hpy ↦ by
+          have h1 := (List.pairwise_cons.1 hl).1 y hy
+          have h2 := hP y (List.mem_cons_of_mem _ hy) hpy
+          have h3 := hQ x List.mem_cons_self hqx
+          omega
+        simp only [List.filter_cons, hpx, hqx, Bool.false_or, if_true, ih, hnil,
+          List.nil_append, Bool.false_eq_true, if_false]
+      · simp only [List.filter_cons, hpx, hqx, Bool.false_or, ih, Bool.false_eq_true, if_false]
+
+open Classical in
+/-- **One size of `relevantCycles`**: if the basis spans the candidates of the sizes done (those
+below `k`) and the result lists their relevant ones, then after size `k` the same holds with `k`
+done. -/
+lemma relevantStep_spec {sorted : List (ℕ × List ℕ)}
+    (hs : sorted.Pairwise fun a b ↦ popcount a.1 ≤ popcount b.1) {k : ℕ} {ks : List ℕ}
+    (hks : (k :: ks).Pairwise (· < ·))
+    (hinv : ∀ c ∈ sorted, popcount c.1 ∉ k :: ks ↔ ∀ k' ∈ k :: ks, popcount c.1 < k')
+    {B : List (ℕ × ℕ)} (hE : Echelon B)
+    (hB : ∀ v, XSpan (B.map (·.2)) v ↔
+      XSpan ((sorted.filter fun c ↦ decide (popcount c.1 ∉ k :: ks)).map (·.1)) v)
+    {res : Array (List ℕ)}
+    (hres : res.toList = (sorted.filter fun c ↦
+      decide (popcount c.1 ∉ k :: ks ∧ Relevant sorted c)).map (·.2)) :
+    Echelon (relevantStep sorted (B, res) k).1 ∧
+      (∀ v, XSpan ((relevantStep sorted (B, res) k).1.map (·.2)) v ↔
+        XSpan ((sorted.filter fun c ↦ decide (popcount c.1 ∉ ks)).map (·.1)) v) ∧
+      (relevantStep sorted (B, res) k).2.toList = (sorted.filter fun c ↦
+        decide (popcount c.1 ∉ ks ∧ Relevant sorted c)).map (·.2) ∧
+      ∀ c ∈ sorted, popcount c.1 ∉ ks ↔ ∀ k' ∈ ks, popcount c.1 < k' := by
+  have hk_lt : ∀ k' ∈ ks, k < k' := (List.pairwise_cons.1 hks).1
+  have hkn : k ∉ ks := fun h ↦ lt_irrefl _ (hk_lt k h)
+  have hlt : ∀ d ∈ sorted, popcount d.1 ∉ k :: ks ↔ popcount d.1 < k := fun d hd ↦ by
+    rw [hinv d hd]
+    constructor
+    · exact fun h ↦ h k List.mem_cons_self
+    · intro h k' hk'
+      rcases List.mem_cons.1 hk' with rfl | hk'
+      · exact h
+      · exact h.trans (hk_lt k' hk')
+  have hkeep : ∀ c ∈ sorted, popcount c.1 = k → (reduceBy B c.1 ≠ 0 ↔ Relevant sorted c) := by
+    intro c hc hck
+    unfold Relevant
+    rw [Ne, reduceBy_eq_zero_iff hE, hB]
+    apply not_congr
+    apply XSpan.congr
+    intro x
+    simp only [List.mem_map, List.mem_filter, decide_eq_true_eq]
+    constructor
+    · rintro ⟨d, ⟨hd, h⟩, rfl⟩
+      exact ⟨d, ⟨hd, by rw [hck]; exact (hlt d hd).1 h⟩, rfl⟩
+    · rintro ⟨d, ⟨hd, h⟩, rfl⟩
+      exact ⟨d, ⟨hd, (hlt d hd).2 (hck ▸ h)⟩, rfl⟩
+  unfold relevantStep
+  dsimp only
+  have hkept : (sorted.filter fun c ↦ popcount c.1 == k).filter (fun c ↦ reduceBy B c.1 != 0) =
+      sorted.filter fun c ↦ decide (popcount c.1 = k ∧ Relevant sorted c) := by
+    rw [List.filter_filter]
+    apply List.filter_congr
+    intro c hc
+    by_cases hck : popcount c.1 = k
+    · have := hkeep c hc hck
+      rw [Bool.eq_iff_iff]
+      simp only [hck, beq_self_eq_true, Bool.and_true, bne_iff_ne, ne_eq, true_and,
+        decide_eq_true_eq]
+      exact this
+    · simp [hck]
+  rw [hkept]
+  obtain ⟨f1, f2⟩ := foldl_addToBasis_spec
+    (sorted.filter fun c ↦ decide (popcount c.1 = k ∧ Relevant sorted c)) B hE
+  refine ⟨f1, fun v ↦ ?_, ?_, fun c hc ↦ ?_⟩
+  · rw [f2 v]
+    refine XSpan.congr_span (fun x hx ↦ ?_) (fun x hx ↦ ?_) v
+    · rcases List.mem_append.1 hx with hx | hx
+      · obtain ⟨d, hd, rfl⟩ := List.mem_map.1 hx
+        simp only [List.mem_filter, decide_eq_true_eq] at hd
+        exact .mem (List.mem_map.2 ⟨d, List.mem_filter.2 ⟨hd.1, by
+          simp only [decide_eq_true_eq]; rw [hd.2.1]; exact hkn⟩, rfl⟩)
+      · refine ((hB x).1 (.mem hx)).mono fun y hy ↦ ?_
+        obtain ⟨d, hd, rfl⟩ := List.mem_map.1 hy
+        simp only [List.mem_filter, decide_eq_true_eq] at hd
+        exact List.mem_map.2 ⟨d, List.mem_filter.2 ⟨hd.1, by
+          simp only [decide_eq_true_eq]; exact fun h ↦ hd.2 (List.mem_cons_of_mem _ h)⟩, rfl⟩
+    · obtain ⟨d, hd, rfl⟩ := List.mem_map.1 hx
+      simp only [List.mem_filter, decide_eq_true_eq] at hd
+      obtain ⟨hd, hdk⟩ := hd
+      by_cases hk : popcount d.1 = k
+      · by_cases hr : Relevant sorted d
+        · exact .mem (List.mem_append_left _ (List.mem_map.2 ⟨d, List.mem_filter.2 ⟨hd, by
+            simp only [decide_eq_true_eq]; exact ⟨hk, hr⟩⟩, rfl⟩))
+        · have h0 : reduceBy B d.1 = 0 := by
+            by_contra h0; exact hr ((hkeep d hd hk).1 h0)
+          exact ((reduceBy_eq_zero_iff hE _).1 h0).mono fun y hy ↦ List.mem_append_right _ hy
+      · have hm : popcount d.1 ∉ k :: ks := by
+          rw [List.mem_cons, not_or]; exact ⟨hk, hdk⟩
+        exact ((hB d.1).2 (.mem (List.mem_map.2 ⟨d, List.mem_filter.2 ⟨hd, by
+          simpa using hm⟩, rfl⟩))).mono fun y hy ↦ List.mem_append_right _ hy
+  · rw [Array.toList_append, hres, List.toList_toArray, ← List.map_append]
+    congr 1
+    rw [← filter_or_of_sorted (fun c ↦ popcount c.1) k _ _ hs]
+    · apply List.filter_congr
+      intro c hc
+      rw [Bool.eq_iff_iff]
+      simp only [Bool.or_eq_true, decide_eq_true_eq, List.mem_cons, not_or]
+      constructor
+      · rintro (⟨⟨_, h1⟩, h2⟩ | ⟨hck, h2⟩)
+        · exact ⟨h1, h2⟩
+        · exact ⟨hck ▸ hkn, h2⟩
+      · rintro ⟨h1, h2⟩
+        by_cases hck : popcount c.1 = k
+        · exact .inr ⟨hck, h2⟩
+        · exact .inl ⟨⟨hck, h1⟩, h2⟩
+    · intro c hc h
+      simp only [decide_eq_true_eq] at h
+      exact (hlt c hc).1 h.1
+    · intro c hc h
+      simp only [decide_eq_true_eq] at h
+      exact h.1
+  · constructor
+    · intro h k' hk'
+      by_cases hck : popcount c.1 = k
+      · rw [hck]; exact hk_lt k' hk'
+      · have : popcount c.1 ∉ k :: ks := by rw [List.mem_cons, not_or]; exact ⟨hck, h⟩
+        exact ((hlt c hc).1 this).trans (hk_lt k' hk')
+    · exact fun h hm ↦ lt_irrefl _ (h _ hm)
+
+lemma eraseDups_pairwise_lt : ∀ {l : List ℕ}, l.Pairwise (· ≤ ·) → l.eraseDups.Pairwise (· < ·)
+  | [], _ => by simp
+  | a :: as, h => by
+    rw [List.eraseDups_cons]
+    have h' : (as.filter fun b ↦ !b == a).Pairwise (· ≤ ·) := (List.pairwise_cons.1 h).2.filter _
+    refine List.Pairwise.cons (fun y hy ↦ ?_) (eraseDups_pairwise_lt h')
+    rw [List.mem_eraseDups, List.mem_filter] at hy
+    have h1 := (List.pairwise_cons.1 h).1 y hy.1
+    have h2 : y ≠ a := by simpa using hy.2
+    omega
+termination_by l => l.length
+decreasing_by exact Nat.lt_succ_of_le (List.length_filter_le _ _)
+
+open Classical in
+/-- **What the sizes loop of `relevantCycles` keeps**: over a candidate list ordered by size, the
+relevant candidates, in order. -/
+theorem relevantFold_eq {sorted : List (ℕ × List ℕ)}
+    (hs : sorted.Pairwise fun a b ↦ popcount a.1 ≤ popcount b.1) :
+    (((sorted.map (popcount ·.1)).eraseDups.foldl (relevantStep sorted) ([], #[])).2).toList =
+      (sorted.filter fun c ↦ decide (Relevant sorted c)).map (·.2) := by
+  have key : ∀ (ks : List ℕ) (B : List (ℕ × ℕ)) (res : Array (List ℕ)),
+      ks.Pairwise (· < ·) → (∀ c ∈ sorted, popcount c.1 ∉ ks ↔ ∀ k' ∈ ks, popcount c.1 < k') →
+      Echelon B →
+      (∀ v, XSpan (B.map (·.2)) v ↔
+        XSpan ((sorted.filter fun c ↦ decide (popcount c.1 ∉ ks)).map (·.1)) v) →
+      res.toList = (sorted.filter fun c ↦
+        decide (popcount c.1 ∉ ks ∧ Relevant sorted c)).map (·.2) →
+      (ks.foldl (relevantStep sorted) (B, res)).2.toList =
+        (sorted.filter fun c ↦ decide (Relevant sorted c)).map (·.2) := by
+    intro ks
+    induction ks with
+    | nil =>
+      intro B res _ _ _ _ hres
+      rw [List.foldl_nil, hres]
+      simp
+    | cons k ks ih =>
+      intro B res hks hinv hE hB hres
+      obtain ⟨g1, g2, g3, g4⟩ := relevantStep_spec hs hks hinv hE hB hres
+      rw [List.foldl_cons]
+      exact ih _ _ (List.pairwise_cons.1 hks).2 g4 g1 g2 g3
+  have hall : ∀ c ∈ sorted, popcount c.1 ∈ (sorted.map (popcount ·.1)).eraseDups :=
+    fun c hc ↦ List.mem_eraseDups.2 (List.mem_map_of_mem hc)
+  have hnil : sorted.filter (fun c ↦ decide (popcount c.1 ∉
+      (sorted.map (popcount ·.1)).eraseDups)) = [] :=
+    List.filter_eq_nil_iff.2 fun c hc h ↦ by simp only [decide_eq_true_eq] at h; exact h (hall c hc)
+  apply key
+  · exact eraseDups_pairwise_lt (List.pairwise_map.2 hs)
+  · intro c hc
+    exact ⟨fun h ↦ absurd (hall c hc) h, fun h ↦ absurd (h _ (hall c hc)) (lt_irrefl _)⟩
+  · exact ⟨by simp, .nil⟩
+  · intro v
+    rw [hnil]
+    simp only [List.map_nil]
+  · rw [List.filter_eq_nil_iff.2 fun c hc h ↦ by
+      simp only [decide_eq_true_eq] at h; exact h.1 (hall c hc)]
+    rfl
+
 end LeanSMILES.Aromaticity
