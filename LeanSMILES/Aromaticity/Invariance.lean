@@ -487,10 +487,15 @@ keeping its charges, a molecule with the same atoms, configurations and bonds �
 each in either orientation — aromatizes too, to the same atoms and configurations and the same
 bonds.  The output's bond list follows the input's, so the outputs are equal only up to
 `SameBonds`.  `ChargesKept` is needed: relisting `c1ccccc1N(=O)=O` moves the charge that
-`cleanUp` gives "the first" oxygen. -/
+`cleanUp` gives "the first" oxygen.  Every aromatic atom is assumed to have at most three bonds
+(as `AromaticWritten` asks): then each lies in one fused system of kekulization, so the order in
+which the systems are kekulized does not matter.  Relisting can reorder two rings with the same
+atoms, and so the systems; an aromatic atom in two systems (a spiro atom with four aromatic bonds)
+would get its double bond reset by the second. -/
 theorem aromatize_of_sameBonds {m m' a : Molecule n} (h : m.aromatize = .ok a)
-    (hc : m.ChargesKept a) (hat : m'.atoms = m.atoms) (hst : m'.stereo = m.stereo)
-    (hb : m'.SameBonds m) :
+    (hc : m.ChargesKept a)
+    (hdeg : ∀ i, (m.atom i).aromatic = true → (m.bonds.filter (·.touches i)).length ≤ 3)
+    (hat : m'.atoms = m.atoms) (hst : m'.stereo = m.stereo) (hb : m'.SameBonds m) :
     ∃ a', m'.aromatize = .ok a' ∧ a'.atoms = a.atoms ∧ a'.stereo = a.stereo ∧
       a'.SameBonds a := by
   sorry
@@ -3626,10 +3631,11 @@ theorem canonicalSmiles_aromatize_relabel {m a a' : Molecule n} (h : m.aromatize
 /-- Relisting the bonds does not change the canonical SMILES of the aromatized molecule.  From
 `aromatize_of_sameBonds` and `canonicalSmiles_eq_of_sameBonds`. -/
 theorem canonicalSmiles_aromatize_of_sameBonds {m m' a : Molecule n} (h : m.aromatize = .ok a)
-    (hc : m.ChargesKept a) (hat : m'.atoms = m.atoms) (hst : m'.stereo = m.stereo)
-    (hb : m'.SameBonds m) :
+    (hc : m.ChargesKept a)
+    (hdeg : ∀ i, (m.atom i).aromatic = true → (m.bonds.filter (·.touches i)).length ≤ 3)
+    (hat : m'.atoms = m.atoms) (hst : m'.stereo = m.stereo) (hb : m'.SameBonds m) :
     ∃ a', m'.aromatize = .ok a' ∧ a'.canonicalSmiles = a.canonicalSmiles := by
-  obtain ⟨a', h', ha, hs, hb'⟩ := aromatize_of_sameBonds h hc hat hst hb
+  obtain ⟨a', h', ha, hs, hb'⟩ := aromatize_of_sameBonds h hc hdeg hat hst hb
   exact ⟨a', h', canonicalSmiles_eq_of_sameBonds ha hs hb'⟩
 
 /-- Aromatizing an output again, keeping its charges, does not change its canonical SMILES.
