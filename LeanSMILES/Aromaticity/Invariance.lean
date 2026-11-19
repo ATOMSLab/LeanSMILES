@@ -2913,24 +2913,22 @@ theorem kekuleWitness_aromatize {m a a' : Molecule n} {K : Work}
 /-- **Every output is the image of a Kekulé structure of itself**, unless `cleanUp` rewrites
 that structure.  A witness is the structure the pipeline computes on the way: the output's atoms
 with the aromatic flags cleared, and each aromatic bond with the kind `Work.kekulize` gave it
-(`kekuleWitness`); if it aromatizes keeping its charges, and its valences are allowed, it
-aromatizes to `a`.  Both provisos are needed: for `O=p1ccccc1` the witness is `O=P1=CC=CC=C1`,
-which `cleanUp` rewrites (`aromatize_aromatize`); for `Oc#1ccccc1` the kekulizer gives the carbon
-next to the triple bond a single ring bond, so the witness `OC#1C=CC=CC1` has a five-valent
-carbon (RDKit would reject it), and aromatizes to itself (that witness is not `m.SameValences`
-either, and with `m.SameValences k` the proof does not use `k.ValenceOk`).  `m.AromaticWritten`
-excludes
-aromatic atoms RDKit's valence rounding misreads (`N[se]=CC`, `C:c1ccccc1`), and
-`m.BareWritable` atoms no SMILES can write without brackets (every parsed molecule is
-`BareWritable`). -/
+(`kekuleWitness`); if it aromatizes keeping its charges, and RDKit reads its valences as it
+reads `m`'s (`m.SameValences k`), it aromatizes to `a`.  Both provisos are needed: for
+`O=p1ccccc1` the witness is `O=P1=CC=CC=C1`, which `cleanUp` rewrites (`aromatize_aromatize`);
+for `Oc#1ccccc1` the kekulizer gives the carbon next to the triple bond a single ring bond, so the
+witness `OC#1C=CC=CC1` has a five-valent carbon (RDKit would reject it, and its valences are not
+`m`'s), and aromatizes to itself.  The witness's valences being allowed (`ValenceOk`) need not be
+assumed: it follows from `m.SameValences k`.  `m.AromaticWritten` excludes aromatic atoms RDKit's
+valence rounding misreads (`N[se]=CC`, `C:c1ccccc1`), and `m.BareWritable` atoms no SMILES can
+write without brackets (every parsed molecule is `BareWritable`). -/
 theorem exists_kekule_aromatize {m a : Molecule n} (h : m.aromatize = .ok a)
     (hw : m.AromaticWritten) (hbw : m.BareWritable) :
     ∃ k : Molecule n, k.IsKekule ∧ k.IsKekuleStructureOf a ∧
-      ∀ a', k.aromatize = .ok a' → k.ChargesKept a' → k.ValenceOk → m.SameValences k →
-        a' = a := by
+      ∀ a', k.aromatize = .ok a' → k.ChargesKept a' → m.SameValences k → a' = a := by
   obtain ⟨K, hK, ha⟩ := aromatize_eq_ok.mp h
   obtain ⟨hk, hs⟩ := kekuleWitness_spec hK ha
-  exact ⟨_, hk, hs, fun _ h' hc' _ hsv ↦ kekuleWitness_aromatize hK ha h' hc' hw hbw hsv⟩
+  exact ⟨_, hk, hs, fun _ h' hc' hsv ↦ kekuleWitness_aromatize hK ha h' hc' hw hbw hsv⟩
 
 /-! ### 4. The canonical string -/
 

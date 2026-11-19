@@ -325,7 +325,7 @@ def testOne (s : String) (t : Tally) : Tally := Id.run do
   let okW := match kekuleWitness m a with
     | some k => decide k.IsKekule && decide (k.IsKekuleStructureOf a) &&
         match arom k with
-        | some a' => !decide (k.ChargesKept a') || !decide k.ValenceOk ||
+        | some a' => !decide (k.ChargesKept a') ||
             !decide m.AromaticWritten || !decide m.BareWritable || !decide (m.SameValences k) ||
             decide (a' = a)
         | none => false
