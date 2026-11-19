@@ -57,6 +57,7 @@ public import LeanSMILES.Aromaticity.RelabelPipeline
 public import LeanSMILES.Aromaticity.KekulizeRelabel
 public import LeanSMILES.Aromaticity.RelabelOutput
 public import LeanSMILES.Aromaticity.Relist
+public import LeanSMILES.Aromaticity.RelistPerceive
 public import LeanSMILES.Aromaticity.Invariance
 public import LeanSMILES.Aromaticity.Resonance
 public import LeanSMILES.Aromaticity.KekuleSim
