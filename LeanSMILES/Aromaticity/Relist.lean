@@ -296,4 +296,135 @@ lemma finalizeHs (h : Relisted w w' π ρ) : Relisted w.finalizeHs w'.finalizeHs
 
 end Relisted
 
+/-! ### `cleanUp` -/
+
+/-- A neutral oxygen on a double bond (what the phosphorus scan keeps). -/
+def pO (w : Work) (e : ℕ × ℕ) : Bool :=
+  (w.atoms[e.2]! : WAtom).z == 8 && (w.atoms[e.2]! : WAtom).charge == 0 &&
+    (w.bonds[e.1]! : WBond).kind == .double
+
+/-- A carbon or nitrogen with two neighbours or more, on a double bond. -/
+def pCN (w : Work) (e : ℕ × ℕ) : Bool :=
+  ((w.atoms[e.2]! : WAtom).z == 6 || (w.atoms[e.2]! : WAtom).z == 7) && 2 ≤ w.degree e.2 &&
+    (w.bonds[e.1]! : WBond).kind == .double
+
+/-- One neighbour of the phosphorus scan. -/
+def scanP (w : Work) (p : Option (ℕ × ℕ) × Bool) (e : ℕ × ℕ) : Option (ℕ × ℕ) × Bool :=
+  if pO w e then (some e, p.2) else if pCN w e then (p.1, true) else p
+
+lemma phosphorusScan_eq_foldl (w : Work) (i : ℕ) :
+    w.phosphorusScan i = (w.neighbors i).foldl (scanP w) (none, false) := by
+  unfold phosphorusScan
+  congr 1
+
+lemma foldl_scanP (w : Work) : ∀ (L : List (ℕ × ℕ)) (p : Option (ℕ × ℕ) × Bool),
+    ((L.foldl (scanP w) p).1.isSome = true ↔ p.1.isSome = true ∨ ∃ x ∈ L, pO w x = true) ∧
+      ((L.foldl (scanP w) p).2 = true ↔ p.2 = true ∨ ∃ x ∈ L, pO w x = false ∧ pCN w x = true)
+  | [], p => by simp
+  | e :: L, p => by
+    rw [List.foldl_cons]
+    obtain ⟨h1, h2⟩ := foldl_scanP w L (scanP w p e)
+    rw [h1, h2]
+    unfold scanP
+    by_cases ho : pO w e = true
+    · simp [ho]
+    · simp only [Bool.not_eq_true] at ho
+      by_cases hc : pCN w e = true
+      · simp [ho, hc]
+      · simp only [Bool.not_eq_true] at hc
+        simp [ho, hc]
+
+lemma phosphorusScan_iff (w : Work) (i : ℕ) :
+    ((w.phosphorusScan i).1.isSome = true ↔ ∃ x ∈ w.neighbors i, pO w x = true) ∧
+      ((w.phosphorusScan i).2 = true ↔
+        ∃ x ∈ w.neighbors i, pO w x = false ∧ pCN w x = true) := by
+  rw [phosphorusScan_eq_foldl]
+  have := foldl_scanP w (w.neighbors i) (none, false)
+  simpa using this
+
+namespace Relisted
+
+variable {w w' : Work} {π ρ : ℕ → ℕ}
+
+/-- A neighbour of the relisted copy is a neighbour of `w`, its bond renumbered. -/
+lemma mem_neighbors (h : Relisted w w' π ρ) (hwf : w.WF) {i : ℕ} {x : ℕ × ℕ}
+    (hx : x ∈ w'.neighbors i) : ∃ y ∈ w.neighbors i, x = (π y.1, y.2) := by
+  obtain ⟨y, hy, rfl⟩ := List.mem_map.1 ((h.neighbors_perm hwf i).mem_iff.1 hx)
+  exact ⟨y, hy, rfl⟩
+
+lemma kind_nbr (h : Relisted w w' π ρ) {i : ℕ} {y : ℕ × ℕ} (hy : y ∈ w.neighbors i) :
+    (w'.bonds[π y.1]! : WBond).kind = (w.bonds[y.1]! : WBond).kind := by
+  obtain ⟨k, hk, rfl⟩ := List.mem_map.1 hy
+  exact h.kind k (by simp only [bondsOf, List.mem_filter, List.mem_range, numBonds] at hk; exact hk.1)
+
+lemma exists_nbr_iff (h : Relisted w w' π ρ) (hwf : w.WF) (i : ℕ) (P : ℕ × ℕ → Prop)
+    (P' : ℕ × ℕ → Prop) (hP : ∀ y ∈ w.neighbors i, P' (π y.1, y.2) ↔ P y) :
+    (∃ x ∈ w'.neighbors i, P' x) ↔ ∃ y ∈ w.neighbors i, P y := by
+  constructor
+  · rintro ⟨x, hx, hp⟩
+    obtain ⟨y, hy, rfl⟩ := h.mem_neighbors hwf hx
+    exact ⟨y, hy, (hP y hy).1 hp⟩
+  · rintro ⟨y, hy, hp⟩
+    exact ⟨_, (h.neighbors_perm hwf i).mem_iff.2 (List.mem_map_of_mem hy), (hP y hy).2 hp⟩
+
+/-- **`cleanUp` leaves a relisted copy alone** when it leaves the copy alone. -/
+theorem quiet (h : Relisted w w' π ρ) (hwf : w.WF) (hq : w.Quiet) : w'.Quiet := by
+  obtain ⟨q1, q2, q3⟩ := hq
+  have hsz : w'.atoms.size = w.atoms.size := by rw [h.atoms]
+  have hnc : ∀ i, w'.nitroCand i = w.nitroCand i := fun i ↦ by
+    simp only [nitroCand, h.atom, h.explicitValence]
+  refine ⟨fun i hi ↦ ?_, fun i hi hc ↦ ?_, fun i hi ↦ ?_⟩
+  · rw [nitroStep_fst_eq_iff]
+    have := (nitroStep_fst_eq_iff (w := w) [] i).1 (q1 i (hsz ▸ hi))
+    intro hc x hx
+    obtain ⟨y, hy, rfl⟩ := h.mem_neighbors hwf hx
+    have e : w'.nitroO (π y.1, y.2) = w.nitroO y := by
+      simp only [nitroO, h.atom, h.kind_nbr hy]
+    rw [e]
+    exact this (by rw [← hnc]; exact hc) y hy
+  · rw [azideStep_eq_iff]
+    have := (azideStep_eq_iff (w := w) i).1 (q2 i (hsz ▸ hi) (by rw [← hnc]; exact hc))
+    intro x hx
+    obtain ⟨y, hy, rfl⟩ := h.mem_neighbors hwf hx
+    have e : w'.azideN (π y.1, y.2) = w.azideN y := by
+      simp only [azideN, h.atom, h.kind_nbr hy]
+    rw [e]
+    exact this y hy
+  · have hi' : i < w.atoms.size := hsz ▸ hi
+    obtain ⟨c1, c2⟩ := cleanUpStep_eq_iff'.1 (q3 i hi')
+    rw [cleanUpStep_eq_iff', h.atom]
+    refine ⟨fun hz ↦ ?_, fun hz hz' ↦ ?_⟩
+    · have := (phosphorusCleanup_eq_iff w hi').1 (c1 hz)
+      rw [phosphorusCleanup_eq_iff _ hi]
+      have e1 : (w'.phosphorusScan i).1.isSome = (w.phosphorusScan i).1.isSome := by
+        rw [Bool.eq_iff_iff, (phosphorusScan_iff w' i).1, (phosphorusScan_iff w i).1]
+        exact h.exists_nbr_iff hwf i _ _ fun y hy ↦ by
+          simp only [pO, h.atom, h.kind_nbr hy]
+      have e2 : (w'.phosphorusScan i).2 = (w.phosphorusScan i).2 := by
+        rw [Bool.eq_iff_iff, (phosphorusScan_iff w' i).2, (phosphorusScan_iff w i).2]
+        exact h.exists_nbr_iff hwf i _ _ fun y hy ↦ by
+          simp only [pO, pCN, h.atom, h.kind_nbr hy, h.degree]
+      simp only [phosphorusGuard, h.atom, h.explicitValence, h.degree, e1, e2] at this ⊢
+      exact this
+    · have := (halogenCleanup_eq_iff w hi').1 (c2 hz hz')
+      rw [halogenCleanup_eq_iff _ hi]
+      have hall : ((w'.neighbors i).all fun x ↦ (w.atoms[x.2]! : WAtom).z == 8) =
+          (w.neighbors i).all fun x ↦ (w.atoms[x.2]! : WAtom).z == 8 := by
+        rw [Bool.eq_iff_iff, List.all_eq_true, List.all_eq_true]
+        constructor
+        · intro H y hy
+          exact H (π y.1, y.2) ((h.neighbors_perm hwf i).mem_iff.2
+            (List.mem_map_of_mem (f := fun e : ℕ × ℕ ↦ (π e.1, e.2)) hy))
+        · intro H x hx
+          obtain ⟨y, hy, rfl⟩ := h.mem_neighbors hwf hx
+          exact H y hy
+      simp only [halogenGuard, h.atom, h.explicitValence] at this ⊢
+      rw [hall]
+      intro hg x hx
+      obtain ⟨y, hy, rfl⟩ := h.mem_neighbors hwf hx
+      rw [h.kind_nbr hy]
+      exact this hg y hy
+
+end Relisted
+
 end LeanSMILES.Aromaticity.Work
