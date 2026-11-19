@@ -787,6 +787,107 @@ theorem donorData_equiv (w : Work) {R R' : Array (List ℕ)} (h : RingsEquiv R.t
     rw [Bool.eq_iff_iff, List.all_eq_true, List.all_eq_true]
     exact ⟨fun H i hi ↦ H i ((hrr.mem i).2 hi), fun H i hi ↦ H i ((hrr.mem i).1 hi)⟩
 
+/-! ### Fused systems: rings written another way, in the same order -/
+
+lemma eraseDups_nodup : ∀ l : List ℕ, l.eraseDups.Nodup
+  | [] => by simp
+  | a :: as => by
+    rw [List.eraseDups_cons]
+    exact List.Nodup.cons (by simp [List.mem_eraseDups]) (eraseDups_nodup _)
+termination_by l => l.length
+decreasing_by exact Nat.lt_succ_of_le (List.length_filter_le _ _)
+
+lemma perm_eraseDups {l l' : List ℕ} (h : l.Perm l') : l.eraseDups.Perm l'.eraseDups :=
+  (List.perm_ext_iff_of_nodup (eraseDups_nodup l) (eraseDups_nodup l')).2 fun x ↦ by
+    rw [List.mem_eraseDups, List.mem_eraseDups]; exact h.mem_iff
+
+lemma mergeSort_eraseDups_perm {l l' : List ℕ} (h : l.Perm l') :
+    l.eraseDups.mergeSort (· ≤ ·) = l'.eraseDups.mergeSort (· ≤ ·) := by
+  refine List.Perm.eq_of_pairwise (le := fun a b : ℕ ↦ decide (a ≤ b) = true)
+    (fun a b _ _ h1 h2 ↦ by simp at h1 h2; omega)
+    (List.pairwise_mergeSort (fun a b c ↦ by simp; omega) (fun a b ↦ by simp; omega) _)
+    (List.pairwise_mergeSort (fun a b c ↦ by simp; omega) (fun a b ↦ by simp; omega) _) ?_
+  exact ((List.mergeSort_perm _ _).trans (perm_eraseDups h)).trans (List.mergeSort_perm _ _).symm
+
+/-- Counting atoms over a ring does not depend on how the ring is written. -/
+lemma foldl_count_perm {l l' : List ℕ} (h : l.Perm l') (acc : Array ℕ) :
+    l.foldl (fun acc a ↦ acc.modify a (· + 1)) acc =
+      l'.foldl (fun acc a ↦ acc.modify a (· + 1)) acc := by
+  refine h.foldl_eq' (fun x _ y _ z ↦ ?_) acc
+  apply Array.ext_getElem?
+  intro j
+  simp only [Array.getElem?_modify]
+  split_ifs <;> simp_all [Option.map_map, Function.comp_def]
+
+lemma groupBonds_ringEq {numAtoms : ℕ} {rb rb' C C' : Array (List ℕ)} {d : Array Donor}
+    {nbrs : Array (List ℕ)} (hC : ∀ r : ℕ, (C'[r]!).Perm (C[r]!))
+    (hR : ∀ r : ℕ, (rb'[r]!).Perm (rb[r]!)) (cur : List ℕ) :
+    groupBonds numAtoms rb' C' d nbrs cur = groupBonds numAtoms rb C d nbrs cur := by
+  unfold groupBonds
+  have hcount : ∀ (acc : Array ℕ) (r : ℕ),
+      C'[r]!.foldl (fun acc a ↦ acc.modify a (· + 1)) acc =
+        C[r]!.foldl (fun acc a ↦ acc.modify a (· + 1)) acc := fun acc r ↦
+    foldl_count_perm (hC r) acc
+  have hall : (cur.flatMap (rb'[·]!)).Perm (cur.flatMap (rb[·]!)) :=
+    List.Perm.flatMap_left _ fun r _ ↦ hR r
+  simp only [hcount, mergeSort_eraseDups_perm hall, hall.count_eq]
+
+lemma fusedNbrs_ringEq {rb rb' : Array (List ℕ)} (hs : rb'.size = rb.size)
+    (hR : ∀ r : ℕ, (rb'[r]!).Perm (rb[r]!)) : fusedNbrs rb' = fusedNbrs rb := by
+  have hc : ∀ i j : ℕ, ((rb'[i]!).filter (rb'[j]!).contains).length =
+      ((rb[i]!).filter (rb[j]!).contains).length := fun i j ↦ by
+    have e : (rb'[j]!).contains = (rb[j]!).contains := funext fun k ↦ by
+      rw [Bool.eq_iff_iff, List.contains_iff_mem, List.contains_iff_mem]; exact (hR j).mem_iff
+    rw [e]
+    exact ((hR i).filter _).length_eq
+  have hl : ∀ i : ℕ, (rb'[i]!).length = (rb[i]!).length := fun i ↦ (hR i).length_eq
+  unfold fusedNbrs
+  simp only [hs, hc, hl]
+
+lemma systemBonds_ringEq {numAtoms : ℕ} {rb rb' C C' : Array (List ℕ)} {d : Array Donor}
+    {nbrs : Array (List ℕ)} (hC : ∀ r : ℕ, (C'[r]!).Perm (C[r]!))
+    (hR : ∀ r : ℕ, (rb'[r]!).Perm (rb[r]!)) (fused : List ℕ) :
+    systemBonds numAtoms rb' C' d nbrs fused = systemBonds numAtoms rb C d nbrs fused := by
+  have hlen : (fused.flatMap (rb'[·]!)).eraseDups.length =
+      (fused.flatMap (rb[·]!)).eraseDups.length :=
+    (perm_eraseDups (List.Perm.flatMap_left _ fun r _ ↦ hR r)).length_eq
+  unfold systemBonds
+  simp only [hlen, groupBonds_ringEq hC hR]
+
+/-- **Fused systems read each candidate ring only up to rotation and reversal.** -/
+theorem fusedBonds_ringEq {numAtoms : ℕ} {w : Work} {C C' : Array (List ℕ)} {d : Array Donor}
+    (h : List.Forall₂ RingEq C.toList C'.toList) :
+    fusedBonds numAtoms (C'.map w.ringBonds) C' d =
+      fusedBonds numAtoms (C.map w.ringBonds) C d := by
+  have hs : C'.size = C.size := by
+    rw [← Array.length_toList, ← Array.length_toList]; exact h.length_eq.symm
+  have hge : ∀ r < C.size, RingEq C[r]! C'[r]! := by
+    intro r hr
+    rw [getElem!_pos C r hr, getElem!_pos C' r (by omega)]
+    have := List.forall₂_iff_get.1 h
+    simpa using this.2 r (by simpa using hr) (by simpa [hs] using hr)
+  have hC : ∀ r : ℕ, (C'[r]!).Perm (C[r]!) := fun r ↦ by
+    by_cases hr : r < C.size
+    · obtain ⟨k, e | e⟩ := hge r hr
+      · rw [e]; exact List.rotate_perm _ _
+      · rw [e]; exact (List.reverse_perm _).trans (List.rotate_perm _ _)
+    · rw [getElem!_neg C r hr, getElem!_neg C' r (by omega)]
+  have hR : ∀ r : ℕ, ((C'.map w.ringBonds)[r]!).Perm ((C.map w.ringBonds)[r]!) := fun r ↦ by
+    by_cases hr : r < C.size
+    · rw [getElem!_pos _ r (by simpa [hs] using hr), getElem!_pos _ r (by simpa using hr)]
+      simp only [Array.getElem_map]
+      rw [← getElem!_pos C r hr, ← getElem!_pos C' r (by omega)]
+      exact (hge r hr).ringBonds w
+    · rw [getElem!_neg _ r (by simpa [hs] using hr), getElem!_neg _ r (by simpa using hr)]
+  have hsz : (C'.map w.ringBonds).size = (C.map w.ringBonds).size := by simp [hs]
+  unfold fusedBonds
+  dsimp only
+  rw [fusedNbrs_ringEq hsz hR, hs]
+  have e : systemBonds numAtoms (C'.map w.ringBonds) C' d (fusedNbrs (C.map w.ringBonds)) =
+      systemBonds numAtoms (C.map w.ringBonds) C d (fusedNbrs (C.map w.ringBonds)) :=
+    funext fun F ↦ systemBonds_ringEq hC hR F
+  rw [e]
+
 end Work
 
 end LeanSMILES.Aromaticity
