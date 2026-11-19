@@ -412,4 +412,36 @@ theorem kekulize_relabel_swapped {P K K' : Work} {R R' : Array (List ℕ)} (hwf 
     · rw [bondHalfSum_of_ge hwfK' (by rw [haK']; omega),
         bondHalfSum_of_ge (wf_relabelW hwfK hbK) (by simp [hKR.atoms_size]; omega)]
 
+/-! ### A perceived atom has at most three bonds -/
+
+lemma elec_neg_of_degree {a : WAtom} {ks : List BondKind} (h : 3 < ks.length) :
+    Loc.elec a ks < 0 := by
+  unfold Loc.elec
+  simp only [Id.run]
+  split
+  · decide
+  · rw [if_pos (by omega)]; decide
+
+lemma isAromaticCandidate_none (w : Work) (y : ℕ) : w.isAromaticCandidate y .none = false := by
+  have hnn : (Donor.none == Donor.none) = true := rfl
+  simp [isAromaticCandidate, Id.run, hnn]; rfl
+
+/-- **An atom perception can make aromatic has at most three bonds**: its donor type is not
+`none`, so its π-electron count is not negative. -/
+lemma degree_le_of_isAromaticCandidate (w : Work) {y : ℕ} {rbs : List ℕ} {len : ℕ}
+    (h : w.isAromaticCandidate y (w.ringDonor rbs len y) = true) : w.degree y ≤ 3 := by
+  by_contra hd
+  have hneg : w.countAtomElec y < 0 := by
+    rw [countAtomElec_eq_loc]
+    exact elec_neg_of_degree (by rw [← degree_eq_loc]; omega)
+  have hdt : w.donorType rbs y = .none := by
+    unfold donorType
+    simp [Id.run, hneg]; rfl
+  have hrd : w.ringDonor rbs len y = .none := by
+    unfold ringDonor
+    simp only [hdt]
+    split <;> rfl
+  rw [hrd, isAromaticCandidate_none] at h
+  cases h
+
 end LeanSMILES.Aromaticity.Work

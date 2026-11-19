@@ -45,14 +45,13 @@ in `adjustHs`, `Work.hsRestored_kekulize` and `kekuleWitness_hsRestored`; the
 per-atom arithmetic is decided in `Aromaticity/HsDecide.lean`,
 `Aromaticity/DonorDecide.lean` and `Aromaticity/DonorFacts.lean`).  Every
 corollary is proved from the statements it names, so it is as proved as they
-are.  `aromatize_relabel_of_aromaticWritten` (relabeling, for aromatic bonds as written) and
-`IsKekule.aromatize_relabel` are proved: the ring set is canonical
-(`Work.WorkIso.relevantCycles`, `Aromaticity/RingSetIso.lean`), every candidate atom gets exactly
-one double bond so two kekulizations differ by a swap (`Work.kekulize_relabel_swapped`), and the
-passes commute with relabeling (`Aromaticity/WorkRelabel.lean`, `RelabelPerceive.lean`,
-`RelabelPipeline.lean`, `RelabelOutput.lean`).  Still `sorry`: `aromatize_relabel` (without
-`AromaticWritten`, which `kekulize_correct` needs), `aromatize_of_sameBonds` (the ring set part is
-done; the passes must still be carried along a relisting of the bonds),
+are.  `aromatize_relabel` and `IsKekule.aromatize_relabel` are proved: the ring set is
+canonical (`Work.WorkIso.relevantCycles`, `Aromaticity/RingSetIso.lean`), every candidate atom
+gets exactly one double bond so two kekulizations differ by a swap
+(`Work.kekulize_relabel_swapped`), and the passes commute with relabeling
+(`Aromaticity/WorkRelabel.lean`, `RelabelPerceive.lean`, `RelabelPipeline.lean`,
+`RelabelOutput.lean`).  Still `sorry`: `aromatize_of_sameBonds` (the ring set part is done; the
+passes must still be carried along a relisting of the bonds),
 `aromatize_aromatize` and `aromatize_of_isKekuleSpellingOf` (its core,
 `aromatize_of_spelling_core`, is proved from two facts about the kekulized copy; see its
 docstring).
@@ -470,16 +469,11 @@ lemma KekuleVariant.chargesKept {a m m' : Molecule n} (hv : KekuleVariant a m m'
   rw [hc i]
   simp [atom, hv.atoms]
 
-/-! ### 1. The numbering of the atoms -/
+/-! ### 1. The numbering of the atoms
 
-/-- **`aromatize` commutes with relabeling.**  If `m` aromatizes to `a` keeping its charges and
-every bond written aromatic, and the relabeled molecule aromatizes at all, it aromatizes to `a`
-relabeled.  Both hypotheses are needed (module docstring): without `ChargesKept`,
-`CN(C)#N(C)CC`; without `AromaticKept`, `Cc1cc2cccc2c1`. -/
-theorem aromatize_relabel {m a a' : Molecule n} (h : m.aromatize = .ok a)
-    (hc : m.ChargesKept a) (hk : m.AromaticKept a) (σ : Equiv.Perm (Fin n))
-    (h' : (m.relabel σ).aromatize = .ok a') : a' = a.relabel σ := by
-  sorry
+`aromatize_relabel` and `IsKekule.aromatize_relabel` are proved below (before section 4), after
+the facts about kekulization they rest on. -/
+
 
 /-! ### 2. The listing of the bonds -/
 
@@ -3277,16 +3271,18 @@ lemma wf_of_afterRel {o w : Work} (hwf : WF o) (h : AfterRel o w) : WF w := by
   exact this
 
 open Aromaticity Aromaticity.Work in
-/-- **`aromatize` commutes with relabeling**, for a molecule with its aromatic bonds as written
-(`AromaticWritten`): if `m` aromatizes to `a` keeping its charges and every bond written aromatic,
-and the relabeled molecule aromatizes at all, it aromatizes to `a` relabeled.  The ring set of
-the relabeled copy is the relabeled ring set (`Work.WorkIso.relevantCycles`); its kekulization
-is the relabeled kekulization with single and double bonds swapped
-(`Work.kekulize_relabel_swapped`), which perception erases since every swapped bond becomes
-aromatic; and the passes commute with relabeling (`Work.finish_relabelW`,
-`Molecule.aromatizeOutput_relabel`). -/
-theorem aromatize_relabel_of_aromaticWritten {m a a' : Molecule n} (h : m.aromatize = .ok a)
-    (hc : m.ChargesKept a) (hk : m.AromaticKept a) (hw : m.AromaticWritten)
+/-- **`aromatize` commutes with relabeling.**  If `m` aromatizes to `a` keeping its charges and
+every bond written aromatic, and the relabeled molecule aromatizes at all, it aromatizes to `a`
+relabeled.  Both hypotheses are needed (module docstring): without `ChargesKept`,
+`CN(C)#N(C)CC`; without `AromaticKept`, `Cc1cc2cccc2c1`.  The ring set of the relabeled copy is
+the relabeled ring set (`Work.WorkIso.relevantCycles`); its kekulization is the relabeled
+kekulization with single and double bonds swapped (`Work.kekulize_relabel_swapped`), which
+perception erases since every swapped bond becomes aromatic; and the passes commute with
+relabeling (`Work.finish_relabelW`, `Molecule.aromatizeOutput_relabel`).  Kekulization is
+correct here (`Work.kekulize_correct`) since an atom with a bond kept aromatic has at most three
+bonds (`Work.degree_le_of_isAromaticCandidate`). -/
+theorem aromatize_relabel {m a a' : Molecule n} (h : m.aromatize = .ok a)
+    (hc : m.ChargesKept a) (hk : m.AromaticKept a)
     (σ : Equiv.Perm (Fin n)) (h' : (m.relabel σ).aromatize = .ok a') : a' = a.relabel σ := by
   obtain ⟨K, hK, ha⟩ := aromatize_eq_ok.mp h
   obtain ⟨K', hK', ha'⟩ := aromatize_eq_ok.mp h'
@@ -3309,15 +3305,12 @@ theorem aromatize_relabel_of_aromaticWritten {m a a' : Molecule n} (h : m.aromat
     rw [hP, ← cacheValences_relabelW hwfF0 hbF0, ← hcl', ← freezeHs_relabelW hwf0 hb0,
       ← ofMolecule_relabel]
     rfl
-  obtain ⟨hwfP, -⟩ := wf_nbrsDistinct_prepare m
+  obtain ⟨hwfP, hndP⟩ := wf_nbrsDistinct_prepare m
+  have hndP' := (wf_nbrsDistinct_prepare (m.relabel σ)).2
   have hnP : (Work.prepare m).atoms.size = n := size_prepare_atoms m
   have hbP : IdxBij (Work.prepare m).numAtoms (finPermFun σ) (finPermFun σ.symm) := by
     rw [numAtoms, hnP]; exact idxBij_finPermFun σ
-  have hd : KekData (Work.prepare m) K := kekulize_prepare_correct hw.1 hK
-  have hw' := hw.relabel σ
-  have hd'0 := kekulize_prepare_correct hw'.1 hK'
-  rw [hP'] at hd'0 hK' ha'
-  have hsw := kekulize_relabel_swapped hwfP hbP hK hK' hd hd'0
+  rw [hP'] at hK' ha' hndP'
   have hI := workIso_relabelW hwfP hbP
   set P := Work.prepare m with hPdef
   set R := P.relevantCycles with hRdef
@@ -3401,6 +3394,53 @@ theorem aromatize_relabel_of_aromaticWritten {m a a' : Molecule n} (h : m.aromat
       rw [ringBonds_relabelW hwfP hbP (fun x hx ↦ by
         rw [← hKR.atoms_size]; exact hRlt r hr x hx)]
       exact hkr⟩
+  -- an atom with a bond written aromatic has at most three bonds: that bond is perceived
+  have hdegP : ∀ x, (P.atoms[x]! : WAtom).aromatic = true →
+      (∃ k ∈ P.bondsOf x, P.kekWa k = true) → (P.bondsOf x).length ≤ 3 := by
+    rintro x - ⟨k, hkx, hk'⟩
+    have h0 : K.assignRadicals.kind? k ≠ some .aromatic := by
+      intro e
+      rw [Work.kind?, Work.assignRadicals_bonds, Option.map_eq_some_iff] at e
+      obtain ⟨y, hy, hyk⟩ := e
+      exact (kekulize_noArom hK).2 y (Array.mem_of_getElem? hy) hyk
+    obtain ⟨hbk, -, -, -, -, ⟨rbs, len, hsrc⟩, ⟨rbs', len', hdst⟩⟩ :=
+      Work.of_kind?_setAromaticity_donor _ R (hAK k hk') h0
+    have hbo : K.assignRadicals.bondsOf = P.bondsOf := by
+      rw [← bondsOf_of_kindsRel hKR]
+      have hnb : K.assignRadicals.numBonds = K.numBonds := by
+        unfold Work.numBonds; rw [Work.assignRadicals_bonds]
+      funext y
+      simp only [Work.bondsOf, hnb, Work.assignRadicals_bonds]
+    have hend := ends_getElem! hsAK heAK k
+    rw [← getElem!_pos _ k hbk, hend.1] at hsrc
+    rw [← getElem!_pos _ k hbk, hend.2] at hdst
+    have ht := touches_of_mem_bondsOf hkx
+    simp only [WBond.touches, Bool.or_eq_true, beq_iff_eq] at ht
+    have e : (P.bondsOf x).length = K.assignRadicals.degree x := by rw [← hbo]; rfl
+    rw [e]
+    rcases ht with ht | ht
+    · rw [ht] at hsrc; exact degree_le_of_isAromaticCandidate _ hsrc
+    · rw [ht] at hdst; exact degree_le_of_isAromaticCandidate _ hdst
+  have hdegP' : ∀ x, ((P.relabelW (finPermFun σ) (finPermFun σ.symm)).atoms[x]! : WAtom).aromatic =
+      true → (∃ k ∈ (P.relabelW (finPermFun σ) (finPermFun σ.symm)).bondsOf x,
+        (P.relabelW (finPermFun σ) (finPermFun σ.symm)).kekWa k = true) →
+      ((P.relabelW (finPermFun σ) (finPermFun σ.symm)).bondsOf x).length ≤ 3 := by
+    intro x hx hk'
+    by_cases hxs : x < P.atoms.size
+    · have hpx := hbP.lt' x hxs
+      rw [← hbP.right x hxs] at hx hk' ⊢
+      rw [atom_relabelW hbP hpx] at hx
+      rw [bondsOf_relabelW hwfP hbP hpx, kekWa_relabelW] at hk'
+      rw [bondsOf_relabelW hwfP hbP hpx]
+      exact hdegP _ hx hk'
+    · rw [getElem!_neg _ x (by simpa using hxs)] at hx
+      cases hx
+  have hd : KekData P K :=
+    kekulize_correct hwfP hndP (fun ring hr ↦ isRing_of_mem_relevantCycles _ hr) hdegP hK
+  have hd'0 : KekData (P.relabelW (finPermFun σ) (finPermFun σ.symm)) K' :=
+    kekulize_correct (wf_relabelW hwfP hbP) hndP'
+      (fun ring hr ↦ isRing_of_mem_relevantCycles _ hr) hdegP' hK'
+  have hsw := kekulize_relabel_swapped hwfP hbP hK hK' hd hd'0
   have hfin : K'.finish R' = (K.relabelW (finPermFun σ) (finPermFun σ.symm)).finish R' :=
     hsw.finish_eq R' hF hA
   have hfin2 : (K.relabelW (finPermFun σ) (finPermFun σ.symm)).finish R' =
@@ -3413,18 +3453,13 @@ theorem aromatize_relabel_of_aromaticWritten {m a a' : Molecule n} (h : m.aromat
   rw [← ha', hfin, hfin2, hfin3, Molecule.aromatizeOutput_relabel m hwfFin hnFin σ, ha]
 
 /-- For a Kekulé structure nothing has to be assumed about the relabeled run: it aromatizes, to
-the relabeled output.  From `aromatize_relabel_of_aromaticWritten` (a Kekulé structure has no
-aromatic atom or bond, so its aromatic bonds are as written), `IsKekule.exists_aromatize` and
+the relabeled output.  From `aromatize_relabel`, `IsKekule.exists_aromatize` and
 `IsKekule.aromaticKept`. -/
 theorem IsKekule.aromatize_relabel {m a : Molecule n} (hk : m.IsKekule)
     (h : m.aromatize = .ok a) (hc : m.ChargesKept a) (σ : Equiv.Perm (Fin n)) :
     (m.relabel σ).aromatize = .ok (a.relabel σ) := by
   obtain ⟨a', h'⟩ := (hk.relabel σ).exists_aromatize
-  have hw : m.AromaticWritten := by
-    refine ⟨fun i hi ↦ ?_, fun b hb hb' ↦ absurd hb' (hk.2 b hb)⟩
-    rw [hk.1 i] at hi
-    cases hi
-  rw [h', aromatize_relabel_of_aromaticWritten h hc (hk.aromaticKept h) hw σ h']
+  rw [h', Molecule.aromatize_relabel h hc (hk.aromaticKept h) σ h']
 
 /-! ### 4. The canonical string -/
 
