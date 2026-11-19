@@ -342,6 +342,131 @@ theorem bfs_order {m : Work} (hwf : m.WF) {r : ℕ} (hr : r < m.numAtoms) :
   · rintro ⟨d, hd⟩
     exact (I.reach hd).1
 
+/-- A path to an atom at distance `d ≥ 1`, without its last atom, is a path to the atom before. -/
+lemma PathOK.dropLast {m : Work} {dist : Array (Option ℕ)} {r w d : ℕ} {p : List ℕ}
+    (hp : m.PathOK dist r w (d + 1) p) :
+    m.PathOK dist r (p[d]'(by rw [hp.length]; omega)) d p.dropLast ∧
+      p = p.dropLast ++ [w] ∧ m.Adj (p[d]'(by rw [hp.length]; omega)) w := by
+  have hl := hp.length
+  have hpw : p = p.dropLast ++ [w] := (List.dropLast_append_getLast? w hp.last).symm
+  have hlast : p[d + 1]'(by omega) = w := by
+    have := hp.last
+    rw [List.getLast?_eq_getElem?, hl, show d + 1 + 1 - 1 = d + 1 by omega,
+      List.getElem?_eq_getElem (by omega)] at this
+    exact Option.some.inj this
+  refine ⟨⟨by simp [hl], ?_, ?_, hp.chain.dropLast, fun i hi ↦ ?_⟩, hpw, ?_⟩
+  · rw [← hp.head]
+    obtain ⟨a, l, e⟩ := List.exists_cons_of_length_pos (by omega : 0 < p.length)
+    rw [e] at hl ⊢
+    cases l with
+    | nil => simp at hl
+    | cons b l => rfl
+  · rw [List.getLast?_eq_getElem?, List.length_dropLast, hl, show d + 1 + 1 - 1 - 1 = d by omega,
+      List.getElem?_eq_getElem (by simp [hl]), List.getElem_dropLast]
+  · rw [List.getElem_dropLast]
+    exact hp.dist i _
+  · have := List.isChain_iff_getElem.1 hp.chain d (by omega)
+    rwa [hlast] at this
+
+/-- Every path from `r` to an atom of `P` (or to `r`) is stored. -/
+def PathsDone (m : Work) (dist : Array (Option ℕ)) (r : ℕ) (P : List ℕ)
+    (paths : Array (List (List ℕ))) : Prop :=
+  ∀ x, (x = r ∨ x ∈ P) → ∀ e q, dist[x]! = some e → m.PathOK dist r x e q → q ∈ paths[x]!
+
+/-- **`allShortestPaths` collects every shortest path**: each path from the root to `w` through
+atoms at distances `0, 1, …` is stored for `w`. -/
+theorem mem_allShortestPaths {m : Work} (hwf : m.WF) {r : ℕ} (hr : r < m.numAtoms) {w d : ℕ}
+    {p : List ℕ} (hw : (m.bfs r).1[w]! = some d) (hp : m.PathOK (m.bfs r).1 r w d p) :
+    p ∈ (m.allShortestPaths (m.bfs r).1 (m.bfs r).2 r)[w]! := by
+  obtain ⟨hnd, hmem, hsorted⟩ := bfs_order hwf hr
+  have hz : ZeroAt (m.bfs r).1 r := zeroAt_bfs m hr
+  have I := bfs_inv hwf hr
+  have hinord : ∀ x e, (m.bfs r).1[x]! = some e → x ∈ (m.bfs r).2.toList :=
+    fun x e hx ↦ (hmem x).2 ⟨e, I.walk x e hx⟩
+  have hlt : ∀ x e, (m.bfs r).1[x]! = some e → x < m.numAtoms := fun x e hx ↦ by
+    by_contra h
+    rw [getElem!_neg _ x (by rw [I.size]; exact h)] at hx
+    cases hx
+  have key : ∀ (L P : List ℕ) (paths : Array (List (List ℕ))), (m.bfs r).2.toList = P ++ L →
+      paths.size = m.numAtoms → m.PathsDone (m.bfs r).1 r P paths →
+      m.PathsDone (m.bfs r).1 r (P ++ L)
+        (L.foldl (m.shortestPathsStep (m.bfs r).1 r) paths) := by
+    intro L
+    induction L with
+    | nil => intro P paths _ _ h; simpa using h
+    | cons v L ih =>
+      intro P paths hsplit hsz hinv
+      rw [List.foldl_cons, show P ++ v :: L = (P ++ [v]) ++ L by simp]
+      refine ih (P ++ [v]) _ (by rw [hsplit]; simp) (by
+        unfold shortestPathsStep; split
+        · exact hsz
+        · rw [size_set!_any, hsz]) ?_
+      intro x hx e q hx' hq
+      simp only [List.mem_append, List.mem_singleton] at hx
+      unfold shortestPathsStep
+      split
+      · rename_i hvr
+        simp only [beq_iff_eq] at hvr
+        refine hinv x ?_ e q hx' hq
+        rcases hx with h | h | h
+        · exact .inl h
+        · exact .inr h
+        · exact .inl (h.trans hvr)
+      rename_i hvr
+      simp only [beq_iff_eq] at hvr
+      rw [getElem!_set!_any]
+      split
+      · rename_i hxv
+        obtain ⟨hvx, -⟩ := hxv
+        subst hvx
+        -- a shortest path to `v` is one to a nearer atom, extended
+        have he0 : e ≠ 0 := fun h ↦ hvr ((hz v).1 (h ▸ hx'))
+        obtain ⟨e, rfl⟩ : ∃ e', e = e' + 1 := ⟨e - 1, by omega⟩
+        obtain ⟨hq', hqe, hadj⟩ := hq.dropLast
+        have hdu : (m.bfs r).1[q[e]'(by rw [hq.length]; omega)]! = some e :=
+          hq.dist e (by rw [hq.length]; omega)
+        have hu : q[e]'(by rw [hq.length]; omega) ∈ P := by
+          have := hinord _ e hdu
+          rw [hsplit, List.mem_append, List.mem_cons] at this
+          rcases this with h | h | h
+          · exact h
+          · rw [← h, hdu] at hx'; cases hx'
+          · exfalso
+            rw [hsplit] at hsorted
+            have := (List.pairwise_cons.1 (List.pairwise_append.1 hsorted).2.1).1 _ h
+            rw [hdu, hx'] at this
+            simp at this
+        have hpred : q[e]'(by rw [hq.length]; omega) ∈ m.shortestPreds (m.bfs r).1 v := by
+          obtain ⟨k, hk⟩ := hadj.symm
+          refine List.mem_filterMap.2 ⟨(k, _), hk, ?_⟩
+          simp [hx', hdu]
+        rw [hqe]
+        exact List.mem_flatMap.2 ⟨_, hpred, List.mem_map.2 ⟨_, hinv _ (.inr hu) e _ hdu hq', rfl⟩⟩
+      · rename_i hxv
+        refine hinv x ?_ e q hx' hq
+        rcases hx with h | h | h
+        · exact .inl h
+        · exact .inr h
+        · exact absurd ⟨h.symm, by rw [hsz]; exact hlt x e hx'⟩ hxv
+  have hinit : m.PathsDone (m.bfs r).1 r []
+      ((Array.replicate m.numAtoms ([] : List (List ℕ))).set! r [[r]]) := by
+    intro x hx e q hx' hq
+    simp only [List.not_mem_nil, or_false] at hx
+    subst hx
+    rw [(hz x).2 rfl] at hx'
+    cases hx'
+    rw [getElem!_set!_any, if_pos ⟨rfl, by simpa using hr⟩]
+    obtain ⟨a, l, rfl⟩ := List.exists_cons_of_length_pos (by rw [hq.length]; omega : 0 < q.length)
+    have hl := hq.length
+    simp only [List.length_cons, zero_add, Nat.add_eq_right, List.length_eq_zero_iff] at hl
+    subst hl
+    have := hq.head
+    simp only [List.head?_cons, Option.some.injEq] at this
+    subst this
+    simp
+  have := key (m.bfs r).2.toList [] _ (by simp) (by simp) hinit
+  exact this w (.inr (by simpa using hinord w d hw)) d p hw hp
+
 end Work
 
 end LeanSMILES.Aromaticity
