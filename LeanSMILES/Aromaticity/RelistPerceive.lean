@@ -542,4 +542,48 @@ theorem setAromaticity (h : Relisted w w' π ρ) (hwf : w.WF) (hnd : w.NbrsDisti
 
 end Relisted
 
+/-! ### Facts read off the bond list -/
+
+lemma bondsOf_of_bonds {x y : Work} (h : y.bonds = x.bonds) : y.bondsOf = x.bondsOf := by
+  funext i; simp only [bondsOf, numBonds, h]
+
+lemma nbrsDistinct_of_bonds {x y : Work} (h : y.bonds = x.bonds) (hx : x.NbrsDistinct) :
+    y.NbrsDistinct := by
+  intro c k₁ k₂ h₁ h₂ e
+  rw [bondsOf_of_bonds h] at h₁ h₂
+  rw [h] at e
+  exact hx c k₁ k₂ h₁ h₂ e
+
+lemma isRing_of_bonds {x y : Work} (h : y.bonds = x.bonds) {c : List ℕ} (hc : x.IsRing c) :
+    y.IsRing c := by
+  have hn : y.neighbors = x.neighbors := by
+    funext i; simp only [neighbors, bondsOf_of_bonds h, h]
+  have ha : ∀ u v, y.Adj u v ↔ x.Adj u v := fun u v ↦ by simp only [Adj, hn]
+  refine ⟨hc.nodup, hc.three, hc.chain.imp fun a b h' ↦ (ha a b).2 h', fun a ha' b hb ↦ ?_⟩
+  exact (ha _ _).2 (hc.close a ha' b hb)
+
+/-- A list read through a renumbering of its positions is a permutation of it. -/
+lemma perm_of_index {α : Type} [Inhabited α] {l l' : List α} {σ ψ : ℕ → ℕ}
+    (hb : IdxBij l.length σ ψ) (hlen : l'.length = l.length)
+    (h : ∀ i < l.length, l[i]! = l'[σ i]!) : l'.Perm l := by
+  have e1 : l = (List.range l.length).map (l[·]!) := by
+    apply List.ext_getElem (by simp)
+    intro i h1 h2
+    rw [List.getElem_map, List.getElem_range, getElem!_pos l i h1]
+  have e2 : l' = (List.range l.length).map (l'[·]!) := by
+    apply List.ext_getElem (by simp [hlen])
+    intro i h1 h2
+    rw [List.getElem_map, List.getElem_range, getElem!_pos l' i h1]
+  have e3 : (List.range l.length).map (l[·]!) = ((List.range l.length).map σ).map (l'[·]!) := by
+    rw [List.map_map]
+    exact List.map_congr_left fun i hi ↦ h i (List.mem_range.1 hi)
+  have hp : ((List.range l.length).map σ).Perm (List.range l.length) :=
+    (List.perm_ext_iff_of_nodup (List.nodup_range.map_on fun a ha b hb' e ↦
+      hb.inj (List.mem_range.1 ha) (List.mem_range.1 hb') e) List.nodup_range).2 fun x ↦ by
+      simp only [List.mem_map, List.mem_range]
+      exact ⟨fun ⟨y, hy, e⟩ ↦ e ▸ hb.lt y hy, fun hx ↦ ⟨ψ x, hb.lt' x hx, hb.right x hx⟩⟩
+  rw [e2]
+  conv_rhs => rw [e1, e3]
+  exact (hp.map _).symm
+
 end LeanSMILES.Aromaticity.Work
