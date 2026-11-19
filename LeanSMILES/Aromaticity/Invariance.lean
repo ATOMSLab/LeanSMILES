@@ -48,7 +48,9 @@ are.  Still `sorry`: `aromatize_relabel` and `aromatize_of_sameBonds` (both
 need the ring set `Work.relevantCycles` to be canonical up to order and to
 where each ring's atom list starts, and the relabeling one also needs
 kekulization's walk to give every candidate atom exactly one double bond),
-`aromatize_aromatize` and `aromatize_of_isKekuleSpellingOf`.
+`aromatize_aromatize` and `aromatize_of_isKekuleSpellingOf` (its core,
+`aromatize_of_spelling_core`, is proved from two facts about the kekulized copy; see its
+docstring).
 Kekulization itself is proved correct (`Work.kekulize_correct`, with the ring facts of
 `Aromaticity/RingFacts.lean`).
 
@@ -4660,7 +4662,20 @@ aromatizes to `a` keeping its charges and every bond written aromatic, and a Kek
 of `m` aromatizes keeping its charges, and `m`'s valences are allowed, the two outputs are
 equal.  This is `c1cc[nH]c1` against `C1=CNC=C1`.  `ValenceOk` is needed: for the five-valent
 `CC1=CC=C[nH](=C1)C=O`, which RDKit rejects, RDKit's GitHub #141 step drops the bracket hydrogen
-of the lowercase `[nH]` and not that of its Kekulé spelling `[NH]`. -/
+of the lowercase `[nH]` and not that of its Kekulé spelling `[NH]`.
+
+Proof status (open): `aromatize_of_spelling_core` proves the conclusion, with `AromaticWritten`
+and `BareWritable` for `m` and `BareWritable` for `k`, from two facts about the kekulized copy
+`K` of the run on `m`.  (1) `K` caches `m`'s hydrogen counts: it does at every atom but an
+aromatic `[nH]`/`[pH]` (`kekulize_record`), where `ValenceOk` should give it (a four-valent
+`[nH]` is the GitHub #141 case).  (2) `K` gives every atom the bond-order sum `k` does, that is,
+RDKit's rounded valence at each aromatic atom agrees with its own needs-a-double-bond test.  This
+fails at single atoms such as `[s-]`, `[pH2-]`, `[as+2]`, `[b-2]`, `[bH-2]`, `[be-3]`, `[al-2]`,
+even where perception keeps the atom aromatic and its valence is allowed, so it is no local fact.
+In every molecule found with such an atom and a Kekulé spelling (about 19 000 built from pairs of
+these atoms in ring templates, 1 128 spellings), the run on `m` does not keep every bond written
+aromatic aromatic, so `AromaticKept` excludes them; a proof would have to show that through the
+Hückel counting of the whole ring system. -/
 theorem aromatize_of_isKekuleSpellingOf {m k a a' : Molecule n} (h : m.aromatize = .ok a)
     (hc : m.ChargesKept a) (hk : m.AromaticKept a) (hs : k.IsKekuleSpellingOf m)
     (h' : k.aromatize = .ok a') (hc' : k.ChargesKept a') (hvm : m.ValenceOk) : a' = a := by
