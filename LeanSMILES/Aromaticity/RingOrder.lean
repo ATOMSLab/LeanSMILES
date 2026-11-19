@@ -1450,6 +1450,125 @@ lemma sublist_iff_positions (F : List ℕ) (G : List ℕ) :
     have := hc.map (F[·]!)
     rwa [hF] at this
 
+/-- What one size adds: the bonds of every group of that many rings of the system. -/
+lemma mem_newBonds {numAtoms : ℕ} {rb C : Array (List ℕ)} {d : Array Donor}
+    {nbrs : Array (List ℕ)} (F : List ℕ) (size b : ℕ) :
+    b ∈ (combinations F.length size).flatMap
+        (fun comb ↦ groupBonds numAtoms rb C d nbrs (comb.map (F[·]!))) ↔
+      ∃ G, G.Sublist F ∧ G.length = size ∧ b ∈ groupBonds numAtoms rb C d nbrs G := by
+  simp only [List.mem_flatMap]
+  constructor
+  · rintro ⟨c, hc, hb⟩
+    obtain ⟨hl, hp, hlt⟩ := mem_combinations.1 hc
+    exact ⟨c.map (F[·]!), (sublist_iff_positions F _).2 ⟨c, sublist_range_iff.2 ⟨hp, hlt⟩, rfl⟩,
+      by simp [hl], hb⟩
+  · rintro ⟨G, hG, hl, hb⟩
+    obtain ⟨c, hc, rfl⟩ := (sublist_iff_positions F G).1 hG
+    obtain ⟨hp, hlt⟩ := sublist_range_iff.1 hc
+    exact ⟨c, mem_combinations.2 ⟨by simpa using hl, hp, hlt⟩, hb⟩
+
+/-- `systemBonds`' bookkeeping of the bonds done: members and no repeat. -/
+lemma addDone_spec : ∀ (new done : List ℕ), done.Nodup →
+    (new.foldl (fun d b ↦ if d.contains b then d else d ++ [b]) done).Nodup ∧
+      ∀ x, x ∈ new.foldl (fun d b ↦ if d.contains b then d else d ++ [b]) done ↔
+        x ∈ done ∨ x ∈ new
+  | [], done, h => ⟨h, by simp⟩
+  | b :: new, done, h => by
+    rw [List.foldl_cons]
+    split
+    · rename_i hb
+      obtain ⟨h1, h2⟩ := addDone_spec new done h
+      refine ⟨h1, fun x ↦ ?_⟩
+      rw [h2]
+      have : b ∈ done := List.contains_iff_mem.1 hb
+      simp only [List.mem_cons]
+      constructor
+      · rintro (h | h)
+        · exact .inl h
+        · exact .inr (.inr h)
+      · rintro (h | rfl | h)
+        · exact .inl h
+        · exact .inl this
+        · exact .inr h
+    · rename_i hb
+      have hbn : b ∉ done := fun h ↦ hb (List.contains_iff_mem.2 h)
+      obtain ⟨h1, h2⟩ := addDone_spec new (done ++ [b])
+        (List.nodup_append.2 ⟨h, by simp, fun a ha c hc ↦ by
+          rw [List.mem_singleton] at hc; subst hc; exact fun e ↦ hbn (e ▸ ha)⟩)
+      refine ⟨h1, fun x ↦ ?_⟩
+      rw [h2]
+      simp only [List.mem_append, List.mem_cons]
+      tauto
+
+/-- **A fused system marks the same bonds whatever the order of its rings.** -/
+lemma systemBonds_perm {numAtoms : ℕ} {rb C : Array (List ℕ)} {d : Array Donor}
+    {nbrs : Array (List ℕ)} (hsym : ∀ i j : ℕ, j ∈ nbrs[i]! → i ∈ nbrs[j]!) {F F' : List ℕ}
+    (hp : F.Perm F') (b : ℕ) :
+    b ∈ systemBonds numAtoms rb C d nbrs F' ↔ b ∈ systemBonds numAtoms rb C d nbrs F := by
+  -- each size adds the same bonds
+  have hnew : ∀ size b, b ∈ (combinations F'.length size).flatMap
+        (fun comb ↦ groupBonds numAtoms rb C d nbrs (comb.map (F'[·]!))) ↔
+      b ∈ (combinations F.length size).flatMap
+        (fun comb ↦ groupBonds numAtoms rb C d nbrs (comb.map (F[·]!))) := by
+    intro size b
+    rw [mem_newBonds, mem_newBonds]
+    constructor
+    · rintro ⟨G, hG, hl, hb⟩
+      obtain ⟨G', hG'p, hG'⟩ := hG.subperm.trans hp.symm.subperm
+      exact ⟨G', hG', by rw [hG'p.length_eq, hl], by
+        rw [groupBonds_perm hsym hG'p.symm]; exact hb⟩
+    · rintro ⟨G, hG, hl, hb⟩
+      obtain ⟨G', hG'p, hG'⟩ := hG.subperm.trans hp.subperm
+      exact ⟨G', hG', by rw [hG'p.length_eq, hl], by
+        rw [groupBonds_perm hsym hG'p.symm]; exact hb⟩
+  have hlen : F'.length = F.length := hp.length_eq.symm
+  have hall : (F'.flatMap (rb[·]!)).eraseDups.length = (F.flatMap (rb[·]!)).eraseDups.length :=
+    (perm_eraseDups (hp.symm.flatMap_right _)).length_eq
+  unfold systemBonds
+  dsimp only
+  rw [hlen, hall]
+  -- the two folds stay in step
+  set step := fun (Fl : List ℕ) (st : List ℕ × List ℕ × Bool) (size : ℕ) ↦
+    let (out, doneBonds, stop) := st
+    if stop || (size == 3 && 300 < F.length) ||
+        (F.flatMap (rb[·]!)).eraseDups.length ≤ doneBonds.length then
+      (out, doneBonds, true)
+    else
+      let new := (combinations F.length size).flatMap fun comb : List ℕ ↦
+        groupBonds numAtoms rb C d nbrs (comb.map (Fl[·]!))
+      (out ++ new, new.foldl (fun d b ↦ if d.contains b then d else d ++ [b]) doneBonds, false)
+    with hstep
+  have key : ∀ (sizes : List ℕ) (st st' : List ℕ × List ℕ × Bool),
+      (∀ x, x ∈ st'.1 ↔ x ∈ st.1) → (∀ x, x ∈ st'.2.1 ↔ x ∈ st.2.1) → st.2.1.Nodup →
+      st'.2.1.Nodup → st'.2.2 = st.2.2 →
+      ∀ x, x ∈ (sizes.foldl (step F') st').1 ↔ x ∈ (sizes.foldl (step F) st).1 := by
+    intro sizes
+    induction sizes with
+    | nil => intro st st' h1 _ _ _ _ x; exact h1 x
+    | cons size sizes ih =>
+      intro st st' h1 h2 hn hn' h3
+      obtain ⟨o, dn, sp⟩ := st
+      obtain ⟨o', dn', sp'⟩ := st'
+      simp only at h1 h2 hn hn' h3
+      subst h3
+      have hdl : dn'.length = dn.length :=
+        ((List.perm_ext_iff_of_nodup hn' hn).2 h2).length_eq
+      rw [List.foldl_cons, List.foldl_cons]
+      simp only [hstep, hdl]
+      split
+      · exact ih _ _ h1 h2 hn hn' rfl
+      · obtain ⟨n1, m1⟩ := addDone_spec ((combinations F.length size).flatMap fun comb ↦
+          groupBonds numAtoms rb C d nbrs (comb.map (F[·]!))) dn hn
+        obtain ⟨n2, m2⟩ := addDone_spec ((combinations F.length size).flatMap fun comb ↦
+          groupBonds numAtoms rb C d nbrs (comb.map (F'[·]!))) dn' hn'
+        refine ih _ _ (fun x ↦ ?_) (fun x ↦ ?_) n1 n2 rfl
+        · simp only [List.mem_append]
+          rw [h1 x, ← hlen, hnew size x, hlen]
+        · rw [m1, m2, h2 x, ← hlen, hnew size x, hlen]
+  have := key (List.range' 1 (min F.length 6)) ([], [], false) ([], [], false)
+    (fun _ ↦ Iff.rfl) (fun _ ↦ Iff.rfl) List.nodup_nil List.nodup_nil rfl b
+  exact this
+
 end Work
 
 end LeanSMILES.Aromaticity
