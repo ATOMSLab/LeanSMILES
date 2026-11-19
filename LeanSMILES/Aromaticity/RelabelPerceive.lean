@@ -6,6 +6,7 @@ Authors: Samiha Sharlin
 module
 
 public import LeanSMILES.Aromaticity.WorkRelabel
+public import LeanSMILES.Aromaticity.HsRestoreK
 
 /-!
 # LeanSMILES.Aromaticity.RelabelPerceive
@@ -95,6 +96,77 @@ lemma ringBonds_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) {r : List �
   rw [getElem!_pos _ t (by simpa using ht), getElem!_pos _ _ (by simpa using h2),
     List.getElem_map, List.getElem_map, bondBetween?_relabelW hwf hb (hr _ (List.getElem_mem _))
       (hr _ (List.getElem_mem _)), ← getElem!_pos r t ht, ← getElem!_pos r _ h2]
+
+/-! ### The first pass -/
+
+lemma contains_map_σ (hb : IdxBij w.numAtoms σ ψ) {r : List ℕ} (hr : ∀ a ∈ r, a < w.atoms.size)
+    {i : ℕ} (hi : i < w.atoms.size) : (r.map σ).contains (σ i) = r.contains i := by
+  rw [Bool.eq_iff_iff, List.contains_iff_mem, List.contains_iff_mem, List.mem_map]
+  exact ⟨fun ⟨a, ha, e⟩ ↦ hb.inj (hr a ha) hi e ▸ ha, fun h ↦ ⟨i, h, rfl⟩⟩
+
+lemma find?_map_σ (hb : IdxBij w.numAtoms σ ψ) {L : List (List ℕ)}
+    (hL : ∀ r ∈ L, ∀ a ∈ r, a < w.atoms.size) {i : ℕ} (hi : i < w.atoms.size) :
+    (L.map (List.map σ)).find? (·.contains (σ i)) = (L.find? (·.contains i)).map (List.map σ) := by
+  rw [List.find?_map]
+  congr 1
+  exact find?_congr_mem fun r hr ↦ by
+    simp only [Function.comp]
+    exact contains_map_σ hb (hL r hr) hi
+
+lemma firstDonor_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) (B : List ℕ)
+    {L : List (List ℕ)} (hL : ∀ r ∈ L, ∀ a ∈ r, a < w.atoms.size) {i : ℕ}
+    (hi : i < w.atoms.size) :
+    firstDonor (w.relabelW σ ψ) B (L.map (List.map σ)) (σ i) = firstDonor w B L i := by
+  unfold firstDonor
+  rw [find?_map_σ hb hL hi]
+  cases L.find? (·.contains i) with
+  | none => rfl
+  | some r => simp only [Option.map_some, List.length_map, ringDonor_relabelW hwf hb B _ hi]
+
+lemma firstCand_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) (B : List ℕ)
+    {L : List (List ℕ)} (hL : ∀ r ∈ L, ∀ a ∈ r, a < w.atoms.size) {i : ℕ}
+    (hi : i < w.atoms.size) :
+    firstCand (w.relabelW σ ψ) B (L.map (List.map σ)) (σ i) = firstCand w B L i := by
+  unfold firstCand
+  rw [find?_map_σ hb hL hi]
+  cases L.find? (·.contains i) with
+  | none => rfl
+  | some r => simp only [Option.map_some, List.length_map, ringDonor_relabelW hwf hb B _ hi,
+      isAromaticCandidate_relabelW hwf hb hi]
+
+/-- **The first pass of perception follows the renaming**: over the renamed rings, the renamed
+atoms get the same donor types, and the candidate rings are the renamed ones. -/
+theorem donorData_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) {R : Array (List ℕ)}
+    (hR : ∀ r ∈ R.toList, ∀ a ∈ r, a < w.atoms.size) :
+    (∀ i < w.atoms.size, ((w.relabelW σ ψ).donorData (R.map (List.map σ))).donor[σ i]! =
+      (w.donorData R).donor[i]!) ∧
+    ((w.relabelW σ ψ).donorData (R.map (List.map σ))).donor.size = w.atoms.size ∧
+    ((w.relabelW σ ψ).donorData (R.map (List.map σ))).candRings.toList =
+      (w.donorData R).candRings.toList.map (List.map σ) := by
+  have I := donorData_inv w R
+  have I' := donorData_inv (w.relabelW σ ψ) (R.map (List.map σ))
+  have hB : ((R.map (List.map σ)).toList.flatMap (w.relabelW σ ψ).ringBonds).eraseDups =
+      (R.toList.flatMap w.ringBonds).eraseDups := by
+    rw [Array.toList_map, List.flatMap_map]
+    congr 1
+    exact flatMap_congr_mem _ fun r hr ↦ ringBonds_relabelW hwf hb (hR r hr)
+  rw [hB] at I'
+  rw [Array.toList_map] at I'
+  refine ⟨fun i hi ↦ ?_, by rw [I'.donor_size]; simp [numAtoms], ?_⟩
+  · rw [I'.donor _ (by simpa [numAtoms] using hb.lt i hi), I.donor _ hi,
+      firstDonor_relabelW hwf hb _ hR hi]
+  · rw [I'.candRings, I.candRings, List.filter_map]
+    congr 1
+    apply List.filter_congr
+    intro r hr
+    simp only [Function.comp_apply, List.all_map, numAtoms_relabelW]
+    rw [Bool.eq_iff_iff, List.all_eq_true, List.all_eq_true]
+    refine forall₂_congr fun a ha ↦ ?_
+    have hra := hR r hr a ha
+    simp only [Function.comp_apply]
+    rw [firstCand_relabelW hwf hb _ hR hra]
+    have h1 : σ a < w.atoms.size := hb.lt a hra
+    simp [numAtoms, h1, hra]
 
 end Work
 
