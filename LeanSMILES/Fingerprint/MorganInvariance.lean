@@ -39,6 +39,20 @@ whichever atom died (`grown_mem_seen_of_killed`).  That is why the theorem
 stops at radius 2.  At radius 3 it is false, for RDKit as well:
 `C1=C(CO)C=C1CC` and `C1(CC)=CC(CO)=C1` are one molecule with different
 radius-3 fingerprints (README, "Findings about external tools").
+
+## Main statements
+
+* `Molecule.roundTriples_relabel`: the triples of a round move with the relabeling, up to order.
+* `Molecule.emitted_ids`: duplicate removal emits, for every new bond set, the identifier of its
+  first triple.
+* `Molecule.eq_of_env1_eq`: of two atoms with the same radius-1 bond set, every neighbor of one is
+  the other.
+* `Molecule.grown_mem_seen_of_killed`: an atom radius 1 killed covers, at radius 2, a bond set
+  already seen.
+* `Molecule.morganIds_relabel`: up to radius 2, the unfolded fingerprint does not depend on the
+  atom order.
+* `Molecule.morganBits_relabel`, `Mol.morganBits_relabel`: up to radius 2, the folded fingerprint
+  does not depend on the atom order.
 -/
 
 @[expose] public section
@@ -531,7 +545,7 @@ lemma layer1_prevEnv_apply {x : Fin n} (hx : m.adjacency[x].isEmpty = false) :
   simp only [Fin.eta, roundAlive_morganInit, hx, Bool.not_false, if_true]
   rfl
 
--- An atom with a neighbor has its radius-1 bond set seen after radius 1.
+/-- After radius 1, the radius-1 bond set of an atom with a neighbor is among the bond sets seen. -/
 private lemma env1_mem_layer1_seen {x : Fin n} (hx : m.adjacency[x].isEmpty = false) :
     m.env1 x ∈ m.layer1.seen := by
   rw [layer1, mem_morganLayer_seen]
@@ -539,8 +553,8 @@ private lemma env1_mem_layer1_seen {x : Fin n} (hx : m.adjacency[x].isEmpty = fa
     mem_roundTriples.mpr ⟨(m.roundAlive_morganInit x).trans (congrArg (!·) hx), ?_⟩, rfl⟩
   simp [morganInit]
 
--- An atom with a neighbor that radius 1 killed shares its radius-1 bond set with another
--- atom with a neighbor.
+/-- An atom with a neighbor that radius 1 left dead has the radius-1 bond set of some other atom
+with a neighbor. -/
 private lemma exists_env1_eq_of_layer1_dead {x : Fin n} (hx : m.adjacency[x].isEmpty = false)
     (hdead : m.layer1.dead[x] = true) :
     ∃ y, x ≠ y ∧ m.adjacency[y].isEmpty = false ∧ m.env1 x = m.env1 y := by
@@ -561,8 +575,8 @@ private lemma exists_env1_eq_of_layer1_dead {x : Fin n} (hx : m.adjacency[x].isE
   rw [ht₀eq, ht₁eq] at ht₁e
   exact ht₁e.symm
 
--- Of two atoms with the same radius-1 bond set, each has only the other as neighbor, so
--- its radius-2 bond set is its radius-1 one.
+/-- Of two distinct atoms with neighbors and the same radius-1 bond set, each has only the other
+as neighbor, so the first grows at radius 2 to its radius-1 bond set. -/
 private lemma growEnv_layer1_of_env1_eq {x y : Fin n} (hxy : x ≠ y) (he : m.env1 x = m.env1 y)
     (hx : m.adjacency[x].isEmpty = false) (hy : m.adjacency[y].isEmpty = false) :
     growEnv m.adjacency m.layer1.prevEnv x = m.env1 x := by

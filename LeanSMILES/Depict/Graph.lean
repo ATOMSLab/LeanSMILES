@@ -25,6 +25,16 @@ back into geometric form:
   one at each end, with whether they are cis.
 
 Nothing here is chemistry beyond those two conventions; the rest is graph.
+
+## Main definitions
+
+* `Depict.Edge`, `Depict.Graph`: a bond and a molecule flattened for layout, with `ℕ` indices.
+* `Depict.Graph.ofMolecule`, `Depict.Graph.ofMol`: the depiction graph of a molecule.
+* `Depict.Graph.components`: the connected components.
+* `Depict.Graph.distances`: all-pairs shortest path lengths in bonds.
+* `Depict.Graph.sortedLigands`, `Depict.Graph.tetraMark`: the listing a tetrahedral mark is read
+  for, and the mark.
+* `Depict.Graph.cisPairs`: the substituent pairs whose cis/trans arrangement is specified.
 -/
 
 @[expose] public section

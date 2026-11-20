@@ -15,6 +15,12 @@ Labelled molecules from the CSV tables in `datasets/`, read with the toolkit's
 `CSVparser`. The parser reads numbers as `Float`; `ratOfFloat` recovers the exact decimal
 they were written as (the Delaney table writes at most four decimals), so a pipeline's
 targets stay exact rationals.
+
+## Main definitions
+
+* `ratOfFloat`: the rational a `Float` was written as, rounded to a number of decimals.
+* `ratOfFloatExact`: the exact dyadic value of a finite `Float`.
+* `LabeledMolecules.ofRecords`: rows of a CSV table as labelled molecules.
 -/
 
 @[expose] public section

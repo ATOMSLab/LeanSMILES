@@ -24,6 +24,22 @@ sums, and `npowGen_eq` / `nsmulGen_eq` / `sumGen_eq` / `sumFin_eq_sum` bridging
 them to `^`, `*`, `List.sum` and `∑ i, f i` over `ℝ` (the two sums over any additive
 monoid, so over `ℚ` as well).
 
+## Main definitions
+
+* `PolynomialLike`: the operations a polynomial needs, `+`, `*`, `-`, `0`, `1`, and no laws.
+* `ScalarLike`: everything numeric code runs on, read at `Float` to run and at `ℝ` for theorems.
+* `RatEmbed`: a scalar that exact rational constants embed into.
+* `npowGen`, `nsmulGen`: power and scalar multiple by repetition, usable at `Float`.
+* `sumGen`, `sumFin`, `sumDistinctGen`: sums over a list, over `Fin n`, and over the distinct
+  members of a list, usable at `Float`.
+
+## Main statements
+
+* `sumFin_eq_sumFinLoop`: `sumFin` is the counting loop that compiled code runs.
+* `sumGen_eq`, `sumFin_eq_sum`: the executable sums are `List.sum` and `∑ i, f i`.
+* `sumDistinctGen_eq`: at `ℝ`, the distinct sum is the sum over the list's `toFinset`.
+* `npowGen_eq`, `nsmulGen_eq`: on `ℝ`, `npowGen x n = x ^ n` and `nsmulGen n x = n * x`.
+
 Extracted from LeanCatalyst (`LeanCatalyst/Scalar.lean`, `main` at `65d1e87`).
 The definitions are unchanged apart from the namespace; the proofs are golfed, and
 docstrings that pointed into LeanCatalyst's own modules are reworded for this library.

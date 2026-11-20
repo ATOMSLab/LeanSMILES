@@ -22,6 +22,15 @@ public import LeanLearn.Proofs.LeastSquares.Ridge
   normal equations;
 * `ols_fit_minimizes`, `stationary_minimizes`, `ridge_fit_minimizes`: the optimality theorems of
   the closed form, restated for the executable objectives.
+
+## Main statements
+
+* `squaredError_real`, `ridgeLoss_real`: at `ℝ` the executable objectives are `OLS.loss` and
+  `Ridge.loss`.
+* `normalResidual_eq_zero_iff`: `normalResidual` vanishes exactly at the ridge normal equations.
+* `ols_fit_minimizes`, `ridge_fit_minimizes`: the closed forms minimize the executable
+  objectives.
+* `stationary_minimizes`: with nonnegative weights, a zero `normalResidual` is a global minimizer.
 -/
 
 public section
@@ -59,8 +68,8 @@ theorem ridgeLoss_real (X : Design ℝ n p) (y : Fin n → ℝ) (weights w : Fin
     ridgeLoss X y weights w = Ridge.loss X y weights w := by
   rw [ridgeLoss, squaredError_real, penalty_real, Ridge.loss]
 
--- The executable normal residual at `ℝ` is `Xᵀ(Xw − y) + diag ρ w`, the vector whose vanishing
--- `Ridge.normalEquations_iff` identifies with the ridge normal equations.
+/-- The executable normal residual at `ℝ` is `Xᵀ(Xw − y) + diag ρ w`, the vector whose vanishing
+`Ridge.normalEquations_iff` identifies with the ridge normal equations. -/
 private theorem normalResidual_real (X : Design ℝ n p) (y : Fin n → ℝ) (weights w : Fin p → ℝ) :
     normalResidual X y weights w = Xᵀ *ᵥ OLS.residual X y w + diagonal weights *ᵥ w := by
   ext j

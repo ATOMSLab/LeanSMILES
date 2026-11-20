@@ -35,6 +35,21 @@ the canonicalization theorems carry no chemistry.  Instead
 relabeling (`chargesConsistent_relabel`) and, in `LeanSMILES.SMILES.Canon`, by
 canonicalization.  `Molecule.checkCharges` is the same predicate as an
 `Except` whose message names the offending atom (`checkCharges_eq_ok_iff`).
+
+## Main definitions
+
+* `Element.shellVacancy`: electrons needed to complete the valence shell.
+* `Atom.minCharge`, `Atom.maxCharge`: the lowest and highest formal charge the atom can carry.
+* `Atom.chargeConsistent`: the atom's formal charge is one its element can carry.
+* `Molecule.chargesConsistent`: every atom's formal charge is consistent.
+* `Molecule.checkCharges`, `Mol.checkCharges`: the check as an `Except` naming the bad atom.
+
+## Main statements
+
+* `Atom.chargeConsistent_of_charge_eq_zero`: a neutral atom is always consistent.
+* `Molecule.checkCharges_eq_ok_iff`, `Mol.checkCharges_eq_ok_iff`: the checker is the predicate.
+* `Molecule.chargesConsistent_relabel`, `Mol.chargesConsistent_relabel`: relabeling neither
+  creates nor removes an inconsistent charge.
 -/
 
 @[expose] public section
@@ -155,6 +170,11 @@ def Mol.chargesConsistent (M : Mol) : Prop := M.mol.chargesConsistent
 
 instance (M : Mol) : Decidable M.chargesConsistent :=
   inferInstanceAs (Decidable M.mol.chargesConsistent)
+
+/-- Relabeling a bundled molecule neither creates nor removes an inconsistent charge. -/
+theorem Mol.chargesConsistent_relabel (M : Mol) (σ : Equiv.Perm (Fin M.n)) :
+    (M.relabel σ).chargesConsistent ↔ M.chargesConsistent :=
+  M.mol.chargesConsistent_relabel σ
 
 /-- `Molecule.checkCharges` for a bundled molecule: run it on the result of
 `SMILES.parse`, which checks syntax only. -/

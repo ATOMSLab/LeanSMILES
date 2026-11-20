@@ -16,6 +16,13 @@ penalty `Σⱼ ρⱼ wⱼ²` and the ridge objective, written with `sumFin` over
 (`LeanLearn/Scalar.lean`) so that they run at `Float` and read exactly at `ℚ` and `ℝ`. The
 design is a Mathlib `Matrix (Fin n) (Fin p) K`; the caller supplies any intercept column.
 
+## Main definitions
+
+* `Design`, `Coefficients`: the design matrix and the coefficient vector.
+* `predict`, `residual`: the predictions `Xw` and the residual `Xw − y`.
+* `squaredError`, `penalty`, `ridgeLoss`: the OLS objective, the diagonal penalty, their sum.
+* `normalResidual`: `Xᵀ(Xw − y) + ρ ⊙ w`, which vanishes exactly at the ridge normal equations.
+
 `Proofs/Regression/LinearModel.lean` proves that at `ℝ` these are the closed-form
 specifications of `Proofs/LeastSquares/OLS.lean` and `Ridge.lean`, so the optimality theorems
 there apply to the executable objectives. No lawful ring instance or optimality theorem is

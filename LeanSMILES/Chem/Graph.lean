@@ -40,6 +40,31 @@ another order or the other way round — and it is equality of the matrices
 Relabeling the atoms by a permutation gives an isomorphic graph
 (`relabelIso`) — which is what makes canonicalization (`LeanSMILES.SMILES.Canon`)
 a change of *labels* and nothing else.
+
+## Main definitions
+
+* `Molecule.graph`: the molecular graph, adjacent when some bond joins two atoms.
+* `Molecule.adjMatrix`: the bond-order-weighted adjacency matrix, over `ℚ`.
+* `Molecule.toBondMatrix`, `Molecule.toFlatMatrix`: the two matrices as subtypes.
+* `Molecule.ofAdjMatrix`, `BondMatrix.toMolecule`: decoding a matrix into a molecule.
+* `Molecule.normalize`, `Molecule.IsNormal`: forgetting bond orientation and bond-list order.
+* `Molecule.normalEquiv`: normal molecules are exactly atoms, a bond matrix and configurations.
+* `Molecule.relabelIso`: relabeling the atoms as a graph isomorphism.
+* `MolData`: a molecule as the canonical search sees it, atoms and a bond matrix.
+* `Molecule.SameBonds`: the same bonds, up to list order and orientation.
+
+## Main statements
+
+* `Molecule.sum_degrees`: the handshake lemma, degrees sum to twice the bond count.
+* `Molecule.adjMatrix_ne_zero_iff`: the weighted matrix is nonzero exactly on the graph's edges.
+* `Molecule.isBondMatrix_adjMatrix`: a molecule's weighted adjacency matrix is a bond matrix.
+* `Molecule.adjMatrix_ofAdjMatrix_adjMatrix`, `Molecule.graph_ofAdjMatrix_adjMatrix`: the round
+  trips through the matrix.
+* `Molecule.normalize_normalize`: `normalize` is idempotent.
+* `Molecule.toBondMatrix_relabel`: relabeling a molecule relabels its bond matrix.
+* `Molecule.sameBonds_iff_adjMatrix_eq`: two molecules have the same bonds exactly when their
+  weighted matrices agree.
+* `Molecule.toMolData_eq_of_sameBonds`: the search data does not see how the bonds are listed.
 -/
 
 @[expose] public section
@@ -517,7 +542,7 @@ def relabel (σ : Equiv.Perm (Fin n)) : MolData n where
     (d.relabel σ).stereo = relabelStereo σ d.stereo := rfl
 
 /-- Entry `(i, j)` of the relabeled table is entry `(σ⁻¹ i, σ⁻¹ j)` of the original. -/
-@[simp] lemma table_relabel (σ : Equiv.Perm (Fin n)) (i j : Fin n) :
+lemma table_relabel (σ : Equiv.Perm (Fin n)) (i j : Fin n) :
     (d.relabel σ).table[i][j] = d.table[σ.symm i][σ.symm j] := by
   simp [relabel]
 

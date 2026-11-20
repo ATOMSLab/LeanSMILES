@@ -38,6 +38,16 @@ The gradient-descent certificate needs no data, only a bound on the features, so
 stated where the features come from (for molecules, `Pipelines/Certificates.lean`). For the
 data-dependent variant there (`Pipeline.checkGDData`), `Problem.smoothnessExact` computes the
 smoothness `Λ = (1/m) ∑ᵣ ‖xᵣ‖² + λ` of the step-size condition exactly from the samples.
+
+## Main definitions
+
+* `SolverWitness`: weights, a contraction ratio and a bound for a Jacobi or Gauss–Seidel
+  certificate.
+* `SolverWitness.check`: the exact check of a witness for `k` iterations and tolerance `ε`.
+* `SolverWitness.unitWeights`: a proposed witness with unit weights.
+* `SolverWitness.excess`: the excess loss `Γ β² ρ²ᵏ` a witness certifies.
+* `Problem.checkResidual`: the a posteriori check `λ > 0` and `‖A θ - b‖² ≤ ε λ`.
+* `Problem.smoothnessExact`: the smoothness `Λ` of gradient descent's step-size condition.
 -/
 
 @[expose] public section

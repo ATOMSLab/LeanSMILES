@@ -26,6 +26,19 @@ closed-form solution `(XᵀX)⁻¹ Xᵀy` with an explicit nonsingularity hypoth
 
 These are exact statements over `ℝ`. They do not assert numerical stability
 of matrix inversion or correctness of a floating-point implementation.
+
+## Main definitions
+
+* `loss`: the sum of squared errors `‖Xw - y‖²`.
+* `IsMinimizer`: global minimality among all coefficient vectors.
+* `NormalEquations`: the residual is orthogonal to every feature column.
+* `fit`: the closed form `(XᵀX)⁻¹ Xᵀy`, given a nonsingular Gram matrix.
+
+## Main statements
+
+* `normalEquations_minimize`: every solution of the normal equations is a global minimizer.
+* `fit_minimizes`: `fit` is a global minimizer.
+* `fit_unique`: with a nonsingular Gram matrix, every global minimizer is `fit`.
 -/
 
 @[expose] public section
@@ -105,6 +118,7 @@ theorem normalEquations_minimize (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n →
   exact le_add_of_nonneg_right (Finset.sum_nonneg fun i _ ↦ mul_self_nonneg _)
 
 /-- Exact OLS coefficients. The hypothesis excludes singular Gram matrices. -/
+@[nolint unusedArguments]
 def fit (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ) (_h : (gram X).det ≠ 0) : Fin p → ℝ :=
   (gram X)⁻¹ *ᵥ (Xᵀ *ᵥ y)
 

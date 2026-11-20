@@ -29,6 +29,13 @@ lake exe depict --fingerprint <smiles> [<smiles2>] out.svg
                                              barcode; bits shared with smiles2
                                              highlighted
 ```
+
+## Main definitions
+
+* `Depict.readSmi`: the SMILES of a `.smi` file.
+* `Depict.gallery`: the HTML page of `depict --html`.
+* `Depict.sdf`: the file of `depict --sdf`.
+* `Depict.main`: the `depict` command.
 -/
 
 @[expose] public section

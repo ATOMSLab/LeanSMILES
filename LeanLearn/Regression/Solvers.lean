@@ -31,6 +31,14 @@ under a step-size condition; Jacobi and Gauss–Seidel converge linearly, with a
 excess-loss bound, when `A` is diagonally dominant with respect to some positive weights;
 Gauss–Seidel never increases the loss; a fixed point of Jacobi solves the normal
 equations.
+
+## Main definitions
+
+* `residual`: the residual `A θ - b` of the normal equations.
+* `coordSolve`: solve equation `i` for coordinate `i`, keeping `θᵢ` when `Aᵢᵢ = 0`.
+* `gradientDescent`, `jacobi`, `gaussSeidel`: `k` steps (or sweeps) of each method from `θ = 0`.
+* `Algorithm`: the choice of method with its hyperparameters, as data.
+* `Algorithm.solve`, `Algorithm.fit`: run the algorithm on `(A, b)` or on a `Problem`.
 -/
 
 @[expose] public section

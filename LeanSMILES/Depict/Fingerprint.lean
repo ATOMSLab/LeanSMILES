@@ -35,6 +35,14 @@ which ones two molecules share, not where anything sits in the molecule.
 `#fingerprint` (`LeanSMILES.Depict.Widget`) parses with
 `SMILES.parseAromatized`, so the bits are RDKit's; `lake exe depict
 --fingerprint` writes the same SVG to a file.
+
+## Main definitions
+
+* `Depict.fingerprintGrid`, `Depict.fingerprintBarcode`: the bits as a grid and as a barcode.
+* `Depict.fingerprintSvg`: the whole picture, with the comparison against a second fingerprint.
+* `Depict.smilesFingerprintSvg`: the fingerprint picture of a SMILES string.
+* `Depict.bitEnvironments`: the environments that set one bit of the folded fingerprint.
+* `Depict.smilesBitSvg`: a SMILES string drawn with the environments of one bit highlighted.
 -/
 
 @[expose] public section

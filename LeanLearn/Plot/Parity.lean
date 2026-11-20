@@ -13,6 +13,12 @@ every point on the diagonal. `paritySvg` writes one as a self-contained SVG
 document — square axes on a shared scale with four to eight round ticks, the
 diagonal, a band of half a tick around it, training points hollow, test points
 filled, and a legend with each set's size, R², RMSE and MAE.
+
+## Main definitions
+
+* `Series`: one set of (measured, predicted) points with its legend entry.
+* `paritySvg`: the parity plot of a list of series, as an SVG document.
+* `fixed`, `niceStep`, `decimalsFor`: number formatting and round tick steps.
 -/
 
 @[expose] public section

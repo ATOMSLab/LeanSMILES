@@ -31,6 +31,14 @@ vector from the bit lists, `(1/m) Xcᵀ (Xc θ − y) + λ θ` with the centring
 operations. `SparseProblem.residual_eq` (`Proofs/Regression/SparseProblem.lean`) proves it
 equal to `Problem.residualAt` of the dense problem `SparseProblem.toProblem`, so the
 certificate theorem applies verbatim: `SparseProblem.checkResidual_sound`.
+
+## Main definitions
+
+* `SparseProblem`: samples as bit lists, their targets, and the ridge penalty `λ`.
+* `SparseProblem.toProblem`: the centred dense problem it stands for, never formed in practice.
+* `SparseProblem.residual`, `SparseProblem.loss`: the normal-equation residual and the ridge loss
+  of `toProblem`, computed from the bit lists.
+* `SparseProblem.checkResidual`: the a posteriori check `λ > 0` and `‖A θ − b‖² ≤ ε λ`.
 -/
 
 @[expose] public section

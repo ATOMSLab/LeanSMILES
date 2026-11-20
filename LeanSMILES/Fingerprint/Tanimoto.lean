@@ -52,6 +52,24 @@ as `Molecule.morganBits` produces them, computes `Finset.tanimoto` of the corres
 
 The paper proposes `√(1 - T)` as the metric to use with real-valued vectors; that claim is
 not formalized here.
+
+## Main definitions
+
+* `Finset.tanimoto`, `Finset.tanimotoDist`: Tanimoto similarity and distance of two bit sets.
+* `Finset.tanimotoMetricSpace`: binary fingerprints with the Tanimoto distance, a metric space.
+* `tanimotoVec`: Tanimoto similarity of two real-valued vectors, by inner products.
+
+## Main statements
+
+* `steinhaus_triangle`: the inequality behind the Steinhaus transform of a metric.
+* `Finset.tanimotoDist_triangle`: the triangle inequality for the Tanimoto distance.
+* `Finset.tanimotoDist_eq_one_sub`: the distance is one minus the similarity when either set has
+  an element.
+* `tanimotoVec_indicator`: on 0/1 vectors, the vector formula is the bit-set Tanimoto.
+* `not_exists_metricSpace_tanimotoVec`: no metric on real-valued vectors has `1 - tanimotoVec` as
+  its distance.
+* `Molecule.tanimoto_morganBits`: the Tanimoto similarity computed on Morgan fingerprints is the
+  bit-set one.
 -/
 
 @[expose] public section

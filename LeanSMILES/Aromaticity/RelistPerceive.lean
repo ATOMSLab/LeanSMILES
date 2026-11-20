@@ -1,0 +1,647 @@
+/-
+Copyright (c) 2026 Samiha Sharlin. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Samiha Sharlin
+-/
+module
+
+public import LeanSMILES.Aromaticity.Relist
+
+/-!
+# LeanSMILES.Aromaticity.RelistPerceive
+
+Perception on a relisted copy
+
+Over the same rings, a relisted copy gets the same donor types (`Work.Relisted.donorType`): the
+only thing read in bond order is the first exocyclic multiple bond, and an atom of a ring with at
+most three bonds has at most one; with more it gets no donor type at all. So the first pass agrees
+(`Work.Relisted.donorData`), Hückel's rule picks the same groups, the bonds marked aromatic are the
+same bonds renumbered (`Work.Relisted.mem_aromaticBondList`), and perception keeps the relisting
+(`Work.Relisted.setAromaticity`).
+
+## Main definitions
+
+* `Work.Relisted.rbs`: the ring bonds of a list of rings, without repeats.
+* `Work.RbMap N π rb rb'`: `rb'` is the list of ring bonds `rb` with every bond renumbered by `π`.
+
+## Main statements
+
+* `Work.Relisted.donorType`: over the same rings, a relisted copy gives a ring atom the same
+  donor type.
+* `Work.Relisted.donorData`: the first pass agrees on a relisted copy.
+* `Work.RbMap.fusedBonds`: the bonds the second pass marks are the same bonds, renumbered.
+* `Work.Relisted.mem_aromaticBondList`: the bonds perception marks on a relisted copy are the same
+  bonds, renumbered.
+* `Work.Relisted.setAromaticity`: perception keeps the relisting.
+-/
+
+@[expose] public section
+
+namespace LeanSMILES.Aromaticity.Work
+
+/-- `find?` on two orderings of a list where at most one element passes. -/
+lemma find?_perm_of_unique {α : Type} {l l' : List α} (h : l.Perm l') (p : α → Bool)
+    (hu : ∀ a ∈ l, ∀ b ∈ l, p a = true → p b = true → a = b) : l.find? p = l'.find? p := by
+  cases h1 : l.find? p with
+  | none =>
+    cases h2 : l'.find? p with
+    | none => rfl
+    | some b =>
+      exfalso
+      have := List.find?_eq_none.1 h1 b (h.mem_iff.2 (List.mem_of_find?_eq_some h2))
+      exact this (List.find?_some h2)
+  | some a =>
+    have ha := List.mem_of_find?_eq_some h1
+    have hpa := List.find?_some h1
+    cases h2 : l'.find? p with
+    | none =>
+      exact absurd hpa (List.find?_eq_none.1 h2 a (h.mem_iff.1 ha))
+    | some b =>
+      have hb := h.mem_iff.2 (List.mem_of_find?_eq_some h2)
+      rw [hu a ha b hb hpa (List.find?_some h2)]
+
+namespace Relisted
+
+variable {w w' : Work} {π ρ : ℕ → ℕ}
+
+/-- The bonds of a ring of `w` in a relisted copy are its bonds in `w`, renumbered by `π`. -/
+lemma ringBonds (h : Relisted w w' π ρ) (hwf : w.WF) (hnd : w.NbrsDistinct)
+    (hnd' : w'.NbrsDistinct) {r : List ℕ} (hr : w.IsRing r) :
+    w'.ringBonds r = (w.ringBonds r).map π := by
+  have := (h.workIso hwf hnd hnd').ringBonds hwf hr
+  rwa [List.map_id] at this
+
+/-- A ring bond is a bond of the working copy. -/
+lemma lt_of_mem_ringBonds' {x : Work} {r : List ℕ} {k : ℕ} (hk : k ∈ x.ringBonds r) :
+    k < x.bonds.size := lt_of_mem_ringBonds hk
+
+/-- The ring bonds of a list of rings, renumbered. -/
+lemma mem_ringBondSet (h : Relisted w w' π ρ) (hwf : w.WF) (hnd : w.NbrsDistinct)
+    (hnd' : w'.NbrsDistinct) {L : List (List ℕ)} (hL : ∀ r ∈ L, w.IsRing r) {k : ℕ}
+    (hk : k < w.bonds.size) :
+    (π k ∈ (L.flatMap w'.ringBonds).eraseDups) ↔ k ∈ (L.flatMap w.ringBonds).eraseDups := by
+  rw [List.mem_eraseDups, List.mem_eraseDups, List.mem_flatMap, List.mem_flatMap]
+  constructor
+  · rintro ⟨r, hr, hk'⟩
+    rw [h.ringBonds hwf hnd hnd' (hL r hr), List.mem_map] at hk'
+    obtain ⟨k0, hk0, e⟩ := hk'
+    rw [h.bij.inj (lt_of_mem_ringBonds hk0) hk e] at hk0
+    exact ⟨r, hr, hk0⟩
+  · rintro ⟨r, hr, hk'⟩
+    exact ⟨r, hr, by rw [h.ringBonds hwf hnd hnd' (hL r hr)]; exact List.mem_map_of_mem hk'⟩
+
+/-- A relisting keeps `hasMultipleBond`. -/
+lemma hasMultipleBond (h : Relisted w w' π ρ) (i : ℕ) :
+    w'.hasMultipleBond i = w.hasMultipleBond i := by
+  have e : ∀ x : Work, x.hasMultipleBond i = (x.kindsAt i).any isMultiple := fun x ↦ by
+    simp only [Work.hasMultipleBond, kindsAt, List.any_map]; rfl
+  rw [e, e, (h.kindsAt_perm i).any_eq']
+
+/-- **An atom of a ring with at most three bonds has at most one bond off the rings.** -/
+lemma off_ring_unique {x : Work} {B : List ℕ} {r : List ℕ} (hr : x.IsRing r)
+    (hrB : ∀ k ∈ x.ringBonds r, k ∈ B) {i : ℕ} (hi : i ∈ r) (hdeg : (x.bondsOf i).length ≤ 3)
+    (p : ℕ → Bool) (hp : ∀ k, p k = true → k ∉ B) :
+    ∀ a ∈ x.neighbors i, ∀ b ∈ x.neighbors i, p a.1 = true → p b.1 = true → a = b := by
+  intro a ha b hb hpa hpb
+  obtain ⟨ka, hka, rfl⟩ := List.mem_map.1 ha
+  obtain ⟨kb, hkb, rfl⟩ := List.mem_map.1 hb
+  by_cases e : ka = kb
+  · subst e; rfl
+  exfalso
+  obtain ⟨k₁, k₂, h12, r₁, r₂, a₁, a₂⟩ := hr.two_bonds hi
+  have na := hp ka hpa
+  have nb := hp kb hpb
+  have hnd : [k₁, k₂, ka, kb].Nodup := by
+    simp only [List.nodup_cons, List.mem_cons, List.not_mem_nil, or_false, List.nodup_nil,
+      and_true]
+    refine ⟨?_, ?_, e, by simp⟩
+    · rintro (h' | h' | h')
+      · exact h12 h'
+      · exact na (h' ▸ hrB _ r₁)
+      · exact nb (h' ▸ hrB _ r₁)
+    · rintro (h' | h')
+      · exact na (h' ▸ hrB _ r₂)
+      · exact nb (h' ▸ hrB _ r₂)
+  have := (List.subperm_of_subset hnd (by
+    intro k hk
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at hk
+    rcases hk with rfl | rfl | rfl | rfl <;> assumption)).length_le
+  simp at this
+  omega
+
+variable (w w') in
+/-- The ring bonds of a list of rings. -/
+abbrev rbs (x : Work) (L : List (List ℕ)) : List ℕ := (L.flatMap x.ringBonds).eraseDups
+
+/-- **Over the same rings, a relisted copy gives an atom of them the same donor type.** -/
+lemma donorType (h : Relisted w w' π ρ) (hwf : w.WF) (hnd : w.NbrsDistinct)
+    (hnd' : w'.NbrsDistinct) {L : List (List ℕ)} (hL : ∀ r ∈ L, w.IsRing r) {r : List ℕ}
+    (hr : r ∈ L) {i : ℕ} (hi : i ∈ r) :
+    w'.donorType (rbs w' L) i = w.donorType (rbs w L) i := by
+  have hc : ∀ k < w.bonds.size, (rbs w' L).contains (π k) = (rbs w L).contains k :=
+    fun k hk ↦ by
+      rw [Bool.eq_iff_iff, List.contains_iff_mem, List.contains_iff_mem]
+      exact h.mem_ringBondSet hwf hnd hnd' hL hk
+  have hlt : ∀ k ∈ w.bondsOf i, k < w.bonds.size := fun k hk ↦ by
+    simp only [bondsOf, List.mem_filter, List.mem_range, numBonds] at hk; exact hk.1
+  have hany : ((w'.bondsOf i).any fun k ↦
+        (rbs w' L).contains k && isMultiple (w'.bonds[k]! : WBond).kind) =
+      (w.bondsOf i).any fun k ↦ (rbs w L).contains k && isMultiple (w.bonds[k]! : WBond).kind := by
+    rw [(h.bondsOf_perm i).any_eq', List.any_map]
+    rw [Bool.eq_iff_iff, List.any_eq_true, List.any_eq_true]
+    refine exists_congr fun k ↦ and_congr_right fun hk ↦ ?_
+    simp only [Function.comp_apply, hc k (hlt k hk), h.kind k (hlt k hk)]
+  by_cases hneg : w.countAtomElec i < 0
+  · have e : ∀ (x : Work) (B : List ℕ), x.countAtomElec i < 0 → x.donorType B i = .none :=
+      fun x B hx ↦ by unfold Work.donorType; simp [Id.run, hx]; rfl
+    rw [e w _ hneg, e w' _ (by rw [h.countAtomElec]; exact hneg)]
+  -- at most three bonds, so at most one off the rings
+  have hdeg : (w.bondsOf i).length ≤ 3 := by
+    by_contra hd
+    apply hneg
+    rw [countAtomElec_eq_loc]
+    exact elec_neg_of_degree (by rw [← degree_eq_loc]; unfold Work.degree; omega)
+  have hex : w'.exocyclicMultiple? (rbs w' L) i = w.exocyclicMultiple? (rbs w L) i := by
+    unfold exocyclicMultiple?
+    set p : ℕ × ℕ → Bool := fun e ↦
+      !(rbs w L).contains e.1 && isMultiple (w.bonds[e.1]! : WBond).kind
+    set p' : ℕ × ℕ → Bool := fun e ↦
+      !(rbs w' L).contains e.1 && isMultiple (w'.bonds[e.1]! : WBond).kind
+    have hu := off_ring_unique (B := rbs w L) (hL r hr)
+      (fun k hk ↦ List.mem_eraseDups.2 (List.mem_flatMap.2 ⟨r, hr, hk⟩)) hi hdeg
+      (fun k ↦ !(rbs w L).contains k && isMultiple (w.bonds[k]! : WBond).kind)
+      (fun k hk hm ↦ by
+        have hcm : (rbs w L).contains k = true := List.contains_iff_mem.2 hm
+        simp only [hcm] at hk
+        cases hk)
+    have hg : ∀ x ∈ w.neighbors i, p' (π x.1, x.2) = p x := fun x hx ↦ by
+      have hx1 : x.1 < w.bonds.size := by
+        obtain ⟨k, hk, rfl⟩ := List.mem_map.1 hx; exact hlt k hk
+      simp only [p, p', hc _ hx1, h.kind _ hx1]
+    have e1 : (w'.neighbors i).find? p' =
+        ((w.neighbors i).map fun e ↦ (π e.1, e.2)).find? p' := by
+      refine (find?_perm_of_unique (h.neighbors_perm hwf i).symm p' ?_).symm
+      intro a ha b hb hpa hpb
+      obtain ⟨x, hx, rfl⟩ := List.mem_map.1 ha
+      obtain ⟨y, hy, rfl⟩ := List.mem_map.1 hb
+      rw [hg x hx] at hpa
+      rw [hg y hy] at hpb
+      rw [hu x hx y hy hpa hpb]
+    have e2 : ((w.neighbors i).map fun e ↦ (π e.1, e.2)).find? p' =
+        ((w.neighbors i).find? p).map fun e ↦ (π e.1, e.2) := by
+      rw [List.find?_map]
+      congr 1
+      exact find?_congr_mem fun x hx ↦ by simp only [Function.comp_apply, hg x hx]
+    change ((w'.neighbors i).find? p').map (·.2) = ((w.neighbors i).find? p).map (·.2)
+    rw [e1, e2, Option.map_map]
+    rfl
+  unfold Work.donorType
+  simp only [Id.run, hex, h.countAtomElec, h.atom, hany, h.cachedValence, h.degree]
+
+/-- Over the same rings, a relisted copy gives an atom of them the same `ringDonor`. -/
+lemma ringDonor (h : Relisted w w' π ρ) (hwf : w.WF) (hnd : w.NbrsDistinct)
+    (hnd' : w'.NbrsDistinct) {L : List (List ℕ)} (hL : ∀ r ∈ L, w.IsRing r) {r : List ℕ}
+    (hr : r ∈ L) {i : ℕ} (hi : i ∈ r) (len : ℕ) :
+    w'.ringDonor (rbs w' L) len i = w.ringDonor (rbs w L) len i := by
+  simp only [Work.ringDonor, h.donorType hwf hnd hnd' hL hr hi, h.atom, h.degree,
+    h.hasMultipleBond]
+
+/-- Over the same rings, a relisted copy gives every atom the same `firstDonor`. -/
+lemma firstDonor (h : Relisted w w' π ρ) (hwf : w.WF) (hnd : w.NbrsDistinct)
+    (hnd' : w'.NbrsDistinct) {L : List (List ℕ)} (hL : ∀ r ∈ L, w.IsRing r) (i : ℕ) :
+    Work.firstDonor w' (rbs w' L) L i = Work.firstDonor w (rbs w L) L i := by
+  unfold Work.firstDonor
+  cases hf : L.find? (·.contains i) with
+  | none => rfl
+  | some r =>
+    have hr := List.mem_of_find?_eq_some hf
+    have hi : i ∈ r := by
+      have h1 := List.find?_some hf
+      exact List.contains_iff_mem.1 h1
+    exact h.ringDonor hwf hnd hnd' hL hr hi _
+
+/-- Over the same rings, a relisted copy gives every atom the same `firstCand`. -/
+lemma firstCand (h : Relisted w w' π ρ) (hwf : w.WF) (hnd : w.NbrsDistinct)
+    (hnd' : w'.NbrsDistinct) {L : List (List ℕ)} (hL : ∀ r ∈ L, w.IsRing r) (i : ℕ) :
+    Work.firstCand w' (rbs w' L) L i = Work.firstCand w (rbs w L) L i := by
+  unfold Work.firstCand
+  cases hf : L.find? (·.contains i) with
+  | none => rfl
+  | some r =>
+    have hr := List.mem_of_find?_eq_some hf
+    have hi : i ∈ r := by
+      have h1 := List.find?_some hf
+      exact List.contains_iff_mem.1 h1
+    simp only [h.ringDonor hwf hnd hnd' hL hr hi, h.isAromaticCandidate]
+
+/-- **The first pass agrees on a relisted copy**: the same donor types and candidate rings. -/
+theorem donorData (h : Relisted w w' π ρ) (hwf : w.WF) (hnd : w.NbrsDistinct)
+    (hnd' : w'.NbrsDistinct) {R : Array (List ℕ)} (hR : ∀ r ∈ R.toList, w.IsRing r) :
+    (w'.donorData R).donor = (w.donorData R).donor ∧
+      (w'.donorData R).candRings = (w.donorData R).candRings := by
+  have I := donorData_inv w R
+  have I' := donorData_inv w' R
+  have hN : w'.numAtoms = w.numAtoms := by simp [numAtoms, h.atoms]
+  refine ⟨array_ext_of_getElem! (n := w.numAtoms) (by rw [I'.donor_size, hN]) I.donor_size
+    fun i hi ↦ ?_, Array.ext' ?_⟩
+  · rw [I'.donor i (by rw [hN]; exact hi), I.donor i hi]
+    exact h.firstDonor hwf hnd hnd' hR i
+  · rw [I'.candRings, I.candRings, hN]
+    apply List.filter_congr
+    intro r hr
+    rw [Bool.eq_iff_iff, List.all_eq_true, List.all_eq_true]
+    refine forall₂_congr fun i _ ↦ ?_
+    rw [h.firstCand hwf hnd hnd' hR i]
+
+/-! ### The second pass -/
+
+/-- Mapping by `f`, injective below `N`, keeps the count of an element below `N` in a list of
+elements below `N`. -/
+lemma count_map_inj {f : ℕ → ℕ} {l : List ℕ} {N : ℕ} (hl : ∀ x ∈ l, x < N)
+    (hf : ∀ a < N, ∀ b < N, f a = f b → a = b) {x : ℕ} (hx : x < N) :
+    (l.map f).count (f x) = l.count x := by
+  induction l with
+  | nil => rfl
+  | cons a l ih =>
+    rw [List.map_cons, List.count_cons, List.count_cons,
+      ih fun y hy ↦ hl y (List.mem_cons_of_mem _ hy)]
+    have ha := hl a List.mem_cons_self
+    congr 1
+    by_cases e : a = x
+    · subst e; simp
+    · have : f a ≠ f x := fun h' ↦ e (hf a ha x hx h')
+      simp [e, this]
+
+/-- Mapping both lists by `f`, injective below `N`, keeps how many elements of `l₁` are in `l₂`. -/
+lemma length_filter_contains_map {f : ℕ → ℕ} {l₁ l₂ : List ℕ} {N : ℕ}
+    (h₁ : ∀ x ∈ l₁, x < N) (h₂ : ∀ x ∈ l₂, x < N) (hf : ∀ a < N, ∀ b < N, f a = f b → a = b) :
+    ((l₁.map f).filter (l₂.map f).contains).length = (l₁.filter l₂.contains).length := by
+  rw [List.filter_map, List.length_map]
+  congr 1
+  apply List.filter_congr
+  intro x hx
+  change (l₂.map f).contains (f x) = l₂.contains x
+  rw [Bool.eq_iff_iff, List.contains_iff_mem, List.contains_iff_mem, List.mem_map]
+  exact ⟨fun ⟨y, hy, e⟩ ↦ hf y (h₂ y hy) x (h₁ x hx) e ▸ hy, fun hx' ↦ ⟨x, hx', rfl⟩⟩
+
+
+end Relisted
+
+section SecondPass
+
+variable {N : ℕ} {π : ℕ → ℕ} {rb rb' : Array (List ℕ)}
+
+/-- `rb'` is `rb` with every bond renumbered by `π`, injective below `N`. -/
+structure RbMap (N : ℕ) (π : ℕ → ℕ) (rb rb' : Array (List ℕ)) : Prop where
+  /-- As many rings. -/
+  size : rb'.size = rb.size
+  /-- Ring `j` of `rb'` is ring `j` of `rb` renumbered. -/
+  get : ∀ j : ℕ, rb'[j]! = (rb[j]! : List ℕ).map π
+  /-- Every bond of `rb` is below `N`. -/
+  lt : ∀ j : ℕ, ∀ x ∈ (rb[j]! : List ℕ), x < N
+  /-- `π` is injective below `N`. -/
+  inj : ∀ a < N, ∀ b < N, π a = π b → a = b
+
+/-- Renumbering the ring bonds keeps `fusedNbrs`. -/
+lemma RbMap.fusedNbrs (h : RbMap N π rb rb') : Work.fusedNbrs rb' = Work.fusedNbrs rb := by
+  have hp : ∀ i j, fusedPair rb' i j = fusedPair rb i j := fun i j ↦ by
+    unfold fusedPair
+    rw [h.get, h.get, List.length_map, List.length_map,
+      Relisted.length_filter_contains_map (h.lt i) (h.lt j) h.inj]
+  rw [fusedNbrs_eq_pairs, fusedNbrs_eq_pairs, h.size]
+  congr 1
+  funext nbrs q
+  simp only [fusedStep, hp]
+
+/-- The bonds of a group of rings of `rb'`, in order, are those of `rb` renumbered. -/
+lemma RbMap.flat (h : RbMap N π rb rb') (cur : List ℕ) :
+    cur.flatMap (rb'[·]!) = (cur.flatMap (rb[·]!)).map π := by
+  rw [List.map_flatMap]
+  exact flatMap_congr_mem cur fun j _ ↦ h.get j
+
+/-- The bonds of a group of rings of `rb` are below `N`. -/
+lemma RbMap.flat_lt (h : RbMap N π rb rb') (cur : List ℕ) :
+    ∀ x ∈ cur.flatMap (rb[·]!), x < N := fun x hx ↦ by
+  obtain ⟨j, -, hx⟩ := List.mem_flatMap.1 hx
+  exact h.lt j x hx
+
+/-- A bond `groupBonds` returns is a bond of one of the group's rings. -/
+lemma mem_groupBonds_sub {numAtoms : ℕ} {rb C : Array (List ℕ)} {d : Array Donor}
+    {nbrs : Array (List ℕ)} {cur : List ℕ} {b : ℕ}
+    (hb : b ∈ Work.groupBonds numAtoms rb C d nbrs cur) : b ∈ cur.flatMap (rb[·]!) := by
+  unfold groupBonds at hb
+  dsimp only at hb
+  split at hb
+  · cases hb
+  · split at hb
+    · simp only [List.mem_filter, List.mem_mergeSort, List.mem_eraseDups] at hb
+      exact hb.1
+    · cases hb
+
+/-- **A group's bonds, renumbered.** -/
+lemma RbMap.groupBonds (h : RbMap N π rb rb') {numAtoms : ℕ} {C : Array (List ℕ)}
+    {d : Array Donor} {nbrs : Array (List ℕ)} (cur : List ℕ) (b' : ℕ) :
+    b' ∈ Work.groupBonds numAtoms rb' C d nbrs cur ↔
+      ∃ b ∈ Work.groupBonds numAtoms rb C d nbrs cur, π b = b' := by
+  unfold Work.groupBonds
+  dsimp only
+  split
+  · simp
+  split
+  · rw [h.flat]
+    simp only [List.mem_filter, List.mem_mergeSort, List.mem_eraseDups, beq_iff_eq]
+    have hl := h.flat_lt cur
+    constructor
+    · rintro ⟨hb, hc⟩
+      obtain ⟨b, hbm, rfl⟩ := List.mem_map.1 hb
+      exact ⟨b, ⟨hbm, by rw [← Relisted.count_map_inj hl h.inj (hl b hbm)]; exact hc⟩, rfl⟩
+    · rintro ⟨b, ⟨hbm, hc⟩, rfl⟩
+      exact ⟨List.mem_map_of_mem hbm, by rw [Relisted.count_map_inj hl h.inj (hl b hbm)]; exact hc⟩
+  · simp
+
+/-- Renumbering a list of bonds below `N` keeps the number of distinct bonds. -/
+lemma eraseDups_map_length (h : RbMap N π rb rb') (l : List ℕ) (hl : ∀ x ∈ l, x < N) :
+    (l.map π).eraseDups.length = l.eraseDups.length := by
+  have hp : (l.map π).eraseDups.Perm (l.eraseDups.map π) :=
+    (List.perm_ext_iff_of_nodup (eraseDups_nodup _) ((eraseDups_nodup l).map_on fun a ha b hb e ↦
+      h.inj a (hl a (List.mem_eraseDups.1 ha)) b (hl b (List.mem_eraseDups.1 hb)) e)).2 fun x ↦ by
+      simp only [List.mem_eraseDups, List.mem_map]
+  rw [hp.length_eq, List.length_map]
+
+/-- **A fused system's bonds, renumbered.** -/
+lemma RbMap.systemBonds (h : RbMap N π rb rb') {numAtoms : ℕ} {C : Array (List ℕ)}
+    {d : Array Donor} {nbrs : Array (List ℕ)} (F : List ℕ) (b' : ℕ) :
+    b' ∈ systemBonds numAtoms rb' C d nbrs F ↔
+      ∃ b ∈ systemBonds numAtoms rb C d nbrs F, π b = b' := by
+  have hnew : ∀ size x', x' ∈ (combinations F.length size).flatMap
+        (fun comb ↦ Work.groupBonds numAtoms rb' C d nbrs (comb.map (F[·]!))) ↔
+      ∃ x ∈ (combinations F.length size).flatMap
+        (fun comb ↦ Work.groupBonds numAtoms rb C d nbrs (comb.map (F[·]!))), π x = x' := by
+    intro size x'
+    simp only [List.mem_flatMap, h.groupBonds]
+    constructor
+    · rintro ⟨c, hc, x, hx, rfl⟩; exact ⟨x, ⟨c, hc, hx⟩, rfl⟩
+    · rintro ⟨x, ⟨c, hc, hx⟩, rfl⟩; exact ⟨c, hc, x, hx, rfl⟩
+  have hnewlt : ∀ size x, x ∈ (combinations F.length size).flatMap
+      (fun comb ↦ Work.groupBonds numAtoms rb C d nbrs (comb.map (F[·]!))) → x < N := by
+    intro size x hx
+    obtain ⟨c, -, hx⟩ := List.mem_flatMap.1 hx
+    exact h.flat_lt _ x (mem_groupBonds_sub hx)
+  have hall : (F.flatMap (rb'[·]!)).eraseDups.length = (F.flatMap (rb[·]!)).eraseDups.length := by
+    rw [h.flat]; exact eraseDups_map_length h _ (h.flat_lt F)
+  unfold Work.systemBonds
+  dsimp only
+  rw [hall]
+  set step := fun (r : Array (List ℕ)) (st : List ℕ × List ℕ × Bool) (size : ℕ) ↦
+    let (out, doneBonds, stop) := st
+    if stop || (size == 3 && 300 < F.length) ||
+        (F.flatMap (rb[·]!)).eraseDups.length ≤ doneBonds.length then
+      (out, doneBonds, true)
+    else
+      let new := (combinations F.length size).flatMap fun comb : List ℕ ↦
+        Work.groupBonds numAtoms r C d nbrs (comb.map (F[·]!))
+      (out ++ new, new.foldl (fun d b ↦ if d.contains b then d else d ++ [b]) doneBonds, false)
+    with hstep
+  have key : ∀ (sizes : List ℕ) (st st' : List ℕ × List ℕ × Bool),
+      (∀ x', x' ∈ st'.1 ↔ ∃ x ∈ st.1, π x = x') → (∀ x', x' ∈ st'.2.1 ↔ ∃ x ∈ st.2.1, π x = x') →
+      st.2.1.Nodup → st'.2.1.Nodup → (∀ x ∈ st.2.1, x < N) → st'.2.2 = st.2.2 →
+      ∀ x', x' ∈ (sizes.foldl (step rb') st').1 ↔ ∃ x ∈ (sizes.foldl (step rb) st).1, π x = x' := by
+    intro sizes
+    induction sizes with
+    | nil => intro st st' h1 _ _ _ _ _ x; exact h1 x
+    | cons size sizes ih =>
+      intro st st' h1 h2 hn hn' hl h3
+      obtain ⟨o, dn, sp⟩ := st
+      obtain ⟨o', dn', sp'⟩ := st'
+      simp only at h1 h2 hn hn' hl h3
+      subst h3
+      have hdl : dn'.length = dn.length := by
+        have hp : dn'.Perm (dn.map π) := (List.perm_ext_iff_of_nodup hn' (hn.map_on
+          fun a ha b hb e ↦ h.inj a (hl a ha) b (hl b hb) e)).2 fun x ↦ by
+          rw [h2 x, List.mem_map]
+        rw [hp.length_eq, List.length_map]
+      rw [List.foldl_cons, List.foldl_cons]
+      simp only [hstep, hdl]
+      split
+      · exact ih _ _ h1 h2 hn hn' hl rfl
+      · obtain ⟨n1, m1⟩ := addDone_spec ((combinations F.length size).flatMap fun comb ↦
+          Work.groupBonds numAtoms rb C d nbrs (comb.map (F[·]!))) dn hn
+        obtain ⟨n2, m2⟩ := addDone_spec ((combinations F.length size).flatMap fun comb ↦
+          Work.groupBonds numAtoms rb' C d nbrs (comb.map (F[·]!))) dn' hn'
+        refine ih _ _ (fun x ↦ ?_) (fun x ↦ ?_) n1 n2 (fun x hx ↦ ?_) rfl
+        · simp only [List.mem_append, h1 x, hnew size x]
+          constructor
+          · rintro (⟨y, hy, rfl⟩ | ⟨y, hy, rfl⟩)
+            · exact ⟨y, .inl hy, rfl⟩
+            · exact ⟨y, .inr hy, rfl⟩
+          · rintro ⟨y, hy | hy, rfl⟩
+            · exact .inl ⟨y, hy, rfl⟩
+            · exact .inr ⟨y, hy, rfl⟩
+        · rw [m2, h2 x, hnew size x]
+          simp only [m1]
+          constructor
+          · rintro (⟨y, hy, rfl⟩ | ⟨y, hy, rfl⟩)
+            · exact ⟨y, .inl hy, rfl⟩
+            · exact ⟨y, .inr hy, rfl⟩
+          · rintro ⟨y, hy | hy, rfl⟩
+            · exact .inl ⟨y, hy, rfl⟩
+            · exact .inr ⟨y, hy, rfl⟩
+        · rcases (m1 x).1 hx with hx | hx
+          · exact hl x hx
+          · exact hnewlt size x hx
+  exact key _ ([], [], false) ([], [], false) (fun _ ↦ by simp) (fun _ ↦ by simp)
+    List.nodup_nil List.nodup_nil (by simp) rfl b'
+
+/-- **The fused systems' bonds, renumbered.** -/
+lemma RbMap.fusedBonds (h : RbMap N π rb rb') {numAtoms : ℕ} {C : Array (List ℕ)}
+    {d : Array Donor} (b' : ℕ) :
+    b' ∈ Work.fusedBonds numAtoms rb' C d ↔ ∃ b ∈ Work.fusedBonds numAtoms rb C d, π b = b' := by
+  unfold Work.fusedBonds
+  dsimp only
+  rw [h.fusedNbrs]
+  simp only [List.mem_flatMap, h.systemBonds]
+  constructor
+  · rintro ⟨F, hF, b, hb, rfl⟩; exact ⟨b, ⟨F, hF, hb⟩, rfl⟩
+  · rintro ⟨b, ⟨F, hF, hb⟩, rfl⟩; exact ⟨F, hF, b, hb, rfl⟩
+
+end SecondPass
+
+namespace Relisted
+
+variable {w w' : Work} {π ρ : ℕ → ℕ}
+
+/-- **The bonds perception marks on a relisted copy are the same bonds, renumbered.** -/
+theorem mem_aromaticBondList (h : Relisted w w' π ρ) (hwf : w.WF) (hnd : w.NbrsDistinct)
+    (hnd' : w'.NbrsDistinct) {R : Array (List ℕ)} (hR : ∀ r ∈ R.toList, w.IsRing r) (b' : ℕ) :
+    b' ∈ w'.aromaticBondList R ↔ ∃ b ∈ w.aromaticBondList R, π b = b' := by
+  obtain ⟨hd, hc⟩ := h.donorData hwf hnd hnd' hR
+  have hCR : ∀ r ∈ (w.donorData R).candRings.toList, w.IsRing r := fun r hr ↦ by
+    rw [(donorData_inv w R).candRings] at hr
+    exact hR r (List.mem_filter.1 hr).1
+  have hN : w'.numAtoms = w.numAtoms := by simp [numAtoms, h.atoms]
+  have hm : RbMap w.bonds.size π ((w.donorData R).candRings.map w.ringBonds)
+      ((w.donorData R).candRings.map w'.ringBonds) := by
+    refine ⟨by simp, fun j ↦ ?_, fun j x hx ↦ ?_, fun a ha c hc e ↦ h.bij.inj ha hc e⟩
+    · rw [getElem!_map_list _ _ (by rw [ringBonds_eq_filterMap]; rfl),
+        getElem!_map_list _ _ (by rw [ringBonds_eq_filterMap]; rfl)]
+      by_cases hj : j < (w.donorData R).candRings.size
+      · rw [getElem!_pos _ j hj]
+        exact h.ringBonds hwf hnd hnd' (hCR _ (Array.getElem_mem_toList hj))
+      · rw [getElem!_neg _ j hj]; rfl
+    · rw [getElem!_map_list _ _ (by rw [ringBonds_eq_filterMap]; rfl)] at hx
+      exact lt_of_mem_ringBonds hx
+  unfold aromaticBondList
+  dsimp only
+  rw [hd, hc, hN]
+  exact hm.fusedBonds b'
+
+/-- Bond `k` after `markAromatic c`: made aromatic if it is `c` and single or double, else
+unchanged. -/
+lemma markAromatic_bond (x : Work) (c k : ℕ) (hk : k < x.bonds.size) :
+    ((x.markAromatic c).bonds[k]! : WBond) =
+      if k = c ∧ isSD (x.bonds[c]! : WBond).kind = true then
+        { (x.bonds[k]! : WBond) with kind := .aromatic } else x.bonds[k]! := by
+  rw [getElem!_eq_getD, getElem?_markAromatic_bonds', Array.getElem?_eq_getElem hk,
+    ← getElem!_pos x.bonds k hk]
+  split <;> rfl
+
+/-- `markAromatic` keeps the numbers of bonds and atoms. -/
+lemma markAromatic_sizes (x : Work) (c : ℕ) :
+    (x.markAromatic c).bonds.size = x.bonds.size ∧
+      (x.markAromatic c).atoms.size = x.atoms.size := by
+  unfold Work.markAromatic; dsimp only; split <;> simp [modifyAtom, setKind]
+
+/-- Marking bond `b` of `w` and bond `π b` of the relisted copy keeps the relisting. -/
+lemma markAromatic (h : Relisted w w' π ρ) {b : ℕ} (hb : b < w.bonds.size) :
+    Relisted (w.markAromatic b) (w'.markAromatic (π b)) π ρ := by
+  have hk := h.kind b hb
+  have hs := (markAromatic_sizes w b).1
+  have hs' := (markAromatic_sizes w' (π b)).1
+  have hπ : ∀ k < w.bonds.size, π k < w'.bonds.size := fun k hk' ↦ by
+    rw [h.size]; exact h.bij.lt k hk'
+  have heq : ∀ k < w.bonds.size, (π k = π b ↔ k = b) := fun k hk' ↦
+    ⟨fun e ↦ h.bij.inj hk' hb e, fun e ↦ e ▸ rfl⟩
+  refine ⟨?_, by rw [hs, hs', h.size], hs ▸ h.bij, fun k hk' ↦ ?_, fun k hk' ↦ ?_⟩
+  · apply Array.ext'
+    apply List.ext_getElem?
+    intro j
+    rw [Array.getElem?_toList, Array.getElem?_toList, getElem?_markAromatic_atoms',
+      getElem?_markAromatic_atoms', hk, h.atoms]
+    have e : ((w'.bonds[π b]! : WBond).src = j ∨ (w'.bonds[π b]! : WBond).dst = j) ↔
+        ((w.bonds[b]! : WBond).src = j ∨ (w.bonds[b]! : WBond).dst = j) := by
+      rcases h.ends b hb with ⟨e1, e2⟩ | ⟨e1, e2⟩
+      · rw [e1, e2]
+      · rw [e1, e2]
+        tauto
+    by_cases hc : isSD (w.bonds[b]! : WBond).kind = true ∧
+        ((w.bonds[b]! : WBond).src = j ∨ (w.bonds[b]! : WBond).dst = j)
+    · rw [if_pos hc, if_pos ⟨hc.1, e.2 hc.2⟩]
+    · rw [if_neg hc, if_neg fun h' ↦ hc ⟨h'.1, e.1 h'.2⟩]
+  · rw [hs] at hk'
+    rw [markAromatic_bond _ _ _ (hπ k hk'), markAromatic_bond _ _ _ hk', hk]
+    by_cases e : k = b
+    · subst e
+      by_cases hsd : isSD (w.bonds[k]! : WBond).kind = true
+      · rw [if_pos ⟨rfl, hsd⟩, if_pos ⟨rfl, hsd⟩]
+      · rw [if_neg (fun h' ↦ hsd h'.2), if_neg (fun h' ↦ hsd h'.2)]
+        exact h.kind k hk'
+    · rw [if_neg (fun h' ↦ e ((heq k hk').1 h'.1)), if_neg (fun h' ↦ e h'.1)]
+      exact h.kind k hk'
+  · rw [hs] at hk'
+    rw [markAromatic_bond _ _ _ (hπ k hk'), markAromatic_bond _ _ _ hk', hk]
+    have := h.ends k hk'
+    by_cases e : k = b
+    · subst e
+      by_cases hsd : isSD (w.bonds[k]! : WBond).kind = true
+      · rw [if_pos ⟨rfl, hsd⟩, if_pos ⟨rfl, hsd⟩]
+        dsimp only
+        exact this
+      · rw [if_neg (fun h' ↦ hsd h'.2), if_neg (fun h' ↦ hsd h'.2)]
+        exact this
+    · rw [if_neg (fun h' ↦ e ((heq k hk').1 h'.1)), if_neg (fun h' ↦ e h'.1)]
+      exact this
+
+/-- Marking the bonds `L` of `w` and the bonds `L.map π` of the relisted copy keeps the
+relisting. -/
+lemma foldl_markAromatic (L : List ℕ) : ∀ {w w' : Work}, Relisted w w' π ρ →
+    (∀ b ∈ L, b < w.bonds.size) →
+    Relisted (L.foldl Work.markAromatic w) ((L.map π).foldl Work.markAromatic w') π ρ := by
+  induction L with
+  | nil => exact fun h _ ↦ h
+  | cons b L ih =>
+    intro w w' h hL
+    rw [List.map_cons, List.foldl_cons, List.foldl_cons]
+    exact ih (h.markAromatic (hL b List.mem_cons_self))
+      fun c hc ↦ by rw [(markAromatic_sizes w b).1]; exact hL c (List.mem_cons_of_mem _ hc)
+
+/-- **Perception keeps the relisting**, over the same rings. -/
+theorem setAromaticity (h : Relisted w w' π ρ) (hwf : w.WF) (hnd : w.NbrsDistinct)
+    (hnd' : w'.NbrsDistinct) {R : Array (List ℕ)} (hR : ∀ r ∈ R.toList, w.IsRing r) :
+    Relisted (w.setAromaticity R) (w'.setAromaticity R) π ρ := by
+  unfold Work.setAromaticity
+  rw [foldl_markAromatic_congr (l := w'.aromaticBondList R) (l' := (w.aromaticBondList R).map π)
+    (fun b' ↦ by rw [h.mem_aromaticBondList hwf hnd hnd' hR, List.mem_map]) w']
+  exact foldl_markAromatic _ h fun b hb' ↦ lt_of_mem_aromaticBondList w R hb'
+
+end Relisted
+
+/-! ### Facts read off the bond list -/
+
+/-- Two working copies with the same bonds have the same `bondsOf`. -/
+lemma bondsOf_of_bonds {x y : Work} (h : y.bonds = x.bonds) : y.bondsOf = x.bondsOf := by
+  funext i; simp only [bondsOf, numBonds, h]
+
+/-- `NbrsDistinct` depends only on the bonds. -/
+lemma nbrsDistinct_of_bonds {x y : Work} (h : y.bonds = x.bonds) (hx : x.NbrsDistinct) :
+    y.NbrsDistinct := by
+  intro c k₁ k₂ h₁ h₂ e
+  rw [bondsOf_of_bonds h] at h₁ h₂
+  rw [h] at e
+  exact hx c k₁ k₂ h₁ h₂ e
+
+/-- Being a ring depends only on the bonds. -/
+lemma isRing_of_bonds {x y : Work} (h : y.bonds = x.bonds) {c : List ℕ} (hc : x.IsRing c) :
+    y.IsRing c := by
+  have hn : y.neighbors = x.neighbors := by
+    funext i; simp only [neighbors, bondsOf_of_bonds h, h]
+  have ha : ∀ u v, y.Adj u v ↔ x.Adj u v := fun u v ↦ by simp only [Adj, hn]
+  refine ⟨hc.nodup, hc.three, hc.chain.imp fun a b h' ↦ (ha a b).2 h', fun a ha' b hb ↦ ?_⟩
+  exact (ha _ _).2 (hc.close a ha' b hb)
+
+/-- A list read through a renumbering of its positions is a permutation of it. -/
+lemma perm_of_index {α : Type} [Inhabited α] {l l' : List α} {σ ψ : ℕ → ℕ}
+    (hb : IdxBij l.length σ ψ) (hlen : l'.length = l.length)
+    (h : ∀ i < l.length, l[i]! = l'[σ i]!) : l'.Perm l := by
+  have e1 : l = (List.range l.length).map (l[·]!) := by
+    apply List.ext_getElem (by simp)
+    intro i h1 h2
+    rw [List.getElem_map, List.getElem_range, getElem!_pos l i h1]
+  have e2 : l' = (List.range l.length).map (l'[·]!) := by
+    apply List.ext_getElem (by simp [hlen])
+    intro i h1 h2
+    rw [List.getElem_map, List.getElem_range, getElem!_pos l' i h1]
+  have e3 : (List.range l.length).map (l[·]!) = ((List.range l.length).map σ).map (l'[·]!) := by
+    rw [List.map_map]
+    exact List.map_congr_left fun i hi ↦ h i (List.mem_range.1 hi)
+  have hp : ((List.range l.length).map σ).Perm (List.range l.length) :=
+    (List.perm_ext_iff_of_nodup (List.nodup_range.map_on fun a ha b hb' e ↦
+      hb.inj (List.mem_range.1 ha) (List.mem_range.1 hb') e) List.nodup_range).2 fun x ↦ by
+      simp only [List.mem_map, List.mem_range]
+      exact ⟨fun ⟨y, hy, e⟩ ↦ e ▸ hb.lt y hy, fun hx ↦ ⟨ψ x, hb.lt' x hx, hb.right x hx⟩⟩
+  rw [e2]
+  conv_rhs => rw [e1, e3]
+  exact (hp.map _).symm
+
+/-- `perm_of_index` without a default element. -/
+lemma perm_of_index? {α : Type} {l l' : List α} {σ ψ : ℕ → ℕ}
+    (hb : IdxBij l.length σ ψ) (hlen : l'.length = l.length)
+    (h : ∀ i < l.length, l[i]? = l'[σ i]?) : l'.Perm l := by
+  have e : ∀ (x : List α) (i : ℕ), (x.map some)[i]! = x[i]? := fun x i ↦ by
+    by_cases hi : i < x.length
+    · rw [getElem!_pos _ i (by simpa using hi), List.getElem_map, List.getElem?_eq_getElem hi]
+    · rw [getElem!_neg _ i (by simpa using hi), List.getElem?_eq_none (by omega)]; rfl
+  have := perm_of_index (l := l.map some) (l' := l'.map some) (by simpa using hb)
+    (by simp [hlen]) (fun i hi ↦ by rw [e, e]; exact h i (by simpa using hi))
+  exact (List.map_perm_map_iff (Option.some_injective _)).1 this
+
+end LeanSMILES.Aromaticity.Work

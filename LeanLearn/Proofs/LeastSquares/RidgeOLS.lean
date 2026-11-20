@@ -41,6 +41,23 @@ penalty, and `l` is a scalar penalty (`ρ = fun _ ↦ l`).
   (`tendsto_sum_sq_path_atTop`).
 
 Exact statements over `ℝ`, as in `OLS.lean` and `Ridge.lean`.
+
+## Main definitions
+
+* `path`: the ridge coefficients `(XᵀX + l I)⁻¹ Xᵀy` as a function of a scalar penalty `l`.
+
+## Main statements
+
+* `isMinimizer_iff_augmented`: the ridge minimizers are the OLS minimizers on the augmented
+  design.
+* `penalty_le_of_isMinimizer`: a ridge minimizer has no larger penalized norm than an OLS
+  minimizer.
+* `penalty_antitone`, `ols_loss_monotone`: a stronger penalty shrinks the penalized norm and
+  raises the squared error.
+* `fit_eq_shrink_ols_fit`: the ridge fit is `(XᵀX + diag ρ)⁻¹ XᵀX` applied to the OLS fit.
+* `continuousOn_path`: the ridge path is continuous on `l > 0`.
+* `tendsto_path_nhds_zero`, `tendsto_sum_sq_path_atTop`: the path tends to OLS as `l → 0`, and
+  its squared norm to `0` as `l → ∞`.
 -/
 
 @[expose] public section

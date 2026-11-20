@@ -22,6 +22,23 @@ lowercase (aromatic), and the default valences the implicit-hydrogen rule
 uses.  The valence table is deliberately the thin OpenSMILES one — this
 library aims at a syntactically faithful reading of SMILES, not at agreeing
 with any one toolkit's chemistry model on edge cases.
+
+## Main definitions
+
+* `Element`: the 118 chemical elements, in order of atomic number.
+* `Element.atomicNumber`, `Element.ofAtomicNumber?`: the atomic number, and the element with a
+  given one.
+* `Element.symbol`, `Element.ofSymbol?`: writing and parsing an element symbol.
+* `Element.inOrganicSubset`, `Element.aromaticAllowed`: which elements may be written bare, and
+  which lowercase.
+* `Element.defaultValences`: the OpenSMILES default valences of the organic subset.
+
+## Main statements
+
+* `Element.card`: there are exactly 118 elements.
+* `Element.atomicNumber_injective`: an element is determined by its atomic number.
+* `Element.ofSymbol?_eq_some_iff`: `ofSymbol?` parses `s` to `e` exactly when `e` writes as `s`.
+* `Element.defaultValences_sorted`: the default valences are strictly ascending.
 -/
 
 @[expose] public section

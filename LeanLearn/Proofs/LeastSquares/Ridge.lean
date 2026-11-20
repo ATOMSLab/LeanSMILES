@@ -17,6 +17,25 @@ import Mathlib.Tactic.Ring
 `ρ j` is the penalty on coefficient `j`. Standard ridge uses `fun _ ↦ λ`;
 an explicit intercept can be exempted by setting its penalty to zero.
 All optimization statements range over every real coefficient vector.
+
+## Main definitions
+
+* `penalty`, `loss`: the weighted squared coefficient norm and the ridge objective.
+* `IsMinimizer`, `NormalEquations`: global minimality and the ridge normal equations.
+* `gram`: the regularized Gram matrix `XᵀX + diag ρ`.
+* `fit`, `fitPositive`: the closed form, given an invertible regularized Gram matrix or positive
+  penalties.
+* `augmentedDesign`, `augmentedTargets`: the design and targets with one observation per penalty.
+
+## Main statements
+
+* `normalEquations_minimize`: with nonnegative penalties, every solution of the normal equations
+  is a global minimizer.
+* `fit_minimizes`, `fitPositive_minimizes`: the closed forms are global minimizers.
+* `gram_posDef`: with positive penalties the regularized Gram matrix is positive definite.
+* `exists_unique_minimizer`: positive ridge has exactly one global minimizer for every design.
+* `fit_zero_penalty`: at zero penalty the closed form is `OLS.fit`.
+* `augmented_loss`: ridge loss is OLS loss on the augmented design.
 -/
 
 @[expose] public section
@@ -112,6 +131,7 @@ theorem normalEquations_minimize (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n →
   exact le_add_of_nonneg_right (energy_nonneg X hρ _)
 
 /-- Closed-form exact algorithm with an explicit invertibility precondition. -/
+@[nolint unusedArguments]
 def fit (X : Matrix (Fin n) (Fin p) ℝ) (y : Fin n → ℝ) (ρ : Fin p → ℝ) (_h : (gram X ρ).det ≠ 0) :
     Fin p → ℝ :=
   (gram X ρ)⁻¹ *ᵥ (Xᵀ *ᵥ y)

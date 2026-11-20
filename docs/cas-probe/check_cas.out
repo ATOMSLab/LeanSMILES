@@ -1,0 +1,36 @@
+== 1. coverage (65 records)
+   no structure string: 12185-10-3   Tetraphosphorus
+   no structure string: 2564-83-2    Tempo
+   no structure string: 10102-43-9   Nitric oxide
+   no structure string: 27081-10-3   Tropylium tetrafluoroborate
+   no structure string: 931-89-5     trans-Cyclooctene
+
+== 2+3. parse and self-check
+   no InChI on record 10028-15-6 Ozone                      string 'O' reads as H2O, CAS formula O3
+   layer unwritten  101-60-0     Porphyrin                  record key block YYOYBPFY, only string is 'N1=C2C=CC1=CC3=CC=C(C=C4N=C(C=C4)C=C5C=C'
+   GRAPH differs    102-54-5     Ferrocene                  string bonds Fe to 10 atoms; the InChI on the record has no metal bonds
+   RDKit rejects   15663-27-1   Cisplatin                  [Cl-][Pt+2]([Cl-])([NH3])[NH3]               Explicit valence for atom # 0 Cl, 1, is greater than permitted
+   RDKit rejects   14913-33-8   Transplatin                [Cl-][Pt+2]([Cl-])([NH3])[NH3]               Explicit valence for atom # 0 Cl, 1, is greater than permitted
+   RDKit rejects   13463-39-3   Nickel tetracarbonyl       O#C[Ni](C#O)(C#O)C#O                         Explicit valence for atom # 0 O, 3, is greater than permitted
+   RDKit rejects   19287-45-7   Diborane                   [H]1[BH2][H][BH2]1                           Explicit valence for atom # 0 H, 2, is greater than permitted
+   layer unwritten  7789-20-0    Water-d2                   record key block ZSJDYOAC, only string is 'O'
+   STEREO lost      119141-88-7  (S)-(-)-Omeprazole         isomeric string -> UHFFFAOY  record DEOSSOPV
+   layer unwritten  1076-43-3    Benzene-d6                 record key block MZWXYZOW, only string is 'C=1C=CC=CC1'
+   layer unwritten  2040-73-5    [18]Annulene               record key block PHECUULL, only string is 'C=1C=CC=CC=CC=CC=CC=CC=CC=CC1'
+   layer unwritten  629-20-9     Cyclooctatetraene          record key block DLMDZQPM, only string is 'C=1C=CC=CC=CC1'
+   -- canonical_smiles: 60
+   -- formula mismatch: 1
+   -- record has stereo/isotope layer but no string carries it: 5
+   -- no InChI can be computed from the string: 1
+   -- rdkit rejects: 4
+   -- isomeric_smiles: 10
+   -- isomeric string loses stereo: 1
+
+== 4. different substances, same strings
+   3 RNs share 'O': Ozone [10028-15-6]; Water [7732-18-5]; Water-d2 [7789-20-0]
+   2 RNs share '[Cl-][Pt+2]([Cl-])([NH3])[NH3]': Cisplatin [15663-27-1]; Transplatin [14913-33-8]   (InChIKey identical too)
+   3 RNs share 'OC=1C=CC=2C=CC=CC2C1C3=C(O)C=CC=4C=CC=CC43': (R)-(+)-BINOL [18531-94-7]; (S)-(-)-BINOL [18531-99-2]; BINOL (racemic) [602-09-5]   (InChIKey identical too)
+   2 RNs share 'OC1C(O)C(O)C(O)C(O)C1O': D-chiro-Inositol [643-12-9]; Hexahydroxycyclohexane [6917-35-7]   (InChIKey identical too)
+
+== non-standard InChI (prefix 'InChI=1/'), keys that end in NA-N
+   myo-Inositol [87-89-8], scyllo-Inositol [488-59-5], Lindane [58-89-9], alpha-Hexachlorocyclohexane [319-84-6], trans-Decalin [493-02-7], cis-Decalin [493-01-6]

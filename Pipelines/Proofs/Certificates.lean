@@ -38,10 +38,25 @@ training it**. Write `L` for the training loss of the pipeline's problem read in
   parameters `θ` — whatever produced them — gives `L(θ) ≤ L(u) + ε` for **every** `u`, at any
   `λ > 0`, with no condition on the normal equations.
 * **Gauss–Seidel never increases the loss** (`Pipeline.gaussSeidel_antitone`), for every
-  pipeline, with no condition.
+  pipeline with `λ ≥ 0`.
 
 The bridge between the exact `ℚ` data and the `ℝ` reading is `normalMatrix_real` /
 `normalVector_real`, from `LeanLearn`'s `Problem.map_normalMatrix` / `map_normalVector`.
+
+## Main definitions
+
+* `GDCertificate`: a gradient-descent certificate on a representation, with no data.
+
+## Main statements
+
+* `GDCertificate.sound`, `Pipeline.checkGD_sound`: on every dataset, the trained loss is within
+  `ε` of that of every `u` with `‖u‖² ≤ B`.
+* `Pipeline.checkGDData_sound`: the trained loss is within `‖u‖² / (2ηk)` of that of every `u`.
+* `Pipeline.checkSolver_sound`, `Pipeline.checkResidual_sound`: a passing check puts the model
+  within `ε` of the optimum.
+* `Pipeline.gaussSeidel_antitone`: for `λ ≥ 0`, Gauss–Seidel never increases the training loss.
+* `Pipeline.normalMatrix_real`, `Pipeline.normalVector_real`: the `ℝ` normal equations are the
+  casts of the exact ones.
 -/
 
 @[expose] public section

@@ -31,6 +31,15 @@ bits. `Pipelines.morganFeatures` produces them from a SMILES string.
 
 Everything is written once over `ScalarLike` (`LeanLearn/Scalar.lean`):
 run it at `Float`; state theorems at `ℝ`.
+
+## Main definitions
+
+* `SparseBits`: a `0/1` sample stored as the indices of its 1s.
+* `sigmoid`, `softplus`: the logistic function and log(1 + e^t), written so `exp` never overflows.
+* `LogisticModel`: a weight per feature bit and an intercept, with `score`, `proba`, `predict`.
+* `objective`, `gradient`: scikit-learn's L2-regularized training objective and its gradient.
+* `fitLogistic`: training by Nesterov's accelerated gradient with gradient-based restart.
+* `accuracy`, `confusionMatrix`: evaluation as scikit-learn reports it.
 -/
 
 @[expose] public section

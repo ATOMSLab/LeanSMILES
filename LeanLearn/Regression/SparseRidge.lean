@@ -31,6 +31,12 @@ dense factorization is the expensive part. Fit quality is measured with
 Delaney's log solubility against scikit-learn.
 
 Written over `ScalarLike` (`LeanLearn/Scalar.lean`), like the logistic model.
+
+## Main definitions
+
+* `Model`: a weight per feature bit and an unpenalized intercept, with `Model.predict`.
+* `Config`: the penalty `alpha` and the conjugate-gradient stopping rule.
+* `fit`: training by conjugate gradients on the centred normal equations.
 -/
 
 @[expose] public section

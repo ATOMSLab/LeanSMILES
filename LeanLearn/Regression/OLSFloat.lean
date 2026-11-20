@@ -21,6 +21,14 @@ numerical rank deficiency using a configurable relative tolerance.
 
 This implements the OLS objective specified in `Proofs/LeastSquares/OLS.lean`, but the exact-real
 proofs there do not certify this program's floating-point rounding errors.
+
+## Main definitions
+
+* `Config`: the relative rank tolerance.
+* `Model`: the fitted coefficients, one per design column.
+* `fit`: ordinary least squares by Householder QR on the scaled design.
+* `Model.predict`, `Model.predictAll`, `Model.sumSquaredError`: predictions and squared error.
+* `Error`: the invalid inputs and numerical failures `fit` and prediction report.
 -/
 
 public section
@@ -85,13 +93,13 @@ structure Model where
   coefficients : Array Float
   deriving Repr
 
--- Check that the row has `expected` entries and that every entry is finite.
+/-- Check that the row has `expected` entries and that every entry is finite. -/
 private def checkRow (row : Array Float) (expected index : Nat) : Except Error Unit := do
   if row.size != expected then throw (.rowWidth index expected row.size)
   for j in [0:row.size] do
     if !row[j]!.isFinite then throw (.nonFiniteFeature index j)
 
--- Dot the row with the coefficients after checking dimensions and finiteness.
+/-- Dot the row with the coefficients after checking dimensions and finiteness. -/
 private def predictRow (model : Model) (row : Array Float) (index : Nat) : Except Error Float := do
   checkRow row model.coefficients.size index
   let mut value := 0.0
@@ -123,7 +131,8 @@ def Model.sumSquaredError (model : Model) (X : Design) (y : Array Float) : Excep
     if !total.isFinite then throw (.numericalFailure "sum of squared errors")
   return total
 
--- Undo scaling without first forming an overflowing or underflowing scale ratio.
+/-- `value * targetScale / columnScale`, computed without first forming an overflowing or
+underflowing scale ratio. -/
 private def unscale (value targetScale columnScale : Float) : Float :=
   let (v, ev) := value.frExp
   let (t, et) := targetScale.frExp

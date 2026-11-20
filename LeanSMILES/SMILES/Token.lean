@@ -27,6 +27,14 @@ decisions — which side was taken and why — are tabulated in the README under
 "What the parser accepts".  Two of them are the tokenizer's: `[CH10]` and
 `[C:]` are rejected with the spec, while a charge of any length (`[Fe+++]`,
 `[C+123]`) is accepted and left to a post-parse chemistry check.
+
+## Main definitions
+
+* `SMILES.ParseError`: everything that can go wrong between a string and a molecule.
+* `SMILES.Token`, `SMILES.TokenKind`: a token with its position, and what it is.
+* `SMILES.Tokenizer.bracketAtom`, `SMILES.Tokenizer.organicAtom`: decoding a bracket atom and a
+  bare atom.
+* `SMILES.tokenize`: a SMILES string to its array of tokens.
 -/
 
 @[expose] public section

@@ -30,6 +30,23 @@ Over `ℝ`, for a problem `P` with normal equations `A θ = b` (`A = P.normalMat
 * **Smoothness** (`curvature_le`): `C(v) ≤ Λ ‖v‖²` with `Λ = (1/m) ∑ᵣ ‖xᵣ‖² + λ`.
 * **Degenerate coordinates** (`residual_eq_zero_of_diag_eq_zero`): if `Aᵢᵢ = 0` then the
   `i`-th equation is `0 = 0`, so Jacobi and Gauss–Seidel lose nothing by dividing by zero.
+
+## Main definitions
+
+* `Problem.feature`, `Problem.fitted`: entry `i` of a sample with the constant `1`, and the fitted
+  value `⟪xᵣ, θ⟫`.
+* `Problem.curvature`: `C(v) = (1/m) ∑ᵣ ⟪xᵣ, v⟫² + λ ‖v‖²`, the second-order part of the loss.
+
+## Main statements
+
+* `Problem.normalMatrix_apply`, `Problem.normalVector_apply`, `Problem.residual_apply`: the
+  entries of `A`, `b` and `A θ - b` as `Finset` sums, over any field.
+* `Problem.loss_add`: `L(θ + v) = L(θ) + 2 ⟪A θ - b, v⟫ + C(v)`.
+* `Problem.tangent_le_loss`: for `λ ≥ 0` the loss lies above its tangent planes.
+* `Problem.loss_le_add_residual`: for `λ > 0`, `L(θ) ≤ L(u) + ‖A θ - b‖² / λ` for every `u`.
+* `Problem.loss_le_of_residual_eq_zero`: a solution of the normal equations minimises the loss.
+* `Problem.curvature_eq`, `Problem.curvature_le`: `C(v) = vᵀ A v` and `C(v) ≤ Λ ‖v‖²`.
+* `Problem.residual_eq_zero_of_diag_eq_zero`: if `Aᵢᵢ = 0` the `i`-th residual is always `0`.
 -/
 
 @[expose] public section
@@ -64,21 +81,21 @@ theorem dot_self_nonneg (v : Vec ℝ n) : 0 ≤ dot v v := by
   exact sum_nonneg fun i _ ↦ mul_self_nonneg _
 
 /-- Entry `i` of `vadd u v` is `uᵢ + vᵢ`. -/
-@[simp] theorem vadd_getElem (u v : Vec ℝ n) (i : Fin n) : (vadd u v)[i] = u[i] + v[i] := by
+theorem vadd_getElem (u v : Vec ℝ n) (i : Fin n) : (vadd u v)[i] = u[i] + v[i] := by
   simp [vadd]
 
 /-- Entry `i` of `vsub u v` is `uᵢ - vᵢ`, for any `PolynomialLike K` (`ℝ` for the proofs, `ℚ`
 for the certificates). -/
-@[simp] theorem vsub_getElem [PolynomialLike K] (u v : Vec K n) (i : Fin n) :
+theorem vsub_getElem [PolynomialLike K] (u v : Vec K n) (i : Fin n) :
     (vsub u v)[i] = u[i] - v[i] := by
   simp [vsub]
 
 /-- Entry `i` of `smul c v` is `c * vᵢ`. -/
-@[simp] theorem smul_getElem (c : ℝ) (v : Vec ℝ n) (i : Fin n) : (smul c v)[i] = c * v[i] := by
+theorem smul_getElem (c : ℝ) (v : Vec ℝ n) (i : Fin n) : (smul c v)[i] = c * v[i] := by
   simp [smul]
 
 /-- Every entry of `vzero` is `0`. -/
-@[simp] theorem vzero_getElem (i : Fin n) : (vzero : Vec ℝ n)[i] = 0 := by
+theorem vzero_getElem (i : Fin n) : (vzero : Vec ℝ n)[i] = 0 := by
   simp [vzero]
 
 /-! The same with natural-number indices, the form `simp` normalises to. -/
@@ -183,7 +200,7 @@ theorem residual_apply [Field K] (P : Problem K m d) (θ : Vec K (d + 1)) (i : F
 variable (P : Problem ℝ m d)
 
 /-- Row `r` of the design matrix is sample `r` with the constant `1` appended. -/
-@[simp] theorem design_getElem (r : Fin m) : P.design[r] = P.row r := by
+theorem design_getElem (r : Fin m) : P.design[r] = P.row r := by
   simp [design]
 
 /-- The normal matrix is symmetric. -/
