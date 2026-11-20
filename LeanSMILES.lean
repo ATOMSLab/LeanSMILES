@@ -60,6 +60,7 @@ public import LeanSMILES.Aromaticity.Relist
 public import LeanSMILES.Aromaticity.RelistPerceive
 public import LeanSMILES.Aromaticity.KekulizeRelist
 public import LeanSMILES.Aromaticity.KekulizeOrder
+public import LeanSMILES.Aromaticity.RoundDecide
 public import LeanSMILES.Aromaticity.Invariance
 public import LeanSMILES.Aromaticity.Resonance
 public import LeanSMILES.Aromaticity.KekuleSim

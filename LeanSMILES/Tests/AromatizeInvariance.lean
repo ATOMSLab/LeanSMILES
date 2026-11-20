@@ -14,9 +14,10 @@ public import Mathlib.Logic.Equiv.Fin.Rotate
 Each theorem of `LeanSMILES/Aromaticity/Invariance.lean` is checked on every
 SMILES of the given files: its hypotheses decided by the instances there, its
 conclusion as an equality of molecules.  A theorem whose hypotheses fail on an
-input is not counted for it.  For the theorems still `sorry` this test is the
-evidence that they are true; for all of them it is a check that a refactoring
-of `aromatize` did not change what they are about.  The Kekulé statement without
+input is not counted for it.  The theorems are proved; the test is a check that
+a refactoring of `aromatize` did not change what they are about, and the
+evidence for the one conjecture left (idempotence with hypotheses on the output
+only).  The Kekulé statement without
 `ChargesKept` is false (`O=P1[SiH]=CC=CC=1`), so it is counted for information only
 and `aromatize_of_kekuleVariant_of_chargesKept` is checked.
 
@@ -30,6 +31,12 @@ bonds that come out aromatic, enumerated exhaustively.  The witness for
 The lines tagged `[info]` count what happens *without* the hypotheses, which
 is how the counterexamples in the module docstring of `Invariance.lean` show
 up: they must not be zero failures for the hypotheses to be earning their keep.
+
+For `aromatize_eq_self_of_isKekuleSpellingOf` the spelling is that same
+structure, and `aromatize_aromatize` is checked on the input and its output.
+Idempotence with hypotheses on the output only (`ChargesKept`, `ValenceOk`) is a
+conjecture, counted for information, and the `[info]` lines under it count which
+of `aromatize_aromatize`'s hypotheses the inputs under those two satisfy.
 
 For `aromatize_of_isKekuleSpellingOf`, three Kekulé spellings are built from
 each input on the Kekulé structure the pipeline computes for it — the atoms as
@@ -206,13 +213,29 @@ structure Tally where
   /-- The Kekulé statement without `ChargesKept`: false
   (`O=P1[SiH]=CC=CC=1`), so counted for information only. -/
   variantAny : Count := (0, 0)
-  /-- `aromatize_aromatize`. -/
+  /-- Idempotence with hypotheses on the output only (`ChargesKept`, `ValenceOk`): a conjecture,
+  not proved. -/
   idempotent : Count := (0, 0)
-  /-- `aromatize_aromatize` without `ChargesKept` for the second run: false
+  /-- Idempotence without `ChargesKept` for the second run: false
   (`O=p1ccccc1`), so counted for information only. -/
   idempotentAny : Count := (0, 0)
   /-- `exists_kekule_aromatize`, with `kekuleWitness`. -/
   witness : Count := (0, 0)
+  /-- `aromatize_eq_self_of_isKekuleSpellingOf`, with `kekuleWitness` as the spelling. -/
+  fixedPoint : Count := (0, 0)
+  /-- `aromatize_aromatize`. -/
+  idempotentRounds : Count := (0, 0)
+  /-- Inputs under the conjecture's hypotheses that are under those of `aromatize_aromatize`. -/
+  idempotentCover : Count := (0, 0)
+  /-- Among the inputs under the conjecture's hypotheses, those with `AromaticWritten`,
+  `RoundsToKekule` and `BareWritable` for the input. -/
+  coverInput : Count := (0, 0)
+  /-- Among them, those whose output has the input's valences (`SameValences`). -/
+  coverValences : Count := (0, 0)
+  /-- Among them, those whose output is `AromaticWritten` and `RoundsToKekule`. -/
+  coverOutput : Count := (0, 0)
+  /-- Among them, those whose output is `BareWritable`. -/
+  coverBare : Count := (0, 0)
   /-- Parsed molecules satisfy `BareWritable`, as every parsed molecule should. -/
   bareWritable : Count := (0, 0)
   /-- `canonicalSmiles_aromatize_eq`. -/
@@ -235,6 +258,12 @@ structure Tally where
   spellingHyp : Count := (0, 0)
   /-- A spelling aromatizes to the input's output, no hypothesis beyond the relation. -/
   spellingAny : Count := (0, 0)
+  /-- A spelling aromatizes to the input's output, with the charge and aromatic hypotheses but
+  not `AromaticWritten`, `RoundsToKekule` and `BareWritable`. -/
+  spellingOld : Count := (0, 0)
+  /-- Inputs that aromatize, keeping their charges and aromatic bonds, and are
+  `RoundsToKekule`. -/
+  rounds : Count := (0, 0)
   /-- Matched pairs read. -/
   pairs : ℕ := 0
   /-- Matched pairs whose second string, read onto the first, is an `IsKekuleSpellingOf` it. -/
@@ -276,6 +305,7 @@ def testOne (s : String) (t : Tally) : Tally := Id.run do
       return t
   let chg : Bool := decide (m.ChargesKept a)
   let kept : Bool := decide (m.AromaticKept a)
+  if chg && kept then t := { t with rounds := t.rounds.add (decide m.RoundsToKekule) }
   let okS := decide (m.SameSkeleton a) && decide (a.stereo = m.stereo)
   t := ({ t with skeleton := t.skeleton.add okS }).miss okS
     fun _ ↦ s!"sameSkeleton_aromatize: {s}"
@@ -317,10 +347,9 @@ def testOne (s : String) (t : Tally) : Tally := Id.run do
     let ok : Bool := decide (a' = a)
     t := { t with idempotentAny := t.idempotentAny.add ok,
                   outputAromatizes := t.outputAromatizes.add true }
-    -- the statement assumes the second run's `cleanUp` rewrote nothing (`O=p1ccccc1`)
+    -- the conjecture assumes the second run's `cleanUp` rewrote nothing (`O=p1ccccc1`)
     if decide (a.ChargesKept a') && decide a.ValenceOk then
-      t := ({ t with idempotent := t.idempotent.add ok }).miss ok
-        fun _ ↦ s!"aromatize_aromatize: {s}: {a.toSmiles} then {a'.toSmiles}"
+      t := { t with idempotent := t.idempotent.add ok }
   | none => t := { t with outputAromatizes := t.outputAromatizes.add false }
   let okW := match kekuleWitness m a with
     | some k => decide k.IsKekule && decide (k.IsKekuleStructureOf a) &&
@@ -332,6 +361,37 @@ def testOne (s : String) (t : Tally) : Tally := Id.run do
     | none => false
   t := ({ t with witness := t.witness.add okW }).miss okW
     fun _ ↦ s!"exists_kekule_aromatize: {s}: {a.toSmiles}"
+  -- the output as a fixed point: of its own Kekulé structure, and under the hypotheses on the
+  -- input and the output alone
+  match arom a with
+  | some a' =>
+    let ok : Bool := decide (a' = a)
+    let chg' := decide (a.ChargesKept a')
+    let onIn := decide m.AromaticWritten && decide m.RoundsToKekule && decide m.BareWritable
+    let vals := decide (m.SameValences a)
+    let onOut := decide a.AromaticWritten && decide a.RoundsToKekule
+    let bare := decide a.BareWritable
+    let hyp := chg' && onIn && vals && onOut && bare
+    if hyp then
+      t := ({ t with idempotentRounds := t.idempotentRounds.add ok }).miss ok
+        fun _ ↦ s!"aromatize_aromatize: {s}: {a.toSmiles} then {a'.toSmiles}"
+    if chg' && decide a.ValenceOk then
+      t := { t with idempotentCover := t.idempotentCover.add hyp,
+                    coverInput := t.coverInput.add onIn,
+                    coverValences := t.coverValences.add vals,
+                    coverOutput := t.coverOutput.add onOut,
+                    coverBare := t.coverBare.add bare }
+    match kekuleWitness m a with
+    | some k =>
+      let wit := match arom k with
+        | some a'' => decide (a'' = a) && decide (k.ChargesKept a'')
+        | none => false
+      if decide (k.IsKekuleSpellingOf a) && wit && chg' && onOut && bare &&
+          decide k.BareWritable then
+        t := ({ t with fixedPoint := t.fixedPoint.add ok }).miss ok
+          fun _ ↦ s!"aromatize_eq_self_of_isKekuleSpellingOf: {s}: {a.toSmiles} then {a'.toSmiles}"
+    | none => pure ()
+  | none => pure ()
   -- a Kekulé spelling of the input
   let mut q := 0
   for k in spellings m do
@@ -342,7 +402,10 @@ def testOne (s : String) (t : Tally) : Tally := Id.run do
     let some a' := arom k | continue
     let ok : Bool := decide (a' = a)
     t := { t with spellingAny := t.spellingAny.add ok }
-    if !(chg && kept && decide (k.ChargesKept a') && decide m.ValenceOk) then continue
+    if !(chg && kept && decide (k.ChargesKept a')) then continue
+    t := { t with spellingOld := t.spellingOld.add ok }
+    if !(decide m.AromaticWritten && decide m.RoundsToKekule && decide m.BareWritable &&
+        decide k.BareWritable) then continue
     t := ({ t with spelling := t.spelling.add ok }).miss ok
       fun _ ↦ s!"aromatize_of_isKekuleSpellingOf: {s}: {k.toSmiles}"
     if q % 4 == 1 then
@@ -393,7 +456,8 @@ def testPair (sl sk : String) (t : Tally) : Tally := Id.run do
     if !hyp then return t
     let some a' := arom k | return t
     if !(decide (m.ChargesKept a) && decide (m.AromaticKept a) && decide (k.ChargesKept a') &&
-        decide m.ValenceOk) then
+        decide m.AromaticWritten && decide m.RoundsToKekule && decide m.BareWritable &&
+        decide k.BareWritable) then
       return t
     let ok : Bool := decide (a' = a)
     t := ({ t with pair := t.pair.add ok }).miss ok
@@ -443,8 +507,9 @@ def report (t : Tally) : IO Bool := do
     ("IsKekule.aromatize_relabel", t.relabelKekule),
     ("aromatize_of_sameBonds", t.listing),
     ("aromatize_of_kekuleVariant_of_chargesKept", t.variant),
-    ("aromatize_aromatize", t.idempotent),
     ("exists_kekule_aromatize (the pipeline's Kekulé structure as witness)", t.witness),
+    ("aromatize_eq_self_of_isKekuleSpellingOf (that structure as the spelling)", t.fixedPoint),
+    ("aromatize_aromatize", t.idempotentRounds),
     ("parsed molecules are `BareWritable`", t.bareWritable),
     ("canonicalSmiles_aromatize_eq", t.canonical),
     ("aromatize_of_isKekuleSpellingOf (spellings built from the input)", t.spelling),
@@ -459,6 +524,10 @@ def report (t : Tally) : IO Bool := do
     t.pairHyp)
   IO.println (info "without the charge and aromatic hypotheses: a spelling gives the same output"
     t.spellingAny)
+  IO.println (info
+    "without AromaticWritten, RoundsToKekule, BareWritable: a spelling gives the same output"
+    t.spellingOld)
+  IO.println (info "inputs keeping charges and aromatic bonds that are `RoundsToKekule`" t.rounds)
   IO.println (info "without hypotheses: the two strings of a pair give one canonical SMILES"
     t.pairCanonicalAny)
   IO.println (info "Kekule statement without ChargesKept (false)" t.variantAny)
@@ -470,7 +539,18 @@ def report (t : Tally) : IO Bool := do
   IO.println (info "without hypotheses: relisting gives the same canonical SMILES"
     t.listingCanonical)
   IO.println (info "without hypotheses: the output aromatizes again" t.outputAromatizes)
-  IO.println (info "aromatize_aromatize without ChargesKept (false: O=p1ccccc1)" t.idempotentAny)
+  IO.println (info "idempotence without ChargesKept (false: O=p1ccccc1)" t.idempotentAny)
+  IO.println (info
+    "conjecture (not proved): idempotence with ChargesKept and ValenceOk for the output only"
+    t.idempotent)
+  IO.println (info "inputs under the conjecture's hypotheses under aromatize_aromatize's"
+    t.idempotentCover)
+  IO.println (info "  of those inputs: AromaticWritten, RoundsToKekule, BareWritable for the input"
+    t.coverInput)
+  IO.println (info "  of those inputs: the output has the input's valences" t.coverValences)
+  IO.println (info "  of those inputs: the output is AromaticWritten and RoundsToKekule"
+    t.coverOutput)
+  IO.println (info "  of those inputs: the output is BareWritable" t.coverBare)
   for l in t.misses do IO.println s!"  FAILED {l}"
   return theorems.all (fun p ↦ p.2.1 == p.2.2) && t.variantHyp.1 == t.variantHyp.2
 
