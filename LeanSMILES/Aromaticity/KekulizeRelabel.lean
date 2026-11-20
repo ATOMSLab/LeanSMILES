@@ -16,6 +16,21 @@ Kekulization picks its double bonds by a walk whose order depends on the numberi
 atom ends with the same sum of bond orders: each candidate atom gets exactly one double bond
 (`Work.kekulize_prepare_correct`). So the kekulization of a relabeled copy is the relabeled
 kekulization with some single and double bonds swapped (`Work.kekulize_relabel_swapped`).
+
+## Main definitions
+
+* `Work.kekBase`: an atom's bond-order sum with the bonds written aromatic made single.
+* `Work.KekData`: what `kekulize_correct` says of a kekulization, a matching of double bonds.
+
+## Main statements
+
+* `Work.kekulize_atom_branch`: kekulization rewrites an aromatic `[nH]`/`[pH]` to `branchRec`.
+* `Work.bondHalfSum_of_matching`: after kekulization an atom's sum is the base, plus one double
+  bond if it is a candidate.
+* `Work.kekulize_relabel_swapped`: kekulizing a relabeled copy gives the relabeled kekulization
+  up to a swap of single and double bonds.
+* `Work.degree_le_of_isAromaticCandidate`: an atom perception can make aromatic has at most three
+  bonds.
 -/
 
 @[expose] public section
@@ -26,6 +41,7 @@ namespace LeanSMILES.Aromaticity.Work
 def NotCleared (a0 : WAtom) (w : Work) (i : ℕ) : Prop :=
   IsBranch a0 → (w.atoms[i]! : WAtom) ≠ { a0 with aromatic := false }
 
+/-- One step of `clearAromatic` keeps `NotCleared` at an atom that `ClearOk` describes. -/
 lemma clearAromatic_notCleared {ra : List ℕ} {a0 : WAtom} {bs : Array WBond} {w w' : Work}
     {j : ℕ} (hw : clearAromatic ra w j = .ok w') (i : ℕ) (hok : ClearOk a0 bs w i)
     (h : NotCleared a0 w i) : NotCleared a0 w' i := by
@@ -78,6 +94,8 @@ lemma clearAromatic_notCleared {ra : List ℕ} {a0 : WAtom} {bs : Array WBond} {
     · rw [modifyAtom_atom_of_ne _ hji]
       exact h hbr
 
+/-- A successful run of `clearAromatic` over a list of atoms keeps `NotCleared` at an atom that
+`ClearOk` describes. -/
 lemma foldlM_clearAromatic_notCleared {ra : List ℕ} {a0 : WAtom} {bs : Array WBond} (i : ℕ) :
     ∀ (l : List ℕ) (w w' : Work), l.foldlM (clearAromatic ra) w = .ok w' →
       ClearOk a0 bs w i → NotCleared a0 w i → NotCleared a0 w' i
@@ -144,6 +162,8 @@ theorem kekulize_atom_branch {m K : Work} {rings : Array (List ℕ)}
 def kekBase (m : Work) (x : ℕ) : ℕ :=
   ((m.bondsOf x).map fun k ↦ if m.kekWa k then 2 else halfOrder (m.bonds[k]! : WBond).kind).sum
 
+/-- A copy that differs from `o` only in bond kinds and atom bookkeeping has the same bonds at
+every atom. -/
 lemma bondsOf_of_kindsRel {o w : Work} (h : KindsRel o w) : w.bondsOf = o.bondsOf := by
   have hs : w.bonds.size = o.bonds.size := by
     have := h.bonds
@@ -167,6 +187,7 @@ lemma bondsOf_of_kindsRel {o w : Work} (h : KindsRel o w) : w.bondsOf = o.bondsO
   rw [getElem!_pos _ k (hs ▸ hk'), getElem!_pos _ k hk']
   simp only [WBond.touches, this.1, this.2.1]
 
+/-- Summing `2` over the entries where `D` holds, and `0` elsewhere, gives twice their number. -/
 lemma sum_ite_two (l : List ℕ) (D : ℕ → Bool) :
     (l.map fun k ↦ if D k = true then 2 else 0).sum = 2 * (l.filter D).length := by
   induction l with
@@ -225,15 +246,18 @@ theorem bondHalfSum_of_matching {m K : Work} (hwf : WF m) (hKR : KindsRel m K) {
 
 variable {σ ψ : ℕ → ℕ}
 
+/-- Renaming keeps the bonds treated as written aromatic. -/
 lemma kekWa_relabelW (P : Work) : (P.relabelW σ ψ).kekWa = P.kekWa := by
   rw [kekWa_eq, kekWa_eq]
   funext k
   rw [kind_relabelW]
 
+/-- A renamed atom has the `kekBase` of the original atom. -/
 lemma kekBase_relabelW {P : Work} (hwf : WF P) (hb : IdxBij P.numAtoms σ ψ) {i : ℕ}
     (hi : i < P.atoms.size) : kekBase (P.relabelW σ ψ) (σ i) = kekBase P i := by
   simp only [kekBase, bondsOf_relabelW hwf hb hi, kekWa_relabelW, kind_relabelW]
 
+/-- A renamed atom needs a double bond in kekulization exactly when the original atom does. -/
 lemma candOf_relabelW {P : Work} (hwf : WF P) (hb : IdxBij P.numAtoms σ ψ) {i : ℕ}
     (hi : i < P.atoms.size) :
     candOf (P.relabelW σ ψ) (P.relabelW σ ψ).kekWa (P.relabelW σ ψ).kekEv0 (σ i) =
@@ -258,12 +282,15 @@ def KekData (m K : Work) : Prop :=
     ∀ x < m.atoms.size, candOf m m.kekWa m.kekEv0 x = true →
       ∃ k, D k = true ∧ (m.bonds[k]! : WBond).touches x = true
 
+/-- Under `KekData`, an atom's bond-order sum after kekulization is the base, plus one double
+bond if it is a candidate. -/
 lemma KekData.bondHalfSum {m K : Work} (hwf : WF m) (hKR : KindsRel m K) (h : KekData m K)
     (x : ℕ) : K.bondHalfSum x = kekBase m x +
       if x < m.atoms.size ∧ candOf m m.kekWa m.kekEv0 x = true then 2 else 0 := by
   obtain ⟨D, h1, h2, h3, h4⟩ := h
   exact bondHalfSum_of_matching hwf hKR h1 h2 h3 h4 x
 
+/-- Under `KekData`, a bond not written aromatic keeps its kind. -/
 lemma KekData.kind_of_not {m K : Work} (h : KekData m K) {k : ℕ} (hk : m.kekWa k = false) :
     (K.bonds[k]! : WBond).kind = (m.bonds[k]! : WBond).kind := by
   obtain ⟨D, h1, h2, -, -⟩ := h
@@ -274,6 +301,7 @@ lemma KekData.kind_of_not {m K : Work} (h : KekData m K) {k : ℕ} (hk : m.kekWa
     rw [hk] at this; cases this
   simp [hD, hk]
 
+/-- Under `KekData`, a bond written aromatic comes out single or double. -/
 lemma KekData.sd {m K : Work} (h : KekData m K) {k : ℕ} (hk : m.kekWa k = true) :
     IsSD (K.bonds[k]! : WBond).kind := by
   obtain ⟨D, h1, -, -, -⟩ := h
@@ -282,6 +310,7 @@ lemma KekData.sd {m K : Work} (h : KekData m K) {k : ℕ} (hk : m.kekWa k = true
   · rw [if_pos hD]; exact .inr rfl
   · rw [if_neg hD, if_pos hk]; exact .inl rfl
 
+/-- A copy that differs from `o` only in bond kinds and atom bookkeeping has as many bonds. -/
 lemma size_of_kindsRel {o w : Work} (h : KindsRel o w) : w.bonds.size = o.bonds.size := by
   have := h.bonds
   by_contra hne
@@ -293,12 +322,16 @@ lemma size_of_kindsRel {o w : Work} (h : KindsRel o w) : w.bonds.size = o.bonds.
     rw [Array.getElem?_eq_none (le_refl _), Array.getElem?_eq_getElem hlt] at this
     simp at this
 
+/-- A copy that differs from `o` only in bond kinds and atom bookkeeping has the same ends at
+every bond. -/
 lemma ends_of_kindsRel {o w : Work} (h : KindsRel o w) (k : ℕ) :
     w.bonds[k]?.map (fun b : WBond ↦ (b.src, b.dst)) =
       o.bonds[k]?.map (fun b : WBond ↦ (b.src, b.dst)) := by
   have := congrArg (Option.map fun b : WBond ↦ (b.src, b.dst)) (h.bonds k)
   simpa [Option.map_map, Function.comp_def] using this
 
+/-- A copy that differs from a well-formed `o` only in bond kinds and atom bookkeeping is well
+formed. -/
 lemma wf_of_kindsRel {o w : Work} (hwf : WF o) (h : KindsRel o w) : WF w := by
   intro k hk
   have hs := size_of_kindsRel h
@@ -312,6 +345,7 @@ lemma wf_of_kindsRel {o w : Work} (hwf : WF o) (h : KindsRel o w) : WF w := by
   simp only [numAtoms, h.atoms_size, e.1, e.2] at this ⊢
   exact this
 
+/-- In a copy with nothing aromatic, no atom has an aromatic bond. -/
 lemma noArom_kindsAt {K : Work} (h : K.NoArom) (i : ℕ) :
     (K.kindsAt i).any (· == .aromatic) = false := by
   rw [Bool.eq_false_iff]
@@ -323,6 +357,7 @@ lemma noArom_kindsAt {K : Work} (h : K.NoArom) (i : ℕ) :
   rw [getElem!_pos _ k hks] at he
   exact h.2 _ (Array.getElem_mem hks) (by simpa using he)
 
+/-- In a well-formed copy, a number past the last atom has bond half-order sum `0`. -/
 lemma bondHalfSum_of_ge {w : Work} (hwf : WF w) {j : ℕ} (hj : w.atoms.size ≤ j) :
     w.bondHalfSum j = 0 := by
   have : w.bondsOf j = [] := by
@@ -414,6 +449,7 @@ theorem kekulize_relabel_swapped {P K K' : Work} {R R' : Array (List ℕ)} (hwf 
 
 /-! ### A perceived atom has at most three bonds -/
 
+/-- An atom with more than three bonds has a negative π-electron count (`Loc.elec`). -/
 lemma elec_neg_of_degree {a : WAtom} {ks : List BondKind} (h : 3 < ks.length) :
     Loc.elec a ks < 0 := by
   unfold Loc.elec
@@ -422,6 +458,7 @@ lemma elec_neg_of_degree {a : WAtom} {ks : List BondKind} (h : 3 < ks.length) :
   · decide
   · rw [if_pos (by omega)]; decide
 
+/-- No atom is an aromatic candidate with donor type `none`. -/
 lemma isAromaticCandidate_none (w : Work) (y : ℕ) : w.isAromaticCandidate y .none = false := by
   have hnn : (Donor.none == Donor.none) = true := rfl
   simp [isAromaticCandidate, Id.run, hnn]; rfl

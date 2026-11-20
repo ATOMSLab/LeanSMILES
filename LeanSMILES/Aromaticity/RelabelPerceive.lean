@@ -18,6 +18,14 @@ they follow the renaming (`Work.ringDonor_relabelW`); the first pass of percepti
 rings is the renamed first pass, and Hückel's rule reads only the donor types of a group's atoms,
 so the bonds perception marks are the same bonds (`Work.aromaticBondList_relabelW`), and marking
 them commutes with the renaming (`Work.setAromaticity_relabelW`).
+
+## Main statements
+
+* `Work.ringDonor_relabelW`: a renamed atom gets the donor type of the original atom.
+* `Work.donorData_relabelW`: the first pass over the renamed rings is the renamed first pass.
+* `Work.huckel_perm`: Hückel's rule reads only the donor types of the atoms, in any order.
+* `Work.aromaticBondList_relabelW`: perception marks the same bonds on the renamed copy.
+* `Work.setAromaticity_relabelW`: perception commutes with renumbering.
 -/
 
 @[expose] public section
@@ -28,14 +36,18 @@ namespace Work
 
 variable {w : Work} {σ ψ : ℕ → ℕ}
 
+/-- A renamed atom has the cached valence of the original atom. -/
 lemma cachedValence_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) {i : ℕ}
     (hi : i < w.atoms.size) : (w.relabelW σ ψ).cachedValence (σ i) = w.cachedValence i := by
   rw [cachedValence_eq_loc, cachedValence_eq_loc, kindsAt_relabelW hwf hb hi, atom_relabelW hb hi]
 
+/-- A renamed atom could donate as many π electrons as the original atom. -/
 lemma countAtomElec_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) {i : ℕ}
     (hi : i < w.atoms.size) : (w.relabelW σ ψ).countAtomElec (σ i) = w.countAtomElec i := by
   rw [countAtomElec_eq_loc, countAtomElec_eq_loc, kindsAt_relabelW hwf hb hi, atom_relabelW hb hi]
 
+/-- The atom across the first exocyclic multiple bond of a renamed atom is the original one's,
+renamed. -/
 lemma exocyclicMultiple?_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) (B : List ℕ)
     {i : ℕ} (hi : i < w.atoms.size) :
     (w.relabelW σ ψ).exocyclicMultiple? B (σ i) = (w.exocyclicMultiple? B i).map σ := by
@@ -46,10 +58,12 @@ lemma exocyclicMultiple?_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) (B
     funext e
     simp only [Function.comp, kind_relabelW]
 
+/-- A renamed atom has a double or triple bond exactly when the original atom does. -/
 lemma hasMultipleBond_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) {i : ℕ}
     (hi : i < w.atoms.size) : (w.relabelW σ ψ).hasMultipleBond (σ i) = w.hasMultipleBond i := by
   simp only [hasMultipleBond, bondsOf_relabelW hwf hb hi, kind_relabelW]
 
+/-- A renamed atom has the donor type of the original atom, for the same ring bonds `B`. -/
 lemma donorType_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) (B : List ℕ) {i : ℕ}
     (hi : i < w.atoms.size) : (w.relabelW σ ψ).donorType B (σ i) = w.donorType B i := by
   have hex := exocyclicMultiple?_relabelW hwf hb B hi
@@ -69,12 +83,14 @@ lemma donorType_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) (B : List �
   | none => rfl
   | some j => simp [hz j h]
 
+/-- A renamed atom gets the ring donor type of the original atom, in a ring of the same size. -/
 lemma ringDonor_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) (B : List ℕ) (len : ℕ)
     {i : ℕ} (hi : i < w.atoms.size) :
     (w.relabelW σ ψ).ringDonor B len (σ i) = w.ringDonor B len i := by
   simp only [ringDonor, donorType_relabelW hwf hb B hi, atom_relabelW hb hi,
     degree_relabelW hwf hb hi, hasMultipleBond_relabelW hwf hb hi]
 
+/-- A renamed atom is an aromatic candidate for a donor type exactly when the original atom is. -/
 lemma isAromaticCandidate_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) {i : ℕ}
     (hi : i < w.atoms.size) (d : Donor) :
     (w.relabelW σ ψ).isAromaticCandidate (σ i) d = w.isAromaticCandidate i d := by
@@ -99,11 +115,13 @@ lemma ringBonds_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) {r : List �
 
 /-! ### The first pass -/
 
+/-- A ring of atoms in range, renamed, contains `σ i` exactly when the ring contains `i`. -/
 lemma contains_map_σ (hb : IdxBij w.numAtoms σ ψ) {r : List ℕ} (hr : ∀ a ∈ r, a < w.atoms.size)
     {i : ℕ} (hi : i < w.atoms.size) : (r.map σ).contains (σ i) = r.contains i := by
   rw [Bool.eq_iff_iff, List.contains_iff_mem, List.contains_iff_mem, List.mem_map]
   exact ⟨fun ⟨a, ha, e⟩ ↦ hb.inj (hr a ha) hi e ▸ ha, fun h ↦ ⟨i, h, rfl⟩⟩
 
+/-- The first renamed ring containing `σ i` is the first ring containing `i`, renamed. -/
 lemma find?_map_σ (hb : IdxBij w.numAtoms σ ψ) {L : List (List ℕ)}
     (hL : ∀ r ∈ L, ∀ a ∈ r, a < w.atoms.size) {i : ℕ} (hi : i < w.atoms.size) :
     (L.map (List.map σ)).find? (·.contains (σ i)) = (L.find? (·.contains i)).map (List.map σ) := by
@@ -113,6 +131,7 @@ lemma find?_map_σ (hb : IdxBij w.numAtoms σ ψ) {L : List (List ℕ)}
     simp only [Function.comp]
     exact contains_map_σ hb (hL r hr) hi
 
+/-- Over the renamed rings, a renamed atom gets the `firstDonor` of the original atom. -/
 lemma firstDonor_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) (B : List ℕ)
     {L : List (List ℕ)} (hL : ∀ r ∈ L, ∀ a ∈ r, a < w.atoms.size) {i : ℕ}
     (hi : i < w.atoms.size) :
@@ -123,6 +142,7 @@ lemma firstDonor_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) (B : List 
   | none => rfl
   | some r => simp only [Option.map_some, List.length_map, ringDonor_relabelW hwf hb B _ hi]
 
+/-- Over the renamed rings, a renamed atom gets the `firstCand` of the original atom. -/
 lemma firstCand_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) (B : List ℕ)
     {L : List (List ℕ)} (hL : ∀ r ∈ L, ∀ a ∈ r, a < w.atoms.size) {i : ℕ}
     (hi : i < w.atoms.size) :
@@ -170,6 +190,7 @@ theorem donorData_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) {R : Arra
 
 /-! ### The second pass -/
 
+/-- Adding `f a` over a list, from `c`, gives `c` plus the sum of the `f a`. -/
 lemma foldl_add_sum {α : Type} (f : α → ℕ) : ∀ (l : List α) (c : ℕ),
     l.foldl (fun s a ↦ s + f a) c = c + (l.map f).sum
   | [], c => by simp
@@ -195,6 +216,8 @@ lemma huckel_perm {A A' : List ℕ} {d d' : Array Donor}
   simp only [Id.run]
   rw [h1, h2 (·.range.1), h2 (·.range.2)]
 
+/-- Adding one at each entry of `l` in turn adds to entry `x` the number of times `x` occurs in
+`l`, and keeps the size. -/
 lemma foldl_modify_count : ∀ (l : List ℕ) (acc : Array ℕ) (x : ℕ), x < acc.size →
     (l.foldl (fun acc a ↦ acc.modify a (· + 1)) acc)[x]! = acc[x]! + l.count x ∧
       (l.foldl (fun acc a ↦ acc.modify a (· + 1)) acc).size = acc.size
@@ -223,6 +246,7 @@ lemma groupCounts {N : ℕ} (C : Array (List ℕ)) : ∀ (cur : List ℕ) (acc :
     rw [i1, g1, List.flatMap_cons, List.count_append]
     omega
 
+/-- For atoms in range, `σ x` occurs in the renamed list as often as `x` occurs in the list. -/
 lemma count_map_σ (hb : IdxBij w.numAtoms σ ψ) : ∀ {l : List ℕ}, (∀ a ∈ l, a < w.atoms.size) →
     ∀ {x : ℕ}, x < w.atoms.size → (l.map σ).count (σ x) = l.count x
   | [], _, _, _ => rfl
@@ -233,6 +257,8 @@ lemma count_map_σ (hb : IdxBij w.numAtoms σ ψ) : ∀ {l : List ℕ}, (∀ a �
     have : (σ a == σ x) = (a == x) := beq_σ hb ha hx
     rw [this]
 
+/-- Entry `r` of `C.map f` is `f` of entry `r` of `C`, when `f` sends the empty list (the default)
+to itself. -/
 lemma getElem!_map_list (C : Array (List ℕ)) (f : List ℕ → List ℕ) (hf : f [] = []) (r : ℕ) :
     (C.map f)[r]! = f C[r]! := by
   by_cases hr : r < C.size
@@ -301,6 +327,8 @@ lemma groupBonds_relabel (hb : IdxBij w.numAtoms σ ψ) {rb C : Array (List ℕ)
     exact (List.map_congr_left fun x hx ↦ hd x (hA x hx)) ▸ List.Perm.refl _
   rw [hh]
 
+/-- Renamed candidate rings, with the donor types renamed with them, make the same bonds
+aromatic in `fusedBonds`. -/
 lemma fusedBonds_relabel (hb : IdxBij w.numAtoms σ ψ) {rb C : Array (List ℕ)}
     {d d' : Array Donor} (hC : ∀ r ∈ C.toList, ∀ a ∈ r, a < w.atoms.size)
     (hd : ∀ a < w.atoms.size, d'[σ a]! = d[a]!) :
@@ -338,11 +366,13 @@ theorem aromaticBondList_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ)
   rw [hc', hrb, numAtoms_relabelW]
   exact fusedBonds_relabel hb hCR hd
 
+/-- Bond `k` of the renamed copy, as an option, is bond `k` of `w` with its endpoints renamed. -/
 lemma getElem?_relabelW_bonds (k : ℕ) :
     (w.relabelW σ ψ).bonds[k]? =
       w.bonds[k]?.map fun b : WBond ↦ { b with src := σ b.src, dst := σ b.dst } := by
   simp [relabelW]
 
+/-- `a[j]!` is the optional lookup `a[j]?` with the default for a missing entry. -/
 lemma getElem!_eq_getD {α : Type} [Inhabited α] (a : Array α) (j : ℕ) :
     a[j]! = a[j]?.getD default := by
   by_cases h : j < a.size
@@ -385,6 +415,7 @@ lemma markAromatic_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) {b : ℕ
     · simp only [Option.map_map]; rfl
     · rfl
 
+/-- Marking a bond aromatic keeps a working copy well formed. -/
 lemma wf_markAromatic (hwf : w.WF) (b : ℕ) : (w.markAromatic b).WF := by
   intro k hk
   have hs : (w.markAromatic b).bonds.size = w.bonds.size := by

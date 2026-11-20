@@ -42,6 +42,17 @@ feature vector, the form `LeanLearn.Classification.fitLogistic` takes.
 
 This file is the only place the toolkit's fingerprints are read (`Molecule.morganVector`,
 `SMILES.parseAromatized` and `Mol.morganBits`).
+
+## Main definitions
+
+* `Representation d`: `d` exact rational features for every molecule.
+* `Representation.morgan`, `Representation.bondOrders`, `Representation.counts`: the
+  fingerprint, bond-order and count representations.
+* `Representation.canonical`, `Representation.clip`, `Representation.append`: a representation
+  read on the canonical form, clamped, or placed side by side with another.
+* `Molecule.bondOrder`: the order of the bond between two atoms, in a form the kernel evaluates.
+* `Mol.canonicalForm`: the molecule read back from its canonical SMILES.
+* `morganFeatures`: the Morgan on-bits of a SMILES string, as a sparse sample.
 -/
 
 @[expose] public section

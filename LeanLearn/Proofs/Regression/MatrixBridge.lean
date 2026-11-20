@@ -46,6 +46,25 @@ transfer:
 At `m = 0` the loss identity still holds (both sides are `0`), but `L(θ) = λ ‖θ‖²` while the
 matrix problem is empty, so the statements about normal equations and minimizers assume
 `m > 0`.
+
+## Main definitions
+
+* `ofVec`: a `Vec` read as a Mathlib vector `Fin n → ℝ`.
+* `Problem.designMatrix`, `Problem.target`: the problem's design and targets as Mathlib objects.
+* `Problem.mse`: the mean squared error, the loss without its penalty.
+* `Problem.IsMinimizer`: `θ` minimises the loss over all parameters.
+* `Problem.closedForm`: `(XᵀX + m λ I)⁻¹ Xᵀ y` as a `Vec`, for `m > 0` and `λ > 0`.
+* `Problem.withRidge`: the same data with another ridge penalty.
+
+## Main statements
+
+* `Problem.ridge_loss_eq`: `‖Xθ − y‖² + m λ ‖θ‖² = m · L(θ)`.
+* `Problem.residual_eq_zero_iff_normalEquations`: for `m > 0`, `A θ = b` is exactly
+  `(XᵀX + m λ I) θ = Xᵀ y`.
+* `Problem.isMinimizer_iff`: for `m > 0`, the minimizers of `L` are those of the matrix loss.
+* `Problem.existsUnique_isMinimizer`: for `m > 0` and `λ > 0` there is exactly one minimizer.
+* `Problem.dot_self_antitone`, `Problem.mse_monotone`: a stronger penalty shrinks the
+  minimizer's `‖θ‖²` and raises its mean squared error.
 -/
 
 @[expose] public section
@@ -242,7 +261,7 @@ def withRidge (l : ℝ) : Problem ℝ m d := { P with ridge := l }
 /-- Reinstalling the problem's own penalty changes nothing. -/
 theorem withRidge_self : P.withRidge P.ridge = P := rfl
 
-/-- Least squares on the data of `P` minimises the mean squared error. -/
+/-- Without a ridge penalty the loss is the mean squared error. -/
 theorem loss_withRidge_zero (θ : Vec ℝ (d + 1)) : (P.withRidge 0).loss θ = P.mse θ := by
   simp [loss_eq_mse_add]
 

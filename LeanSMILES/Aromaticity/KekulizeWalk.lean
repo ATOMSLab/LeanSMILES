@@ -16,6 +16,18 @@ RDKit's kekulization walk (`Work.kekulizeWorker`) is correct: when it succeeds o
 every atom that needed a double bond has exactly one, on a bond written aromatic, and no other
 atom of the system has one.
 
+## Main definitions
+
+* `Work.NbrsDistinct`: no two bonds join an atom to the same neighbour.
+* `Work.WalkInv`: the invariant of the walk's state.
+
+## Main statements
+
+* `Work.kekulizeStep_walkInv`, `Work.kekulizeLoop_walkInv`: one step keeps the invariant, and the
+  walk ends with every atom done.
+* `Work.kekulizeWorker_correct`: the kekulization walk is correct on a fused system.
+* `Work.kekulizeSystem_correct`: one fused system is kekulized correctly.
+
 The walk visits the system's atoms through a queue, gives each atom that still needs a double
 bond one to its first neighbour that also needs one, and on getting stuck backtracks to the
 latest atom that had other neighbours to try (`Work.KekState.backTrack`).  On revisiting that
@@ -123,6 +135,7 @@ lemma nodup_neighbors {w : Work} (h : w.NbrsDistinct) (c : ℕ) :
 /-- The part of a list before `a`. -/
 def before (l : List ℕ) (a : ℕ) : List ℕ := l.takeWhile (· != a)
 
+/-- What comes before `a` in a list is in the list. -/
 lemma before_sub {l : List ℕ} {a x : ℕ} (h : x ∈ before l a) : x ∈ l :=
   (List.takeWhile_sublist _).subset h
 
@@ -141,7 +154,7 @@ lemma before_append_of_mem : ∀ {l r : List ℕ} {a : ℕ}, a ∈ l → before 
   | x :: l, r, a, h => by
     by_cases hx : x = a
     · subst hx
-      simp [before, List.takeWhile_cons]
+      simp [before]
     · have hx' : (x != a) = true := by simpa using hx
       rcases List.mem_cons.mp h with h | h
       · exact absurd h.symm hx
@@ -251,16 +264,28 @@ lemma other_ne_of_mem_bondsOf {w : Work} (hwf : WF w) {c k : ℕ} (hk : k ∈ w.
 /-- What is known once the next atom `curr` is taken, with queue `q2` after the scan and options
 `opts`; `stored` says whether they were kept from an earlier visit. -/
 structure Popped (s : KekState) (curr : ℕ) (q2 opts : List ℕ) (stored : Bool) : Prop where
+  /-- `curr` is not done yet. -/
   currNotDone : curr ∉ s.done
+  /-- `curr` is an atom of the system. -/
   currAtom : curr ∈ atoms
+  /-- The new queue has no repeats. -/
   qNodup : q2.Nodup
+  /-- No atom of the new queue is done or is `curr`. -/
   qDisj : ∀ x ∈ q2, x ∉ s.done ∧ x ≠ curr
+  /-- The new queue holds atoms of the system. -/
   qSub : ∀ x ∈ q2, x ∈ atoms
+  /-- The options have no repeats. -/
   optsNodup : opts.Nodup
+  /-- An option is another atom of the system that needs a double bond, joined to `curr` by a
+  bond written aromatic. -/
   optsOk : ∀ j ∈ opts, j ≠ curr ∧ j ∈ atoms ∧ s.cands[j]! = true ∧
     ∃ k, m0.bondBetween? curr j = some k ∧ wa k = true
+  /-- Kept options: they are `curr`'s entry, and `curr` is the latest backtrack point, the
+  earlier ones done. -/
   storedBt : stored = true → (curr, opts) ∈ s.options ∧ ∃ bt, s.btMoves = bt ++ [curr] ∧
     bt.Sublist s.done
+  /-- Fresh options: `curr` is not a backtrack point, and the backtrack points are done in
+  order. -/
   freshBt : stored = false → curr ∉ s.btMoves ∧ s.btMoves.Sublist s.done
 
 variable {wa atoms m0 cands0}
@@ -581,7 +606,7 @@ lemma walkInv_place_core
     · exact hi.matching k₁ k₂ x a₁ a₂ t₁ t₂
   · -- cands
     simp only [hC]
-    show _ ↔ cands0[x]! = true ∧ ¬ ∃ k₁, (s.adds.set! k true)[k₁]! = true ∧ Tch m0 k₁ x
+    change _ ↔ cands0[x]! = true ∧ ¬ ∃ k₁, (s.adds.set! k true)[k₁]! = true ∧ Tch m0 k₁ x
     rw [hM]
     by_cases h : x = curr ∨ x = n
     · simp only [if_pos h]
@@ -756,14 +781,15 @@ lemma before_eq_take : ∀ (l : List ℕ) (a : ℕ), before l a = l.take (l.idxO
   | x :: l, a => by
     by_cases hx : x = a
     · subst hx
-      simp [before, List.takeWhile_cons]
+      simp [before]
     · have hx' : (x != a) = true := by simpa using hx
       have hx'' : (x == a) = false := by simpa using hx
       simp only [before, List.takeWhile_cons, hx', ↓reduceIte, List.idxOf_cons, hx'',
         cond_false, List.take_succ_cons]
       rw [← before, before_eq_take l a]
 
-lemma not_mem_before : ∀ (l : List ℕ) (a : ℕ), a ∉ before l a
+/-- `a` is not in the part of a list before `a`. -/
+lemma not_mem_before :∀ (l : List ℕ) (a : ℕ), a ∉ before l a
   | [], _ => by simp [before]
   | x :: l, a => by
     by_cases hx : x = a
@@ -793,14 +819,14 @@ lemma before_before : ∀ {l : List ℕ} {lo a : ℕ}, a ∈ before l lo →
   | x :: l, lo, a, h => by
     by_cases hxl : x = lo
     · subst hxl
-      simp [before, List.takeWhile_cons] at h
+      simp [before] at h
     · have hxl' : (x != lo) = true := by simpa using hxl
       have e : before (x :: l) lo = x :: before l lo := by
-        simp [before, List.takeWhile_cons, hxl']
+        simp [before, hxl']
       rw [e] at h ⊢
       by_cases hxa : x = a
       · subst hxa
-        simp [before, List.takeWhile_cons]
+        simp [before]
       · have hxa' : (x != a) = true := by simpa using hxa
         rcases List.mem_cons.mp h with h | h
         · exact absurd h.symm hxa
@@ -836,12 +862,14 @@ lemma sublist_before : ∀ {bt l : List ℕ} {lo : ℕ}, (bt ++ [lo]).Sublist l 
         have hxl : b ≠ lo := fun e ↦ hlo (by rw [e]; exact List.mem_cons_self)
         have hxl' : (b != lo) = true := by simpa using hxl
         simp only [before, List.takeWhile_cons, hxl', ↓reduceIte]
-        exact (sublist_before hrl hnd.2).cons₂ b
+        exact (sublist_before hrl hnd.2).cons_cons b
 
 /-- Bond `j` is undone by backtracking to `keep`: the walk placed it, and neither end is kept. -/
 @[reducible] def Undone (w : Work) (A : Array Bool) (keep : List ℕ) (j : ℕ) : Prop :=
   A[j]! = true ∧ (w.bonds[j]! : WBond).src ∉ keep ∧ (w.bonds[j]! : WBond).dst ∉ keep
 
+/-- `undoAdds` at bond `j`: when `j` is `Undone`, it is made single, unflagged, and both its ends
+need a double bond again; otherwise nothing changes. -/
 lemma undoAdds_eq (keep : List ℕ) (w : Work) (A C : Array Bool) (j : ℕ) :
     undoAdds keep (w, A, C) j = if Undone w A keep j then
       (w.setKind j .single, A.set! j false,
@@ -852,10 +880,10 @@ lemma undoAdds_eq (keep : List ℕ) (w : Work) (A C : Array Bool) (j : ℕ) :
   by_cases hA : A[j]! = true
   · rw [if_pos hA]
     by_cases hs : (w.bonds[j]! : WBond).src ∈ keep
-    · rw [if_neg (by simp [List.contains_iff_mem, hs]), if_neg (by simp [hs])]
+    · rw [if_neg (by simp [hs]), if_neg (by simp [hs])]
     · by_cases hd : (w.bonds[j]! : WBond).dst ∈ keep
-      · rw [if_neg (by simp [List.contains_iff_mem, hd]), if_neg (by simp [hd])]
-      · rw [if_pos (by simp [List.contains_iff_mem, hs, hd]), if_pos ⟨hA, hs, hd⟩]
+      · rw [if_neg (by simp [hd]), if_neg (by simp [hd])]
+      · rw [if_pos (by simp [hs, hd]), if_pos ⟨hA, hs, hd⟩]
   · rw [if_neg hA, if_neg (fun h ↦ hA h.1)]
 
 /-- The undo loop keeps which atoms each bond joins and the sizes of the flag arrays. -/
@@ -884,7 +912,7 @@ lemma foldl_undoAdds_adds (keep : List ℕ) : ∀ (l : List ℕ) (w : Work) (A C
       have hlt := lt_size_of_getElem!_bool hU.1
       by_cases hji : j = i
       · subst hji
-        simp [getElem!_set!_bool, hlt, hnd.1, hU]
+        simp [hlt, hnd.1, hU]
       · simp only [Undone, getElem!_set!_bool, Ne.symm hji, false_and, ↓reduceIte,
           ← hsk.src, ← hsk.dst, List.mem_cons, hji, false_or]
     · rw [if_neg hU, foldl_undoAdds_adds keep l _ _ _ hnd.2 j]
@@ -1350,7 +1378,7 @@ lemma nbrsDistinct_ofMolecule {n : ℕ} (m : Molecule n) : (Work.ofMolecule m).N
   have hedge : (m.bonds[k₁]).edge = (m.bonds[k₂]).edge := by
     simp only [toWBond, WBond.touches, WBond.other, Bool.or_eq_true, beq_iff_eq] at t₁ t₂ he
     simp only [Bond.edge, Sym2.eq_iff, Fin.ext_iff]
-    split at he <;> split at he <;> simp_all <;> omega
+    split at he <;> split at he <;> simp_all
   have hnd := m.nodup
   have e : (m.bonds.map Bond.edge)[k₁]'(by simpa using hl₁) =
       (m.bonds.map Bond.edge)[k₂]'(by simpa using hl₂) := by simpa using hedge

@@ -28,6 +28,17 @@ trained model from conditions checked without training it.
 
 The parsing and the molecules are `LeanSMILES`'s; the regression problem and its solvers
 are `LeanLearn`'s. This file only joins them.
+
+## Main definitions
+
+* `LabeledMolecules`: `m` molecules with exact rational targets.
+* `Pipeline`: labelled molecules, a representation, a ridge penalty and an iterative solver.
+* `Pipeline.exactProblem`, `Pipeline.problem`: the regression problem over `ℚ`, and read in `K`.
+* `Pipeline.model`: the trained parameters, the algorithm run on `problem K`.
+* `Pipeline.trainLoss`, `Pipeline.mse`, `Pipeline.trainMSE`: the training loss and the mean
+  squared error on a dataset.
+* `Pipeline.predictWith`, `Pipeline.predictSmiles`, `Pipeline.predictAll`: predictions on a
+  molecule, a SMILES string or a dataset.
 -/
 
 @[expose] public section
@@ -111,24 +122,23 @@ def trainLoss (K : Type) [PolynomialLike K] [Div K] [BEq K] [RatEmbed K] : K :=
 
 /-- The prediction of parameters `θ` on a molecule, its exact features read in `K`. -/
 @[specialize]
-def predictWith {K : Type} [PolynomialLike K] [Div K] [BEq K] [RatEmbed K] (θ : Vec K (d + 1))
-    (M : Mol) : K :=
+def predictWith {K : Type} [PolynomialLike K] [RatEmbed K] (θ : Vec K (d + 1)) (M : Mol) : K :=
   predict θ ((p.representation M).map RatEmbed.ofRat)
 
 /-- The prediction of parameters `θ` on a SMILES string (panics if it does not parse), to run in
 `Float`. -/
-def predictSmiles {K : Type} [PolynomialLike K] [Div K] [BEq K] [RatEmbed K] (θ : Vec K (d + 1))
-    (s : String) : K :=
+def predictSmiles {K : Type} [PolynomialLike K] [RatEmbed K] (θ : Vec K (d + 1)) (s : String) :
+    K :=
   p.predictWith θ (Mol.ofSmiles! s)
 
 /-- The predictions of parameters `θ` on every molecule of a dataset, to run in `Float`. -/
-def predictAll {K : Type} [PolynomialLike K] [Div K] [BEq K] [RatEmbed K] {k : ℕ}
-    (θ : Vec K (d + 1)) (D : LabeledMolecules k) : Vector K k :=
+def predictAll {K : Type} [PolynomialLike K] [RatEmbed K] {k : ℕ} (θ : Vec K (d + 1))
+    (D : LabeledMolecules k) : Vector K k :=
   D.molecules.map (p.predictWith θ)
 
 /-- The mean squared error of parameters `θ` on a dataset, with this pipeline's representation
 (no ridge penalty): the test error, on held-out molecules. -/
-def mse {K : Type} [PolynomialLike K] [Div K] [BEq K] [RatEmbed K] {k : ℕ} (θ : Vec K (d + 1))
+def mse {K : Type} [PolynomialLike K] [Div K] [RatEmbed K] {k : ℕ} (θ : Vec K (d + 1))
     (D : LabeledMolecules k) : K :=
   (({ p with data := D, ridge := 0 } : Pipeline k d).problem K).loss θ
 

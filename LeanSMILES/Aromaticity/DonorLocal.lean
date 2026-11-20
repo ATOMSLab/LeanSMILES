@@ -14,6 +14,18 @@ Perception's donor type and candidate test at one atom, read off the atom's reco
 its bonds, and three facts about its surroundings that two copies with the same bonds share:
 whether it has an exocyclic multiple bond, whether the atom across that bond pulls electrons, and
 whether one of its ring bonds is multiple (`Loc.donorL`, `Loc.ringDonorL`, `Loc.candD`).
+
+## Main definitions
+
+* `Loc.donorL`, `Loc.ringDonorL`: `Work.donorType` and `Work.ringDonor` at one atom.
+* `Loc.candD`: `Work.isAromaticCandidate` at one atom, for any donor type.
+* `Work.whoS`, `Work.pullsB`, `Work.ringMultB`: the three facts about an atom's surroundings.
+
+## Main statements
+
+* `Work.donorType_eq_loc`, `Work.ringDonor_eq_loc`: the donor types are their local versions.
+* `Work.isAromaticCandidate_eq_candD`: the candidate test is `Loc.candD` at the atom.
+* `Loc.donorL_congr`, `Loc.ringDonorL_congr`, `Loc.candD_congr`: what each local function reads.
 -/
 
 @[expose] public section
@@ -48,6 +60,8 @@ def ringDonorL (a : WAtom) (ks : List BondKind) (whoS pulls rm big : Bool) : Don
 /-- `Work.isAromaticCandidate`, for any donor type. -/
 def candD (a : WAtom) (ks : List BondKind) (d : Donor) : Bool := d != .none && cand a ks
 
+/-- `Loc.donorL` reads only the element, the charge, the hydrogens, the radicals and the cached
+valence of the record. -/
 lemma donorL_congr {a b : WAtom} (hz : a.z = b.z) (hc : a.charge = b.charge)
     (he : a.explicitHs = b.explicitHs) (hi : a.cachedImplicit = b.cachedImplicit)
     (hr : a.radicals = b.radicals) (ks : List BondKind) (hcv : cv a ks = cv b ks)
@@ -56,12 +70,16 @@ lemma donorL_congr {a b : WAtom} (hz : a.z = b.z) (hc : a.charge = b.charge)
     simp only [elec, hz, hc, he, hi, hr, hcv]
   simp only [donorL, hel, hcv, he, hc]
 
+/-- `Loc.ringDonorL` reads only the element, the charge, the hydrogens, the radicals and the cached
+valence of the record. -/
 lemma ringDonorL_congr {a b : WAtom} (hz : a.z = b.z) (hc : a.charge = b.charge)
     (he : a.explicitHs = b.explicitHs) (hi : a.cachedImplicit = b.cachedImplicit)
     (hr : a.radicals = b.radicals) (ks : List BondKind) (hcv : cv a ks = cv b ks)
     (w p r g : Bool) : ringDonorL a ks w p r g = ringDonorL b ks w p r g := by
   simp only [ringDonorL, donorL_congr hz hc he hi hr ks hcv, hz, hc]
 
+/-- `Loc.candD` reads only the element, the charge, the cached implicit count, the radicals and the
+cached valence of the record. -/
 lemma candD_congr {a b : WAtom} (hz : a.z = b.z) (hc : a.charge = b.charge)
     (hi : a.cachedImplicit = b.cachedImplicit) (hr : a.radicals = b.radicals)
     (ks : List BondKind) (hcv : cv a ks = cv b ks) (d : Donor) : candD a ks d = candD b ks d := by
@@ -71,17 +89,21 @@ end Loc
 
 namespace Work
 
-/-- Whether atom `i` has an exocyclic multiple bond, and whether the atom across it pulls. -/
+/-- Whether atom `i` has a multiple bond off the ring bonds `rbs` (`exocyclicMultiple?`). -/
 def whoS (w : Work) (rbs : List ℕ) (i : ℕ) : Bool := (w.exocyclicMultiple? rbs i).isSome
 
+/-- Whether the atom across `i`'s exocyclic multiple bond is more electronegative than `i`, so
+that it pulls an electron out of the ring. -/
 def pullsB (w : Work) (rbs : List ℕ) (i : ℕ) : Bool :=
   match w.exocyclicMultiple? rbs i with
   | some j => moreElectronegative (w.atoms[j]! : WAtom).z (w.atoms[i]! : WAtom).z
   | none => false
 
+/-- Whether atom `i` has a multiple bond among the ring bonds `rbs`. -/
 def ringMultB (w : Work) (rbs : List ℕ) (i : ℕ) : Bool :=
   (w.bondsOf i).any fun k ↦ rbs.contains k && isMultiple (w.bonds[k]! : WBond).kind
 
+/-- `Work.donorType` is `Loc.donorL` at the atom's record, bond kinds and surroundings. -/
 lemma donorType_eq_loc (w : Work) (rbs : List ℕ) (i : ℕ) :
     w.donorType rbs i = Loc.donorL w.atoms[i]! (w.kindsAt i) (w.whoS rbs i) (w.pullsB rbs i)
       (w.ringMultB rbs i) := by
@@ -89,6 +111,8 @@ lemma donorType_eq_loc (w : Work) (rbs : List ℕ) (i : ℕ) :
   rw [countAtomElec_eq_loc, cachedValence_eq_loc, degree_eq_loc]
   rfl
 
+/-- `Work.ringDonor` in a ring of `len` atoms is `Loc.ringDonorL` at the atom, `big` being
+`9 ≤ len`. -/
 lemma ringDonor_eq_loc (w : Work) (rbs : List ℕ) (len i : ℕ) :
     w.ringDonor rbs len i = Loc.ringDonorL w.atoms[i]! (w.kindsAt i) (w.whoS rbs i)
       (w.pullsB rbs i) (w.ringMultB rbs i) (decide (9 ≤ len)) := by
@@ -96,6 +120,8 @@ lemma ringDonor_eq_loc (w : Work) (rbs : List ℕ) (len i : ℕ) :
   rw [donorType_eq_loc, degree_eq_loc]
   simp only [hasMultipleBond, kindsAt, List.any_map, Function.comp_def, List.length_map]
 
+/-- `Work.isAromaticCandidate` is `Loc.candD` at the atom's record and bond kinds, for any donor
+type. -/
 lemma isAromaticCandidate_eq_candD (w : Work) (i : ℕ) (d : Donor) :
     w.isAromaticCandidate i d = Loc.candD w.atoms[i]! (w.kindsAt i) d := by
   by_cases hd : d = .none
@@ -108,7 +134,7 @@ lemma isAromaticCandidate_eq_candD (w : Work) (i : ℕ) (d : Donor) :
     have : (d != Donor.none) = true := by cases d <;> first | rfl | exact absurd rfl hd
     simp [Loc.candD, this]
 
-/-- An exocyclic multiple bond, or a multiple ring bond, is a multiple bond at the atom. -/
+/-- An exocyclic multiple bond is a multiple bond at the atom. -/
 lemma any_isMultiple_of_whoS (w : Work) (rbs : List ℕ) (i : ℕ) (h : w.whoS rbs i = true) :
     (w.kindsAt i).any isMultiple = true := by
   unfold whoS exocyclicMultiple? at h
@@ -123,6 +149,7 @@ lemma any_isMultiple_of_whoS (w : Work) (rbs : List ℕ) (i : ℕ) (h : w.whoS r
   simp only [Bool.and_eq_true] at hp
   exact List.any_eq_true.2 ⟨_, List.mem_map.2 ⟨_, hk', rfl⟩, hp.2⟩
 
+/-- A multiple ring bond at the atom is a multiple bond among its bond kinds. -/
 lemma any_isMultiple_of_ringMultB (w : Work) (rbs : List ℕ) (i : ℕ)
     (h : w.ringMultB rbs i = true) : (w.kindsAt i).any isMultiple = true := by
   unfold ringMultB at h

@@ -14,6 +14,25 @@ public import LeanSMILES.SMILES.KekuleClass
 When two resonance structures are one molecule, and what `Molecule.aromatize`
 must do for canonical SMILES to give them one string.
 
+## Main definitions
+
+* `Molecule.CleanUpTarget`: an atom RDKit's `cleanUp` may rewrite.
+* `Molecule.MovesAvoidCleanUp`, `Molecule.CleanUpTargetsApart`, `Molecule.RingsCoverCycles`: the
+  hypotheses the three properties need.
+* `Molecule.ResonanceStructure`: a Kekulé partner differing only on bonds the model makes aromatic.
+* `Aromaticity.AromaticBondsKekuleInvariant`, `Aromaticity.AromatizeMergesExactlyResonance`,
+  `Aromaticity.AromatizeRelabelKekule`: properties 1, 2 and 3 of `aromatize`, as `Prop`s.
+* `Molecule.Redraw`: one step between two drawings, a renumbering or a resonance move.
+
+## Main statements
+
+* `Molecule.aromaticCanonicalSmiles_eq_of_resonanceStructure`: given property 2, resonance
+  structures have one aromatic canonical SMILES.
+* `Molecule.aromaticCanonicalSmiles_relabel`: given property 3, it does not depend on the
+  numbering.
+* `Molecule.aromaticCanonicalSmiles_eq_of_eqvGen`: given properties 2 and 3, any chain of
+  redrawings keeps the aromatic canonical SMILES.
+
 `Molecule.canonicalSmiles_relabel` makes canonical SMILES independent of how
 the atoms are numbered. It says nothing about bond orders. The Kekulé
 structures of o-xylene, `CC1=C(C)C=CC=C1` and `CC1=CC=CC=C1C`, are different
@@ -205,6 +224,8 @@ instance (m : Molecule n) : Decidable m.CleanUpTargetsApart := by
   unfold CleanUpTargetsApart
   infer_instance
 
+/-- Atom `σ i` of the relabeled molecule is one `cleanUp` may rewrite exactly when atom `i` of `m`
+is. -/
 lemma cleanUpTarget_relabel (m : Molecule n) (σ : Equiv.Perm (Fin n)) (i : Fin n) :
     (m.relabel σ).CleanUpTarget (σ i) ↔ m.CleanUpTarget i := by
   simp only [CleanUpTarget, atom_relabel, bondOrderSum_relabel]
@@ -237,6 +258,7 @@ lemma KekulePartner.graph_eq {m₁ m₂ : Molecule n} (h : m₁.KekulePartner m�
   ext i j
   simp only [graph, he]
 
+/-- Kekulé partners have the same atoms `cleanUp` may rewrite. -/
 lemma KekulePartner.cleanUpTarget_iff {m₁ m₂ : Molecule n} (h : m₁.KekulePartner m₂) (i : Fin n) :
     m₁.CleanUpTarget i ↔ m₂.CleanUpTarget i := by
   simp only [KekulePartner, kekuleData, Prod.mk.injEq] at h
@@ -244,6 +266,8 @@ lemma KekulePartner.cleanUpTarget_iff {m₁ m₂ : Molecule n} (h : m₁.KekuleP
   have hs : m₁.bondOrderSum i = m₂.bondOrderSum i := by simpa using congrArg (·[i]) h.2.2.1
   simp only [CleanUpTarget, ha, hs]
 
+/-- Of two Kekulé partners, one has the atoms `cleanUp` rewrites apart exactly when the other
+does. -/
 lemma KekulePartner.cleanUpTargetsApart_iff {m₁ m₂ : Molecule n} (h : m₁.KekulePartner m₂) :
     m₁.CleanUpTargetsApart ↔ m₂.CleanUpTargetsApart := by
   simp only [CleanUpTargetsApart, h.graph_eq, h.cleanUpTarget_iff]

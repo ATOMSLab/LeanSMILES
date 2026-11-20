@@ -42,6 +42,13 @@ grid and a barcode; with a second SMILES, the bits both share are highlighted:
 
 ProofWidgets comes with Mathlib, so nothing new is required; the picture
 appears when the cursor is on the command.
+
+## Main definitions
+
+* `Depict.Drawable`: anything `#draw` can show.
+* `Depict.html`, `Depict.bitHtml`, `Depict.fingerprintHtml`: the Infoview pictures that `#draw`,
+  `#drawbit` and `#fingerprint` display.
+* `Depict.Xml.toHtml`: an SVG tree converted to ProofWidgets HTML.
 -/
 
 @[expose] public section

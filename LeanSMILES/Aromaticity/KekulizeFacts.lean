@@ -24,6 +24,11 @@ What kekulization keeps, for any input it succeeds on (not only one with nothing
 
 These need the walk to be a structural recursion: written as RDKit writes it, a `while` loop,
 it would be a `partial` function, and nothing about what it returns could be proved.
+
+## Main definitions
+
+* `Work.KindsRel o w`: `w` is `o` but for its bond kinds and its atoms' bookkeeping.
+* `Work.KekState.OnlyArom wa s`: the walk's bookkeeping only points at bonds written aromatic.
 -/
 
 @[expose] public section
@@ -34,6 +39,7 @@ variable {Q : Work → Prop}
 
 /-! ### A property kept by setting bond kinds -/
 
+/-- `undoAdds` keeps a property of the molecule kept by setting bond kinds. -/
 lemma undoAdds_fst (hQ : ∀ w k t, Q w → Q (w.setKind k t)) (keep : List ℕ)
     (p : Work × Array Bool × Array Bool) (k : ℕ) (h : Q p.1) : Q (undoAdds keep p k).1 := by
   obtain ⟨m, adds, cands⟩ := p
@@ -45,17 +51,20 @@ lemma undoAdds_fst (hQ : ∀ w k t, Q w → Q (w.setKind k t)) (keep : List ℕ)
     · exact h
   · exact h
 
+/-- A fold of `undoAdds` keeps a property of the molecule kept by setting bond kinds. -/
 lemma foldl_undoAdds_fst (hQ : ∀ w k t, Q w → Q (w.setKind k t)) (keep : List ℕ) :
     ∀ (l : List ℕ) (p : Work × Array Bool × Array Bool), Q p.1 →
       Q (l.foldl (undoAdds keep) p).1
   | [], _, h => h
   | k :: l, p, h => foldl_undoAdds_fst hQ keep l _ (undoAdds_fst hQ keep p k h)
 
+/-- Back-tracking keeps a property of the molecule kept by setting bond kinds. -/
 lemma KekState.backTrack_m (hQ : ∀ w k t, Q w → Q (w.setKind k t)) (s : KekState) (lo : ℕ)
     (h : Q s.m) : Q (s.backTrack lo).m := by
   unfold KekState.backTrack
   exact foldl_undoAdds_fst hQ _ _ (s.m, s.adds, s.cands) h
 
+/-- `placeDouble` makes bond `k` double in the molecule and changes nothing else in it. -/
 @[simp] lemma KekState.placeDouble_m (s : KekState) (curr n k : ℕ) (rest : List ℕ) :
     (s.placeDouble curr n k rest).m = s.m.setKind k .double := rfl
 
@@ -109,11 +118,14 @@ theorem kekulizeLoop_m (hQ : ∀ w k t, Q w → Q (w.setKind k t)) (wasAromatic 
     · cases hw
       exact hs
 
+/-- `kekulizeWorker` keeps a property kept by setting bond kinds. -/
 theorem kekulizeWorker_m (hQ : ∀ w k t, Q w → Q (w.setKind k t)) {m w : Work}
     {wasAromatic : ℕ → Bool} {atoms : List ℕ} {cands : Array Bool} {done : List ℕ} (h : Q m)
     (hw : m.kekulizeWorker wasAromatic atoms cands done = some w) : Q w :=
   kekulizeLoop_m hQ wasAromatic atoms _ _ _ h w hw
 
+/-- Setting the kind of the bonds of `l` that pass `g` to `t` keeps a property kept by setting
+bond kinds. -/
 lemma foldl_setKind_of (hQ : ∀ w k t, Q w → Q (w.setKind k t)) (g : ℕ → Bool) (t : BondKind) :
     ∀ (l : List ℕ) (o : Work), Q o → Q (l.foldl (fun o k ↦ if g k then o.setKind k t else o) o)
   | [], _, h => h
@@ -124,6 +136,7 @@ lemma foldl_setKind_of (hQ : ∀ w k t, Q w → Q (w.setKind k t)) (g : ℕ → 
     · exact hQ _ _ _ h
     · exact h
 
+/-- `singleAromaticBonds` keeps a property kept by setting bond kinds. -/
 lemma singleAromaticBonds_m (hQ : ∀ w k t, Q w → Q (w.setKind k t)) (wasAromatic : ℕ → Bool)
     (out : Work) (i : ℕ) (h : Q out) : Q (singleAromaticBonds wasAromatic out i) := by
   unfold singleAromaticBonds
@@ -131,6 +144,7 @@ lemma singleAromaticBonds_m (hQ : ∀ w k t, Q w → Q (w.setKind k t)) (wasArom
   · exact foldl_setKind_of hQ wasAromatic .single _ _ h
   · exact h
 
+/-- A fold of `singleAromaticBonds` keeps a property kept by setting bond kinds. -/
 lemma foldl_singleAromaticBonds_m (hQ : ∀ w k t, Q w → Q (w.setKind k t))
     (wasAromatic : ℕ → Bool) : ∀ (l : List ℕ) (out : Work), Q out →
       Q (l.foldl (singleAromaticBonds wasAromatic) out)
@@ -223,8 +237,10 @@ structure KindsRel (o w : Work) : Prop where
   bonds : ∀ k : ℕ, w.bonds[k]?.map (fun b : WBond ↦ { b with kind := .single }) =
     o.bonds[k]?.map (fun b : WBond ↦ { b with kind := .single })
 
+/-- Every copy is related to itself. -/
 lemma KindsRel.refl (o : Work) : KindsRel o o := ⟨rfl, fun _ ↦ rfl, rfl, fun _ ↦ rfl⟩
 
+/-- Setting a bond's kind keeps `KindsRel`. -/
 lemma KindsRel.setKind {o w : Work} (h : KindsRel o w) (k : ℕ) (t : BondKind) :
     KindsRel o (w.setKind k t) where
   atoms_size := h.atoms_size
@@ -234,6 +250,7 @@ lemma KindsRel.setKind {o w : Work} (h : KindsRel o w) (k : ℕ) (t : BondKind) 
     rw [← h.bonds j, getElem?_setKind_bonds]
     split <;> simp [Option.map_map, Function.comp_def]
 
+/-- Editing an atom without touching its element or charge keeps `KindsRel`. -/
 lemma KindsRel.modifyAtom {o w : Work} (h : KindsRel o w) (i : ℕ) (f : WAtom → WAtom)
     (hf : ∀ a, (f a).z = a.z ∧ (f a).charge = a.charge) : KindsRel o (w.modifyAtom i f) where
   atoms_size := by simp [h.atoms_size]
@@ -484,6 +501,8 @@ section OnlyArom
 
 variable {wa : ℕ → Bool} {P : Work → Prop}
 
+/-- Placing a double bond along `k` to the first of options all across bonds written aromatic
+satisfies `StepR`, for a state with the molecule of `s₀`. -/
 lemma KekState.OnlyArom.placeDouble (hP : ∀ w k t, wa k = true → P w → P (w.setKind k t))
     {s₀ s : KekState} (hm : s.m = s₀.m) (hi : s.OnlyArom wa) (hp : P s.m) {curr n k : ℕ}
     {rest : List ℕ} (hk : s.m.bondBetween? curr n = some k)
@@ -519,7 +538,8 @@ lemma KekState.OnlyArom.placeDouble (hP : ∀ w k t, wa k = true → P w → P (
     · exact hi.options a o hmem j hj k' hk'
   · have e : (s.placeDouble curr n k rest).adds = s.adds.set! k true := by
       unfold KekState.placeDouble
-      split <;> (try split) <;> rfl
+      split
+      rfl
     rw [e, getElem!_set!_bool] at hk'
     split at hk'
     · rename_i h
@@ -527,6 +547,8 @@ lemma KekState.OnlyArom.placeDouble (hP : ∀ w k t, wa k = true → P w → P (
       exact hwk
     · exact hi.adds k' hk'
 
+/-- A fold of `undoAdds` keeps the bonds made double among those written aromatic, keeps `P`,
+and keeps `bondBetween?`. -/
 lemma foldl_undoAdds_onlyArom (hP : ∀ w k t, wa k = true → P w → P (w.setKind k t))
     (keep : List ℕ) : ∀ (l : List ℕ) (p : Work × Array Bool × Array Bool),
       (∀ k, p.2.1[k]! = true → wa k = true) → P p.1 →
@@ -554,6 +576,7 @@ lemma foldl_undoAdds_onlyArom (hP : ∀ w k t, wa k = true → P w → P (w.setK
     obtain ⟨h1, h2, h3⟩ := foldl_undoAdds_onlyArom hP keep l _ step.1 step.2.1
     exact ⟨h1, h2, h3.trans step.2.2⟩
 
+/-- Back-tracking satisfies `StepR`, for a state with the molecule of `s₀`. -/
 lemma KekState.OnlyArom.backTrack (hP : ∀ w k t, wa k = true → P w → P (w.setKind k t))
     {s₀ s : KekState} (hm : s.m = s₀.m) (hi : s.OnlyArom wa) (hp : P s.m) (lo : ℕ) :
     StepR wa P s₀ (.inr (s.backTrack lo)) := by
@@ -607,6 +630,7 @@ theorem kekulizeStep_onlyArom (hP : ∀ w k t, wa k = true → P w → P (w.setK
               · exact hp
           · trivial
 
+/-- The walk keeps a property kept by setting the kinds of bonds written aromatic. -/
 theorem kekulizeLoop_onlyArom (hP : ∀ w k t, wa k = true → P w → P (w.setKind k t))
     (atoms sorted : List ℕ) :
     ∀ (fuel : ℕ) (s : KekState), s.OnlyArom wa → P s.m → ∀ w,
@@ -627,12 +651,15 @@ theorem kekulizeLoop_onlyArom (hP : ∀ w k t, wa k = true → P w → P (w.setK
     · cases hw
       exact hp
 
+/-- `kekulizeWorker` keeps a property kept by setting the kinds of bonds written aromatic. -/
 theorem kekulizeWorker_onlyArom (hP : ∀ w k t, wa k = true → P w → P (w.setKind k t))
     {m w : Work} {atoms : List ℕ} {cands : Array Bool} {done : List ℕ} (hp : P m)
     (hw : m.kekulizeWorker wa atoms cands done = some w) : P w :=
   kekulizeLoop_onlyArom hP atoms _ _ _
     ⟨fun _ _ h ↦ by simp at h, fun k h ↦ by simp [getElem!_replicate_false] at h⟩ hp w hw
 
+/-- Making the bonds of `l` written aromatic single keeps a property kept by setting the kinds of
+such bonds. -/
 lemma foldl_single_onlyArom (hP : ∀ w k t, wa k = true → P w → P (w.setKind k t)) :
     ∀ (l : List ℕ) (o : Work), P o →
       P (l.foldl (fun o k ↦ if wa k then o.setKind k .single else o) o)
@@ -645,6 +672,7 @@ lemma foldl_single_onlyArom (hP : ∀ w k t, wa k = true → P w → P (w.setKin
     · exact hP _ _ _ ‹_› hp
     · exact hp
 
+/-- `singleAromaticBonds` keeps a property kept by setting the kinds of bonds written aromatic. -/
 lemma singleAromaticBonds_onlyArom (hP : ∀ w k t, wa k = true → P w → P (w.setKind k t))
     (out : Work) (i : ℕ) (hp : P out) : P (singleAromaticBonds wa out i) := by
   unfold singleAromaticBonds
@@ -652,6 +680,8 @@ lemma singleAromaticBonds_onlyArom (hP : ∀ w k t, wa k = true → P w → P (w
   · exact foldl_single_onlyArom hP _ _ hp
   · exact hp
 
+/-- A fold of `singleAromaticBonds` keeps a property kept by setting the kinds of bonds written
+aromatic. -/
 lemma foldl_singleAromaticBonds_onlyArom
     (hP : ∀ w k t, wa k = true → P w → P (w.setKind k t)) :
     ∀ (l : List ℕ) (out : Work), P out → P (l.foldl (singleAromaticBonds wa) out)
@@ -659,6 +689,7 @@ lemma foldl_singleAromaticBonds_onlyArom
   | i :: l, out, hp =>
     foldl_singleAromaticBonds_onlyArom hP l _ (singleAromaticBonds_onlyArom hP out i hp)
 
+/-- One fused system keeps a property kept by setting the kinds of bonds written aromatic. -/
 theorem kekulizeSystem_onlyArom (hP : ∀ w k t, wa k = true → P w → P (w.setKind k t))
     {ev0 : List ℕ} {rings : Array (List ℕ)} {out w : Work} {system : List ℕ} (hp : P out)
     (hw : kekulizeSystem wa ev0 rings out system = .ok w) : P w := by

@@ -7,9 +7,25 @@ module
 
 public import LeanSMILES.Aromaticity.Passes
 
-/-! # LeanSMILES.Aromaticity.PerceiveFacts
+/-!
+# LeanSMILES.Aromaticity.PerceiveFacts
 
-Where the bonds `setAromaticity` makes aromatic come from. -/
+Where the bonds `setAromaticity` makes aromatic come from.
+
+## Main definitions
+
+* `Work.DonorInv`, `Work.RingInv`: what the first pass of perception keeps true of its state, atom
+  by atom and ring by ring.
+
+## Main statements
+
+* `Work.mem_fusedBonds`: a bond the second pass marks is in one of the ring bond lists it reads.
+* `Work.ringInv_donorData`: the first pass ends with `RingInv`.
+* `Work.of_kind?_setAromaticity`: a bond `setAromaticity` makes aromatic is a ring bond between two
+  aromatic candidates.
+* `Work.of_kind?_setAromaticity_donor`: the same, with the ring and the donor types that made its
+  ends candidates.
+-/
 
 @[expose] public section
 

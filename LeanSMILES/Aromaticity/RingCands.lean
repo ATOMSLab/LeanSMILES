@@ -19,6 +19,16 @@ share only `r`. Every cycle it lists is one of these (`Work.cand_of_mem_cyclesFr
 such cycle is listed, perhaps started elsewhere and run the other way
 (`Work.exists_mem_cyclesFrom_of_cand`): which way round depends on the numbering, through the test
 `x < y` and the order of the neighbour list.
+
+## Main definitions
+
+* `Work.OddCand`, `Work.EvenCand`: the two kinds of candidate cycle from a root.
+* `Work.Cand`: a candidate cycle from a root, odd or even.
+
+## Main statements
+
+* `Work.cand_of_mem_cyclesFrom`: every cycle `cyclesFrom` lists is a candidate.
+* `Work.exists_mem_cyclesFrom_of_cand`: every candidate is listed, up to `RingEq`.
 -/
 
 @[expose] public section
@@ -36,6 +46,7 @@ lemma PathOK.mem_tail {m : Work} {dist : Array (Option ℕ)} {r w d : ℕ} {p : 
   rw [getLast?_cons_of_ne_nil hpt0] at this
   exact List.mem_of_getLast? this
 
+/-- `disjointTails` is symmetric in its two paths. -/
 lemma disjointTails_comm {p q : List ℕ} : disjointTails p q = disjointTails q p := by
   rw [Bool.eq_iff_iff]
   simp only [disjointTails, List.all_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true,
@@ -137,6 +148,7 @@ theorem cand_of_mem_cyclesFrom (m : Work) {r : ℕ} (hr : r < m.numAtoms) {c : L
 lemma ringEq_swap (r : ℕ) (A B : List ℕ) : RingEq (r :: (A ++ B.reverse)) (r :: (B ++ A.reverse)) :=
   ⟨1, .inr (by simp [List.rotate_cons_succ])⟩
 
+/-- Every atom list is `RingEq` to itself. -/
 lemma RingEq.refl (c : List ℕ) : RingEq c c := ⟨0, .inl (by simp)⟩
 
 /-- **Every candidate is listed**, perhaps started elsewhere and run the other way. -/

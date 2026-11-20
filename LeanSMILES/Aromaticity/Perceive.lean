@@ -24,6 +24,23 @@ from `tools/rdkit_reference/aromaticity_ref.py` (`assign_radicals`, `set_aromati
    "fused" here only if they share exactly one bond and both have ≤ 24 bonds;
    groups of up to 6 rings are tried (`applyHuckelToFused`, `Aromaticity.cpp:334`).
    When a group passes, every bond that occurs once in the group becomes aromatic.
+
+## Main definitions
+
+* `Aromaticity.Donor`: how many π electrons a ring atom can give to an aromatic ring.
+* `Aromaticity.Work.donorType`: the donor type of an atom.
+* `Aromaticity.Work.huckel`: Hückel's rule over a set of atoms.
+* `Aromaticity.Work.setAromaticity`: marking the aromatic rings' bonds and atoms.
+* `Aromaticity.Work.prepare`, `Aromaticity.Work.finish`: the passes before and after
+  kekulization.
+* `Molecule.aromatize`, `Mol.aromatize`: RDKit's view of the molecule's bonds, charges and
+  hydrogens.
+* `SMILES.parseAromatized`: parse a SMILES string and give it RDKit's bonds, aromaticity and
+  hydrogens.
+
+## Main statements
+
+* `Aromaticity.map_edge_withKinds`: `withKinds` keeps every bond's endpoints.
 -/
 
 @[expose] public section

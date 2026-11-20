@@ -17,6 +17,21 @@ whose radicals are those `assignRadicals` gives it, reads like its canonical rec
 two such records with the same element, charge and hydrogen total are read alike by perception
 (`Loc.readAlike`) when they write the same hydrogens, when the atom has more than three bonds or
 takes no more than one bond, and in the two swaps of `swapCheck`.
+
+## Main definitions
+
+* `Loc.canonOf`, `Loc.Canonish`: the canonical record of a record, and the records that read
+  like theirs.
+* `Loc.rdCount`, `Loc.smCount`: RDKit's and OpenSMILES's hydrogen counts for a bare atom.
+* `Loc.restoreAromCheck`, `Loc.bareRestoreCheck`: the `adjustHs` checks at an atom perception
+  makes aromatic.
+
+## Main statements
+
+* `Loc.readAlike_rd`, `Loc.readAlike_sm`: the RDKit swap and the OpenSMILES swap.
+* `Loc.restore_sm`, `Loc.restore_bare`: `adjustHs` gives back the hydrogens of an atom written
+  bare and made aromatic.
+* `Work.readAlike_of_swap`: perception reads an atom alike in two Kekulé copies.
 -/
 
 @[expose] public section
@@ -45,6 +60,7 @@ def smCount (e : Element) (sk : List BondKind) : ℕ :=
   Molecule.implicitHydrogens ({ element := some e, aromatic := sk.any (· == .aromatic) } : Atom)
     ((sk.map BondKind.order).sum)
 
+/-- A `Canonish` record has the candidate verdicts and donor types of its canonical record. -/
 lemma canon_read {x : WAtom} {ks : List BondKind} (h : Canonish x ks) :
     (∀ d, candD x ks d = candD (canonOf x ks) ks d) ∧
       ∀ w p r g, ringDonorL x ks w p r g = ringDonorL (canonOf x ks) ks w p r g := by
@@ -55,6 +71,8 @@ lemma canon_read {x : WAtom} {ks : List BondKind} (h : Canonish x ks) :
   exact ⟨fun d ↦ candD_congr (a := x) (b := canonOf x ks) rfl rfl hi hr' ks hcv' d,
     fun w p r g ↦ ringDonorL_congr (a := x) (b := canonOf x ks) rfl rfl rfl hi hr' ks hcv' w p r g⟩
 
+/-- Perception reads two `Canonish` records alike exactly when it reads their canonical records
+alike. -/
 lemma readAlike_canonOf {x y : WAtom} {ks : List BondKind} (hx : Canonish x ks)
     (hy : Canonish y ks) (w p r g : Bool) :
     readAlike x y ks w p r g = readAlike (canonOf x ks) (canonOf y ks) ks w p r g := by
@@ -62,6 +80,7 @@ lemma readAlike_canonOf {x y : WAtom} {ks : List BondKind} (hx : Canonish x ks)
   obtain ⟨cy, dy⟩ := canon_read hy
   simp only [readAlike, cx, cy, dx, dy]
 
+/-- Perception reads a record alike with itself. -/
 lemma readAlike_self (a : WAtom) (ks : List BondKind) (w p r g : Bool) :
     readAlike a a ks w p r g = true := by
   unfold readAlike
@@ -69,12 +88,15 @@ lemma readAlike_self (a : WAtom) (ks : List BondKind) (w p r g : Bool) :
   generalize candD a ks d = c
   cases c <;> cases d <;> rfl
 
+/-- An environment is in `envs kk` when its exocyclic or ring multiple bond comes with a multiple
+bond in `kk`, and a pulling atom with an exocyclic multiple bond. -/
 lemma mem_envs {kk : List BondKind} {w p r g : Bool} (hm : (w || r) = true → kk.any isMultiple)
     (hp : p = true → w = true) : (w, p, r, g) ∈ envs kk := by
   simp only [envs, List.mem_filter]
   refine ⟨by cases w <;> cases p <;> cases r <;> cases g <;> decide, ?_⟩
   cases w <;> cases p <;> cases r <;> simp_all
 
+/-- An element whose default valence is at most one gives no donor, in any environment. -/
 lemma ringDonorL_none_of_dv {a : WAtom} {ks : List BondKind} (h : defaultValence a.z ≤ 1)
     (w p r g : Bool) : ringDonorL a ks w p r g = .none := by
   refine ringDonorL_none_of_elec ?_ w p r g
@@ -83,6 +105,7 @@ lemma ringDonorL_none_of_dv {a : WAtom} {ks : List BondKind} (h : defaultValence
   simp only [Id.run, this, if_true]
   rfl
 
+/-- Two records that both give no donor are read alike. -/
 lemma readAlike_of_none {x y : WAtom} {ks : List BondKind} {w p r g : Bool}
     (hx : ringDonorL x ks w p r g = .none) (hy : ringDonorL y ks w p r g = .none) :
     readAlike x y ks w p r g = true := by
@@ -162,11 +185,13 @@ lemma elec_congr_cv {a b : WAtom} (hz : a.z = b.z) (hc : a.charge = b.charge)
     elec a ks = elec b ks := by
   simp only [elec, hz, hc, he, hi, hr, hcv]
 
+/-- `cand` reads the cached valence only through `cv`. -/
 lemma cand_congr_cv {a b : WAtom} (hz : a.z = b.z) (hc : a.charge = b.charge)
     (hi : a.cachedImplicit = b.cachedImplicit) (hr : a.radicals = b.radicals)
     (ks : List BondKind) (hcv : cv a ks = cv b ks) : cand a ks = cand b ks := by
   simp only [cand, hz, hc, hi, hr, hcv]
 
+/-- `donorOk` reads the cached valence only through `cv`. -/
 lemma donorOk_congr_cv {a b : WAtom} (hz : a.z = b.z) (hc : a.charge = b.charge)
     (he : a.explicitHs = b.explicitHs) (hi : a.cachedImplicit = b.cachedImplicit)
     (hr : a.radicals = b.radicals) (ks : List BondKind) (hcv : cv a ks = cv b ks) :
@@ -206,9 +231,13 @@ def restoreAromCheck (e : Element) (kk : List BondKind) : Bool :=
       Molecule.readsDifferentlyInRDKit b q || decide (elec aK kk < 0) || !cand aK kk ||
       !donorOk aK kk || restore a' sk true
 
+/-- `restoreAromCheck` holds at every organic-subset element and every list of at most three
+non-aromatic bond kinds. -/
 theorem restoreArom_ok : (organic.all fun e ↦ (nonArom 3).all (restoreAromCheck e)) = true := by
   decide +kernel
 
+/-- A neutral bare record with OpenSMILES's count cached, made aromatic by perception where the
+bracketed canonical record is a candidate donor: the `adjustHs` step gives back its hydrogens. -/
 lemma restore_sm {e : Element} (he : e ∈ organic) {kk : List BondKind} (hkk : kk ∈ nonArom 3)
     {sk : List BondKind} (hsk : sk ∈ marks kk) (har : sk.any (· == .aromatic) = true)
     (hl : 2 ≤ sk.length)
@@ -263,6 +292,7 @@ lemma restore_congr_true {a b : WAtom} (hz : a.z = b.z) (hc : a.charge = b.charg
   rw [key]
   simp only [he, hi]
 
+/-- A bracketed atom gets no implicit hydrogens. -/
 lemma impl_of_noImplicit {a : WAtom} (h : a.noImplicit = true) (b : ℕ) (ar : Bool) :
     impl a b ar = 0 := by
   simp [impl, h]
@@ -300,9 +330,13 @@ def bareRestoreCheck (e : Element) (kk : List BondKind) : Bool :=
       decide (elec aB kk < 0) || !cand aB kk || !donorOk aB kk ||
       restore (bareRec z Tr) sk true
 
+/-- `bareRestoreCheck` holds at every organic-subset element and every list of at most three
+non-aromatic bond kinds. -/
 theorem bareRestore_ok : (organic.all fun e ↦ (nonArom 3).all (bareRestoreCheck e)) = true := by
   decide +kernel
 
+/-- A neutral bare record with RDKit's count on the Kekulé bonds cached, made aromatic by
+perception where its canonical record is a candidate donor: `adjustHs` gives back its hydrogens. -/
 lemma restore_bare {e : Element} (he : e ∈ organic) {kk : List BondKind} (hkk : kk ∈ nonArom 3)
     {sk : List BondKind} (hsk : sk ∈ marks kk) (har : sk.any (· == .aromatic) = true)
     (hl : 2 ≤ sk.length)
@@ -378,6 +412,7 @@ lemma radicals_assignRadicals_eq (w : Work) {i : ℕ} (hi : i < w.atoms.size) :
     · rw [radicals_assignRadicals w hi hn hz, radicalCount_eq_loc]; simp [hn, hz]
   · rw [assignRadicals_atom_of_skip w (.inl (by simpa using hn))]; simp [hn]
 
+/-- An atom whose exocyclic partner pulls electrons has an exocyclic multiple bond. -/
 lemma whoS_of_pullsB {w : Work} {rbs : List ℕ} {i : ℕ} (h : w.pullsB rbs i = true) :
     w.whoS rbs i = true := by
   unfold pullsB at h
@@ -386,19 +421,23 @@ lemma whoS_of_pullsB {w : Work} {rbs : List ℕ} {i : ℕ} (h : w.pullsB rbs i =
   | none => rw [hx] at h; cases h
   | some _ => rfl
 
+/-- `exocyclicMultiple?` reads only the bonds of the working copy. -/
 lemma exocyclicMultiple?_congr {w w' : Work} (hb : w'.bonds = w.bonds) (rbs : List ℕ) (i : ℕ) :
     w'.exocyclicMultiple? rbs i = w.exocyclicMultiple? rbs i := by
   simp only [exocyclicMultiple?, neighbors, bondsOf, numBonds, hb]
 
+/-- `whoS` reads only the bonds of the working copy. -/
 lemma whoS_congr {w w' : Work} (hb : w'.bonds = w.bonds) (rbs : List ℕ) (i : ℕ) :
     w'.whoS rbs i = w.whoS rbs i := by
   simp only [whoS, exocyclicMultiple?_congr hb]
 
+/-- `pullsB` reads only the bonds and the atomic numbers of the working copy. -/
 lemma pullsB_congr {w w' : Work} (hb : w'.bonds = w.bonds)
     (hz : ∀ j : ℕ, (w'.atoms[j]! : WAtom).z = (w.atoms[j]! : WAtom).z) (rbs : List ℕ) (i : ℕ) :
     w'.pullsB rbs i = w.pullsB rbs i := by
   simp only [pullsB, exocyclicMultiple?_congr hb, hz]
 
+/-- `ringMultB` reads only the bonds of the working copy. -/
 lemma ringMultB_congr {w w' : Work} (hb : w'.bonds = w.bonds) (rbs : List ℕ) (i : ℕ) :
     w'.ringMultB rbs i = w.ringMultB rbs i := by
   simp only [ringMultB, bondsOf, numBonds, hb]

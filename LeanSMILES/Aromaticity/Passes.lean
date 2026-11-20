@@ -19,6 +19,24 @@ the facts `LeanSMILES.Aromaticity.Invariance` needs.
 * kekulization returns a working copy with nothing aromatic unchanged (`Work.kekulize_of_noArom`).
 * the passes after kekulization keep every charge and every bond's endpoints, and change a bond
   kind only to aromatic.
+
+## Main definitions
+
+* `Work.CleanRel`, `Work.CleanStep`: how `cleanUp` may change a copy, and one or several of its
+  rewrites, each charging a neutral atom.
+* `Work.Quiet`: no step of `cleanUp` does anything on the copy.
+* `Work.NoArom`: nothing in the copy is aromatic.
+* `Work.AfterRel`: how the passes after kekulization may change a copy.
+
+## Main statements
+
+* `Work.cleanUp_eq_self_of_charge`: when `cleanUp` keeps every charge it does nothing.
+* `Work.quiet_of_cleanUp_eq`, `Work.cleanUp_eq_of_quiet`: `cleanUp` does nothing exactly when
+  the copy is `Quiet`.
+* `Work.kekulize_of_noArom`: kekulization of a copy with nothing aromatic returns it unchanged.
+* `Work.afterRel_finish`: the passes after kekulization change a copy only as `AfterRel` allows.
+* `Molecule.aromatize_eq_ok`: `aromatize` succeeds exactly when kekulization does, with the
+  output of the finished copy.
 -/
 
 @[expose] public section
@@ -52,28 +70,37 @@ def charge? (j : ℕ) : Option ℤ := w.atoms[j]?.map (·.charge)
 /-- The kind of bond `k`, if there is a bond `k`. -/
 def kind? (k : ℕ) : Option BondKind := w.bonds[k]?.map (·.kind)
 
+/-- `setKind` does not touch the atoms. -/
 @[simp] lemma setKind_atoms (k : ℕ) (o : BondKind) : (w.setKind k o).atoms = w.atoms := rfl
 
+/-- `modifyAtom` does not touch the bonds. -/
 @[simp] lemma modifyAtom_bonds (i : ℕ) (f : WAtom → WAtom) :
     (w.modifyAtom i f).bonds = w.bonds := rfl
 
+/-- `setKind` keeps the number of bonds. -/
 @[simp] lemma size_setKind_bonds (k : ℕ) (o : BondKind) :
     (w.setKind k o).bonds.size = w.bonds.size := by simp [setKind]
 
+/-- `modifyAtom` keeps the number of atoms. -/
 @[simp] lemma size_modifyAtom_atoms (i : ℕ) (f : WAtom → WAtom) :
     (w.modifyAtom i f).atoms.size = w.atoms.size := by simp [modifyAtom]
 
+/-- Bond `j` after `setKind k o`: bond `j` with kind `o` if `j` is `k`, else bond `j` as it was. -/
 lemma getElem?_setKind_bonds (k : ℕ) (o : BondKind) (j : ℕ) :
     (w.setKind k o).bonds[j]? =
       if k = j then w.bonds[j]?.map ({ · with kind := o }) else w.bonds[j]? := by
   simp [setKind, Array.getElem?_modify]
 
+/-- Atom `j` after `modifyAtom i f`: atom `j` updated by `f` if `j` is `i`, else as it was. -/
 lemma getElem?_modifyAtom_atoms (i : ℕ) (f : WAtom → WAtom) (j : ℕ) :
     (w.modifyAtom i f).atoms[j]? = if i = j then w.atoms[j]?.map f else w.atoms[j]? := by
   simp [modifyAtom, Array.getElem?_modify]
 
+/-- `setKind` keeps every charge. -/
 @[simp] lemma charge?_setKind (k : ℕ) (o : BondKind) : (w.setKind k o).charge? = w.charge? := rfl
 
+/-- The charge of atom `j` after setting atom `i`'s to `c`: `c` if `j` is `i` and in range, else
+as it was. -/
 lemma charge?_modifyAtom_charge (i : ℕ) (c : ℤ) (j : ℕ) :
     (w.modifyAtom i ({ · with charge := c })).charge? j =
       if i = j then (w.charge? j).map fun _ ↦ c else w.charge? j := by
@@ -119,9 +146,11 @@ def Charged (o w : Work) : Prop := ∃ j c, o.charge? j = some 0 ∧ w.charge? j
 some neutral atom charged. -/
 def CleanStep (o w : Work) : Prop := CleanRel o w ∧ (w = o ∨ Charged o w)
 
+/-- Every copy is related to itself by `CleanRel`. -/
 lemma CleanRel.refl (o : Work) : CleanRel o o :=
   ⟨rfl, rfl, fun _ ↦ rfl, fun _ ↦ rfl, fun _ _ h ↦ .inr h, fun _ _ h ↦ .inr (.inr h)⟩
 
+/-- `CleanRel` composes: two such changes in a row are one. -/
 lemma CleanRel.trans {o w w' : Work} (h : CleanRel o w) (h' : CleanRel w w') : CleanRel o w' where
   atoms_size := h'.atoms_size.trans h.atoms_size
   bonds_size := h'.bonds_size.trans h.bonds_size
@@ -131,9 +160,11 @@ lemma CleanRel.trans {o w w' : Work} (h : CleanRel o w) (h' : CleanRel w w') : C
   kind k t ht := (h'.kind k t ht).elim .inl fun ht' ↦
     ht'.elim (fun h1 ↦ .inr (.inl h1)) fun ht'' ↦ h.kind k t ht''
 
+/-- Atom `j` has a charge exactly when it is in range. -/
 lemma charge?_isSome_iff (j : ℕ) : (w.charge? j).isSome ↔ j < w.atoms.size := by
   simp [charge?]
 
+/-- An atom neutral in `o` and charged in `w` stays charged through a further `CleanRel` change. -/
 lemma Charged.of_cleanRel {o w w' : Work} (h : Charged o w) (h' : CleanRel w w') :
     Charged o w' := by
   obtain ⟨j, c, ho, hw, hc⟩ := h
@@ -144,6 +175,7 @@ lemma Charged.of_cleanRel {o w w' : Work} (h : Charged o w) (h' : CleanRel w w')
   · exact h1
   · rw [hw] at h1; cases h1; exact hc
 
+/-- An atom neutral in `w` and charged in `w'` was neutral in `o` too, if `CleanRel o w`. -/
 lemma Charged.of_cleanRel_left {o w w' : Work} (h : CleanRel o w) (h' : Charged w w') :
     Charged o w' := by
   obtain ⟨j, c, hw, hw', hc⟩ := h'
@@ -152,8 +184,10 @@ lemma Charged.of_cleanRel_left {o w w' : Work} (h : CleanRel o w) (h' : Charged 
   · exact absurd rfl h1
   · exact h1
 
+/-- Every copy is related to itself by `CleanStep`. -/
 lemma CleanStep.refl (o : Work) : CleanStep o o := ⟨CleanRel.refl o, .inl rfl⟩
 
+/-- `CleanStep` composes: two sequences of rewrites in a row are one. -/
 lemma CleanStep.trans {o w w' : Work} (h : CleanStep o w) (h' : CleanStep w w') :
     CleanStep o w' := by
   refine ⟨h.1.trans h'.1, ?_⟩
@@ -163,9 +197,11 @@ lemma CleanStep.trans {o w w' : Work} (h : CleanStep o w) (h' : CleanStep w w') 
     · exact .inr h2
     · exact .inr (h1.of_cleanRel h'.1)
 
+/-- A `CleanRel` change that charges some neutral atom is a `CleanStep`. -/
 lemma CleanStep.of_charged {o w : Work} (h : CleanRel o w) (h' : Charged o w) : CleanStep o w :=
   ⟨h, .inr h'⟩
 
+/-- Making a bond single or double is a `CleanRel` change. -/
 lemma cleanRel_setKind (k : ℕ) (t : BondKind) (ht : t = .single ∨ t = .double) :
     CleanRel w (w.setKind k t) where
   atoms_size := rfl
@@ -181,6 +217,7 @@ lemma cleanRel_setKind (k : ℕ) (t : BondKind) (ht : t = .single ∨ t = .doubl
       exact ht.elim .inl fun h ↦ .inr (.inl h)
     · exact .inr (.inr h)
 
+/-- Setting an atom's charge to a nonzero value is a `CleanRel` change. -/
 lemma cleanRel_modifyAtom_charge (i : ℕ) (c : ℤ) (hc : c ≠ 0) :
     CleanRel w (w.modifyAtom i ({ · with charge := c })) where
   atoms_size := by simp
@@ -196,10 +233,12 @@ lemma cleanRel_modifyAtom_charge (i : ℕ) (c : ℤ) (hc : c ≠ 0) :
     · exact .inr h
   kind _ _ h := .inr (.inr h)
 
+/-- After setting the charge of an atom in range to `c`, its charge is `c`. -/
 lemma charge?_modifyAtom_charge_self {i : ℕ} (hi : i < w.atoms.size) (c : ℤ) :
     (w.modifyAtom i ({ · with charge := c })).charge? i = some c := by
   rw [charge?_modifyAtom_charge, if_pos rfl, charge?_eq_of_lt w hi]; rfl
 
+/-- A charged atom stays charged when any atom's charge is set to a nonzero value. -/
 lemma charge?_modifyAtom_charge_of_ne_zero {i j : ℕ} {c d : ℤ} (h : w.charge? i = some c)
     (hc : c ≠ 0) (hd : d ≠ 0) :
     ∃ e, (w.modifyAtom j ({ · with charge := d })).charge? i = some e ∧ e ≠ 0 := by
@@ -370,6 +409,7 @@ lemma cleanRel_cleanUp : CleanRel w w.cleanUp := w.cleanStep_cleanUp.1
 
 /-! ### When `cleanUp` does nothing -/
 
+/-- No atom is neutral and charged in the same copy. -/
 lemma Charged.irrefl {o : Work} : ¬ Charged o o := by
   rintro ⟨j, c, h0, hc, hne⟩
   rw [h0] at hc
@@ -461,6 +501,7 @@ def Quiet : Prop :=
   (∀ i < w.atoms.size, w.nitroCand i = true → azideStep w i = w) ∧
   ∀ i < w.atoms.size, cleanUpStep w i = w
 
+/-- If `cleanUp` does nothing on `w`, then `w` is `Quiet`. -/
 lemma quiet_of_cleanUp_eq (h : w.cleanUp = w) : w.Quiet := by
   have hN : w.nitrogensCleanup = w := by
     have h2 := w.cleanStep_cleanUp
@@ -535,7 +576,7 @@ lemma quiet_of_cleanUp_eq (h : w.cleanUp = w) : w.Quiet := by
     exact foldl_eq_self_of_cleanStep cleanUpStep _ w (fun w' a ha hs ↦ cleanStep_cleanUpStep w'
       (by rw [hs]; simpa [numAtoms] using ha)) h2 i (by simpa [numAtoms] using hi)
 
-/-- Charging a neutral atom of `w` gives something other than `w`. -/
+/-- A copy with atom `j` charged is not `w`, when `j` is neutral in `w`. -/
 lemma modifyAtom_charge_ne {X : Work} {j : ℕ} {d : ℤ} (hs : X.atoms.size = w.atoms.size)
     (hj : j < w.atoms.size) (h0 : w.atoms[j]!.charge = 0) (hd : d ≠ 0) :
     X.modifyAtom j ({ · with charge := d }) ≠ w := by
@@ -629,17 +670,20 @@ lemma phosphorusCleanup_eq_iff {i : ℕ} (hi : i < w.atoms.size) :
       · simp only [if_true, Option.isSome_some, and_self, not_true_eq_false, iff_false]
         exact modifyAtom_charge_ne w (by simp) hi hg.1.1 one_ne_zero
 
+/-- `halogenStep` keeps the number of atoms. -/
 lemma halogenStep_size (p : Work × ℤ) (kj : ℕ × ℕ) :
     (halogenStep p kj).1.atoms.size = p.1.atoms.size := by
   unfold halogenStep
   dsimp only
   split <;> simp
 
+/-- A fold of `halogenStep` keeps the number of atoms. -/
 lemma foldl_halogenStep_size : ∀ (l : List (ℕ × ℕ)) (p : Work × ℤ),
     (l.foldl halogenStep p).1.atoms.size = p.1.atoms.size
   | [], _ => rfl
   | kj :: l, p => by rw [List.foldl_cons, foldl_halogenStep_size l, halogenStep_size]
 
+/-- A fold of `halogenStep` never lowers the count of `=O` rewritten. -/
 lemma le_foldl_halogenStep : ∀ (l : List (ℕ × ℕ)) (p : Work × ℤ),
     p.2 ≤ (l.foldl halogenStep p).2
   | [], _ => le_rfl
@@ -715,6 +759,7 @@ lemma halogenCleanup_eq_iff {i : ℕ} (hi : i < w.atoms.size) :
         rw [foldl_halogenStep_of_not_double _ w 0 h]
         exact modifyAtom_charge_self w hg.1
 
+/-- If `w` is `Quiet`, `cleanUp` does nothing on it. -/
 lemma cleanUp_eq_of_quiet (h : w.Quiet) : w.cleanUp = w := by
   obtain ⟨h1, h2, h3⟩ := h
   have hN : w.nitrogensCleanup = w := by
@@ -729,6 +774,7 @@ lemma cleanUp_eq_of_quiet (h : w.Quiet) : w.cleanUp = w := by
 
 /-! ### Atoms rebuilt one by one: `freezeHs`, `cacheValences` -/
 
+/-- Atom `j` of `freezeHs`: atom `j` with its total hydrogen count frozen. -/
 lemma getElem?_freezeHs_atoms (j : ℕ) :
     w.freezeHs.atoms[j]? = w.atoms[j]?.map fun a ↦ { a with frozenHs := some (w.totalHs j) } := by
   unfold freezeHs numAtoms
@@ -736,6 +782,8 @@ lemma getElem?_freezeHs_atoms (j : ℕ) :
   · simp [hj, getElem!_def]
   · simp [hj]
 
+/-- Atom `j` of `cacheValences`: atom `j` with its explicit valence, implicit hydrogens and
+aromaticity cached. -/
 lemma getElem?_cacheValences_atoms (j : ℕ) :
     w.cacheValences.atoms[j]? = w.atoms[j]?.map fun a ↦
       { a with cachedValence := some (w.explicitValence j), cachedImplicit := w.implicitHs j,
@@ -745,19 +793,25 @@ lemma getElem?_cacheValences_atoms (j : ℕ) :
   · simp [hj, getElem!_def]
   · simp [hj]
 
+/-- `freezeHs` does not touch the bonds. -/
 @[simp] lemma freezeHs_bonds : w.freezeHs.bonds = w.bonds := rfl
 
+/-- `cacheValences` does not touch the bonds. -/
 @[simp] lemma cacheValences_bonds : w.cacheValences.bonds = w.bonds := rfl
 
+/-- `freezeHs` keeps every charge. -/
 @[simp] lemma charge?_freezeHs : w.freezeHs.charge? = w.charge? := by
   funext j; simp [charge?, getElem?_freezeHs_atoms, Option.map_map, Function.comp_def]
 
+/-- `cacheValences` keeps every charge. -/
 @[simp] lemma charge?_cacheValences : w.cacheValences.charge? = w.charge? := by
   funext j; simp [charge?, getElem?_cacheValences_atoms, Option.map_map, Function.comp_def]
 
+/-- `freezeHs` keeps the number of atoms. -/
 @[simp] lemma size_freezeHs_atoms : w.freezeHs.atoms.size = w.atoms.size := by
   simp [freezeHs, numAtoms]
 
+/-- `cacheValences` keeps the number of atoms. -/
 @[simp] lemma size_cacheValences_atoms : w.cacheValences.atoms.size = w.atoms.size := by
   simp [cacheValences, numAtoms]
 
@@ -766,6 +820,7 @@ lemma getElem?_cacheValences_atoms (j : ℕ) :
 /-- Nothing in the working copy is aromatic: no atom flagged, no bond of kind aromatic. -/
 def NoArom : Prop := (∀ a ∈ w.atoms, a.aromatic = false) ∧ ∀ b ∈ w.bonds, b.kind ≠ .aromatic
 
+/-- `NoArom` read by position: no atom at any index is flagged, no bond at any index aromatic. -/
 lemma noArom_iff : w.NoArom ↔ (∀ (j : ℕ) (a : WAtom), w.atoms[j]? = some a → a.aromatic = false) ∧
     ∀ (k : ℕ) (b : WBond), w.bonds[k]? = some b → b.kind ≠ .aromatic := by
   simp only [NoArom, Array.mem_iff_getElem?]
@@ -792,6 +847,7 @@ lemma kekulize_of_noArom {w : Work} (h : w.NoArom) (rings : Array (List ℕ)) :
   simp only [kekulize, h1, h2]
   rfl
 
+/-- `freezeHs` makes nothing aromatic. -/
 lemma noArom_freezeHs {w : Work} (h : w.NoArom) : w.freezeHs.NoArom := by
   rw [noArom_iff] at h ⊢
   refine ⟨fun j a ha ↦ ?_, h.2⟩
@@ -799,6 +855,7 @@ lemma noArom_freezeHs {w : Work} (h : w.NoArom) : w.freezeHs.NoArom := by
   obtain ⟨a, ha, rfl⟩ := ha
   exact h.1 j a ha
 
+/-- `cacheValences` makes nothing aromatic. -/
 lemma noArom_cacheValences {w : Work} (h : w.NoArom) : w.cacheValences.NoArom := by
   rw [noArom_iff] at h ⊢
   refine ⟨fun j a ha ↦ ?_, h.2⟩
@@ -806,6 +863,7 @@ lemma noArom_cacheValences {w : Work} (h : w.NoArom) : w.cacheValences.NoArom :=
   obtain ⟨a, ha, rfl⟩ := ha
   exact h.1 j a ha
 
+/-- A `CleanRel` change makes nothing aromatic. -/
 lemma CleanRel.noArom {o w : Work} (hr : CleanRel o w) (h : o.NoArom) : w.NoArom := by
   rw [noArom_iff] at h ⊢
   refine ⟨fun j a ha ↦ ?_, fun k b hb ↦ ?_⟩
@@ -842,9 +900,11 @@ structure AfterRel (o w : Work) : Prop where
   /-- Every kind is `o`'s, or aromatic. -/
   kind : ∀ k : ℕ, w.kind? k = o.kind? k ∨ w.kind? k = some .aromatic
 
+/-- Every copy is related to itself by `AfterRel`. -/
 lemma AfterRel.refl (o : Work) : AfterRel o o :=
   ⟨rfl, rfl, rfl, fun _ ↦ rfl, fun _ ↦ .inl rfl⟩
 
+/-- `AfterRel` composes: two such changes in a row are one. -/
 lemma AfterRel.trans {o w w' : Work} (h : AfterRel o w) (h' : AfterRel w w') : AfterRel o w' where
   atoms_size := h'.atoms_size.trans h.atoms_size
   bonds_size := h'.bonds_size.trans h.bonds_size
@@ -852,6 +912,7 @@ lemma AfterRel.trans {o w w' : Work} (h : AfterRel o w) (h' : AfterRel w w') : A
   bonds k := (h'.bonds k).trans (h.bonds k)
   kind k := (h'.kind k).elim (fun e ↦ e ▸ h.kind k) .inr
 
+/-- Updating an atom by a function that keeps its charge is an `AfterRel` change. -/
 lemma afterRel_modifyAtom (i : ℕ) (f : WAtom → WAtom) (hf : ∀ a, (f a).charge = a.charge) :
     AfterRel w (w.modifyAtom i f) where
   atoms_size := by simp
@@ -863,6 +924,7 @@ lemma afterRel_modifyAtom (i : ℕ) (f : WAtom → WAtom) (hf : ∀ a, (f a).cha
   bonds _ := rfl
   kind _ := .inl rfl
 
+/-- Making a bond aromatic is an `AfterRel` change. -/
 lemma afterRel_setKind_aromatic (k : ℕ) : AfterRel w (w.setKind k .aromatic) where
   atoms_size := rfl
   bonds_size := by simp
@@ -874,6 +936,7 @@ lemma afterRel_setKind_aromatic (k : ℕ) : AfterRel w (w.setKind k .aromatic) w
     · cases w.bonds[j]? <;> simp
     · exact .inl rfl
 
+/-- `assignRadicals` changes the copy only as `AfterRel` allows. -/
 lemma afterRel_assignRadicals : AfterRel w w.assignRadicals := by
   unfold assignRadicals
   refine foldl_rel AfterRel AfterRel.refl (fun _ _ _ ↦ AfterRel.trans) _ _ _ fun w' i _ _ ↦ ?_
@@ -883,6 +946,7 @@ lemma afterRel_assignRadicals : AfterRel w w.assignRadicals := by
   · exact .refl w'
   · exact w'.afterRel_modifyAtom i _ fun _ ↦ rfl
 
+/-- `markAromatic` changes the copy only as `AfterRel` allows. -/
 lemma afterRel_markAromatic (b : ℕ) : AfterRel w (w.markAromatic b) := by
   unfold markAromatic
   dsimp only
@@ -892,10 +956,12 @@ lemma afterRel_markAromatic (b : ℕ) : AfterRel w (w.markAromatic b) := by
       (afterRel_modifyAtom _ _ ({ · with aromatic := true }) fun _ ↦ rfl)
   · exact .refl w
 
+/-- `setAromaticity` changes the copy only as `AfterRel` allows. -/
 lemma afterRel_setAromaticity (rings : Array (List ℕ)) : AfterRel w (w.setAromaticity rings) :=
   foldl_rel AfterRel AfterRel.refl (fun _ _ _ ↦ AfterRel.trans) _ _ _ fun w' b _ _ ↦
     w'.afterRel_markAromatic b
 
+/-- `finalizeHs` changes the copy only as `AfterRel` allows. -/
 lemma afterRel_finalizeHs : AfterRel w w.finalizeHs := by
   have h1 : AfterRel w ((List.range w.numAtoms).foldl adjustHsStep w) := by
     refine foldl_rel AfterRel AfterRel.refl (fun _ _ _ ↦ AfterRel.trans) _ _ _ fun w' i _ _ ↦ ?_
@@ -928,6 +994,7 @@ lemma finalizeHs_bonds : w.finalizeHs.bonds = w.bonds := by
     · exact h
   · exact h
 
+/-- `finish` (radicals, perception, final hydrogens) changes the copy only as `AfterRel` allows. -/
 lemma afterRel_finish (rings : Array (List ℕ)) : AfterRel w (w.finish rings) :=
   ((w.afterRel_assignRadicals).trans (afterRel_setAromaticity _ rings)).trans
     (afterRel_finalizeHs _)
@@ -938,18 +1005,24 @@ section OfMolecule
 
 variable {n : ℕ} (m : Molecule n)
 
+/-- The working copy of a molecule with `n` atoms has `n` atoms. -/
 @[simp] lemma size_ofMolecule_atoms : (ofMolecule m).atoms.size = n := by simp [ofMolecule]
 
+/-- Bond `k` of the working copy: the molecule's bond `k`, its endpoints as numbers. -/
 lemma getElem?_ofMolecule_bonds (k : ℕ) : (ofMolecule m).bonds[k]? = m.bonds[k]?.map fun b ↦
     ({ src := b.src.val, dst := b.dst.val, kind := b.kind } : WBond) := by
   simp [ofMolecule]
 
+/-- The kind of bond `k` of the working copy is that of the molecule's bond `k`. -/
 lemma kind?_ofMolecule (k : ℕ) : (ofMolecule m).kind? k = m.bonds[k]?.map (·.kind) := by
   simp [kind?, getElem?_ofMolecule_bonds, Option.map_map, Function.comp_def]
 
+/-- The charge of atom `i` of the working copy is that of the molecule's atom `i`. -/
 lemma charge?_ofMolecule (i : Fin n) : (ofMolecule m).charge? i = some (m.atom i).charge := by
   simp [charge?, ofMolecule, Molecule.atom]
 
+/-- A molecule with no aromatic atom and no aromatic bond has a working copy with nothing
+aromatic. -/
 lemma noArom_ofMolecule (ha : ∀ i, (m.atom i).aromatic = false)
     (hb : ∀ b ∈ m.bonds, b.kind ≠ .aromatic) : (ofMolecule m).NoArom := by
   refine ⟨fun a h ↦ ?_, fun b h ↦ ?_⟩
@@ -994,12 +1067,15 @@ theorem aromatize_eq_ok {m : Molecule n} {a : Molecule n} : m.aromatize = .ok a 
   cases h : (Work.prepare m).kekulize (Work.prepare m).relevantCycles <;>
     simp [h, bind, Except.bind, pure, Except.pure]
 
+/-- The output's bonds are the molecule's with the working copy's kinds. -/
 @[simp] lemma aromatizeOutput_bonds (m : Molecule n) (w : Work) :
     (m.aromatizeOutput w).bonds = withKinds m w := rfl
 
+/-- The output keeps the molecule's stereo marks. -/
 @[simp] lemma aromatizeOutput_stereo (m : Molecule n) (w : Work) :
     (m.aromatizeOutput w).stereo = m.stereo := rfl
 
+/-- The charge of an output atom is that of the working copy's atom. -/
 lemma charge_aromatizeOutput (m : Molecule n) (w : Work) (i : Fin n) :
     ((m.aromatizeOutput w).atom i).charge = w.atoms[i.val]!.charge := by
   unfold aromatizeOutput

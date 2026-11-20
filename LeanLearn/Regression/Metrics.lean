@@ -15,6 +15,12 @@ How close predictions are to measured values, as scikit-learn reports them:
 error) and `mae` (mean absolute error, `mean_absolute_error`), the last two in
 the units of the target. Each takes (measured, predicted) pairs and is written
 over `ScalarLike`.
+
+## Main definitions
+
+* `r2`: the coefficient of determination `1 − SS_res / SS_tot`.
+* `rmse`: the root mean squared error.
+* `mae`: the mean absolute error.
 -/
 
 @[expose] public section

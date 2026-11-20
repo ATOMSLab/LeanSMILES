@@ -57,6 +57,16 @@ dangling bond symbol — are reported as `ParseError`s.  The result is a
 and no duplicate bonds, so the checks are not repeated downstream.
 
 `parse` also runs `Molecule.assignImplicitH`; `parseRaw` does not.
+
+## Main definitions
+
+* `SMILES.State`: the parser's state machine.
+* `SMILES.State.step`, `SMILES.State.finish`: consuming one token, and the end-of-input checks.
+* `SMILES.State.planarOf`: the cis/trans arrangement the `/` `\` marks give a double bond.
+* `SMILES.State.toMolecule`: the state packaged as a `Molecule`.
+* `SMILES.parseRaw`, `SMILES.parse`: a SMILES string to a molecule, without and with implicit
+  hydrogens.
+* `Mol.ofSmiles!`: parse, or panic with the error.
 -/
 
 @[expose] public section

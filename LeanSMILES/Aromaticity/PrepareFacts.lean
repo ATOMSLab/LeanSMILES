@@ -15,6 +15,19 @@ The working copy `aromatize` kekulizes (`Work.prepare`), atom by atom: each atom
 molecule's atom with RDKit's caches filled and `cleanUp`'s charge (`Work.prepare_atom`), and the
 kinds of its bonds are the molecule's, aromatic exactly where the molecule's are
 (`Work.kindsAt_prepare`).
+
+## Main definitions
+
+* `Work.cleaned`: the copy `prepare` builds before caching valences.
+
+## Main statements
+
+* `Work.prepare_atom`: an atom of `prepare m` is the cleaned atom with RDKit's caches filled.
+* `Work.cleaned_atom`: an atom of the cleaned copy is the molecule's, but for its charge and
+  frozen hydrogen count.
+* `Work.kindsAt_prepare`: the bonds at an atom of `prepare m` are aromatic exactly where the
+  molecule's are.
+* `Work.freezeCache_atom`: an atom of a molecule's frozen, cached copy, written out in full.
 -/
 
 @[expose] public section
@@ -23,18 +36,23 @@ namespace LeanSMILES.Aromaticity.Work
 
 /-! ### Same skeleton -/
 
+/-- Two copies with as many atoms and bonds, whose bonds join the same atoms, have the same
+skeleton. -/
 lemma sameSkel_of_ends {w w' : Work} (hn : w'.atoms.size = w.atoms.size)
     (hs : w'.bonds.size = w.bonds.size)
     (he : ∀ k : ℕ, w'.bonds[k]?.map (fun b : WBond ↦ (b.src, b.dst)) =
       w.bonds[k]?.map (fun b : WBond ↦ (b.src, b.dst))) : SameSkel w' w :=
   ⟨hn, hs, fun k ↦ (ends_getElem! hs he k).1, fun k ↦ (ends_getElem! hs he k).2⟩
 
+/-- Copies related by `CleanRel` have the same skeleton. -/
 lemma CleanRel.sameSkel {o w : Work} (h : CleanRel o w) : SameSkel w o :=
   sameSkel_of_ends h.atoms_size h.bonds_size fun k ↦ ends_of_single (h.bonds k)
 
+/-- Copies related by `KindsRel` have the same skeleton. -/
 lemma KindsRel.sameSkel {o w : Work} (h : KindsRel o w) : SameSkel w o :=
   sameSkel_of_ends h.atoms_size h.bonds_size h.ends
 
+/-- Copies related by `AfterRel` have the same skeleton. -/
 lemma AfterRel.sameSkel {o w : Work} (h : AfterRel o w) : SameSkel w o :=
   sameSkel_of_ends h.atoms_size h.bonds_size fun k ↦ ends_of_single (h.bonds k)
 
@@ -52,6 +70,8 @@ lemma kindsAt_forall₂ {w w' : Work} (h : SameSkel w' w) (R : BondKind → Bond
 
 /-! ### The molecule's bonds at an atom -/
 
+/-- Filtering a list's indices by `p` of the entry and mapping each kept index to `f` of its
+entry is filtering the list by `p` and mapping `f`. -/
 lemma range_filter_map {α β : Type*} [Inhabited α] (l : List α) (p : α → Bool) (f : α → β) :
     ((List.range l.length).filter (fun k ↦ p l[k]!)).map (fun k ↦ f l[k]!) =
       (l.filter p).map f := by
@@ -94,19 +114,24 @@ lemma kindsAt_ofMolecule {n : ℕ} (m : Molecule n) (i : Fin n) :
 /-- The copy `prepare` builds before caching: `cleanUp` after freezing the hydrogen counts. -/
 def cleaned {n : ℕ} (m : Molecule n) : Work := (ofMolecule m).freezeHs.cleanUp
 
+/-- `prepare m` is the cleaned copy with its valences cached. -/
 lemma prepare_eq {n : ℕ} (m : Molecule n) : prepare m = (cleaned m).cacheValences := rfl
 
+/-- The cleaned copy is related to the frozen copy by `CleanFine`. -/
 lemma cleanFine_cleaned {n : ℕ} (m : Molecule n) : CleanFine (ofMolecule m).freezeHs (cleaned m) :=
   cleanFine_cleanUp _
 
+/-- The cleaned copy has the skeleton of the molecule's working copy. -/
 lemma sameSkel_cleaned {n : ℕ} (m : Molecule n) : SameSkel (cleaned m) (ofMolecule m) :=
   (cleanFine_cleaned m).rel.sameSkel.trans
     ⟨by simp [numAtoms], rfl, fun _ ↦ rfl, fun _ ↦ rfl⟩
 
+/-- `prepare m` has the skeleton of the molecule's working copy. -/
 lemma sameSkel_prepare {n : ℕ} (m : Molecule n) : SameSkel (prepare m) (ofMolecule m) :=
   (⟨by simp [numAtoms, prepare_eq], rfl, fun _ ↦ rfl, fun _ ↦ rfl⟩ :
     SameSkel (prepare m) (cleaned m)).trans (sameSkel_cleaned m)
 
+/-- The cleaned copy of a molecule with `n` atoms has `n` atoms. -/
 lemma size_cleaned {n : ℕ} (m : Molecule n) : (cleaned m).atoms.size = n := by
   rw [(cleanFine_cleaned m).rel.atoms_size]
   simp [ofMolecule]
@@ -128,6 +153,8 @@ lemma cleaned_atom {n : ℕ} (m : Molecule n) (i : Fin n) :
   simp only [Option.map_some, Option.some.injEq, WAtom.mk.injEq] at h
   simp [h]
 
+/-- An atom of a molecule's working copy: the molecule's element, aromatic flag, charge and
+written hydrogens, with `noImplicit` set for bracket atoms and `*`. -/
 lemma ofMolecule_atom {n : ℕ} (m : Molecule n) (i : Fin n) :
     ((ofMolecule m).atoms[i.val]! : WAtom) =
       { z := (m.atom i).atomicNumber, aromatic := (m.atom i).aromatic, charge := (m.atom i).charge,

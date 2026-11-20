@@ -17,6 +17,20 @@ mask by an echelon basis (pivot bit, vector), highest pivot first, and `addToBas
 mask to the basis. This file proves what they compute: `reduceBy basis v = 0` exactly when `v` is
 a sum of basis vectors (`reduceBy_eq_zero_iff`), and `addToBasis` keeps the basis in echelon form
 and adds the cycle to its span (`addToBasis_spec`).
+
+## Main definitions
+
+* `XSpan`: a sum (`xor`) of members of a list of masks.
+* `Echelon`: an echelon basis of (pivot bit, vector) pairs.
+* `Relevant`: a candidate whose mask is not a sum of masks of strictly smaller candidates.
+* `relevantCmp`: the order `relevantCycles` sorts candidates by.
+
+## Main statements
+
+* `reduceBy_eq_zero_iff`: reduction decides the span.
+* `addToBasis_spec`: `addToBasis` keeps the basis echelon and adds the cycle to its span.
+* `relevantFold_eq`: the sizes loop of `relevantCycles` keeps the relevant candidates, in order.
+* `Work.relevantCycles_toList`: the ring set is the relevant candidates.
 -/
 
 @[expose] public section
@@ -25,38 +39,48 @@ namespace LeanSMILES.Aromaticity
 
 /-- `v` is a sum (`xor`) of members of `S`. -/
 inductive XSpan (S : List ℕ) : ℕ → Prop
+  /-- `0` is the empty sum. -/
   | zero : XSpan S 0
+  /-- Adding a member of `S` to a sum gives a sum. -/
   | add {s v : ℕ} : s ∈ S → XSpan S v → XSpan S (s ^^^ v)
 
 namespace XSpan
 
+/-- The `xor` of two sums is a sum. -/
 lemma xor {S : List ℕ} {a b : ℕ} (ha : XSpan S a) (hb : XSpan S b) : XSpan S (a ^^^ b) := by
   induction ha with
   | zero => simpa using hb
   | add hs _ ih => rw [Nat.xor_assoc]; exact .add hs ih
 
+/-- Every member of `S` is a sum. -/
 lemma mem {S : List ℕ} {s : ℕ} (hs : s ∈ S) : XSpan S s := by
   simpa using XSpan.add hs .zero
 
+/-- If every member of `S` is a sum of `T`, every sum of `S` is a sum of `T`. -/
 lemma of_span {S T : List ℕ} (h : ∀ x ∈ S, XSpan T x) {v : ℕ} (hv : XSpan S v) : XSpan T v := by
   induction hv with
   | zero => exact .zero
   | add hs _ ih => exact (h _ hs).xor ih
 
+/-- A sum of `S` is a sum of any list containing `S`'s members. -/
 lemma mono {S T : List ℕ} (h : ∀ x ∈ S, x ∈ T) {v : ℕ} (hv : XSpan S v) : XSpan T v :=
   of_span (fun x hx ↦ mem (h x hx)) hv
 
+/-- Lists with the same members have the same sums. -/
 lemma congr {S T : List ℕ} (h : ∀ x, x ∈ S ↔ x ∈ T) (v : ℕ) : XSpan S v ↔ XSpan T v :=
   ⟨mono fun x ↦ (h x).1, mono fun x ↦ (h x).2⟩
 
+/-- `xor`ing by `b` twice cancels. -/
 lemma xor_cancel (b v : ℕ) : b ^^^ (b ^^^ v) = v := by
   rw [← Nat.xor_assoc, Nat.xor_self, Nat.zero_xor]
 
+/-- The only sum of the empty list is `0`. -/
 lemma nil {v : ℕ} (h : XSpan [] v) : v = 0 := by
   cases h with
   | zero => rfl
   | add hs _ => cases hs
 
+/-- `v` is a sum of `b :: S` exactly when `v` or `b ^^^ v` is a sum of `S`. -/
 lemma cons_iff {b : ℕ} {S : List ℕ} {v : ℕ} :
     XSpan (b :: S) v ↔ XSpan S v ∨ XSpan S (b ^^^ v) := by
   constructor
@@ -101,8 +125,10 @@ decrease. -/
 def Echelon (B : List (ℕ × ℕ)) : Prop :=
   (∀ e ∈ B, e.2.testBit e.1 = true ∧ e.2 < 2 ^ (e.1 + 1)) ∧ B.Pairwise fun x y ↦ y.1 < x.1
 
+/-- Reducing by the empty basis does nothing. -/
 lemma reduceBy_nil (v : ℕ) : reduceBy [] v = v := rfl
 
+/-- Reducing by `(p, b) :: B`: `xor` by `b` if bit `p` is set, then reduce by `B`. -/
 lemma reduceBy_cons (p b : ℕ) (B : List (ℕ × ℕ)) (v : ℕ) :
     reduceBy ((p, b) :: B) v = reduceBy B (if v.testBit p then v ^^^ b else v) := rfl
 
@@ -250,6 +276,7 @@ theorem addToBasis_spec {B : List (ℕ × ℕ)} (hE : Echelon B) (c : ℕ × Lis
     refine ⟨hE, fun v ↦ ?_⟩
     rw [XSpan.cons_iff, XSpan.xor_iff hc, or_self]
 
+/-- Lists whose members are sums of each other have the same sums. -/
 lemma XSpan.congr_span {S T : List ℕ} (h : ∀ x ∈ S, XSpan T x) (h' : ∀ x ∈ T, XSpan S x)
     (v : ℕ) : XSpan S v ↔ XSpan T v :=
   ⟨XSpan.of_span h, XSpan.of_span h'⟩
@@ -428,6 +455,7 @@ lemma relevantStep_spec {sorted : List (ℕ × List ℕ)}
         exact ((hlt c hc).1 this).trans (hk_lt k' hk')
     · exact fun h hm ↦ lt_irrefl _ (h _ hm)
 
+/-- Erasing duplicates from a nondecreasing list leaves a strictly increasing one. -/
 lemma eraseDups_pairwise_lt : ∀ {l : List ℕ}, l.Pairwise (· ≤ ·) → l.eraseDups.Pairwise (· < ·)
   | [], _ => by simp
   | a :: as, h => by
@@ -485,6 +513,7 @@ theorem relevantFold_eq {sorted : List (ℕ × List ℕ)}
       simp only [decide_eq_true_eq] at h; exact h.1 (hall c hc)]
     rfl
 
+/-- `listLt` is transitive. -/
 lemma listLt_trans : ∀ {a b c : List ℕ}, listLt a b = true → listLt b c = true →
     listLt a c = true
   | [], [], _, h, _ => by simp [listLt] at h
@@ -501,6 +530,7 @@ lemma listLt_trans : ∀ {a b c : List ℕ}, listLt a b = true → listLt b c = 
     · left; exact h2
     · right; exact ⟨rfl, listLt_trans h1 h2⟩
 
+/-- Any two lists are ordered one way or the other by `listLt`, or equal. -/
 lemma listLt_total : ∀ a b : List ℕ, listLt a b = true ∨ a = b ∨ listLt b a = true
   | [], [] => .inr (.inl rfl)
   | [], _ :: _ => .inl rfl
@@ -520,6 +550,7 @@ def relevantCmp (a b : ℕ × List ℕ) : Bool :=
     (listLt (a.2.mergeSort (· ≤ ·)) (b.2.mergeSort (· ≤ ·)) ||
       a.2.mergeSort (· ≤ ·) == b.2.mergeSort (· ≤ ·)))
 
+/-- `relevantCmp` is transitive. -/
 lemma relevantCmp_trans (a b c : ℕ × List ℕ) (h1 : relevantCmp a b = true)
     (h2 : relevantCmp b c = true) : relevantCmp a c = true := by
   unfold relevantCmp at *
@@ -539,6 +570,7 @@ lemma relevantCmp_trans (a b c : ℕ × List ℕ) (h1 : relevantCmp a b = true)
     · exact .inl h2
     · exact .inr rfl
 
+/-- `relevantCmp` is total: any two candidates are ordered one way or the other. -/
 lemma relevantCmp_total (a b : ℕ × List ℕ) : (relevantCmp a b || relevantCmp b a) = true := by
   unfold relevantCmp
   generalize a.2.mergeSort (· ≤ ·) = sa

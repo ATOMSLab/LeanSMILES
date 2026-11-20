@@ -21,7 +21,7 @@ public import LeanSMILES.SMILES.Canonicity
 public import LeanSMILES.SMILES.KekuleClass
 
 /-!
-# LeanSMILES.Aromaticity.Invariance
+# Invariance of aromatization
 
 What `Molecule.aromatize` does not depend on: the numbering of the atoms, the
 listing of the bonds, and which Kekulé structure of an aromatic system was
@@ -30,7 +30,37 @@ this gives the statement a user wants: every Kekulé structure of a molecule,
 with its atoms in any order and its bonds listed any way, aromatizes to one
 canonical SMILES (`canonicalSmiles_aromatize_eq`).
 
-**Status: partly proved.**  The definitions are complete and decidable, and
+## Main definitions
+
+* `Molecule.ChargesKept`, `Molecule.AromaticKept`: the output has the input's charges (`cleanUp`
+  rewrote nothing); every bond written aromatic came out aromatic.
+* `Molecule.ValenceOk`, `Molecule.AromaticWritten`, `Molecule.BareWritable`: every atom is within
+  its allowed valences; aromatic atoms and bonds are written as such; atoms without brackets
+  could be written so.
+* `Molecule.SameValences`, `Molecule.RoundsToKekule`: RDKit reads the valences of two molecules
+  alike; its rounded valences are the ones kekulization gives.
+* `Molecule.KekuleVariant`, `Molecule.IsKekuleStructureOf`, `Molecule.IsKekuleSpellingOf`: another
+  Kekulé structure over the aromatic bonds of an output; a Kekulé structure of an output; a
+  Kekulé spelling of an input.
+* `Molecule.kekuleWitness`: the Kekulé structure the pipeline computes for an output.
+
+## Main statements
+
+* `Molecule.aromatize_relabel`: renumbering the atoms commutes with `aromatize`.
+* `Molecule.aromatize_of_sameBonds`: relisting the bonds gives the same output, relisted.
+* `Molecule.aromatize_of_kekuleVariant_of_chargesKept`: two Kekulé structures of one aromatic
+  system aromatize to the same molecule.
+* `Molecule.exists_kekule_aromatize`: every output is the image of a Kekulé structure of itself.
+* `Molecule.canonicalSmiles_aromatize_eq`: every Kekulé structure of a molecule, renumbered and
+  relisted any way, aromatizes to one canonical SMILES.
+* `Molecule.aromatize_of_isKekuleSpellingOf`: a lowercase molecule and a Kekulé spelling of it
+  aromatize to the same molecule.
+* `Molecule.aromatize_eq_self_of_isKekuleSpellingOf`, `Molecule.aromatize_aromatize`: a molecule
+  that one of its Kekulé spellings aromatizes to is a fixed point; `aromatize` is idempotent.
+
+## Implementation notes
+
+**Status: proved.**  The definitions are complete and decidable, and
 each statement was tested as written (below) before it was fixed.  Proved, with
 only the standard axioms: `sameSkeleton_aromatize`, `stereo_aromatize`,
 `IsKekule.exists_aromatize`, `IsKekule.aromaticKept`, `kind_aromatize`,
@@ -1134,33 +1164,6 @@ theorem kekuleWitness_start_basic {m a : Molecule n} {K : Work}
     · rw [Array.getElem?_eq_none (by omega), Array.getElem?_eq_none (by omega)]
   · rw [Work.assignRadicals_bonds] at hb'
     exact (Work.kekulize_noArom hK).2 b hb'
-
-open Aromaticity in
-/-- `assignRadicals` keeps every cached valence. -/
-lemma Work.cachedValence_assignRadicals (w : Work) (i : ℕ) :
-    w.assignRadicals.cachedValence i = w.cachedValence i := by
-  have h1 : (w.assignRadicals.atoms[i]! : WAtom).cachedValence =
-      (w.atoms[i]! : WAtom).cachedValence :=
-    Work.getElem!_eq_of_map (fun x : WAtom ↦ x.cachedValence)
-      (Work.getElem?_assignRadicals_map w _ (fun _ ↦ rfl) i)
-  have h2 : (w.assignRadicals.atoms[i]! : WAtom).explicitHs = (w.atoms[i]! : WAtom).explicitHs :=
-    Work.getElem!_eq_of_map (fun x : WAtom ↦ x.explicitHs)
-      (Work.getElem?_assignRadicals_map w _ (fun _ ↦ rfl) i)
-  simp only [Work.cachedValence, Work.kekuleValence, h1, h2,
-    Work.bondHalfSum_congr (Work.assignRadicals_bonds w)]
-
-open Aromaticity in
-lemma Work.explicitHs_assignRadicals (w : Work) (i : ℕ) :
-    (w.assignRadicals.atoms[i]! : WAtom).explicitHs = (w.atoms[i]! : WAtom).explicitHs :=
-  Work.getElem!_eq_of_map (fun x : WAtom ↦ x.explicitHs)
-    (Work.getElem?_assignRadicals_map w _ (fun _ ↦ rfl) i)
-
-open Aromaticity in
-/-- `cacheValences` caches every atom's explicit valence. -/
-lemma Work.cachedValence_cacheValences_atom (w : Work) {i : ℕ} (hi : i < w.atoms.size) :
-    (w.cacheValences.atoms[i]! : WAtom).cachedValence = some (w.explicitValence i) := by
-  rw [getElem!_pos _ i (by simpa [Work.cacheValences, Work.numAtoms] using hi)]
-  simp [Work.cacheValences, Work.numAtoms]
 
 open Aromaticity in
 /-- **The kekulized copy's cached valence, less its written hydrogens, is its Kekulé bond-order
@@ -3280,6 +3283,8 @@ lemma AromaticWritten.relabel {m : Molecule n} (hw : m.AromaticWritten) (σ : Eq
     exact ⟨h1, h2⟩
 
 open Aromaticity Aromaticity.Work in
+/-- A copy with as many atoms as a well-formed `o` and every bond between the same atoms is well
+formed. -/
 lemma wf_of_afterRel {o w : Work} (hwf : WF o) (h : AfterRel o w) : WF w := by
   intro k hk
   have hk' : k < o.bonds.size := h.bonds_size ▸ hk
@@ -3612,8 +3617,9 @@ theorem IsKekule.aromatize_of_sameBonds {m m' a : Molecule n} (hk : m.IsKekule)
   have hW := (hRA.setAromaticity hwfA (nbrsDistinct_of_bonds hAb hndP)
     (nbrsDistinct_of_bonds hAb' hndP') hRring).finalizeHs
   have hfin' : (Work.prepare m').finish (Work.prepare m').relevantCycles =
-      ((Work.prepare m').assignRadicals.setAromaticity (Work.prepare m).relevantCycles).finalizeHs :=
-    by rw [Work.finish, hseq]
+      ((Work.prepare m').assignRadicals.setAromaticity
+        (Work.prepare m).relevantCycles).finalizeHs := by
+    rw [Work.finish, hseq]
   have hfin : (Work.prepare m).finish (Work.prepare m).relevantCycles =
       ((Work.prepare m).assignRadicals.setAromaticity (Work.prepare m).relevantCycles).finalizeHs :=
     rfl
@@ -4786,11 +4792,208 @@ lemma IsKekule.explicitValence {x : Molecule n} (hx : x.IsKekule) (i : Fin n) :
   omega
 
 open Aromaticity in
-/-- A bond swap, read the other way round. -/
-lemma swapped_symm {F : ℕ → Bool} {w w' : Work} (h : Work.Swapped F w w') :
-    Work.Swapped F w' w :=
-  ⟨h.atoms.symm, h.size.symm, fun k ↦ (h.ends k).symm, fun k hk ↦ (h.kind k hk).symm,
-    fun k hk ↦ ⟨(h.sd k hk).2, (h.sd k hk).1⟩, fun i ↦ (h.sum i).symm⟩
+/-- **The kekulized copy and a Kekulé spelling's copy record an atom's hydrogens alike, or swap
+written for implied at RDKit's count.**  `Pk` is the spelling's working copy and `K'` the
+kekulized copy with the spelling's bonds.  Either the two records write the same hydrogens and
+agree on taking implied ones, or the atom is a neutral one of the organic subset whose total is
+RDKit's count on the spelling's bonds, written in one record and implied in the other. -/
+lemma spelling_record_cases {m k : Molecule n} {K K' Pk : Work}
+    (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K)
+    (hPk : Pk = Work.prepare k) (hK' : K' = { K with bonds := Pk.bonds })
+    (hqm : (Work.ofMolecule m).freezeHs.cleanUp = (Work.ofMolecule m).freezeHs)
+    (hqk : (Work.ofMolecule k).freezeHs.cleanUp = (Work.ofMolecule k).freezeHs)
+    (hs : k.IsKekuleSpellingOf m) (hw : m.AromaticWritten) (hbw : m.BareWritable)
+    (hbk : k.BareWritable) (hsum : ∀ i, (Work.prepare k).bondHalfSum i = K.bondHalfSum i)
+    (htotK : ∀ i : Fin n, K.cachedTotalHs i = m.sanitizedH i) (i : Fin n) :
+    ((Pk.atoms[i.val]! : WAtom).explicitHs = (K'.atoms[i.val]! : WAtom).explicitHs ∧
+      (Pk.atoms[i.val]! : WAtom).noImplicit = (K'.atoms[i.val]! : WAtom).noImplicit) ∨
+    ∃ e ∈ Loc.organic, (K'.atoms[i.val]! : WAtom).z = e.atomicNumber ∧
+      (K'.atoms[i.val]! : WAtom).charge = 0 ∧
+      K'.cachedTotalHs i.val = Loc.rdCount e.atomicNumber 0 (Loc.bhs (K'.kindsAt i.val)) ∧
+      (((K'.atoms[i.val]! : WAtom).explicitHs = 0 ∧
+          (K'.atoms[i.val]! : WAtom).noImplicit = false ∧
+          (Pk.atoms[i.val]! : WAtom).explicitHs = K'.cachedTotalHs i.val ∧
+          (Pk.atoms[i.val]! : WAtom).noImplicit = true) ∨
+        ((Pk.atoms[i.val]! : WAtom).explicitHs = 0 ∧
+          (Pk.atoms[i.val]! : WAtom).noImplicit = false ∧
+          (K'.atoms[i.val]! : WAtom).explicitHs = K'.cachedTotalHs i.val ∧
+          (K'.atoms[i.val]! : WAtom).noImplicit = true)) := by
+  have hPkdef := hPk
+  have hsum : ∀ i, Pk.bondHalfSum i = K.bondHalfSum i := by rw [hPk]; exact hsum
+  have hel : ∀ i, (k.atom i).element = (m.atom i).element := fun i ↦ by
+    have := congrArg Atom.element (hs.atoms i); simpa using this
+  have hch : ∀ i, (k.atom i).charge = (m.atom i).charge := fun i ↦ by
+    have := congrArg Atom.charge (hs.atoms i); simpa using this
+  have hzn : ∀ i, (k.atom i).atomicNumber = (m.atom i).atomicNumber := fun i ↦ by
+    simp [Atom.atomicNumber, hel i]
+  have hCl : Work.cleaned m = (Work.ofMolecule m).freezeHs := hqm
+  have hCc : ∀ i : Fin n, ((Work.cleaned m).atoms[i.val]! : WAtom).charge = (m.atom i).charge :=
+    fun i ↦ by rw [hCl, Work.freezeHs_ofMolecule_atom]
+  have hKz : ∀ j : ℕ, (K'.atoms[j]! : WAtom) = (K.atoms[j]! : WAtom) := fun _ ↦ by rw [hK']
+  have hbK' : ∀ j : ℕ, K'.bondHalfSum j = Pk.bondHalfSum j := fun j ↦
+    congrFun (Work.bondHalfSum_congr (by rw [hK'] : K'.bonds = Pk.bonds)) j
+  have hkP : ∀ j : ℕ, K'.kindsAt j = Pk.kindsAt j := fun _ ↦ by rw [hK']; rfl
+  obtain ⟨yz, yc, ye, yn, -, yci, -⟩ := hs.kekule.prepare_record hqk i
+  obtain ⟨-, kz, kc, hrec⟩ := kekulize_record hK hw hbw i.isLt
+  have hT : Pk.cachedTotalHs i.val = K'.cachedTotalHs i.val := by
+    rw [hPk, (hs.kekule.prepare_record hqk i).2.2.2.2.2.2, hs.hydrogens, hK']
+    exact (htotK i).symm
+  have hTx : K'.cachedTotalHs i.val = (K'.atoms[i.val]! : WAtom).explicitHs +
+      (K'.atoms[i.val]! : WAtom).cachedImplicit := rfl
+  have hTy : Pk.cachedTotalHs i.val = (Pk.atoms[i.val]! : WAtom).explicitHs +
+      (Pk.atoms[i.val]! : WAtom).cachedImplicit := rfl
+  have hbhs : Loc.bhs (K.kindsAt i.val) = Loc.bhs (K'.kindsAt i.val) := by
+    rw [← Work.bondHalfSum_eq_loc, ← Work.bondHalfSum_eq_loc, hbK', hsum]
+  rw [← hPkdef] at yz yc ye yn yci
+  rw [← hkP] at yci
+  have hyc0 : (Pk.atoms[i.val]! : WAtom).noImplicit = true →
+      (Pk.atoms[i.val]! : WAtom).cachedImplicit = 0 := fun h ↦ by
+    rw [yci]; exact Loc.impl_of_noImplicit h _ _
+  -- the spelling's atom bare: RDKit's count on its bonds
+  have hyBare : ∀ e, (k.atom i).explicitH = none → (k.atom i).element = some e →
+      e ∈ Loc.organic ∧ (k.atom i).charge = 0 ∧
+      Pk.cachedTotalHs i.val = Loc.rdCount e.atomicNumber 0 (Loc.bhs (K'.kindsAt i.val)) := by
+    intro e hn he
+    obtain ⟨hcb, -⟩ := hbk i hn
+    have hcb' := hcb
+    simp only [Atom.canBeBare, hn, he, Option.isNone_none, Bool.true_and,
+      Bool.and_eq_true, beq_iff_eq] at hcb'
+    obtain ⟨⟨⟨⟨-, hch0⟩, -⟩, -⟩, horg⟩ := hcb'
+    refine ⟨Loc.mem_organic e (by simpa using horg), hch0, ?_⟩
+    rw [hTy, ye, hn, Option.getD_none, Nat.zero_add, yci]
+    apply Loc.impl_congr
+    · rw [yz]; simp [Atom.atomicNumber, he]
+    · rw [yc, hch0]
+    · rw [ye, hn]; rfl
+    · rw [yn, hn, he]; rfl
+  rcases hrec with ⟨ke, kn, kci, -, kC0, kMN⟩ | ⟨hm1, kc0, ke0, kn0, kci, -, kz7⟩
+  · cases hme : (m.atom i).explicitH with
+    | some a =>
+      have hxn : (K'.atoms[i.val]! : WAtom).noImplicit = true := by
+        rw [hKz, kn, hme]; rfl
+      have hxci : (K'.atoms[i.val]! : WAtom).cachedImplicit = 0 := by
+        rw [hKz, kci]; exact kC0 (by simp [hme])
+      cases hke : (k.atom i).explicitH with
+      | some b =>
+        have hyn : (Pk.atoms[i.val]! : WAtom).noImplicit = true := by rw [yn, hke]; rfl
+        left
+        refine ⟨?_, by rw [hxn, hyn]⟩
+        have := hyc0 hyn
+        omega
+      | none =>
+        cases hel' : (k.atom i).element with
+        | none =>
+          have hyn : (Pk.atoms[i.val]! : WAtom).noImplicit = true := by
+            rw [yn, hke, hel']; rfl
+          left
+          refine ⟨?_, by rw [hxn, hyn]⟩
+          have := hyc0 hyn
+          have hy0 : (Pk.atoms[i.val]! : WAtom).explicitHs = 0 := by rw [ye, hke]; rfl
+          omega
+        | some e =>
+          obtain ⟨horg, hch0, hTr⟩ := hyBare e hke hel'
+          right
+          have hyn : (Pk.atoms[i.val]! : WAtom).noImplicit = false := by
+            rw [yn, hke, hel']; rfl
+          have hy0 : (Pk.atoms[i.val]! : WAtom).explicitHs = 0 := by rw [ye, hke]; rfl
+          refine ⟨e, horg, ?_, ?_, by rw [← hT, hTr], .inr ⟨hy0, hyn, by omega, hxn⟩⟩
+          · rw [hKz, kz, ← hzn]; simp [Atom.atomicNumber, hel']
+          · rw [hKz, kc, hCc i, ← hch]; exact hch0
+    | none =>
+      cases hme' : (m.atom i).element with
+      | none =>
+        have hxn : (K'.atoms[i.val]! : WAtom).noImplicit = true := by
+          rw [hKz, kn, hme, hme']; rfl
+        have hxci : (K'.atoms[i.val]! : WAtom).cachedImplicit = 0 := by
+          rw [hKz, kci]; exact kC0 (by simp [hme'])
+        have hx0 : (K'.atoms[i.val]! : WAtom).explicitHs = 0 := by rw [hKz, ke, hme]; rfl
+        have hyn : (Pk.atoms[i.val]! : WAtom).noImplicit = true := by
+          rw [yn, hel, hme']; simp
+        left
+        refine ⟨?_, by rw [hxn, hyn]⟩
+        have := hyc0 hyn
+        omega
+      | some e =>
+        obtain ⟨hcb, -⟩ := hbw i hme
+        have hcb' := hcb
+        simp only [Atom.canBeBare, hme, hme', Option.isNone_none, Bool.true_and,
+          Bool.and_eq_true, beq_iff_eq] at hcb'
+        obtain ⟨⟨⟨⟨-, hch0⟩, -⟩, -⟩, horg⟩ := hcb'
+        have hxn : (K'.atoms[i.val]! : WAtom).noImplicit = false := by
+          rw [hKz, kn, hme, hme']; rfl
+        have hx0 : (K'.atoms[i.val]! : WAtom).explicitHs = 0 := by rw [hKz, ke, hme]; rfl
+        have hz : (K'.atoms[i.val]! : WAtom).z = e.atomicNumber := by
+          rw [hKz, kz]; simp [Atom.atomicNumber, hme']
+        have hc0 : (K'.atoms[i.val]! : WAtom).charge = 0 := by rw [hKz, kc, hCc i]; exact hch0
+        have hTr : K'.cachedTotalHs i.val =
+            Loc.rdCount e.atomicNumber 0 (Loc.bhs (K'.kindsAt i.val)) := by
+          rw [hTx, hx0, Nat.zero_add, hKz, kci, kMN hme e hme', ← hbhs, hCc i, hch0]
+          simp [Atom.atomicNumber, hme']
+        cases hke : (k.atom i).explicitH with
+        | none =>
+          left
+          refine ⟨by rw [ye, hke, hx0]; rfl, by rw [yn, hke, hel, hxn, hme']; rfl⟩
+        | some b =>
+          right
+          have hyn : (Pk.atoms[i.val]! : WAtom).noImplicit = true := by rw [yn, hke]; rfl
+          have := hyc0 hyn
+          refine ⟨e, Loc.mem_organic e (by simpa using horg), hz, hc0, hTr,
+            .inl ⟨hx0, hxn, by omega, hyn⟩⟩
+  · -- the `[nH]`/`[pH]` rewrite
+    have hxn : (K'.atoms[i.val]! : WAtom).noImplicit = false := by rw [hKz]; exact kn0
+    have hx0 : (K'.atoms[i.val]! : WAtom).explicitHs = 0 := by rw [hKz]; exact ke0
+    obtain ⟨e, he, hez⟩ : ∃ e ∈ Loc.organic, (K'.atoms[i.val]! : WAtom).z = e.atomicNumber := by
+      rw [hKz]
+      rcases kz7 with h | h
+      · exact ⟨.N, by decide, h⟩
+      · exact ⟨.P, by decide, h⟩
+    have hTr : K'.cachedTotalHs i.val =
+        Loc.rdCount e.atomicNumber 0 (Loc.bhs (K'.kindsAt i.val)) := by
+      rw [hTx, hx0, Nat.zero_add, hKz, kci, ← hbhs, ← hKz, hez]
+    cases hke : (k.atom i).explicitH with
+    | some b =>
+      right
+      have hyn : (Pk.atoms[i.val]! : WAtom).noImplicit = true := by rw [yn, hke]; rfl
+      have := hyc0 hyn
+      refine ⟨e, he, hez, by rw [hKz]; exact kc0, hTr, .inl ⟨hx0, hxn, by omega, hyn⟩⟩
+    | none =>
+      left
+      refine ⟨by rw [ye, hke, hx0]; rfl, ?_⟩
+      rw [yn, hke, hxn, hel]
+      have hzm : (m.atom i).atomicNumber ≠ 0 := by
+        rw [← kz]; rcases kz7 with h | h <;> omega
+      cases hme' : (m.atom i).element with
+      | none => simp [Atom.atomicNumber, hme'] at hzm
+      | some _ => rfl
+
+open Aromaticity in
+/-- **A bond written aromatic in `m` is one perception marked**, when the run of `x` over the
+working copy `W` gives an output that has every bond `m` writes aromatic aromatic. -/
+lemma kind?_setAromaticity_of_aromaticKept {m x a : Molecule n} {W : Work} {R : Array (List ℕ)}
+    (hout : x.aromatizeOutput (W.finish R) = a) (hk : m.AromaticKept a)
+    (hlen : x.bonds.length = m.bonds.length) (hsize : (W.finish R).bonds.size = m.bonds.length)
+    {j : ℕ} (hj : (m.bonds[j]?.map (·.kind == .aromatic)).getD false = true) :
+    (W.assignRadicals.setAromaticity R).kind? j = some .aromatic := by
+  cases hmj : m.bonds[j]? with
+  | none => simp [hmj] at hj
+  | some b =>
+    simp only [hmj, Option.map_some, Option.getD_some, beq_iff_eq] at hj
+    rcases hk.getElem? j with ⟨h1, -⟩ | ⟨b', y, hb', hy, hxy⟩
+    · rw [h1] at hmj; cases hmj
+    · rw [hmj] at hb'
+      cases hb'
+      have hya := hxy hj
+      have hjm : j < m.bonds.length := (List.getElem?_eq_some_iff.mp hmj).1
+      have hjl : j < (W.finish R).bonds.size := hsize ▸ hjm
+      rw [← hout, aromatizeOutput_bonds, getElem?_withKinds,
+        List.getElem?_eq_getElem (hlen ▸ hjm)] at hy
+      simp only [Option.map_some, Array.getElem?_eq_getElem hjl, Option.getD_some,
+        Option.some.injEq] at hy
+      rw [← hy] at hya
+      simp only at hya
+      have e : (W.finish R).kind? j = some .aromatic := by
+        simp [Work.kind?, Array.getElem?_eq_getElem hjl, hya]
+      simpa [Work.finish, Work.kind?, Work.finalizeHs_bonds] using e
 
 set_option maxHeartbeats 4000000 in -- the two runs, atom by atom
 open Aromaticity in
@@ -4798,7 +5001,8 @@ open Aromaticity in
 kekulization gives every atom the bond-order sum the spelling does and the hydrogen count `m`
 has.  The kekulized copy with the spelling's bonds is a bond swap of it, perceived alike
 (`swapped_spelling`, `Work.Swapped.finish_eq`); its records and the spelling's copy's are equal
-or swap written for implied hydrogens at RDKit's count (`Work.readAlike_of_swap`); both get
+or swap written for implied hydrogens at RDKit's count (`spelling_record_cases`,
+`Work.readAlike_of_swap`); both get
 their hydrogens back; and the outputs are written alike (`aromatizeOutput_respell`). -/
 theorem aromatize_of_spelling_core {m k a a' : Molecule n} {K : Work}
     (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K)
@@ -4928,151 +5132,8 @@ theorem aromatize_of_spelling_core {m k a a' : Molecule n} {K : Work}
     rw [← hPk, Work.bondHalfSum_congr (Work.assignRadicals_bonds _)] at hk'
     exact hk'
   -- written alike, or swapped at RDKit's count
-  have hcls : ∀ i : Fin n,
-      ((Pk.atoms[i.val]! : WAtom).explicitHs = (K'.atoms[i.val]! : WAtom).explicitHs ∧
-        (Pk.atoms[i.val]! : WAtom).noImplicit = (K'.atoms[i.val]! : WAtom).noImplicit) ∨
-      ∃ e ∈ Loc.organic, (K'.atoms[i.val]! : WAtom).z = e.atomicNumber ∧
-        (K'.atoms[i.val]! : WAtom).charge = 0 ∧
-        K'.cachedTotalHs i.val = Loc.rdCount e.atomicNumber 0 (Loc.bhs (K'.kindsAt i.val)) ∧
-        (((K'.atoms[i.val]! : WAtom).explicitHs = 0 ∧
-            (K'.atoms[i.val]! : WAtom).noImplicit = false ∧
-            (Pk.atoms[i.val]! : WAtom).explicitHs = K'.cachedTotalHs i.val ∧
-            (Pk.atoms[i.val]! : WAtom).noImplicit = true) ∨
-          ((Pk.atoms[i.val]! : WAtom).explicitHs = 0 ∧
-            (Pk.atoms[i.val]! : WAtom).noImplicit = false ∧
-            (K'.atoms[i.val]! : WAtom).explicitHs = K'.cachedTotalHs i.val ∧
-            (K'.atoms[i.val]! : WAtom).noImplicit = true)) := by
-    intro i
-    obtain ⟨yz, yc, ye, yn, -, yci, -⟩ := hs.kekule.prepare_record hqk i
-    obtain ⟨-, kz, kc, hrec⟩ := kekulize_record hK hw hbw i.isLt
-    have hT := htot i.val
-    have hTx : K'.cachedTotalHs i.val = (K'.atoms[i.val]! : WAtom).explicitHs +
-        (K'.atoms[i.val]! : WAtom).cachedImplicit := rfl
-    have hTy : Pk.cachedTotalHs i.val = (Pk.atoms[i.val]! : WAtom).explicitHs +
-        (Pk.atoms[i.val]! : WAtom).cachedImplicit := rfl
-    have hbhs : Loc.bhs (K.kindsAt i.val) = Loc.bhs (K'.kindsAt i.val) := by
-      rw [← Work.bondHalfSum_eq_loc, ← Work.bondHalfSum_eq_loc, hbK', hsum]
-    rw [← hPkdef] at yz yc ye yn yci
-    rw [← hkP] at yci
-    have hyc0 : (Pk.atoms[i.val]! : WAtom).noImplicit = true →
-        (Pk.atoms[i.val]! : WAtom).cachedImplicit = 0 := fun h ↦ by
-      rw [yci]; exact Loc.impl_of_noImplicit h _ _
-    -- the spelling's atom bare: RDKit's count on its bonds
-    have hyBare : ∀ e, (k.atom i).explicitH = none → (k.atom i).element = some e →
-        e ∈ Loc.organic ∧ (k.atom i).charge = 0 ∧
-        Pk.cachedTotalHs i.val = Loc.rdCount e.atomicNumber 0 (Loc.bhs (K'.kindsAt i.val)) := by
-      intro e hn he
-      obtain ⟨hcb, -⟩ := hbk i hn
-      have hcb' := hcb
-      simp only [Atom.canBeBare, hn, he, Option.isNone_none, Bool.true_and,
-        Bool.and_eq_true, beq_iff_eq] at hcb'
-      obtain ⟨⟨⟨⟨-, hch0⟩, -⟩, -⟩, horg⟩ := hcb'
-      refine ⟨Loc.mem_organic e (by simpa using horg), hch0, ?_⟩
-      rw [hTy, ye, hn, Option.getD_none, Nat.zero_add, yci]
-      apply Loc.impl_congr
-      · rw [yz]; simp [Atom.atomicNumber, he]
-      · rw [yc, hch0]
-      · rw [ye, hn]; rfl
-      · rw [yn, hn, he]; rfl
-    rcases hrec with ⟨ke, kn, kci, -, kC0, kMN⟩ | ⟨hm1, kc0, ke0, kn0, kci, -, kz7⟩
-    · cases hme : (m.atom i).explicitH with
-      | some a =>
-        have hxn : (K'.atoms[i.val]! : WAtom).noImplicit = true := by
-          rw [hKz, kn, hme]; rfl
-        have hxci : (K'.atoms[i.val]! : WAtom).cachedImplicit = 0 := by
-          rw [hKz, kci]; exact kC0 (by simp [hme])
-        cases hke : (k.atom i).explicitH with
-        | some b =>
-          have hyn : (Pk.atoms[i.val]! : WAtom).noImplicit = true := by rw [yn, hke]; rfl
-          left
-          refine ⟨?_, by rw [hxn, hyn]⟩
-          have := hyc0 hyn
-          omega
-        | none =>
-          cases hel' : (k.atom i).element with
-          | none =>
-            have hyn : (Pk.atoms[i.val]! : WAtom).noImplicit = true := by
-              rw [yn, hke, hel']; rfl
-            left
-            refine ⟨?_, by rw [hxn, hyn]⟩
-            have := hyc0 hyn
-            have hy0 : (Pk.atoms[i.val]! : WAtom).explicitHs = 0 := by rw [ye, hke]; rfl
-            omega
-          | some e =>
-            obtain ⟨horg, hch0, hTr⟩ := hyBare e hke hel'
-            right
-            have hyn : (Pk.atoms[i.val]! : WAtom).noImplicit = false := by
-              rw [yn, hke, hel']; rfl
-            have hy0 : (Pk.atoms[i.val]! : WAtom).explicitHs = 0 := by rw [ye, hke]; rfl
-            refine ⟨e, horg, ?_, ?_, by rw [← hT, hTr], .inr ⟨hy0, hyn, by omega, hxn⟩⟩
-            · rw [hKz, kz, ← hzn]; simp [Atom.atomicNumber, hel']
-            · rw [hKz, kc, hCc i, ← hch]; exact hch0
-      | none =>
-        cases hme' : (m.atom i).element with
-        | none =>
-          have hxn : (K'.atoms[i.val]! : WAtom).noImplicit = true := by
-            rw [hKz, kn, hme, hme']; rfl
-          have hxci : (K'.atoms[i.val]! : WAtom).cachedImplicit = 0 := by
-            rw [hKz, kci]; exact kC0 (by simp [hme'])
-          have hx0 : (K'.atoms[i.val]! : WAtom).explicitHs = 0 := by rw [hKz, ke, hme]; rfl
-          have hyn : (Pk.atoms[i.val]! : WAtom).noImplicit = true := by
-            rw [yn, hel, hme']; simp
-          left
-          refine ⟨?_, by rw [hxn, hyn]⟩
-          have := hyc0 hyn
-          omega
-        | some e =>
-          obtain ⟨hcb, -⟩ := hbw i hme
-          have hcb' := hcb
-          simp only [Atom.canBeBare, hme, hme', Option.isNone_none, Bool.true_and,
-            Bool.and_eq_true, beq_iff_eq] at hcb'
-          obtain ⟨⟨⟨⟨-, hch0⟩, -⟩, -⟩, horg⟩ := hcb'
-          have hxn : (K'.atoms[i.val]! : WAtom).noImplicit = false := by
-            rw [hKz, kn, hme, hme']; rfl
-          have hx0 : (K'.atoms[i.val]! : WAtom).explicitHs = 0 := by rw [hKz, ke, hme]; rfl
-          have hz : (K'.atoms[i.val]! : WAtom).z = e.atomicNumber := by
-            rw [hKz, kz]; simp [Atom.atomicNumber, hme']
-          have hc0 : (K'.atoms[i.val]! : WAtom).charge = 0 := by rw [hKz, kc, hCc i]; exact hch0
-          have hTr : K'.cachedTotalHs i.val =
-              Loc.rdCount e.atomicNumber 0 (Loc.bhs (K'.kindsAt i.val)) := by
-            rw [hTx, hx0, Nat.zero_add, hKz, kci, kMN hme e hme', ← hbhs, hCc i, hch0]
-            simp [Atom.atomicNumber, hme']
-          cases hke : (k.atom i).explicitH with
-          | none =>
-            left
-            refine ⟨by rw [ye, hke, hx0]; rfl, by rw [yn, hke, hel, hxn, hme']; rfl⟩
-          | some b =>
-            right
-            have hyn : (Pk.atoms[i.val]! : WAtom).noImplicit = true := by rw [yn, hke]; rfl
-            have := hyc0 hyn
-            refine ⟨e, Loc.mem_organic e (by simpa using horg), hz, hc0, hTr,
-              .inl ⟨hx0, hxn, by omega, hyn⟩⟩
-    · -- the `[nH]`/`[pH]` rewrite
-      have hxn : (K'.atoms[i.val]! : WAtom).noImplicit = false := by rw [hKz]; exact kn0
-      have hx0 : (K'.atoms[i.val]! : WAtom).explicitHs = 0 := by rw [hKz]; exact ke0
-      obtain ⟨e, he, hez⟩ : ∃ e ∈ Loc.organic, (K'.atoms[i.val]! : WAtom).z = e.atomicNumber := by
-        rw [hKz]
-        rcases kz7 with h | h
-        · exact ⟨.N, by decide, h⟩
-        · exact ⟨.P, by decide, h⟩
-      have hTr : K'.cachedTotalHs i.val =
-          Loc.rdCount e.atomicNumber 0 (Loc.bhs (K'.kindsAt i.val)) := by
-        rw [hTx, hx0, Nat.zero_add, hKz, kci, ← hbhs, ← hKz, hez]
-      cases hke : (k.atom i).explicitH with
-      | some b =>
-        right
-        have hyn : (Pk.atoms[i.val]! : WAtom).noImplicit = true := by rw [yn, hke]; rfl
-        have := hyc0 hyn
-        refine ⟨e, he, hez, by rw [hKz]; exact kc0, hTr, .inl ⟨hx0, hxn, by omega, hyn⟩⟩
-      | none =>
-        left
-        refine ⟨by rw [ye, hke, hx0]; rfl, ?_⟩
-        rw [yn, hke, hxn, hel]
-        have hzm : (m.atom i).atomicNumber ≠ 0 := by
-          rw [← kz]; rcases kz7 with h | h <;> omega
-        cases hme' : (m.atom i).element with
-        | none => simp [Atom.atomicNumber, hme'] at hzm
-        | some _ => rfl
+  have hcls := fun i : Fin n ↦
+    spelling_record_cases hK hPkdef hK' hqm hqk hs hw hbw hbk hsum htotK i
   -- perception reads the two copies alike
   have hbR : Pk.assignRadicals.bonds = K'.assignRadicals.bonds := by
     rw [Work.assignRadicals_bonds, Work.assignRadicals_bonds]
@@ -5172,27 +5233,8 @@ theorem aromatize_of_spelling_core {m k a a' : Molecule n} {K : Work}
     rcases hk with hk | hk
     · -- the run on `m` makes the bonds `m` writes aromatic aromatic
       have hA : ∀ j, Fs j = true →
-          (K.assignRadicals.setAromaticity R).kind? j = some .aromatic := by
-        intro j hj
-        cases hmj : m.bonds[j]? with
-        | none => simp [hFs, hmj] at hj
-        | some b =>
-          simp only [hFs, hmj, Option.map_some, Option.getD_some, beq_iff_eq] at hj
-          rcases hk.getElem? j with ⟨h1, -⟩ | ⟨x, y, hx, hy, hxy⟩
-          · rw [h1] at hmj; cases hmj
-          · rw [hmj] at hx
-            cases hx
-            have hya := hxy hj
-            rw [← ha, aromatizeOutput_bonds, getElem?_withKinds, hmj] at hy
-            have hjl : j < (K.finish R).bonds.size := by
-              rw [hFsize]; exact (List.getElem?_eq_some_iff.mp hmj).1
-            simp only [Option.map_some, Array.getElem?_eq_getElem hjl, Option.getD_some,
-              Option.some.injEq] at hy
-            rw [← hy] at hya
-            simp only at hya
-            have e : (K.finish R).kind? j = some .aromatic := by
-              simp [Work.kind?, Array.getElem?_eq_getElem hjl, hya]
-            simpa [Work.finish, Work.kind?, Work.finalizeHs_bonds] using e
+          (K.assignRadicals.setAromaticity R).kind? j = some .aromatic := fun j hj ↦
+        kind?_setAromaticity_of_aromaticKept ha hk rfl hFsize hj
       have h0 : ∀ j, K.assignRadicals.kind? j ≠ some .aromatic := by
         intro j e
         rw [Work.kind?, Work.assignRadicals_bonds, Option.map_eq_some_iff] at e
@@ -5210,34 +5252,9 @@ theorem aromatize_of_spelling_core {m k a a' : Molecule n} {K : Work}
           Work.assignRadicals_bonds, hbPk]
         simp [Work.ofMolecule, hs.bonds.length_eq]
       have hA' : ∀ j, Fs j = true →
-          (K'.assignRadicals.setAromaticity R).kind? j = some .aromatic := by
-        intro j hj
-        cases hmj : m.bonds[j]? with
-        | none => simp [hFs, hmj] at hj
-        | some b =>
-          simp only [hFs, hmj, Option.map_some, Option.getD_some, beq_iff_eq] at hj
-          rcases hk.getElem? j with ⟨h1, -⟩ | ⟨x, y, hx, hy, hxy⟩
-          · rw [h1] at hmj; cases hmj
-          · rw [hmj] at hx
-            cases hx
-            have hya := hxy hj
-            obtain ⟨bk, hbk'⟩ : ∃ bk, k.bonds[j]? = some bk := by
-              rcases hs.bonds.getElem? j with ⟨-, h2⟩ | ⟨x', -, hx', -, -⟩
-              · rw [h2] at hmj; cases hmj
-              · exact ⟨x', hx'⟩
-            rw [← hak, aromatizeOutput_bonds, getElem?_withKinds, hbk'] at hy
-            have hjl : j < (Pk.finish R).bonds.size := by
-              rw [hFsize']; exact (List.getElem?_eq_some_iff.mp hmj).1
-            simp only [Option.map_some, Array.getElem?_eq_getElem hjl, Option.getD_some,
-              Option.some.injEq] at hy
-            rw [← hy] at hya
-            simp only at hya
-            have e : (Pk.finish R).kind? j = some .aromatic := by
-              simp [Work.kind?, Array.getElem?_eq_getElem hjl, hya]
-            have e' : (Pk.assignRadicals.setAromaticity R).kind? j = some .aromatic := by
-              simpa [Work.finish, Work.kind?, Work.finalizeHs_bonds] using e
-            rw [Work.kind?, ← hsm.bonds]
-            exact e'
+          (K'.assignRadicals.setAromaticity R).kind? j = some .aromatic := fun j hj ↦ by
+        rw [Work.kind?, ← hsm.bonds]
+        exact kind?_setAromaticity_of_aromaticKept hak hk hs.bonds.length_eq hFsize' hj
       have h0' : ∀ j, K'.assignRadicals.kind? j ≠ some .aromatic := by
         intro j e
         rw [Work.kind?, Work.assignRadicals_bonds, Option.map_eq_some_iff] at e
@@ -5247,7 +5264,7 @@ theorem aromatize_of_spelling_core {m k a a' : Molecule n} {K : Work}
         intro j hj
         obtain ⟨-, -, hmem, -⟩ := Work.of_kind?_setAromaticity _ R (hA' j hj) (h0' j)
         rwa [Work.ringBonds_of_bonds_eq (Work.assignRadicals_bonds _)] at hmem
-      have hsw' := swapped_symm hsw
+      have hsw' := hsw.symm
       exact ⟨(hsw'.finish_eq R hF' hA').symm, (hsw'.setAromaticity_eq R hF' hA').symm⟩
   obtain ⟨hFin, hSet⟩ := hFS
   have hr : ∀ i < n, Work.HsRestored (K'.assignRadicals.setAromaticity R) i := fun i hi ↦ by
@@ -5555,125 +5572,351 @@ lemma kekuleWitness_sameValences {m a : Molecule n} {K : Work}
   split_ifs at h2 h4 <;> omega
 
 open Aromaticity in
-/-- **`cleanUp` does nothing on a copy that agrees with one it does nothing on, in what it
-reads**: the same elements, charges, explicit valences and bond ends, and the same bond kinds at
-every atom it could rewrite at (`Work.Hypervalent`).  `Work.Swapped.quiet` is the case of two
-Kekulé structures; this one also relates a lowercase molecule to a Kekulé structure of it. -/
-lemma quiet_of_agree {w w' : Work} (hsz : w'.atoms.size = w.atoms.size)
-    (hbs : w'.bonds.size = w.bonds.size)
-    (hsrc : ∀ k : ℕ, (w'.bonds[k]! : WBond).src = (w.bonds[k]! : WBond).src)
-    (hdst : ∀ k : ℕ, (w'.bonds[k]! : WBond).dst = (w.bonds[k]! : WBond).dst)
-    (hz : ∀ i : ℕ, (w'.atoms[i]! : WAtom).z = (w.atoms[i]! : WAtom).z)
-    (hch : ∀ i : ℕ, (w'.atoms[i]! : WAtom).charge = (w.atoms[i]! : WAtom).charge)
-    (hev : ∀ i : ℕ, w'.explicitValence i = w.explicitValence i)
-    (hkind : ∀ i : ℕ, Work.Hypervalent w i → ∀ k ∈ w.bondsOf i,
-      (w'.bonds[k]! : WBond).kind = (w.bonds[k]! : WBond).kind)
-    (hq : w.Quiet) : w'.Quiet := by
-  have hbo : w'.bondsOf = w.bondsOf := by
-    funext i; simp only [Work.bondsOf, Work.numBonds, hbs, WBond.touches, hsrc, hdst]
-  have hnb : w'.neighbors = w.neighbors := by
-    funext i; simp only [Work.neighbors, hbo, WBond.other, hsrc, hdst]
-  have hdeg : w'.degree = w.degree := by funext i; simp only [Work.degree, hbo]
-  have kindEq : ∀ i, Work.Hypervalent w i → ∀ x ∈ w.neighbors i,
-      (w'.bonds[x.1]! : WBond).kind = (w.bonds[x.1]! : WBond).kind := by
-    intro i hv ⟨k, j⟩ hx
-    exact hkind i hv k (Work.mem_bondsOf_of_mem_neighbors hx)
-  have hNC : w'.nitroCand = w.nitroCand := by
-    funext i; simp only [Work.nitroCand, hz, hch, hev]
-  have hPG : w'.phosphorusGuard = w.phosphorusGuard := by
-    funext i; simp only [Work.phosphorusGuard, hch, hev, hdeg]
-  have hHG : w'.halogenGuard = w.halogenGuard := by
-    funext i; simp only [Work.halogenGuard, hch, hev, hnb, hz]
-  have hvN : ∀ i, w.nitroCand i = true → Work.Hypervalent w i := by
-    intro i hn
-    simp only [Work.nitroCand, Bool.and_eq_true, beq_iff_eq] at hn
-    exact ⟨hn.1.2, .inl ⟨.inl hn.1.1, hn.2⟩⟩
-  refine ⟨fun i hi ↦ ?_, fun i hi hn ↦ ?_, fun i hi ↦ ?_⟩
-  · have hw := (Work.nitroStep_fst_eq_iff w [] i).mp (hq.1 i (hsz ▸ hi))
-    rw [Work.nitroStep_fst_eq_iff, hNC, hnb]
-    intro hn x hx
-    rw [← hw hn x hx]
-    simp only [Work.nitroO, hz, hch, kindEq i (hvN i hn) x hx]
-  · rw [hNC] at hn
-    have hw := (Work.azideStep_eq_iff w i).mp (hq.2.1 i (hsz ▸ hi) hn)
-    rw [Work.azideStep_eq_iff, hnb]
-    intro x hx
-    rw [← hw x hx]
-    simp only [Work.azideN, hz, hch, kindEq i (hvN i hn) x hx]
-  · have hi' : i < w.atoms.size := hsz ▸ hi
-    have hw := hq.2.2 i hi'
-    unfold Work.cleanUpStep at hw ⊢
-    simp only [hz] at ⊢
-    by_cases hz15 : ((w.atoms[i]! : WAtom).z == 15) = true
-    · simp only [hz15, if_true] at hw ⊢
-      rw [Work.phosphorusCleanup_eq_iff w' hi, hPG]
-      have hw' := (Work.phosphorusCleanup_eq_iff w hi').mp hw
-      intro hg
-      have hv : Work.Hypervalent w i := by
-        simp only [Work.phosphorusGuard, Bool.or_eq_false_iff, bne_eq_false_iff_eq] at hg
-        simp only [beq_iff_eq] at hz15
-        exact ⟨hg.1.1, .inl ⟨.inr hz15, hg.1.2⟩⟩
-      have hs : w'.phosphorusScan i = w.phosphorusScan i := by
-        unfold Work.phosphorusScan
-        rw [hnb]
-        refine foldl_congr_mem (fun s x hx ↦ ?_) _
-        obtain ⟨k, j⟩ := x
-        simp only [hz, hch, hdeg, kindEq i hv (k, j) hx]
-      rw [hs]
-      exact hw' hg
-    · simp only [hz15, Bool.false_eq_true, if_false] at hw ⊢
-      by_cases hz' : ((w.atoms[i]! : WAtom).z == 17 || (w.atoms[i]! : WAtom).z == 35 ||
-          (w.atoms[i]! : WAtom).z == 53) = true
-      · simp only [hz', if_true] at hw ⊢
-        rw [Work.halogenCleanup_eq_iff w' hi, hHG, hnb]
-        have hw' := (Work.halogenCleanup_eq_iff w hi').mp hw
-        intro hg kj hkj
-        have hv : Work.Hypervalent w i := by
-          simp only [Work.halogenGuard, Bool.or_eq_false_iff, bne_eq_false_iff_eq] at hg
-          simp only [Bool.or_eq_true, beq_iff_eq] at hz'
-          refine ⟨hg.1.1, .inr ⟨by tauto, ?_⟩⟩
-          have := hg.1.2
-          simp only [Bool.not_eq_false', List.contains_cons, List.contains_nil, Bool.or_false,
-            Bool.or_eq_true, beq_iff_eq] at this
-          omega
-        rw [kindEq i hv kj hkj]
-        exact hw' hg kj hkj
-      · simp only [hz', Bool.false_eq_true, if_false]
+/-- The pipeline's Kekulé structure of `a` has `a`'s atoms, no longer flagged aromatic. -/
+lemma atom_kekuleWitness {m a : Molecule n} {K : Work}
+    (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K)
+    (ha : m.aromatizeOutput (K.finish (Work.prepare m).relevantCycles) = a) (i : Fin n) :
+    (kekuleWitness a K).atom i = { a.atom i with aromatic := false } :=
+  (kekuleWitness_spec hK ha).2.atoms i
 
 open Aromaticity in
-/-- **A neutral atom that takes implied hydrogens gets as many read aromatic as read plain**,
-when its explicit valence is the same both ways and, where it is read aromatic, within its default
-valence.  RDKit fills an aromatic atom up to its default valence only and a plain one up to the
-next allowed valence; within the default valence the two are the same. -/
-lemma impl_arom_eq {a : WAtom} (hn : a.noImplicit = false) (hc : a.charge = 0) {h h' : ℕ}
-    {ar : Bool} (he : Loc.ev a h ar = Loc.ev a h' false)
-    (hle : ar = true → Loc.ev a h' false ≤ defaultValence a.z) :
-    Loc.impl a h ar = Loc.impl a h' false := by
-  have heff : Work.effectiveZ a = a.z := by simp [Work.effectiveZ, hc]
-  have hhv : Work.canBeHypervalent a a.z = false := by
-    simp only [Work.canBeHypervalent, Bool.or_eq_false_iff, Bool.and_eq_false_iff,
-      decide_eq_false_iff_not, Bool.or_eq_false_iff, beq_eq_false_iff_ne]
-    omega
-  unfold Loc.impl
-  simp only [Id.run, hn, heff, hhv, he, Bool.false_eq_true, if_false]
-  cases ar
-  · rfl
-  · have hle' := hle rfl
-    unfold defaultValence at hle'
-    cases hv : (valences a.z).head? with
-    | none => rfl
-    | some dv =>
-      rw [hv] at hle'
-      simp only [Option.getD_some] at hle'
-      obtain ⟨tl, htl⟩ : ∃ tl, valences a.z = dv :: tl := by
-        cases hl : valences a.z with
-        | nil => simp [hl] at hv
-        | cons x tl =>
-          rw [hl, List.head?_cons, Option.some.injEq] at hv
-          exact ⟨tl, by rw [hv]⟩
-      simp [htl, hle']
+/-- Bond for bond, the working copy of the pipeline's Kekulé structure of `a` is `a`'s with the
+kinds of the structure. -/
+lemma getElem?_ofMolecule_kekuleWitness_bonds (a : Molecule n) (K : Work) (j : ℕ) :
+    (Work.ofMolecule (kekuleWitness a K)).bonds[j]? = (Work.ofMolecule a).bonds[j]?.map
+      fun b ↦ { b with kind := witnessKind K j b.kind } := by
+  rw [Work.getElem?_ofMolecule_bonds, Work.getElem?_ofMolecule_bonds,
+    getElem?_kekuleWitness_bonds]
+  cases a.bonds[j]? <;> rfl
 
-set_option maxHeartbeats 1000000 in -- the witness's records against the output's, atom by atom
+open Aromaticity in
+/-- **The atoms of an aromatic bond of the output are aromatic candidates in the working copy of
+its Kekulé structure**: perception marks that copy as it marked the kekulized one
+(`kekuleWitness_start`), and it marks a bond only between candidates. -/
+lemma kekuleWitness_isAromaticCandidate {m a : Molecule n} {K : Work}
+    (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K)
+    (ha : m.aromatizeOutput (K.finish (Work.prepare m).relevantCycles) = a)
+    (hw : m.AromaticWritten) (hr : m.RoundsToKekule) (hbw : m.BareWritable) {j : ℕ} {b : Bond n}
+    (hj : a.bonds[j]? = some b) (hb : b.kind = .aromatic) {i : Fin n} (hi : b.touches i = true) :
+    ∃ d, Work.isAromaticCandidate
+      (Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences.assignRadicals i d = true := by
+  obtain ⟨hp, hm, -, -⟩ := kekuleWitness_start hK ha hw hbw (kekuleWitness_sameValences hK ha hw hr)
+  obtain ⟨hkk, -⟩ := kekuleWitness_spec hK ha
+  have hna := Work.noArom_freezeHs (Work.noArom_ofMolecule (kekuleWitness a K) hkk.1 hkk.2)
+  set R := (Work.prepare m).relevantCycles
+  set P' := (Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences
+  -- the bond is aromatic in the finished copy, so perception marked it in both copies
+  have h1 : (K.finish R).kind? j = some .aromatic := by
+    rw [Work.kind?, ← bonds_ofMolecule_output hK ha, Work.getElem?_ofMolecule_bonds, hj]
+    simp [hb]
+  have h2 : (P'.assignRadicals.setAromaticity R).kind? j = some .aromatic := by
+    rw [Work.kind?, (hp.setAromaticity hm).bonds]
+    simpa [Work.finish, Work.kind?, Work.finalizeHs_bonds] using h1
+  -- and it was not aromatic before: the structure is Kekulé
+  have h0 : P'.assignRadicals.kind? j ≠ some .aromatic := by
+    intro e
+    rw [Work.kind?, Work.assignRadicals_bonds, Work.cacheValences_bonds,
+      Option.map_eq_some_iff] at e
+    obtain ⟨x, hx, hxk⟩ := e
+    exact hna.2 x (Array.mem_of_getElem? hx) hxk
+  obtain ⟨bd, hbd, -, hd1, hd2⟩ := Work.of_kind?_setAromaticity _ R h2 h0
+  rw [Work.assignRadicals_bonds, Work.cacheValences_bonds, Work.freezeHs_bonds,
+    Work.getElem?_ofMolecule_bonds, getElem?_kekuleWitness_bonds, hj] at hbd
+  simp only [Option.map_some, Option.some.injEq] at hbd
+  subst hbd
+  simp only [Bond.touches, Bool.or_eq_true, beq_iff_eq] at hi
+  rcases hi with rfl | rfl
+  · exact hd1
+  · exact hd2
+
+open Aromaticity in
+/-- **The pipeline's Kekulé structure of `a` has `a`'s explicit valences**, when RDKit reads the
+valences of `a` as it read `m`'s and those are the ones kekulization gives. -/
+lemma explicitValence_kekuleWitness {m a : Molecule n} {K : Work}
+    (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K)
+    (ha : m.aromatizeOutput (K.finish (Work.prepare m).relevantCycles) = a)
+    (hw : m.AromaticWritten) (hr : m.RoundsToKekule) (hsv : m.SameValences a)
+    (hqa : (Work.ofMolecule a).freezeHs.cleanUp = (Work.ofMolecule a).freezeHs) (i : Fin n) :
+    (Work.ofMolecule (kekuleWitness a K)).explicitValence i =
+      (Work.ofMolecule a).explicitValence i := by
+  have e1 := (kekuleWitness_spec hK ha).1.explicitValence i
+  have e2 : (Work.ofMolecule (kekuleWitness a K)).bondHalfSum i = K.bondHalfSum i :=
+    congrFun (Work.bondHalfSum_congr (bonds_ofMolecule_kekuleWitness hK ha)) i
+  have e3 := bondValence_eq a i
+  have e4 := hsv i
+  have e5 := hr i
+  have e6 := bondHalfSum_kekulize hK hw i
+  have e8 : Work.cleaned a = (Work.ofMolecule a).freezeHs := hqa
+  rw [e8, (freezeHs_explicitValence_implicitHs a i).1] at e3
+  have e7 : ((kekuleWitness a K).atom i).explicitH = (a.atom i).explicitH := by
+    rw [atom_kekuleWitness hK ha]
+  rw [e1, e2, e7]
+  unfold bondValence at e3 e4 e5
+  split_ifs at e5 e6 <;> omega
+
+open Aromaticity in
+/-- The working copies of `a` and of its Kekulé structure, before caching, have the same
+elements, charges and explicit valences at every atom number. -/
+lemma freezeHs_kekuleWitness_agree {m a : Molecule n} {K : Work}
+    (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K)
+    (ha : m.aromatizeOutput (K.finish (Work.prepare m).relevantCycles) = a)
+    (hw : m.AromaticWritten) (hr : m.RoundsToKekule) (hsv : m.SameValences a)
+    (hqa : (Work.ofMolecule a).freezeHs.cleanUp = (Work.ofMolecule a).freezeHs) (i : ℕ) :
+    ((Work.ofMolecule (kekuleWitness a K)).freezeHs.atoms[i]! : WAtom).z =
+        ((Work.ofMolecule a).freezeHs.atoms[i]! : WAtom).z ∧
+      ((Work.ofMolecule (kekuleWitness a K)).freezeHs.atoms[i]! : WAtom).charge =
+        ((Work.ofMolecule a).freezeHs.atoms[i]! : WAtom).charge ∧
+      (Work.ofMolecule (kekuleWitness a K)).freezeHs.explicitValence i =
+        (Work.ofMolecule a).freezeHs.explicitValence i := by
+  by_cases hi : i < n
+  · rw [Work.freezeHs_ofMolecule_atom _ ⟨i, hi⟩, Work.freezeHs_ofMolecule_atom a ⟨i, hi⟩,
+      (freezeHs_explicitValence_implicitHs _ ⟨i, hi⟩).1,
+      (freezeHs_explicitValence_implicitHs a ⟨i, hi⟩).1, atom_kekuleWitness hK ha]
+    exact ⟨rfl, rfl, explicitValence_kekuleWitness hK ha hw hr hsv hqa ⟨i, hi⟩⟩
+  · -- past the last atom both copies read the default record and no bond
+    have hdef : ∀ x : Molecule n, ((Work.ofMolecule x).freezeHs.atoms[i]! : WAtom) = default :=
+      fun x ↦ getElem!_neg _ i (by simpa [Work.ofMolecule] using hi)
+    have hb0 : ∀ x : Molecule n, (Work.ofMolecule x).freezeHs.bondHalfSum i = 0 := fun x ↦ by
+      rw [Work.bondHalfSum_congr (Work.freezeHs_bonds _)]
+      exact Work.bondHalfSum_ofMolecule_of_le x (Nat.le_of_not_lt hi)
+    have hev0 : ∀ b : Bool, Loc.ev (default : WAtom) 0 b = 0 := by decide
+    rw [Work.explicitValence_eq_loc, Work.explicitValence_eq_loc, hdef, hdef, hb0, hb0, hev0,
+      hev0]
+    exact ⟨rfl, rfl, rfl⟩
+
+open Aromaticity in
+/-- **`cleanUp` does nothing on the pipeline's Kekulé structure of `a` when it does nothing on
+`a`**: the two differ only at the aromatic bonds of `a`, whose atoms are aromatic candidates, and
+`cleanUp` cannot rewrite at a candidate (`Work.not_hypervalent_of_isAromaticCandidate`). -/
+lemma cleanUp_kekuleWitness {m a : Molecule n} {K : Work}
+    (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K)
+    (ha : m.aromatizeOutput (K.finish (Work.prepare m).relevantCycles) = a)
+    (hw : m.AromaticWritten) (hr : m.RoundsToKekule) (hbw : m.BareWritable)
+    (hsv : m.SameValences a)
+    (hqa : (Work.ofMolecule a).freezeHs.cleanUp = (Work.ofMolecule a).freezeHs) :
+    (Work.ofMolecule (kekuleWitness a K)).freezeHs.cleanUp =
+      (Work.ofMolecule (kekuleWitness a K)).freezeHs := by
+  have hag := freezeHs_kekuleWitness_agree hK ha hw hr hsv hqa
+  have hbj := getElem?_ofMolecule_kekuleWitness_bonds a K
+  have hsz : ∀ x : Molecule n, (Work.ofMolecule x).freezeHs.atoms.size = n := fun x ↦ by
+    simp [Work.ofMolecule]
+  refine Work.cleanUp_eq_of_quiet _ (Work.quiet_of_agree (w := (Work.ofMolecule a).freezeHs)
+    (by rw [hsz, hsz]) ?_ ?_ ?_ (fun i ↦ (hag i).1) (fun i ↦ (hag i).2.1) (fun i ↦ (hag i).2.2) ?_
+    (Work.quiet_of_cleanUp_eq _ hqa))
+  · rw [Work.freezeHs_bonds, Work.freezeHs_bonds]
+    simp [Work.ofMolecule, kekuleWitness, setKinds]
+  · intro j
+    rw [Work.freezeHs_bonds, Work.freezeHs_bonds]
+    simp only [getElem!_def, hbj]
+    cases (Work.ofMolecule a).bonds[j]? <;> rfl
+  · intro j
+    rw [Work.freezeHs_bonds, Work.freezeHs_bonds]
+    simp only [getElem!_def, hbj]
+    cases (Work.ofMolecule a).bonds[j]? <;> rfl
+  · -- a bond at an atom `cleanUp` could rewrite at is not aromatic in `a`, so the structure
+    -- has it as `a` does
+    intro i hv j hj
+    have hjt : ((Work.ofMolecule a).bonds[j]! : WBond).touches i = true := by
+      simp only [Work.bondsOf, List.mem_filter, Work.freezeHs_bonds] at hj
+      exact hj.2
+    rw [Work.freezeHs_bonds, Work.freezeHs_bonds]
+    simp only [getElem!_def, hbj] at hjt ⊢
+    cases hbd : (Work.ofMolecule a).bonds[j]? with
+    | none => rfl
+    | some bd =>
+      rw [Work.getElem?_ofMolecule_bonds] at hbd
+      obtain ⟨b, hb, rfl⟩ := Option.map_eq_some_iff.mp hbd
+      simp only [Option.map_some, witnessKind]
+      split
+      · rename_i hbk
+        exfalso
+        have hcand := fun (x : Fin n) (hx : b.touches x = true) ↦
+          kekuleWitness_isAromaticCandidate hK ha hw hr hbw hb hbk hx
+        have hv' : Work.Hypervalent (Work.ofMolecule (kekuleWitness a K)).freezeHs i := by
+          unfold Work.Hypervalent at hv ⊢
+          rw [(hag i).1, (hag i).2.1, (hag i).2.2]
+          exact hv
+        rw [Work.getElem?_ofMolecule_bonds, hb] at hjt
+        simp only [Option.map_some, WBond.touches, Bool.or_eq_true, beq_iff_eq] at hjt
+        have hin : i < (Work.ofMolecule (kekuleWitness a K)).freezeHs.atoms.size := by
+          rw [hsz]
+          rcases hjt with e | e <;> rw [← e] <;> exact Fin.isLt _
+        rcases hjt with e | e
+        · obtain ⟨d, hd⟩ := hcand b.src (by simp [Bond.touches])
+          rw [e] at hd
+          exact Work.not_hypervalent_of_isAromaticCandidate _ hin hd hv'
+        · obtain ⟨d, hd⟩ := hcand b.dst (by simp [Bond.touches])
+          rw [e] at hd
+          exact Work.not_hypervalent_of_isAromaticCandidate _ hin hd hv'
+      · rfl
+
+open Aromaticity in
+/-- **The pipeline's Kekulé structure of `a` aromatizes to `a`**, when `cleanUp` does nothing on
+it (`cleanUp_kekuleWitness`): `aromatizeOutput_kekuleWitness`, over the same rings. -/
+lemma aromatize_kekuleWitness {m a : Molecule n} {K : Work}
+    (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K)
+    (ha : m.aromatizeOutput (K.finish (Work.prepare m).relevantCycles) = a)
+    (hw : m.AromaticWritten) (hr : m.RoundsToKekule) (hbw : m.BareWritable)
+    (hqk : (Work.ofMolecule (kekuleWitness a K)).freezeHs.cleanUp =
+      (Work.ofMolecule (kekuleWitness a K)).freezeHs) :
+    (kekuleWitness a K).aromatize = .ok a := by
+  have hPk : Work.prepare (kekuleWitness a K) =
+      (Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences := by
+    simp only [Work.prepare, hqk]
+  have hb : (Work.prepare (kekuleWitness a K)).bonds = K.bonds := by
+    rw [hPk, Work.cacheValences_bonds, Work.freezeHs_bonds, bonds_ofMolecule_kekuleWitness hK ha]
+  have hKP := Work.kekulize_kindsRel hK
+  have hR : (Work.prepare (kekuleWitness a K)).relevantCycles =
+      (Work.prepare m).relevantCycles := by
+    rw [Work.relevantCycles_eq_of_ends (w := K) ?_ (by rw [hb]) (fun j ↦ by rw [hb]),
+      Work.relevantCycles_eq_of_ends hKP.atoms_size hKP.bonds_size hKP.ends]
+    rw [hKP.atoms_size, size_prepare_atoms, size_prepare_atoms]
+  rw [aromatize_eq_ok]
+  refine ⟨_, (kekuleWitness_spec hK ha).1.kekulize_prepare, ?_⟩
+  rw [hR, hPk]
+  exact aromatizeOutput_kekuleWitness hK ha hw hbw (kekuleWitness_sameValences hK ha hw hr)
+
+open Aromaticity in
+/-- An atom that RDKit reads as aromatic has a bond written aromatic, when aromatic bonds are as
+written (`AromaticWritten`). -/
+lemma exists_aromatic_bond_of_isAromaticAtom {a : Molecule n} (hwa : a.AromaticWritten)
+    {i : Fin n} (har : (Work.ofMolecule a).isAromaticAtom i = true) :
+    ∃ b ∈ a.bonds, b.touches i = true ∧ b.kind = .aromatic := by
+  rw [Work.isAromaticAtom_eq_loc, Work.ofMolecule_atom, Bool.or_eq_true] at har
+  rcases har with hf | hany
+  · obtain ⟨b, hb⟩ := List.exists_mem_of_length_pos (Nat.lt_of_lt_of_le Nat.zero_lt_two
+      (hwa.1 i hf).1)
+    simp only [List.mem_filter, Bool.and_eq_true, beq_iff_eq] at hb
+    exact ⟨b, hb.1, hb.2.1, hb.2.2⟩
+  · rw [Work.kindsAt_ofMolecule, List.any_map, List.any_eq_true] at hany
+    obtain ⟨b, hb, hbk⟩ := hany
+    simp only [List.mem_filter] at hb
+    exact ⟨b, hb.1, hb.2, by simpa using hbk⟩
+
+open Aromaticity in
+/-- **A bare atom of `a` on an aromatic bond is within its default valence** in the pipeline's
+Kekulé structure of `a`: it passed perception's candidate test there
+(`kekuleWitness_isAromaticCandidate`), which rejects an atom over its default valence. -/
+lemma explicitValence_kekuleWitness_le {m a : Molecule n} {K : Work}
+    (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K)
+    (ha : m.aromatizeOutput (K.finish (Work.prepare m).relevantCycles) = a)
+    (hw : m.AromaticWritten) (hr : m.RoundsToKekule) (hbw : m.BareWritable)
+    (hqk : (Work.ofMolecule (kekuleWitness a K)).freezeHs.cleanUp =
+      (Work.ofMolecule (kekuleWitness a K)).freezeHs)
+    {i : Fin n} {e : Element} (he : (a.atom i).element = some e) (horg : e ∈ Loc.organic)
+    (hc : (a.atom i).charge = 0) {b : Bond n} (hbm : b ∈ a.bonds) (hbt : b.touches i = true)
+    (hbk : b.kind = .aromatic) :
+    (Work.ofMolecule (kekuleWitness a K)).explicitValence i ≤ defaultValence e.atomicNumber := by
+  obtain ⟨j, hj⟩ := List.getElem?_of_mem hbm
+  obtain ⟨d, hd⟩ := kekuleWitness_isAromaticCandidate hK ha hw hr hbw hj hbk hbt
+  set P' := (Work.ofMolecule (kekuleWitness a K)).freezeHs.cacheValences with hP'
+  obtain ⟨-, hspec⟩ := Work.isAromaticCandidate_spec hd
+  -- the record perception read: `a`'s element and charge, and the explicit valence cached
+  have hPk : Work.prepare (kekuleWitness a K) = P' := by simp only [Work.prepare, hqk, hP']
+  obtain ⟨yz, yc, -⟩ := (kekuleWitness_spec hK ha).1.prepare_record hqk i
+  rw [hPk, atom_kekuleWitness hK ha] at yz yc
+  have hz1 : (P'.assignRadicals.atoms[i.val]! : WAtom).z = e.atomicNumber := by
+    rw [Work.getElem!_eq_of_map (fun x : WAtom ↦ x.z)
+      (Work.getElem?_assignRadicals_map P' _ (fun _ ↦ rfl) i.val), yz]
+    simp [Atom.atomicNumber, he]
+  have hc1 : (P'.assignRadicals.atoms[i.val]! : WAtom).charge = 0 := by
+    rw [Work.getElem!_eq_of_map (fun x : WAtom ↦ x.charge)
+      (Work.getElem?_assignRadicals_map P' _ (fun _ ↦ rfl) i.val), yc]
+    exact hc
+  have hv1 : P'.assignRadicals.cachedValence i.val =
+      (Work.ofMolecule (kekuleWitness a K)).explicitValence i.val := by
+    rw [Work.cachedValence_assignRadicals, Work.cachedValence,
+      Work.cachedValence_cacheValences_atom _ (by simp [Work.ofMolecule]),
+      Option.getD_some, (freezeHs_explicitValence_implicitHs _ i).1]
+  rw [hz1, hc1, hv1] at hspec
+  have h0 : 0 < defaultValence e.atomicNumber := by
+    simp only [Loc.organic, List.mem_cons, List.mem_nil_iff, or_false] at horg
+    rcases horg with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> decide
+  by_contra hlt
+  refine hspec ⟨h0, ?_⟩
+  simp only [Int.sub_zero, Int.toNat_natCast]
+  omega
+
+open Aromaticity in
+/-- **The pipeline's Kekulé structure of `a` gives every atom the implied hydrogens `a` does.**
+The two have the same explicit valences (`explicitValence_kekuleWitness`); an atom RDKit reads as
+aromatic in `a` is within its default valence (`explicitValence_kekuleWitness_le`), where the
+aromatic and the plain count agree (`Loc.impl_eq_of_ev_eq`). -/
+lemma implicitHs_kekuleWitness {m a : Molecule n} {K : Work}
+    (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K)
+    (ha : m.aromatizeOutput (K.finish (Work.prepare m).relevantCycles) = a)
+    (hw : m.AromaticWritten) (hr : m.RoundsToKekule) (hbw : m.BareWritable)
+    (hsv : m.SameValences a)
+    (hqa : (Work.ofMolecule a).freezeHs.cleanUp = (Work.ofMolecule a).freezeHs)
+    (hwa : a.AromaticWritten) (hba : a.BareWritable) (i : Fin n) :
+    (Work.ofMolecule (kekuleWitness a K)).implicitHs i = (Work.ofMolecule a).implicitHs i := by
+  obtain ⟨hkk, -⟩ := kekuleWitness_spec hK ha
+  have hqk := cleanUp_kekuleWitness hK ha hw hr hbw hsv hqa
+  have hat := atom_kekuleWitness hK ha i
+  have hark : (Work.ofMolecule (kekuleWitness a K)).isAromaticAtom i = false :=
+    Work.isAromaticAtom_of_noArom (Work.noArom_ofMolecule _ hkk.1 hkk.2) i
+  have hE := explicitValence_kekuleWitness hK ha hw hr hsv hqa i
+  rw [Work.explicitValence_eq_loc, Work.explicitValence_eq_loc, hark, Work.ofMolecule_atom,
+    Work.ofMolecule_atom] at hE
+  rw [Work.implicitHs_eq_loc, Work.implicitHs_eq_loc, hark, Work.ofMolecule_atom,
+    Work.ofMolecule_atom]
+  -- both records are `a`'s, the aromatic flag aside
+  set A : WAtom :=
+    { z := (a.atom i).atomicNumber, aromatic := (a.atom i).aromatic,
+      charge := (a.atom i).charge, explicitHs := (a.atom i).explicitH.getD 0,
+      noImplicit := (a.atom i).explicitH.isSome || (a.atom i).element.isNone } with hA
+  have hcg : ∀ (h : ℕ) (ar : Bool), Loc.ev
+      { z := ((kekuleWitness a K).atom i).atomicNumber,
+        aromatic := ((kekuleWitness a K).atom i).aromatic,
+        charge := ((kekuleWitness a K).atom i).charge,
+        explicitHs := ((kekuleWitness a K).atom i).explicitH.getD 0,
+        noImplicit := ((kekuleWitness a K).atom i).explicitH.isSome ||
+          ((kekuleWitness a K).atom i).element.isNone } h ar = Loc.ev A h ar :=
+    fun h ar ↦ Loc.ev_congr (b := A) (by rw [hat]; rfl) (by rw [hat]) (by rw [hat]) h ar
+  rw [Loc.impl_congr (b := A) (by rw [hat]; rfl) (by rw [hat]) (by rw [hat]) (by rw [hat])]
+  rw [hcg] at hE
+  by_cases hn : A.noImplicit = true
+  · rw [Loc.impl_of_noImplicit hn, Loc.impl_of_noImplicit hn]
+  · -- a bare atom: neutral, of the organic subset
+    have hn' : A.noImplicit = false := by simpa using hn
+    simp only [hA, Bool.or_eq_false_iff] at hn'
+    have hnone : (a.atom i).explicitH = none := by simpa using hn'.1
+    obtain ⟨e, he⟩ : ∃ e, (a.atom i).element = some e := by
+      cases hel : (a.atom i).element with
+      | none => simp [hel] at hn'
+      | some e => exact ⟨e, rfl⟩
+    obtain ⟨hcb, -⟩ := hba i hnone
+    simp only [Atom.canBeBare, hnone, he, Option.isNone_none, Bool.true_and,
+      Bool.and_eq_true, beq_iff_eq] at hcb
+    obtain ⟨⟨⟨⟨-, hch0⟩, -⟩, -⟩, horg⟩ := hcb
+    have hAz : A.z = e.atomicNumber := by simp [hA, Atom.atomicNumber, he]
+    refine (Loc.impl_eq_of_ev_eq (by simpa using hn) hch0 hE.symm fun har ↦ ?_).symm
+    obtain ⟨b, hbm, hbt, hbk⟩ := exists_aromatic_bond_of_isAromaticAtom hwa har
+    have hle := explicitValence_kekuleWitness_le hK ha hw hr hbw hqk he
+      (Loc.mem_organic e (by simpa using horg)) hch0 hbm hbt hbk
+    rw [Work.explicitValence_eq_loc, hark, Work.ofMolecule_atom, hcg] at hle
+    rw [hAz]
+    exact hle
+
+open Aromaticity in
+/-- **The pipeline's Kekulé structure of `a` is a Kekulé spelling of `a`**: a Kekulé structure of
+it (`kekuleWitness_spec`) with its valences (`explicitValence_kekuleWitness`) and its hydrogens
+(`implicitHs_kekuleWitness`). -/
+theorem kekuleWitness_isKekuleSpellingOf {m a : Molecule n} {K : Work}
+    (hK : (Work.prepare m).kekulize (Work.prepare m).relevantCycles = .ok K)
+    (ha : m.aromatizeOutput (K.finish (Work.prepare m).relevantCycles) = a)
+    (hw : m.AromaticWritten) (hr : m.RoundsToKekule) (hbw : m.BareWritable)
+    (hsv : m.SameValences a)
+    (hqa : (Work.ofMolecule a).freezeHs.cleanUp = (Work.ofMolecule a).freezeHs)
+    (hwa : a.AromaticWritten) (hba : a.BareWritable) :
+    (kekuleWitness a K).IsKekuleSpellingOf a := by
+  obtain ⟨hkk, hks⟩ := kekuleWitness_spec hK ha
+  have himp := implicitHs_kekuleWitness hK ha hw hr hbw hsv hqa hwa hba
+  refine ⟨hkk, hks.stereo, hks.bonds, fun i ↦ by rw [hks.atoms], fun i ↦ ?_, fun i ↦ ?_⟩
+  · rw [sanitizedH_eq, sanitizedH_eq, hks.atoms, himp]
+  · unfold sanitizedValence
+    rw [explicitValence_kekuleWitness hK ha hw hr hsv hqa, himp]
+
 open Aromaticity in
 /-- **`aromatize` is idempotent**: the lowercase form of a molecule, as an input, is a fixed
 point.  If `m` aromatizes to `a`, and `a` aromatizes keeping its charges, then `a` aromatizes to
@@ -5685,14 +5928,14 @@ it keeps the double bonds kekulization placed), and that, now with `P(=O)=C`, to
 `[O-][p+]1ccccc1`.  RDKit 2026.09 does the same: `cleanUp` runs before kekulization, so it does
 not see what kekulization makes.
 
-The Kekulé structure the first run computes (`kekuleWitness`) is a Kekulé spelling of `a` that
-aromatizes to `a`, and `aromatize_eq_self_of_isKekuleSpellingOf` applies.  Its valences are `a`'s
-by `SameValences` and `RoundsToKekule` for `m`.  It has `a`'s hydrogens: an atom of an aromatic
-bond of `a` passed perception's candidate test, so it is within its default valence, where RDKit
-counts the same hydrogens on an aromatic atom as on a plain one (`impl_arom_eq`).  `cleanUp` does
-nothing on it, because it does nothing on `a` and the two differ only at aromatic bonds, whose
-atoms `cleanUp` cannot rewrite (`quiet_of_agree`, `Work.not_hypervalent_of_isAromaticCandidate`).
-So it aromatizes to `a` (`aromatizeOutput_kekuleWitness`).
+The Kekulé structure the first run computes (`kekuleWitness`) is a Kekulé spelling of `a`
+(`kekuleWitness_isKekuleSpellingOf`) that aromatizes to `a` (`aromatize_kekuleWitness`), and
+`aromatize_eq_self_of_isKekuleSpellingOf` applies.  Its valences are `a`'s by `SameValences` and
+`RoundsToKekule` for `m` (`explicitValence_kekuleWitness`).  It has `a`'s hydrogens
+(`implicitHs_kekuleWitness`): an atom of an aromatic bond of `a` passed perception's candidate
+test, so it is within its default valence, where RDKit counts the same hydrogens on an aromatic
+atom as on a plain one.  `cleanUp` does nothing on it (`cleanUp_kekuleWitness`), because it does
+nothing on `a` and the two differ only at aromatic bonds, whose atoms `cleanUp` cannot rewrite.
 
 `BareWritable` for `a` fails when `cleanUp` rewrote the input: the `[O-]` of a nitro group written
 `N(=O)=O` is, in the output's record, a charged atom whose hydrogens are not in brackets.  The
@@ -5716,267 +5959,13 @@ theorem aromatize_aromatize {m a a' : Molecule n} (h : m.aromatize = .ok a)
   obtain ⟨K, hK, ha⟩ := aromatize_eq_ok.mp h
   obtain ⟨K2, hK2, ha2⟩ := aromatize_eq_ok.mp h'
   have hqa := hc'.cleanUp_eq_of_kekulize hK2 ha2
-  obtain ⟨hkk, hks⟩ := kekuleWitness_spec hK ha
-  have hsvK := kekuleWitness_sameValences hK ha hw hr
-  obtain ⟨hp, hm, -, -⟩ := kekuleWitness_start hK ha hw hbw hsvK
-  have hout := aromatizeOutput_kekuleWitness hK ha hw hbw hsvK
-  set k := kekuleWitness a K with hkdef
-  set R := (Work.prepare m).relevantCycles with hRdef
-  set P' := (Work.ofMolecule k).freezeHs.cacheValences with hP'def
-  have hnaK := Work.noArom_freezeHs (Work.noArom_ofMolecule k hkk.1 hkk.2)
-  -- the atoms, one by one
-  have hat : ∀ i, k.atom i = { a.atom i with aromatic := false } := hks.atoms
-  have heH : ∀ i, (k.atom i).explicitH = (a.atom i).explicitH := fun i ↦ by rw [hat]
-  have hzn : ∀ i, (k.atom i).atomicNumber = (a.atom i).atomicNumber := fun i ↦ by
-    rw [hat]; rfl
-  have hchg : ∀ i, (k.atom i).charge = (a.atom i).charge := fun i ↦ by rw [hat]
-  have helt : ∀ i, (k.atom i).element = (a.atom i).element := fun i ↦ by rw [hat]
-  -- the bonds
-  have hbj : ∀ j : ℕ, (Work.ofMolecule k).bonds[j]? = (Work.ofMolecule a).bonds[j]?.map
-      fun b ↦ { b with kind := witnessKind K j b.kind } := by
-    intro j
-    rw [Work.getElem?_ofMolecule_bonds, Work.getElem?_ofMolecule_bonds,
-      getElem?_kekuleWitness_bonds]
-    cases a.bonds[j]? <;> rfl
-  -- the atoms of an aromatic bond of `a` are candidates in the witness's copy
-  have hcand : ∀ (j : ℕ) (b : Bond n), a.bonds[j]? = some b → b.kind = .aromatic →
-      (∃ d, P'.assignRadicals.isAromaticCandidate b.src.val d = true) ∧
-      ∃ d, P'.assignRadicals.isAromaticCandidate b.dst.val d = true := by
-    intro j b hj hb
-    have h1 : (K.finish R).kind? j = some .aromatic := by
-      rw [Work.kind?, ← bonds_ofMolecule_output hK ha, Work.getElem?_ofMolecule_bonds, hj]
-      simp [hb]
-    have h2 : (P'.assignRadicals.setAromaticity R).kind? j = some .aromatic := by
-      rw [Work.kind?, (hp.setAromaticity hm).bonds]
-      simpa [Work.finish, Work.kind?, Work.finalizeHs_bonds] using h1
-    have h0 : P'.assignRadicals.kind? j ≠ some .aromatic := by
-      intro e
-      rw [Work.kind?, Work.assignRadicals_bonds, Work.cacheValences_bonds,
-        Option.map_eq_some_iff] at e
-      obtain ⟨x, hx, hxk⟩ := e
-      exact hnaK.2 x (Array.mem_of_getElem? hx) hxk
-    obtain ⟨bd, hbd, -, hd1, hd2⟩ := Work.of_kind?_setAromaticity _ R h2 h0
-    rw [Work.assignRadicals_bonds, Work.cacheValences_bonds, Work.freezeHs_bonds,
-      Work.getElem?_ofMolecule_bonds, getElem?_kekuleWitness_bonds, hj] at hbd
-    simp only [Option.map_some, Option.some.injEq] at hbd
-    subst hbd
-    exact ⟨hd1, hd2⟩
-  -- the explicit valences
-  have hevF : ∀ i : Fin n, (Work.ofMolecule k).explicitValence i =
-      (Work.ofMolecule a).explicitValence i := by
-    intro i
-    have e1 := hkk.explicitValence i
-    have e2 : (Work.ofMolecule k).bondHalfSum i = K.bondHalfSum i :=
-      congrFun (Work.bondHalfSum_congr (bonds_ofMolecule_kekuleWitness hK ha)) i
-    have e3 := bondValence_eq a i
-    have e4 := hsv i
-    have e5 := hr i
-    have e6 := bondHalfSum_kekulize hK hw i
-    have e7 := (freezeHs_explicitValence_implicitHs a i).1
-    have e8 : Work.cleaned a = (Work.ofMolecule a).freezeHs := hqa
-    rw [e8, e7] at e3
-    rw [e1, e2, heH]
-    unfold bondValence at e3 e4 e5
-    split_ifs at e5 e6 <;> omega
-  -- the working copies before caching
-  have hszW : ∀ x : Molecule n, (Work.ofMolecule x).freezeHs.atoms.size = n := fun x ↦ by
-    simp [Work.ofMolecule]
-  have hdef : ∀ (x : Molecule n) (i : ℕ), ¬ i < n →
-      ((Work.ofMolecule x).freezeHs.atoms[i]! : WAtom) = default := fun x i hi ↦
-    getElem!_neg _ i (by rw [hszW]; exact hi)
-  have hzW : ∀ i : ℕ, ((Work.ofMolecule k).freezeHs.atoms[i]! : WAtom).z =
-      ((Work.ofMolecule a).freezeHs.atoms[i]! : WAtom).z := by
-    intro i
-    by_cases hi : i < n
-    · rw [Work.freezeHs_ofMolecule_atom k ⟨i, hi⟩, Work.freezeHs_ofMolecule_atom a ⟨i, hi⟩]
-      exact hzn _
-    · rw [hdef k i hi, hdef a i hi]
-  have hcW : ∀ i : ℕ, ((Work.ofMolecule k).freezeHs.atoms[i]! : WAtom).charge =
-      ((Work.ofMolecule a).freezeHs.atoms[i]! : WAtom).charge := by
-    intro i
-    by_cases hi : i < n
-    · rw [Work.freezeHs_ofMolecule_atom k ⟨i, hi⟩, Work.freezeHs_ofMolecule_atom a ⟨i, hi⟩]
-      exact hchg _
-    · rw [hdef k i hi, hdef a i hi]
-  have hev0 : ∀ b : Bool, Loc.ev (default : WAtom) 0 b = 0 := by decide
-  have hevW : ∀ i : ℕ, (Work.ofMolecule k).freezeHs.explicitValence i =
-      (Work.ofMolecule a).freezeHs.explicitValence i := by
-    intro i
-    by_cases hi : i < n
-    · rw [(freezeHs_explicitValence_implicitHs k ⟨i, hi⟩).1,
-        (freezeHs_explicitValence_implicitHs a ⟨i, hi⟩).1]
-      exact hevF ⟨i, hi⟩
-    · have hb0 : ∀ x : Molecule n, (Work.ofMolecule x).freezeHs.bondHalfSum i = 0 := fun x ↦ by
-        rw [Work.bondHalfSum_congr (Work.freezeHs_bonds _)]
-        exact Work.bondHalfSum_ofMolecule_of_le x (Nat.le_of_not_lt hi)
-      rw [Work.explicitValence_eq_loc, Work.explicitValence_eq_loc, hdef k i hi, hdef a i hi,
-        hb0, hb0, hev0, hev0]
-  -- `cleanUp` does nothing on the witness: where it could rewrite, the witness has `a`'s bonds
-  have hqk : (Work.ofMolecule k).freezeHs.cleanUp = (Work.ofMolecule k).freezeHs := by
-    refine Work.cleanUp_eq_of_quiet _ (quiet_of_agree (w := (Work.ofMolecule a).freezeHs)
-      ?_ ?_ ?_ ?_ hzW hcW hevW ?_ (Work.quiet_of_cleanUp_eq _ hqa))
-    · rw [hszW, hszW]
-    · rw [Work.freezeHs_bonds, Work.freezeHs_bonds]
-      simp [Work.ofMolecule, hkdef, kekuleWitness, setKinds]
-    · intro j
-      rw [Work.freezeHs_bonds, Work.freezeHs_bonds]
-      simp only [getElem!_def, hbj]
-      cases (Work.ofMolecule a).bonds[j]? <;> rfl
-    · intro j
-      rw [Work.freezeHs_bonds, Work.freezeHs_bonds]
-      simp only [getElem!_def, hbj]
-      cases (Work.ofMolecule a).bonds[j]? <;> rfl
-    · intro i hv j hj
-      have hjt : ((Work.ofMolecule a).bonds[j]! : WBond).touches i = true := by
-        simp only [Work.bondsOf, List.mem_filter, Work.freezeHs_bonds] at hj
-        exact hj.2
-      rw [Work.freezeHs_bonds, Work.freezeHs_bonds]
-      simp only [getElem!_def, hbj] at hjt ⊢
-      cases hbd : (Work.ofMolecule a).bonds[j]? with
-      | none => rfl
-      | some bd =>
-        rw [Work.getElem?_ofMolecule_bonds] at hbd
-        obtain ⟨b, hb, rfl⟩ := Option.map_eq_some_iff.mp hbd
-        simp only [Option.map_some, witnessKind]
-        split
-        · rename_i hbk
-          exfalso
-          obtain ⟨⟨d1, hd1⟩, d2, hd2⟩ := hcand j b hb hbk
-          have hv' : Work.Hypervalent (Work.ofMolecule k).freezeHs i := by
-            unfold Work.Hypervalent at hv ⊢
-            rw [hzW, hcW, hevW]
-            exact hv
-          have hin : i < (Work.ofMolecule k).freezeHs.atoms.size := by
-            rw [hszW]
-            rw [Work.getElem?_ofMolecule_bonds, hb] at hjt
-            simp only [Option.map_some, WBond.touches, Bool.or_eq_true,
-              beq_iff_eq] at hjt
-            rcases hjt with e | e <;> rw [← e] <;> exact Fin.isLt _
-          rw [Work.getElem?_ofMolecule_bonds, hb] at hjt
-          simp only [Option.map_some, WBond.touches, Bool.or_eq_true,
-            beq_iff_eq] at hjt
-          rcases hjt with e | e
-          · rw [e] at hd1
-            exact Work.not_hypervalent_of_isAromaticCandidate _ hin hd1 hv'
-          · rw [e] at hd2
-            exact Work.not_hypervalent_of_isAromaticCandidate _ hin hd2 hv'
-        · rfl
-  have hPk : Work.prepare k = P' := by simp only [Work.prepare, hqk, hP'def]
-  -- the witness aromatizes to `a`
-  have hka : k.aromatize = .ok a := by
-    rw [aromatize_eq_ok]
-    refine ⟨Work.prepare k, hkk.kekulize_prepare, ?_⟩
-    have hb : (Work.prepare k).bonds = K.bonds := by
-      rw [hPk, Work.cacheValences_bonds, Work.freezeHs_bonds,
-        bonds_ofMolecule_kekuleWitness hK ha]
-    have hKP := Work.kekulize_kindsRel hK
-    have hR : (Work.prepare k).relevantCycles = (Work.prepare m).relevantCycles := by
-      rw [Work.relevantCycles_eq_of_ends (w := K) ?_ (by rw [hb]) (fun j ↦ by rw [hb]),
-        Work.relevantCycles_eq_of_ends hKP.atoms_size hKP.bonds_size hKP.ends]
-      rw [hKP.atoms_size, size_prepare_atoms, size_prepare_atoms]
-    rw [hR, hPk]
-    exact hout
-  have hkc : k.ChargesKept a := fun i ↦ (hchg i).symm
-  have hbk : k.BareWritable := by
-    intro i hn
-    rw [heH] at hn
-    obtain ⟨h1, -⟩ := hba i hn
-    refine ⟨?_, fun h ↦ ?_⟩
-    · rw [hat]; exact h1
-    · rw [hat] at h; exact absurd h (by simp)
-  -- the implied hydrogens
-  have hd0 : ∀ e ∈ Loc.organic, 0 < defaultValence e.atomicNumber := by
-    intro e he
-    simp only [Loc.organic, List.mem_cons, List.mem_nil_iff, or_false] at he
-    rcases he with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> decide
-  have himp : ∀ i : Fin n, (Work.ofMolecule k).implicitHs i = (Work.ofMolecule a).implicitHs i := by
-    intro i
-    have hark : (Work.ofMolecule k).isAromaticAtom i = false :=
-      Work.isAromaticAtom_of_noArom (Work.noArom_ofMolecule k hkk.1 hkk.2) i
-    have hE := hevF i
-    rw [Work.explicitValence_eq_loc, Work.explicitValence_eq_loc, hark, Work.ofMolecule_atom,
-      Work.ofMolecule_atom] at hE
-    rw [Work.implicitHs_eq_loc, Work.implicitHs_eq_loc, hark, Work.ofMolecule_atom,
-      Work.ofMolecule_atom]
-    set A : WAtom :=
-      { z := (a.atom i).atomicNumber, aromatic := (a.atom i).aromatic,
-        charge := (a.atom i).charge, explicitHs := (a.atom i).explicitH.getD 0,
-        noImplicit := (a.atom i).explicitH.isSome || (a.atom i).element.isNone } with hA
-    rw [Loc.impl_congr (b := A) (hzn i) (hchg i) (by rw [heH]) (by rw [heH, helt])]
-    rw [Loc.ev_congr (b := A) (hzn i) (hchg i) (by rw [heH])] at hE
-    by_cases hn : A.noImplicit = true
-    · rw [Loc.impl_of_noImplicit hn, Loc.impl_of_noImplicit hn]
-    · have hn' : A.noImplicit = false := by simpa using hn
-      have hnone : (a.atom i).explicitH = none := by
-        simp only [hA, Bool.or_eq_false_iff] at hn'
-        simpa using hn'.1
-      obtain ⟨e, he⟩ : ∃ e, (a.atom i).element = some e := by
-        simp only [hA, Bool.or_eq_false_iff] at hn'
-        cases hel : (a.atom i).element with
-        | none => simp [hel] at hn'
-        | some e => exact ⟨e, rfl⟩
-      obtain ⟨hcb, -⟩ := hba i hnone
-      simp only [Atom.canBeBare, hnone, he, Option.isNone_none, Bool.true_and,
-        Bool.and_eq_true, beq_iff_eq] at hcb
-      obtain ⟨⟨⟨⟨-, hch0⟩, -⟩, -⟩, horg⟩ := hcb
-      have hAz : A.z = e.atomicNumber := by simp [hA, Atom.atomicNumber, he]
-      symm
-      refine impl_arom_eq hn' hch0 hE.symm fun har ↦ ?_
-      -- an aromatic bond of `a` at `i`
-      obtain ⟨b, hbm, hbt, hbk'⟩ : ∃ b ∈ a.bonds, b.touches i = true ∧ b.kind = .aromatic := by
-        rw [Work.isAromaticAtom_eq_loc, Work.ofMolecule_atom, Bool.or_eq_true] at har
-        rcases har with hf | hany
-        · have h2 := (hwa.1 i hf).1
-          obtain ⟨b, hb⟩ := List.exists_mem_of_length_pos (by omega : 0 <
-            (a.bonds.filter fun b ↦ b.touches i && b.kind == .aromatic).length)
-          simp only [List.mem_filter, Bool.and_eq_true, beq_iff_eq] at hb
-          exact ⟨b, hb.1, hb.2.1, hb.2.2⟩
-        · rw [Work.kindsAt_ofMolecule, List.any_map, List.any_eq_true] at hany
-          obtain ⟨b, hb, hbk'⟩ := hany
-          simp only [List.mem_filter] at hb
-          exact ⟨b, hb.1, hb.2, by simpa using hbk'⟩
-      obtain ⟨j, hj⟩ := List.getElem?_of_mem hbm
-      obtain ⟨⟨d1, hd1⟩, d2, hd2⟩ := hcand j b hj hbk'
-      obtain ⟨d, hd⟩ : ∃ d, P'.assignRadicals.isAromaticCandidate i.val d = true := by
-        simp only [Bond.touches, Bool.or_eq_true, beq_iff_eq] at hbt
-        rcases hbt with e' | e'
-        · exact ⟨d1, by rw [← e']; exact hd1⟩
-        · exact ⟨d2, by rw [← e']; exact hd2⟩
-      obtain ⟨-, hspec⟩ := Work.isAromaticCandidate_spec hd
-      obtain ⟨yz, yc, -, -, -, -, -⟩ := hkk.prepare_record hqk i
-      rw [hPk] at yz yc
-      have hz1 : (P'.assignRadicals.atoms[i.val]! : WAtom).z = e.atomicNumber := by
-        rw [Work.getElem!_eq_of_map (fun x : WAtom ↦ x.z)
-          (Work.getElem?_assignRadicals_map P' _ (fun _ ↦ rfl) i.val), yz, hzn]
-        simp [Atom.atomicNumber, he]
-      have hc1 : (P'.assignRadicals.atoms[i.val]! : WAtom).charge = 0 := by
-        rw [Work.getElem!_eq_of_map (fun x : WAtom ↦ x.charge)
-          (Work.getElem?_assignRadicals_map P' _ (fun _ ↦ rfl) i.val), yc, hchg, hch0]
-      have hv1 : P'.assignRadicals.cachedValence i.val =
-          (Work.ofMolecule k).explicitValence i.val := by
-        rw [Work.cachedValence_assignRadicals, Work.cachedValence,
-          Work.cachedValence_cacheValences_atom _ (by rw [hszW]; exact i.isLt),
-          Option.getD_some, (freezeHs_explicitValence_implicitHs k i).1]
-      rw [hz1, hc1, hv1] at hspec
-      have h0 := hd0 e (Loc.mem_organic e (by simpa using horg))
-      rw [hAz]
-      have hE2 : (Work.ofMolecule k).explicitValence i.val =
-          Loc.ev A ((Work.ofMolecule k).bondHalfSum i.val) false := by
-        rw [Work.explicitValence_eq_loc, hark, Work.ofMolecule_atom]
-        exact Loc.ev_congr (b := A) (hzn i) (hchg i) (by rw [heH]) _ _
-      rw [← hE2]
-      by_contra hlt
-      apply hspec
-      refine ⟨h0, ?_⟩
-      simp only [Int.sub_zero, Int.toNat_natCast]
-      omega
-  -- the witness is a Kekulé spelling of `a`
-  have hsp : k.IsKekuleSpellingOf a := by
-    refine ⟨hkk, hks.stereo, hks.bonds, fun i ↦ by rw [hat], fun i ↦ ?_, fun i ↦ ?_⟩
-    · rw [sanitizedH_eq, sanitizedH_eq, heH, himp]
-    · unfold sanitizedValence
-      rw [hevF, himp]
-  exact aromatize_eq_self_of_isKekuleSpellingOf hsp hka hkc h' hc' hwa hra hba hbk
+  have hat := atom_kekuleWitness hK ha
+  refine aromatize_eq_self_of_isKekuleSpellingOf
+    (kekuleWitness_isKekuleSpellingOf hK ha hw hr hbw hsv hqa hwa hba)
+    (aromatize_kekuleWitness hK ha hw hr hbw (cleanUp_kekuleWitness hK ha hw hr hbw hsv hqa))
+    (fun i ↦ by rw [hat]) h' hc' hwa hra hba fun i hn ↦ ?_
+  rw [hat] at hn ⊢
+  exact ⟨(hba i hn).1, fun h ↦ absurd h (by simp)⟩
 
 /-- Aromatizing an output again, keeping its charges, does not change its canonical SMILES.
 From `aromatize_aromatize`. -/

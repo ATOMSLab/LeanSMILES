@@ -23,6 +23,15 @@ With zero penalty, this solves the ordinary least-squares problem.
 
 The exact-real proofs in `Proofs/LeastSquares/` do not certify this program's
 floating-point rounding errors or its regularized objective.
+
+## Main definitions
+
+* `Config`: the penalty, an optional unpenalized column, and the rank tolerance.
+* `Model`: fitted coefficients with the penalty they were fitted under.
+* `fit`: ridge regression by Householder QR on the penalty-augmented, scaled design.
+* `Model.predict`, `Model.predictAll`: predictions for one row or for a design.
+* `Model.sumSquaredError`, `Model.penalizedLoss`: the squared error and the ridge objective.
+* `Error`: the invalid inputs and numerical failures `fit` and prediction report.
 -/
 
 public section
@@ -34,17 +43,29 @@ abbrev Design := Array (Array Float)
 
 /-- Invalid inputs or a failure to obtain a finite, numerically full-rank solution. -/
 inductive Error where
+  /-- The design has no rows. -/
   | emptyData
+  /-- The first design row has no columns. -/
   | noFeatures
+  /-- The target vector has `actual` entries but the design has `expected` rows. -/
   | targetCount (expected actual : Nat)
+  /-- Zero-based `row` has `actual` entries instead of `expected`. -/
   | rowWidth (row expected actual : Nat)
+  /-- A NaN or infinite design entry at the zero-based position. -/
   | nonFiniteFeature (row column : Nat)
+  /-- A NaN or infinite target at the zero-based row. -/
   | nonFiniteTarget (row : Nat)
+  /-- Zero penalty and fewer observations than coefficients, so no unique solution exists. -/
   | underdetermined (observations features : Nat)
+  /-- `Config.penalty` is not finite or is negative. -/
   | invalidPenalty
+  /-- `Config.unpenalizedColumn` is `column`, not below the number of `features`. -/
   | invalidUnpenalizedColumn (column features : Nat)
+  /-- `Config.rankTolerance` is not finite or not strictly between 0 and 1. -/
   | invalidTolerance
+  /-- The zero-based augmented column is zero or numerically dependent on earlier columns. -/
   | rankDeficient (column : Nat)
+  /-- A non-finite intermediate value; `context` names the stage that produced it. -/
   | numericalFailure (context : String)
   deriving Repr, BEq, DecidableEq
 
@@ -89,13 +110,13 @@ structure Model where
   unpenalizedColumn : Option Nat
   deriving Repr
 
--- Validate one feature row: its width and that every entry is finite.
+/-- Validate one feature row: its width is `expected` and every entry is finite. -/
 private def checkRow (row : Array Float) (expected index : Nat) : Except Error Unit := do
   if row.size != expected then throw (.rowWidth index expected row.size)
   for j in [0:row.size] do
     if !row[j]!.isFinite then throw (.nonFiniteFeature index j)
 
--- Compute one prediction after checking the row and coefficient dimensions/values.
+/-- Compute one prediction after checking the row and coefficient dimensions and values. -/
 private def predictRow (model : Model) (row : Array Float) (index : Nat) : Except Error Float := do
   checkRow row model.coefficients.size index
   let mut value := 0.0
@@ -139,7 +160,8 @@ def Model.penalizedLoss (model : Model) (X : Design) (y : Array Float) : Except 
       if !total.isFinite then throw (.numericalFailure "penalized loss")
   return total
 
--- Undo scaling without first forming an overflowing or underflowing scale ratio.
+/-- `value * targetScale / columnScale`, computed without first forming an overflowing or
+underflowing scale ratio. -/
 private def unscale (value targetScale columnScale : Float) : Float :=
   let (v, ev) := value.frExp
   let (t, et) := targetScale.frExp

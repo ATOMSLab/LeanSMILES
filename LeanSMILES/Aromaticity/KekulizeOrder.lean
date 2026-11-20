@@ -17,6 +17,15 @@ can share atoms only where an atom has more than three bonds (`Work.fusedSystems
 such atom is aromatic with a bond written aromatic, kekulizing one system leaves alone everything
 the other reads and writes, so the two commute (`Work.kekulizeSystem_comm`).  A system's result
 also does not depend on the order in which its atoms are listed (`Work.kekulizeSystem_perm`).
+
+## Main statements
+
+* `Work.kekulizeSystem_perm`: a system's result does not depend on how its atoms are listed.
+* `Work.kekulizeSystem_comm`: two fused systems commute when no atom aromatic with a bond written
+  aromatic lies in both.
+* `Work.components_ringsEquiv`: an equivalent ring list has the same fused systems, in some order.
+* `Work.kekulize_ringsEquiv`: kekulization reads the ring list only up to equivalence.
+* `Work.Relisted.walkRel`: a relisting relates the walks.
 -/
 
 @[expose] public section
@@ -25,6 +34,7 @@ namespace LeanSMILES.Aromaticity.Work
 
 /-! ### Same copy, related to itself -/
 
+/-- A copy is related to itself, bonds not renumbered. -/
 lemma WalkRel.refl (Q : ℕ → Prop) (m : Work) : WalkRel Q id id m m :=
   ⟨rfl, rfl, ⟨fun _ h ↦ h, fun _ h ↦ h, fun _ _ ↦ rfl, fun _ _ ↦ rfl⟩,
     fun _ _ ↦ .inl ⟨rfl, rfl⟩, fun _ _ ↦ by simp, fun _ ↦ by simp, fun _ _ _ ↦ rfl⟩
@@ -35,6 +45,7 @@ lemma walkRel_id {Q : ℕ → Prop} {u v : Work} (hs : SameSkel u v) (ha : v.ato
     WalkRel Q id id u v :=
   (WalkRel.refl (fun _ ↦ True) u).of_skel (SameSkel.refl u) hs ha hk
 
+/-- Two bonds with the same endpoints and kind are equal. -/
 lemma WBond.ext' {a b : WBond} (h1 : a.src = b.src) (h2 : a.dst = b.dst) (h3 : a.kind = b.kind) :
     a = b := by
   cases a; cases b; simp_all
@@ -53,6 +64,7 @@ lemma eq_of_kinds {u r r' : Work} (hs : SameSkel u r) (hs' : SameSkel u r')
 
 /-! ### A system's atoms in any order -/
 
+/-- `kekulizeSystem` is `kekSys` on the system's `systemAtoms`. -/
 lemma kekulizeSystem_eq' (wa : ℕ → Bool) (ev0 : List ℕ) (rings : Array (List ℕ)) (out : Work)
     (system : List ℕ) :
     kekulizeSystem wa ev0 rings out system = kekSys wa ev0 out (systemAtoms rings system) := by
@@ -80,6 +92,7 @@ theorem kekulizeSystem_perm {wa : ℕ → Bool} {ev0 : List ℕ} {R R' : Array (
 
 /-! ### Two systems commute -/
 
+/-- The only error `kekSys` gives is "Can't kekulize mol". -/
 lemma kekSys_error {wa : ℕ → Bool} {ev0 : List ℕ} {out : Work} {atoms : List ℕ} {e : String}
     (h : kekSys wa ev0 out atoms = .error e) : e = "Can't kekulize mol" := by
   unfold kekSys at h
@@ -90,6 +103,7 @@ lemma kekSys_error {wa : ℕ → Bool} {ev0 : List ℕ} {out : Work} {atoms : Li
     · cases h
     · cases h; rfl
 
+/-- `SabSet` is the same on two copies with the same skeleton and atoms. -/
 lemma SabSet.congr {wa : ℕ → Bool} {u a : Work} (hs : SameSkel u a) (ha : a.atoms = u.atoms)
     (X : List ℕ) (k : ℕ) : SabSet wa a X k ↔ SabSet wa u X k := by
   simp only [SabSet, ha, hs.bondsOf]
@@ -233,6 +247,7 @@ theorem kekulizeSystem_comm {wa : ℕ → Bool} {ev0 : List ℕ} {R : Array (Lis
 
 /-! ### The fused systems of an equivalent ring list -/
 
+/-- `dfsComp` keeps every vertex already in the component. -/
 lemma dfsComp_sub {nbrs : Array (List ℕ)} : ∀ (fuel : ℕ) (seen : Array Bool) (comp stack : List ℕ),
     ∀ x ∈ comp, x ∈ (dfsComp nbrs fuel (seen, comp, stack)).2
   | 0, _, _, _, x, hx => by unfold dfsComp; exact hx
@@ -243,6 +258,7 @@ lemma dfsComp_sub {nbrs : Array (List ℕ)} : ∀ (fuel : ℕ) (seen : Array Boo
     obtain ⟨s', st'⟩ := p
     exact dfsComp_sub fuel _ _ _ x (List.mem_cons_of_mem _ hx)
 
+/-- With fuel left, the vertex on top of the stack ends up in the component. -/
 lemma dfsComp_root {nbrs : Array (List ℕ)} (fuel : ℕ) (seen : Array Bool) (comp rest : List ℕ)
     (u : ℕ) : u ∈ (dfsComp nbrs (fuel + 1) (seen, comp, u :: rest)).2 := by
   unfold dfsComp
@@ -282,15 +298,18 @@ lemma components_ne_nil {n : ℕ} {nbrs : Array (List ℕ)} {C : List ℕ}
   unfold components at hC
   exact key _ _ (fun s hs ↦ List.mem_range.1 hs) (by simp) C hC
 
+/-- Every ring `kekFusedNbrs` lists is a ring of the list. -/
 lemma kekFusedNbrs_lt (m : Work) (R : Array (List ℕ)) :
     ∀ i : ℕ, ∀ j ∈ (m.kekFusedNbrs R)[i]!, j < R.size :=
   fun _ _ h ↦ (mem_kekFusedNbrs.1 h).2.1
 
+/-- `kekFusedNbrs` is symmetric. -/
 lemma kekFusedNbrs_symm (m : Work) (R : Array (List ℕ)) :
     ∀ i j : ℕ, j ∈ (m.kekFusedNbrs R)[i]! → i ∈ (m.kekFusedNbrs R)[j]! := fun i j h ↦ by
   obtain ⟨h1, h2, h3, k, hk1, hk2⟩ := mem_kekFusedNbrs.1 h
   exact mem_kekFusedNbrs.2 ⟨h2, h1, Ne.symm h3, k, hk2, hk1⟩
 
+/-- On a symmetric graph on `[0, n)`, no component is listed twice. -/
 lemma components_nodup {n : ℕ} {nbrs : Array (List ℕ)} (hlt : ∀ i : ℕ, ∀ j ∈ nbrs[i]!, j < n)
     (hsym : ∀ i j : ℕ, j ∈ nbrs[i]! → i ∈ nbrs[j]!) : (components n nbrs).Nodup :=
   (components_spec hlt hsym).2.1.imp_of_mem fun {C D} hC _ h e ↦ by
@@ -396,6 +415,8 @@ theorem components_ringsEquiv (m : Work) {R R' : Array (List ℕ)}
 
 /-! ### Kekulization over an equivalent ring list -/
 
+/-- Two `foldlM`s over lists related elementwise by `P` agree, if the steps agree on related
+elements from every state satisfying `Inv`, and the second step keeps `Inv`. -/
 lemma foldlM_forall₂ {α γ δ : Type} {f : α → γ → Except String α} {g : α → δ → Except String α}
     {P : γ → δ → Prop} (Inv : α → Prop) (hpres : ∀ a c b, Inv a → g a c = .ok b → Inv b)
     (hfg : ∀ a, Inv a → ∀ x y, P x y → f a x = g a y) :
@@ -408,6 +429,8 @@ lemma foldlM_forall₂ {α γ δ : Type} {f : α → γ → Except String α} {g
     · rfl
     · exact foldlM_forall₂ Inv hpres hfg h b (hpres a y b ha hg)
 
+/-- A `foldlM` over a list without repeats does not depend on its order, if any two distinct steps
+on elements satisfying `S` commute from every state satisfying `Inv`, and steps keep `Inv`. -/
 lemma foldlM_perm_comm {α γ : Type} {f : α → γ → Except String α} (Inv : α → Prop)
     (S : γ → Prop) (hpres : ∀ a c b, Inv a → f a c = .ok b → Inv b)
     (hcomm : ∀ a, Inv a → ∀ x y, S x → S y → x ≠ y →
@@ -435,6 +458,7 @@ lemma foldlM_perm_comm {α γ : Type} {f : α → γ → Except String α} (Inv 
     rw [ih1 hnd hS a ha]
     exact ih2 (h1.nodup_iff.1 hnd) (fun z hz ↦ hS z (h1.symm.subset hz)) a ha
 
+/-- `clearAromatic` reads its ring-atom list only through membership. -/
 lemma clearAromatic_congr {ra ra' : List ℕ} (h : ∀ x, ra'.contains x = ra.contains x) :
     clearAromatic ra' = clearAromatic ra := by
   funext out i
@@ -508,6 +532,7 @@ lemma skel_of_kindsRel {o w : Work} (h : KindsRel o w) : SameSkel o w :=
     fun k ↦ (ends_getElem! (size_of_kindsRel h) (ends_of_kindsRel h) k).1.symm,
     fun k ↦ (ends_getElem! (size_of_kindsRel h) (ends_of_kindsRel h) k).2.symm⟩
 
+/-- A ring of `x` is a ring of any copy with the same skeleton. -/
 lemma SameSkel.isRing {x y : Work} (hs : SameSkel x y) {c : List ℕ} (hc : x.IsRing c) :
     y.IsRing c := by
   have ha : ∀ u v, y.Adj u v ↔ x.Adj u v := fun u v ↦ by simp only [Adj, hs.neighbors]

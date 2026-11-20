@@ -17,6 +17,17 @@ the bond between `σ u` and `σ v` is `π` of the bond between `u` and `v`. Rela
 atoms is one (`π` the identity); relisting its bonds is another. Distances, shortest paths and
 candidate cycles follow the renaming (`Work.WorkIso.dist`, `Work.WorkIso.cyclesFrom`), and a
 ring's bonds are renamed by `π` (`Work.WorkIso.ringBonds`).
+
+## Main definitions
+
+* `Work.WorkIso`: a renaming of a copy's atoms and bonds that carries one copy to another.
+
+## Main statements
+
+* `Work.WorkIso.dist`: distances follow the renaming.
+* `Work.WorkIso.pathOK`, `Work.WorkIso.cand`: shortest paths and candidates follow it.
+* `Work.WorkIso.cyclesFrom`: the cycles found from a root follow it, up to `RingEq`.
+* `Work.WorkIso.isRing`, `Work.WorkIso.ringBonds`: rings follow it, their bonds renamed by `π`.
 -/
 
 @[expose] public section
@@ -25,6 +36,7 @@ namespace LeanSMILES.Aromaticity
 
 namespace Work
 
+/-- A bond `bondBetween?` finds is in range. -/
 lemma bondBetween?_lt {m : Work} {u v k : ℕ} (h : m.bondBetween? u v = some k) : k < m.numBonds :=
   List.mem_range.1 (List.mem_of_find?_eq_some h)
 
@@ -47,10 +59,15 @@ lemma adj_iff_bondBetween? {m : Work} (hwf : m.WF) (u v : ℕ) :
 
 /-- `w'` is `w` with atom `u` renamed `σ u` and bond `k` renamed `π k`. -/
 structure WorkIso (w w' : Work) (σ ψ π ρ : ℕ → ℕ) : Prop where
+  /-- `σ` and `ψ` are inverse renumberings of the atoms. -/
   atoms : IdxBij w.numAtoms σ ψ
+  /-- `π` and `ρ` are inverse renumberings of the bonds. -/
   bonds : IdxBij w.numBonds π ρ
+  /-- The two copies have the same number of atoms. -/
   natoms : w'.numAtoms = w.numAtoms
+  /-- The two copies have the same number of bonds. -/
   nbonds : w'.numBonds = w.numBonds
+  /-- The bond between `σ u` and `σ v` is `π` of the bond between `u` and `v`. -/
   bond : ∀ u v, u < w.numAtoms → v < w.numAtoms →
     w'.bondBetween? (σ u) (σ v) = (w.bondBetween? u v).map π
 
@@ -58,6 +75,7 @@ namespace WorkIso
 
 variable {w w' : Work} {σ ψ π ρ : ℕ → ℕ}
 
+/-- Renamed atoms are bonded exactly when the atoms are. -/
 lemma adj (I : WorkIso w w' σ ψ π ρ) (hwf : w.WF) (hwf' : w'.WF) {u v : ℕ}
     (hu : u < w.numAtoms) (hv : v < w.numAtoms) : w'.Adj (σ u) (σ v) ↔ w.Adj u v := by
   rw [adj_iff_bondBetween? hwf', adj_iff_bondBetween? hwf, I.bond u v hu hv, Option.isSome_map]
@@ -74,6 +92,7 @@ lemma symm (I : WorkIso w w' σ ψ π ρ) : WorkIso w' w ψ σ ρ π := by
   | none => rfl
   | some k => simp [I.bonds.left k (bondBetween?_lt hk)]
 
+/-- A walk renamed is a walk of the same length. -/
 lemma walk (I : WorkIso w w' σ ψ π ρ) (hwf : w.WF) (hwf' : w'.WF) {r v d : ℕ}
     (h : w.Walk r v d) : w'.Walk (σ r) (σ v) d := by
   induction h with
@@ -82,12 +101,15 @@ lemma walk (I : WorkIso w w' σ ψ π ρ) (hwf : w.WF) (hwf' : w'.WF) {r v d : �
     have hl := Adj.lt hwf hadj
     exact .step ih ((I.adj hwf hwf' hl.1 hl.2).2 hadj)
 
+/-- There is a walk of `d` bonds between renamed atoms exactly when there is one between the
+atoms. -/
 lemma walk_iff (I : WorkIso w w' σ ψ π ρ) (hwf : w.WF) (hwf' : w'.WF) {r v d : ℕ}
     (hr : r < w.numAtoms) (hv : v < w.numAtoms) : w'.Walk (σ r) (σ v) d ↔ w.Walk r v d := by
   refine ⟨fun h ↦ ?_, I.walk hwf hwf'⟩
   have := I.symm.walk hwf' hwf h
   rwa [I.atoms.left r hr, I.atoms.left v hv] at this
 
+/-- Renamed atoms are `d` bonds apart exactly when the atoms are. -/
 lemma isDist_iff (I : WorkIso w w' σ ψ π ρ) (hwf : w.WF) (hwf' : w'.WF) {r v d : ℕ}
     (hr : r < w.numAtoms) (hv : v < w.numAtoms) :
     w'.IsDist (σ r) (σ v) d ↔ w.IsDist r v d := by
@@ -108,12 +130,14 @@ lemma dist (I : WorkIso w w' σ ψ π ρ) (hwf : w.WF) (hwf' : w'.WF) {r v : ℕ
     rw [bfs_dist hwf' hr', I.isDist_iff hwf hwf' hr hv]
     exact (bfs_dist hwf hr v d).1 h
 
+/-- An atom the search from an in-range root gives a distance is in range. -/
 lemma lt_of_dist {m : Work} (hwf : m.WF) {r x e : ℕ} (hr : r < m.numAtoms)
     (hx : (m.bfs r).1[x]! = some e) : x < m.numAtoms := by
   by_contra h
   rw [getElem!_neg _ x (by rw [(bfs_inv hwf hr).size]; exact h)] at hx
   cases hx
 
+/-- Every atom of a shortest path from an in-range root is in range. -/
 lemma PathOK.lt {m : Work} (hwf : m.WF) {r x d : ℕ} {p : List ℕ} (hr : r < m.numAtoms)
     (hp : m.PathOK (m.bfs r).1 r x d p) : ∀ a ∈ p, a < m.numAtoms := fun a ha ↦ by
   obtain ⟨i, -, hi⟩ := hp.dist_le ha
@@ -133,10 +157,12 @@ lemma pathOK (I : WorkIso w w' σ ψ π ρ) (hwf : w.WF) (hwf' : w'.WF) {r x d :
 
 end WorkIso
 
+/-- `disjointTails p q` holds when no atom of `p.tail` is in `q.tail`. -/
 lemma disjointTails_iff {p q : List ℕ} : disjointTails p q = true ↔ ∀ a ∈ p.tail, a ∉ q.tail := by
   simp only [disjointTails, List.all_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true,
     List.contains_eq_mem, decide_eq_false_iff_not]
 
+/-- Renaming two paths by a map injective on their atoms keeps `disjointTails`. -/
 lemma disjointTails_map {σ : ℕ → ℕ} {p q : List ℕ}
     (hinj : ∀ a ∈ p, ∀ b ∈ q, σ a = σ b → a = b) :
     disjointTails (p.map σ) (q.map σ) = disjointTails p q := by
@@ -189,6 +215,7 @@ theorem cyclesFrom (I : WorkIso w w' σ ψ π ρ) (hwf : w.WF) (hwf' : w'.WF) {r
   exists_mem_cyclesFrom_of_cand hwf' (I.natoms ▸ I.atoms.lt r hr)
     (I.cand hwf hwf' hr (cand_of_mem_cyclesFrom w hr hc))
 
+/-- On a well-formed copy, every atom of a ring is in range. -/
 lemma IsRing.lt {m : Work} (hwf : m.WF) {c : List ℕ} (hc : m.IsRing c) :
     ∀ a ∈ c, a < m.numAtoms := fun a ha ↦ by
   obtain ⟨t, ht, rfl⟩ := List.getElem_of_mem ha

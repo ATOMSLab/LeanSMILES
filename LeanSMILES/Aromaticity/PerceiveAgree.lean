@@ -34,6 +34,23 @@ RDKit way, or after).  Perception reads only some combinations of those, and
 Then the first pass of perception agrees on its candidates, candidate rings and their donor types
 (`PerceiveAgree.donorData_rel`), and the second reads donor types only at atoms of candidate
 rings, so `aromaticBondList` is the same (`PerceiveAgree.aromaticBondList_eq`).
+
+## Main definitions
+
+* `Work.PerceiveAgree`: two working copies that perception over `rings` reads alike.
+* `Work.SameMarks`: two copies with the same bonds and the same aromatic flags.
+* `Work.HsRestored`: the step of `adjustHs` at an atom gives back its cached hydrogen total.
+
+## Main statements
+
+* `Work.PerceiveAgree.donorData_rel`: the first pass of perception agrees on the candidates,
+  candidate rings and their donor types.
+* `Work.PerceiveAgree.aromaticBondList_eq`: the same bonds are made aromatic.
+* `Work.PerceiveAgree.setAromaticity`: perception marks the same bonds and atoms.
+* `Work.frozenHs_finalizeHs_of_restored`: the final hydrogen count is the cached one where the
+  `adjustHs` step restores it.
+* `Work.cachedValence_sub_of_noArom`: with nothing aromatic, the cached valence less the written
+  hydrogens is the bond-order sum.
 -/
 
 @[expose] public section
@@ -93,6 +110,8 @@ structure PerceiveAgree (rings : Array (List ℕ)) (w w' : Work) : Prop where
     w'.ringDonor ((rings.toList.flatMap w.ringBonds).eraseDups) len i =
       w.ringDonor ((rings.toList.flatMap w.ringBonds).eraseDups) len i
 
+/-- Entry `j` of a donor array after `set! i v`: `v` if `j` is `i` and in range, else the old
+entry. -/
 lemma getElem!_set!_donor (a : Array Donor) (i j : ℕ) (v : Donor) :
     (a.set! i v)[j]! = if i = j ∧ j < a.size then v else a[j]! := by
   by_cases hj : j < a.size
@@ -106,36 +125,45 @@ namespace PerceiveAgree
 variable {rings : Array (List ℕ)} {w w' : Work} (h : PerceiveAgree rings w w')
 include h
 
+/-- The two copies have as many atoms. -/
 lemma numAtoms_eq : w'.numAtoms = w.numAtoms := h.size
 
+/-- The two copies have the same bonds at every atom. -/
 lemma bondsOf_eq : w'.bondsOf = w.bondsOf := by
   funext i
   simp only [bondsOf, numBonds, h.bonds]
 
+/-- The two copies have the same neighbors at every atom. -/
 lemma neighbors_eq : w'.neighbors = w.neighbors := by
   funext i
   simp only [neighbors, h.bondsOf_eq, h.bonds]
 
+/-- The two copies have the same degree at every atom. -/
 lemma degree_eq : w'.degree = w.degree := by
   funext i
   simp only [degree, h.bondsOf_eq]
 
+/-- The two copies have the same bond between any two atoms. -/
 lemma bondBetween?_eq : w'.bondBetween? = w.bondBetween? := by
   funext i j
   simp only [bondBetween?, numBonds, h.bonds]
 
+/-- The two copies give every ring the same bonds. -/
 lemma ringBonds_eq : w'.ringBonds = w.ringBonds := by
   funext r
   simp only [ringBonds, h.bondBetween?_eq]
 
+/-- The two copies have the same bond half-order sum at every atom. -/
 lemma bondHalfSum_eq : w'.bondHalfSum = w.bondHalfSum := by
   funext i
   simp only [bondHalfSum, h.bondsOf_eq, h.bonds]
 
+/-- An atom has a multiple bond in one copy exactly when it has one in the other. -/
 lemma hasMultipleBond_eq : w'.hasMultipleBond = w.hasMultipleBond := by
   funext i
   simp only [hasMultipleBond, h.bondsOf_eq, h.bonds]
 
+/-- The two copies give every atom the same exocyclic multiple bond partner. -/
 lemma exocyclicMultiple?_eq : w'.exocyclicMultiple? = w.exocyclicMultiple? := by
   funext rbs i
   simp only [exocyclicMultiple?, h.neighbors_eq, h.bonds]
@@ -155,6 +183,8 @@ def DonorRel (s s' : DonorState) : Prop :=
   s'.seen = s.seen ∧ s'.cand = s.cand ∧ s'.candRings = s.candRings ∧
     s'.donor.size = s.donor.size ∧ ∀ j : ℕ, s.cand[j]! = true → s'.donor[j]! = s.donor[j]!
 
+/-- One atom of a ring in the first pass keeps two related states related, and both copies give
+the same "every atom so far is a candidate" flag. -/
 lemma donorAtomStep_rel {ring : List ℕ} (hr : ring ∈ rings.toList) {i : ℕ} (hi : i ∈ ring)
     {s s' : DonorState} (hs : DonorRel s s') (a : Bool) :
     DonorRel (w.donorAtomStep ((rings.toList.flatMap w.ringBonds).eraseDups) ring.length (s, a) i).1
@@ -190,6 +220,8 @@ lemma donorAtomStep_rel {ring : List ℕ} (hr : ring ∈ rings.toList) {i : ℕ}
       rw [if_neg (fun h ↦ hij h.1), if_neg (fun h ↦ hij h.1)]
       exact h4 j hj
 
+/-- Any list of atoms of a ring, folded through the first pass, keeps two related states related
+and gives the same candidate flag in both copies. -/
 lemma foldl_donorAtomStep_rel {ring : List ℕ} (hr : ring ∈ rings.toList) :
     ∀ (l : List ℕ), (∀ i ∈ l, i ∈ ring) → ∀ (s s' : DonorState) (a : Bool), DonorRel s s' →
       DonorRel (l.foldl (w.donorAtomStep ((rings.toList.flatMap w.ringBonds).eraseDups)
@@ -248,6 +280,7 @@ end PerceiveAgree
 
 /-! ### The second pass reads donor types only at atoms of candidate rings -/
 
+/-- Hückel's rule over `atoms` reads the donor types only at those atoms. -/
 lemma huckel_congr {atoms : List ℕ} {d d' : Array Donor} (h : ∀ a ∈ atoms, d'[a]! = d[a]!) :
     huckel atoms d' = huckel atoms d := by
   have e1 : atoms.filter (d'[·]! == .any) = atoms.filter (d[·]! == .any) :=
@@ -298,6 +331,7 @@ lemma counts_eq_zero {numAtoms : ℕ} {candRings : Array (List ℕ)} {cur : List
   · simp [hlt]
   · simp [hlt]
 
+/-- `groupBonds` reads the donor types only at atoms of candidate rings. -/
 lemma groupBonds_congr {numAtoms : ℕ} {rbonds candRings : Array (List ℕ)} {d d' : Array Donor}
     {nbrs : Array (List ℕ)} (h : ∀ r : ℕ, ∀ a ∈ candRings[r]!, d'[a]! = d[a]!) (cur : List ℕ) :
     groupBonds numAtoms rbonds candRings d' nbrs cur =
@@ -314,6 +348,7 @@ lemma groupBonds_congr {numAtoms : ℕ} {rbonds candRings : Array (List ℕ)} {d
     rw [counts_eq_zero this] at ha
     omega
 
+/-- `fusedBonds` reads the donor types only at atoms of candidate rings. -/
 lemma fusedBonds_congr {numAtoms : ℕ} {rbonds candRings : Array (List ℕ)} {d d' : Array Donor}
     (h : ∀ r : ℕ, ∀ a ∈ candRings[r]!, d'[a]! = d[a]!) :
     fusedBonds numAtoms rbonds candRings d' = fusedBonds numAtoms rbonds candRings d := by
@@ -354,16 +389,19 @@ namespace SameMarks
 
 variable {w w' : Work}
 
+/-- Every atom read with `!` has the same aromatic flag in both copies. -/
 lemma aromatic_getElem! (h : SameMarks w w') (j : ℕ) :
     (w'.atoms[j]! : WAtom).aromatic = (w.atoms[j]! : WAtom).aromatic := by
   have := h.flags j
   simp only [getElem!_def]
   cases h1 : w'.atoms[j]? <;> cases h2 : w.atoms[j]? <;> simp_all
 
+/-- RDKit reads the same atoms as aromatic in both copies. -/
 lemma isAromaticAtom_eq (h : SameMarks w w') : w'.isAromaticAtom = w.isAromaticAtom := by
   funext i
   simp only [isAromaticAtom, h.aromatic_getElem!, bondsOf, numBonds, h.bonds]
 
+/-- Flagging the same atom aromatic in both copies keeps them `SameMarks`. -/
 lemma modifyAtom_aromatic (h : SameMarks w w') (i : ℕ) :
     SameMarks (w.modifyAtom i ({ · with aromatic := true }))
       (w'.modifyAtom i ({ · with aromatic := true })) where
@@ -375,6 +413,7 @@ lemma modifyAtom_aromatic (h : SameMarks w w') (i : ℕ) :
       cases h1 : w'.atoms[j]? <;> cases h2 : w.atoms[j]? <;> simp_all
     · exact h.flags j
 
+/-- Marking the same bond aromatic in both copies keeps them `SameMarks`. -/
 lemma markAromatic (h : SameMarks w w') (b : ℕ) :
     SameMarks (w.markAromatic b) (w'.markAromatic b) := by
   unfold Work.markAromatic
@@ -410,11 +449,13 @@ lemma implicitHs_congr {w w' : Work} (hb : w'.bonds = w.bonds) {i : ℕ}
   simp only [implicitHs, explicitValence, isAromaticAtom, bondHalfSum, hbo, hb, ha]
   rfl
 
+/-- The step of `adjustHs` keeps the bonds. -/
 @[simp] lemma adjustHsStep_bonds (w : Work) (j : ℕ) : (adjustHsStep w j).bonds = w.bonds := by
   unfold adjustHsStep
   dsimp only
   split <;> (try split) <;> rfl
 
+/-- The step of `adjustHs` keeps the number of atoms. -/
 @[simp] lemma size_adjustHsStep_atoms (w : Work) (j : ℕ) :
     (adjustHsStep w j).atoms.size = w.atoms.size := by
   unfold adjustHsStep
@@ -432,11 +473,13 @@ lemma modifyAtom_atom_self (w : Work) (i : ℕ) (g : WAtom → WAtom) :
   · have hi' : ¬ i < (w.modifyAtom i g).atoms.size := by simpa [modifyAtom] using hi
     rw [if_neg hi, getElem!_neg _ i hi', getElem!_neg _ i hi]
 
+/-- Any run of `adjustHs` steps keeps the number of atoms. -/
 @[simp] lemma size_foldl_adjustHsStep_atoms :
     ∀ (l : List ℕ) (w : Work), (l.foldl adjustHsStep w).atoms.size = w.atoms.size
   | [], _ => rfl
   | j :: l, w => by rw [List.foldl_cons, size_foldl_adjustHsStep_atoms l, size_adjustHsStep_atoms]
 
+/-- Any run of `adjustHs` steps keeps the bonds. -/
 @[simp] lemma foldl_adjustHsStep_bonds :
     ∀ (l : List ℕ) (w : Work), (l.foldl adjustHsStep w).bonds = w.bonds
   | [], _ => rfl
@@ -578,7 +621,7 @@ lemma aromatic_finalizeHs (w : Work) (i : ℕ) :
   set w1 := (List.range w.numAtoms).foldl adjustHsStep w with hw1
   have hs1 : w1.atoms.size = w.atoms.size := by rw [hw1, size_foldl_adjustHsStep_atoms]
   have hfs : w.finalizeHs.atoms.size = w.atoms.size := by
-    simp [finalizeHs, ← hw1, hs1, numAtoms]
+    simp [finalizeHs, numAtoms]
   by_cases hi : i < w.atoms.size
   · have ha1 := foldl_adjustHsStep_atom w i (List.range w.numAtoms) w List.nodup_range rfl rfl rfl
     rw [if_pos (List.mem_range.mpr (by simpa [numAtoms] using hi))] at ha1
@@ -586,7 +629,7 @@ lemma aromatic_finalizeHs (w : Work) (i : ℕ) :
     unfold finalizeHs
     rw [← hw1]
     simp only [numAtoms, getElem!_def, List.getElem?_toArray, Array.getElem?_map,
-      List.getElem?_range hi1, Option.map_some, Option.getD_some, Array.getElem?_eq_getElem hi1]
+      List.getElem?_range hi1, Option.map_some, Array.getElem?_eq_getElem hi1]
     rw [← hw1] at ha1
     simp only [getElem!_def, Array.getElem?_eq_getElem hi1] at ha1
     rw [ha1, ← getElem!_def, aromatic_adjustHsStep, getElem!_def]
@@ -640,6 +683,28 @@ lemma getElem?_assignRadicals_map {β : Type*} (w : Work) (f : WAtom → β)
     w.assignRadicals.atoms[j]?.map f = w.atoms[j]?.map f := by
   have := congrArg (Option.map f) (getElem?_assignRadicals_atoms w j)
   simpa [Option.map_map, Function.comp_def, hf] using this
+
+/-- `assignRadicals` keeps every atom's written hydrogens. -/
+lemma explicitHs_assignRadicals (w : Work) (i : ℕ) :
+    (w.assignRadicals.atoms[i]! : WAtom).explicitHs = (w.atoms[i]! : WAtom).explicitHs :=
+  getElem!_eq_of_map (fun x : WAtom ↦ x.explicitHs)
+    (getElem?_assignRadicals_map w _ (fun _ ↦ rfl) i)
+
+/-- `assignRadicals` keeps every cached valence. -/
+lemma cachedValence_assignRadicals (w : Work) (i : ℕ) :
+    w.assignRadicals.cachedValence i = w.cachedValence i := by
+  have h1 : (w.assignRadicals.atoms[i]! : WAtom).cachedValence =
+      (w.atoms[i]! : WAtom).cachedValence :=
+    getElem!_eq_of_map (fun x : WAtom ↦ x.cachedValence)
+      (getElem?_assignRadicals_map w _ (fun _ ↦ rfl) i)
+  simp only [cachedValence, kekuleValence, h1, explicitHs_assignRadicals, bondHalfSum, bondsOf,
+    numBonds, assignRadicals_bonds]
+
+/-- `cacheValences` caches every atom's explicit valence. -/
+lemma cachedValence_cacheValences_atom (w : Work) {i : ℕ} (hi : i < w.atoms.size) :
+    (w.cacheValences.atoms[i]! : WAtom).cachedValence = some (w.explicitValence i) := by
+  rw [getElem!_pos _ i (by simpa [cacheValences, numAtoms] using hi)]
+  simp [cacheValences, numAtoms]
 
 /-! ### A copy with nothing aromatic -/
 

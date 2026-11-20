@@ -12,8 +12,18 @@ public import LeanSMILES.Aromaticity.KekuleSim
 
 What `cleanUp` can do to an atom and a bond, beyond `Work.CleanRel`: it never makes a bond
 aromatic or not (each rewrite turns a double or triple bond into a single or double one), and
-every charge it sets is `+1`, or `-1` on nitrogen or oxygen, or on a halogen (`Work.CleanFine`,
-`Work.cleanFine_cleanUp`).
+every charge it sets is `+1`, or `-1` on nitrogen or oxygen, or any charge on Cl, Br or I
+(`Work.CleanFine`, `Work.cleanFine_cleanUp`).
+
+## Main definitions
+
+* `CleanCharge`: the charges `cleanUp` sets on an atom of a given element.
+* `Work.CleanFine`: `CleanRel`, with aromatic bonds unchanged and every changed charge a
+  `CleanCharge`.
+
+## Main statements
+
+* `Work.cleanFine_cleanUp`: `cleanUp` relates its input and output by `CleanFine`.
 -/
 
 @[expose] public section
@@ -45,9 +55,11 @@ lemma CleanRel.z_getElem! {o w : Work} (h : CleanRel o w) (j : ℕ) :
   simp only [getElem!_def]
   cases h1 : w.atoms[j]? <;> cases h2 : o.atoms[j]? <;> simp_all
 
+/-- Every copy is related to itself by `CleanFine`. -/
 lemma CleanFine.refl (o : Work) : CleanFine o o :=
   ⟨.refl o, fun _ ↦ Iff.rfl, fun _ ↦ .inl rfl⟩
 
+/-- `CleanFine` composes: two such steps in a row are one. -/
 lemma CleanFine.trans {o w w' : Work} (h : CleanFine o w) (h' : CleanFine w w') :
     CleanFine o w' where
   rel := h.rel.trans h'.rel
@@ -85,11 +97,12 @@ lemma cleanFine_modifyAtom_charge (w : Work) {i : ℕ} {c : ℤ}
       exact .inr hc
     · exact .inl rfl
 
-/-- In range, the bond `find?` picks out of `neighbors` is a bond of the atom, read by `!`. -/
+/-- What `find?` picks out of `neighbors` satisfies the test and is a neighbor pair of the atom. -/
 lemma find?_neighbors_spec {w : Work} {i k j : ℕ} {p : ℕ × ℕ → Bool}
     (h : (w.neighbors i).find? p = some (k, j)) : p (k, j) = true ∧ (k, j) ∈ w.neighbors i :=
   ⟨List.find?_some h, List.mem_of_find?_eq_some h⟩
 
+/-- One step of `nitrogensCleanup`'s first pass changes its copy only as `CleanFine` allows. -/
 lemma cleanFine_nitroStep (p : Work × List ℕ) (i : ℕ) : CleanFine p.1 (nitroStep p i).1 := by
   obtain ⟨w, consider⟩ := p
   unfold nitroStep
@@ -112,6 +125,7 @@ lemma cleanFine_nitroStep (p : Work × List ℕ) (i : ℕ) : CleanFine p.1 (nitr
         split <;> simp [hz]
     · exact .refl w
 
+/-- One step of `nitrogensCleanup`'s second pass changes the copy only as `CleanFine` allows. -/
 lemma cleanFine_azideStep (w : Work) (i : ℕ) : CleanFine w (azideStep w i) := by
   unfold azideStep
   dsimp only
@@ -167,6 +181,7 @@ lemma phosphorusScan_spec (w : Work) (i : ℕ) {k j : ℕ}
         · exact hs k j hkj
   exact key _ (none, false) (fun _ _ h ↦ by simp at h) k j h
 
+/-- `phosphorusCleanup` at any atom changes the copy only as `CleanFine` allows. -/
 lemma cleanFine_phosphorusCleanup (w : Work) (i : ℕ) :
     CleanFine w (w.phosphorusCleanup i) := by
   unfold phosphorusCleanup
@@ -186,6 +201,7 @@ lemma cleanFine_phosphorusCleanup (w : Work) (i : ℕ) :
       · exact .refl w
     · exact .refl w
 
+/-- `halogenCleanup` at a Cl, Br or I atom changes the copy only as `CleanFine` allows. -/
 lemma cleanFine_halogenCleanup (w : Work) (i : ℕ) (hz : (w.atoms[i]! : WAtom).z = 17 ∨
     (w.atoms[i]! : WAtom).z = 35 ∨ (w.atoms[i]! : WAtom).z = 53) :
     CleanFine w (w.halogenCleanup i) := by
@@ -239,6 +255,7 @@ lemma cleanFine_halogenCleanup (w : Work) (i : ℕ) (hz : (w.atoms[i]! : WAtom).
         rw [hf.rel.z_getElem! i]
         rcases hz with h | h | h <;> rw [h] <;> simp [CleanCharge]
 
+/-- One step of `cleanUp`'s second pass changes the copy only as `CleanFine` allows. -/
 lemma cleanFine_cleanUpStep (w : Work) (i : ℕ) : CleanFine w (cleanUpStep w i) := by
   unfold cleanUpStep
   dsimp only
@@ -250,6 +267,7 @@ lemma cleanFine_cleanUpStep (w : Work) (i : ℕ) : CleanFine w (cleanUpStep w i)
       exact w.cleanFine_halogenCleanup i (by omega)
     · exact .refl w
 
+/-- `nitrogensCleanup` changes the copy only as `CleanFine` allows. -/
 lemma cleanFine_nitrogensCleanup (w : Work) : CleanFine w w.nitrogensCleanup := by
   unfold nitrogensCleanup
   have h1 := foldl_induction (fun p : Work × List ℕ ↦ CleanFine w p.1) nitroStep

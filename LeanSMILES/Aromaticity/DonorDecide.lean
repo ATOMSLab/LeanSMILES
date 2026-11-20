@@ -17,6 +17,18 @@ brackets and the one with `T` implied pass or fail the candidate test together a
 candidates, have the same donor type, when `T` is RDKit's count on the Kekulé bonds or
 OpenSMILES's count on the bonds perception leaves (with the written record a candidate in some
 environment, when perception made the atom aromatic).
+
+## Main definitions
+
+* `Loc.canon`: the cached record of an atom with a given hydrogen total, written or implied.
+* `Loc.readAlike`: perception gives two records the same candidate verdict and donor type.
+* `Loc.swapCheck`: the check at one element and one list of Kekulé bond kinds.
+
+## Main statements
+
+* `Loc.swap_ok`: the check holds for every organic-subset element and every list of at most three
+  non-aromatic bond kinds.
+* `Loc.ringDonorL_none_of_deg`: an atom with more than three bonds and hydrogens gives no donor.
 -/
 
 @[expose] public section
@@ -68,6 +80,8 @@ def swapCheck (e : Element) (kk : List BondKind) : Bool :=
       (envs kk).all fun (w, p, r, g) ↦
         readAlike (canon z 0 T h T true) (canon z 0 T h 0 false) kk w p r g)
 
+/-- `swapCheck` holds at every organic-subset element and every list of at most three
+non-aromatic bond kinds. -/
 theorem swap_ok : (organic.all fun e ↦ (nonArom 3).all (swapCheck e)) = true := by
   decide +kernel
 
@@ -75,6 +89,8 @@ end LeanSMILES.Aromaticity.Loc
 
 namespace LeanSMILES.Aromaticity.Loc
 
+/-- An atom whose bonds and hydrogens number more than three has no π electrons to count: `elec`
+is `-1`. -/
 lemma elec_eq_neg_one {a : WAtom} {ks : List BondKind}
     (h : 3 < ks.length + (a.explicitHs + a.cachedImplicit)) : elec a ks = -1 := by
   unfold elec
@@ -93,6 +109,8 @@ lemma ringDonorL_none_of_elec {a : WAtom} {ks : List BondKind} (he : elec a ks =
   simp only [ringDonorL, hd]
   split <;> rfl
 
+/-- An atom whose bonds and hydrogens number more than three gives no donor, in any
+environment. -/
 lemma ringDonorL_none_of_deg {a : WAtom} {ks : List BondKind}
     (h : 3 < ks.length + (a.explicitHs + a.cachedImplicit)) (w p r g : Bool) :
     ringDonorL a ks w p r g = .none :=

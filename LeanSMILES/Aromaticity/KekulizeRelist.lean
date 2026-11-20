@@ -20,6 +20,23 @@ of one listed as `π k` of the other (`Work.WalkRel`), it takes the same steps, 
 double bonds renumbered, and succeeds or fails alike (`Work.kekulizeWorker_rel`).  The atoms done
 at the start may also be listed in another order: the walk reads the done list only up to order,
 except for the part it adds itself, which is the same on both sides (`Work.StRel`).
+
+## Main definitions
+
+* `Work.WalkRel Q π ρ m m'`: `m'` has `m`'s atoms, bond `π k` of `m'` joins the atoms bond `k` of
+  `m` joins, and the kinds agree where `Q` says.
+* `Work.StRel`: two states of the walk in step.
+* `Work.kekSys`: `kekulizeSystem` once the system's atoms are listed.
+* `Work.ExRel R`: two results that fail alike or succeed related by `R`.
+
+## Main statements
+
+* `Work.kekulizeStep_rel`, `Work.kekulizeLoop_rel`: one step of the walk, and the whole walk, in
+  step.
+* `Work.kekulizeWorker_rel`: the worker on related copies ends alike, on related copies.
+* `Work.kekSys_rel`: one fused system on related copies fails alike or succeeds on related copies.
+* `Work.kekulize_walkRel`: kekulization of a relisted copy, over the same rings, fails alike or
+  succeeds on relisted copies.
 -/
 
 @[expose] public section
@@ -29,22 +46,30 @@ namespace LeanSMILES.Aromaticity.Work
 /-- `m'` has `m`'s atoms, and bond `π k` of `m'` joins the atoms bond `k` of `m` joins; the kinds
 agree where `Q` says. -/
 structure WalkRel (Q : ℕ → Prop) (π ρ : ℕ → ℕ) (m m' : Work) : Prop where
+  /-- The atoms are the same. -/
   atoms : m'.atoms = m.atoms
+  /-- There are as many bonds. -/
   size : m'.bonds.size = m.bonds.size
+  /-- `π` and `ρ` are inverse renumberings of the bonds. -/
   bij : IdxBij m.bonds.size π ρ
+  /-- Bond `π k` of `m'` has the endpoints of bond `k` of `m`, in the same or the other order. -/
   ends : ∀ k < m.bonds.size,
     ((m'.bonds[π k]! : WBond).src = (m.bonds[k]! : WBond).src ∧
       (m'.bonds[π k]! : WBond).dst = (m.bonds[k]! : WBond).dst) ∨
     ((m'.bonds[π k]! : WBond).src = (m.bonds[k]! : WBond).dst ∧
       (m'.bonds[π k]! : WBond).dst = (m.bonds[k]! : WBond).src)
+  /-- The bond between two atoms is renumbered by `π`. -/
   bb : ∀ u v, m'.bondBetween? u v = (m.bondBetween? u v).map π
+  /-- Every atom has the same neighbour atoms, in some order. -/
   nbrs : ∀ u, ((m'.neighbors u).map (·.2)).Perm ((m.neighbors u).map (·.2))
+  /-- Bond `π k` of `m'` has the kind of bond `k` of `m` where `Q k` holds. -/
   kind : ∀ k < m.bonds.size, Q k → (m'.bonds[π k]! : WBond).kind = (m.bonds[k]! : WBond).kind
 
 namespace WalkRel
 
 variable {Q : ℕ → Prop} {π ρ : ℕ → ℕ} {m m' : Work}
 
+/-- Bond `π k` of `m'` touches the same atoms as bond `k` of `m`. -/
 lemma touches (h : WalkRel Q π ρ m m') {k : ℕ} (hk : k < m.bonds.size) (x : ℕ) :
     (m'.bonds[π k]! : WBond).touches x = (m.bonds[k]! : WBond).touches x := by
   simp only [WBond.touches]
@@ -84,6 +109,7 @@ end WalkRel
 
 /-! ### Helpers on lists -/
 
+/-- Two orderings of the same list of numbers sort to the same list. -/
 lemma mergeSort_eq_of_perm {l l' : List ℕ} (h : l'.Perm l) :
     l'.mergeSort (fun a b ↦ decide (a ≤ b)) = l.mergeSort (fun a b ↦ decide (a ≤ b)) := by
   have htr : ∀ a b c : ℕ, decide (a ≤ b) = true → decide (b ≤ c) = true → decide (a ≤ c) = true :=
@@ -98,6 +124,8 @@ lemma mergeSort_eq_of_perm {l l' : List ℕ} (h : l'.Perm l) :
   · exact List.pairwise_mergeSort htr htot _
   · exact ((List.mergeSort_perm _ _).trans h).trans (List.mergeSort_perm _ _).symm
 
+/-- The index of `a` in `p ++ t`, with `a` not in `p`, is the length of `p` plus its index in
+`t`. -/
 lemma idxOf_append_of_not_mem : ∀ {p t : List ℕ} {a : ℕ}, a ∉ p →
     (p ++ t).idxOf a = p.length + t.idxOf a
   | [], _, _, _ => by simp
@@ -107,6 +135,7 @@ lemma idxOf_append_of_not_mem : ∀ {p t : List ℕ} {a : ℕ}, a ∉ p →
       idxOf_append_of_not_mem h.2, List.length_cons]
     omega
 
+/-- Reordering the prefix does not change what `p ++ t` contains. -/
 lemma contains_append_perm {p p' t : List ℕ} (h : p'.Perm p) (x : ℕ) :
     (p' ++ t).contains x = (p ++ t).contains x := by
   rw [List.contains_append, List.contains_append, h.contains_eq]
@@ -118,36 +147,55 @@ and backtracking data, the placed double bonds renumbered, and done lists that d
 the order of a prefix the walk started with; atoms the walk handles avoid that prefix. -/
 structure StRel (Q : ℕ → Prop) (π ρ : ℕ → ℕ) (N : ℕ) (p p' : List ℕ) (s s' : KekState) :
     Prop where
+  /-- The molecules are related. -/
   m : WalkRel Q π ρ s.m s'.m
+  /-- The molecule has `N` bonds. -/
   sz : s.m.bonds.size = N
+  /-- The same candidates. -/
   cands : s'.cands = s.cands
+  /-- Bond `π k` is made double on one side exactly when bond `k` is on the other. -/
   adds : ∀ k < N, s'.adds[π k]! = s.adds[k]!
+  /-- One flag per bond. -/
   asz : s.adds.size = N
+  /-- One flag per bond, on the other side. -/
   asz' : s'.adds.size = N
+  /-- The same queue. -/
   queue : s'.queue = s.queue
+  /-- The same options. -/
   options : s'.options = s.options
+  /-- The same atom to back-track to. -/
   lastOpt : s'.lastOpt = s.lastOpt
+  /-- The same atoms with untried options. -/
   btMoves : s'.btMoves = s.btMoves
+  /-- As many back-tracks. -/
   numBt : s'.numBt = s.numBt
+  /-- The starting prefixes are reorderings of each other. -/
   perm : p'.Perm p
+  /-- The done lists are the prefixes followed by a common tail that avoids `p`. -/
   tail : ∃ t, s.done = p ++ t ∧ s'.done = p' ++ t ∧ ∀ x ∈ t, x ∉ p
+  /-- The queue avoids `p`. -/
   avoidQ : ∀ x ∈ s.queue, x ∉ p
+  /-- The atoms with untried options avoid `p`. -/
   avoidB : ∀ x ∈ s.btMoves, x ∉ p
+  /-- The atom to back-track to is not in `p`. -/
   avoidL : ∀ x ∈ s.lastOpt, x ∉ p
 
 namespace StRel
 
 variable {Q : ℕ → Prop} {π ρ : ℕ → ℕ} {N : ℕ} {p p' : List ℕ} {s s' : KekState}
 
+/-- The done lists contain the same atoms. -/
 lemma done_contains (h : StRel Q π ρ N p p' s s') (x : ℕ) :
     s'.done.contains x = s.done.contains x := by
   obtain ⟨t, h1, h2, -⟩ := h.tail
   rw [h1, h2, contains_append_perm h.perm]
 
+/-- The done lists have the same length. -/
 lemma done_length (h : StRel Q π ρ N p p' s s') : s'.done.length = s.done.length := by
   obtain ⟨t, h1, h2, -⟩ := h.tail
   rw [h1, h2, List.length_append, List.length_append, h.perm.length_eq]
 
+/-- States in step visit the same atom next, with the same queue after it. -/
 lemma nextAtom (h : StRel Q π ρ N p p' s s') (sorted : List ℕ) :
     s'.nextAtom sorted = s.nextAtom sorted := by
   unfold KekState.nextAtom
@@ -196,6 +244,7 @@ def pdBook (options : List (ℕ × List ℕ)) (btMoves : List ℕ) (lastOpt : Op
   else if !rest.isEmpty then (options ++ [(curr, rest)], btMoves ++ [curr], some curr)
   else (options, btMoves, lastOpt)
 
+/-- `KekState.placeDouble` with its bookkeeping written through `pdBook`. -/
 lemma placeDouble_eq (s : KekState) (curr n k : ℕ) (rest : List ℕ) :
     s.placeDouble curr n k rest =
       { s with m := s.m.setKind k .double, cands := (s.cands.set! curr false).set! n false,
@@ -206,6 +255,8 @@ lemma placeDouble_eq (s : KekState) (curr n k : ℕ) (rest : List ℕ) :
   unfold KekState.placeDouble pdBook
   split_ifs <;> rfl
 
+/-- If the backtrack points, the latest one and `curr` avoid `p`, so do the new backtrack points
+and latest one `pdBook` gives. -/
 lemma pdBook_avoid {options : List (ℕ × List ℕ)} {btMoves : List ℕ} {lastOpt : Option ℕ}
     {curr : ℕ} {rest p : List ℕ} (hb : ∀ x ∈ btMoves, x ∉ p) (hl : ∀ x ∈ lastOpt, x ∉ p)
     (hc : curr ∉ p) :
@@ -250,6 +301,7 @@ lemma placeDouble (h : StRel Q π ρ N p p' s s') {curr n k : ℕ} (hk : k < N) 
 
 end StRel
 
+/-- `KekState.backTrack` unfolded, field by field. -/
 lemma backTrack_eq (s : KekState) (lo : ℕ) :
     s.backTrack lo =
       { s with m := ((List.range s.m.numBonds).foldl (undoAdds (s.done.take (s.done.idxOf lo)))
@@ -261,6 +313,7 @@ lemma backTrack_eq (s : KekState) (lo : ℕ) :
                queue := s.done.drop (s.done.idxOf lo) ++ s.queue,
                done := s.done.take (s.done.idxOf lo), numBt := s.numBt + 1 } := rfl
 
+/-- A fold of `undoAdds` keeps the atoms. -/
 lemma foldl_undoAdds_atoms (keep : List ℕ) : ∀ (l : List ℕ) (w : Work) (A C : Array Bool),
     (l.foldl (undoAdds keep) (w, A, C)).1.atoms = w.atoms
   | [], _, _, _ => rfl
@@ -270,6 +323,7 @@ lemma foldl_undoAdds_atoms (keep : List ℕ) : ∀ (l : List ℕ) (w : Work) (A 
     · rw [foldl_undoAdds_atoms keep l]; rfl
     · exact foldl_undoAdds_atoms keep l _ _ _
 
+/-- `undoAdds` reads the atoms kept only through membership. -/
 lemma undoAdds_congr {keep keep' : List ℕ} (h : ∀ x, keep'.contains x = keep.contains x) :
     undoAdds keep' = undoAdds keep := by
   funext q k
@@ -387,6 +441,7 @@ def kekCont (curr : ℕ) (s : KekState) (opts : List ℕ) : Option Work ⊕ KekS
     | some lo => if 100 ≤ s.numBt then .inl none else .inr (s.backTrack lo)
     | none => .inl none
 
+/-- `kekulizeStep` written through `stepScan` and `kekCont`. -/
 lemma kekulizeStep_eq (wa : ℕ → Bool) (atoms sorted : List ℕ) (s : KekState) :
     kekulizeStep wa atoms sorted s =
       match s.nextAtom sorted with
@@ -402,6 +457,7 @@ lemma kekulizeStep_eq (wa : ℕ → Bool) (atoms sorted : List ℕ) (s : KekStat
     unfold stepScan
     rcases s.options.lookup c with _ | o <;> rfl
 
+/-- An atom of the queue `stepScan` returns was in the queue before or is not done. -/
 lemma mem_stepScan {wa : ℕ → Bool} {atoms : List ℕ} {s : KekState} {curr : ℕ} {queue : List ℕ}
     {x : ℕ} (hx : x ∈ (stepScan wa atoms s curr queue).2) : x ∈ queue ∨ x ∉ s.done := by
   unfold stepScan at hx
@@ -425,6 +481,8 @@ namespace StRel
 
 variable {Q : ℕ → Prop} {π ρ : ℕ → ℕ} {N : ℕ} {p p' : List ℕ} {s s' : KekState}
 
+/-- States in step get the same options and queue from `stepScan`, with the flags "written
+aromatic" renumbered and the system's atoms the same. -/
 lemma stepScan (h : StRel Q π ρ N p p' s s') {wa wa' : ℕ → Bool}
     (hwa : ∀ k < N, wa' (π k) = wa k) {atoms atoms' : List ℕ}
     (hat : ∀ x, atoms'.contains x = atoms.contains x) (curr : ℕ) (queue : List ℕ) :
@@ -463,6 +521,7 @@ lemma visit (h : StRel Q π ρ N p p' s s') {curr : ℕ} (hc : curr ∉ p) {q : 
   · exact ht x hx
   · rw [List.mem_singleton.1 hx]; exact hc
 
+/-- `kekCont` on states in step, at an atom not in `p`, gives results in step. -/
 lemma kekCont (h : StRel Q π ρ N p p' s s') {curr : ℕ} (hc : curr ∉ p) (opts : List ℕ) :
     StepRel Q π ρ N p p' (Work.kekCont curr s opts) (Work.kekCont curr s' opts) := by
   unfold Work.kekCont
@@ -547,6 +606,7 @@ namespace WalkRel
 
 variable {Q : ℕ → Prop} {π ρ : ℕ → ℕ} {m m' : Work}
 
+/-- The relation for `Q` gives it for any `Q'` that implies `Q`. -/
 lemma mono (h : WalkRel Q π ρ m m') {Q' : ℕ → Prop} (hQ : ∀ k, Q' k → Q k) :
     WalkRel Q' π ρ m m' :=
   ⟨h.atoms, h.size, h.bij, h.ends, h.bb, h.nbrs, fun k hk hq ↦ h.kind k hk (hQ k hq)⟩
@@ -555,11 +615,13 @@ lemma mono (h : WalkRel Q π ρ m m') {Q' : ℕ → Prop} (hQ : ∀ k, Q' k → 
 lemma relisted (h : WalkRel (fun _ ↦ True) π ρ m m') : Relisted m m' π ρ :=
   ⟨h.atoms, h.size, h.bij, fun k hk ↦ h.kind k hk trivial, h.ends⟩
 
+/-- Bond `π k` is at atom `i` in `m'` exactly when bond `k` is at `i` in `m`. -/
 lemma mem_bondsOf (h : WalkRel Q π ρ m m') {k : ℕ} (hk : k < m.bonds.size) (i : ℕ) :
     π k ∈ m'.bondsOf i ↔ k ∈ m.bondsOf i := by
   simp only [bondsOf, List.mem_filter, List.mem_range, numBonds, h.size, h.touches hk,
     h.bij.lt k hk, hk, true_and]
 
+/-- A bond at an atom is a bond of the working copy. -/
 lemma lt_of_mem_bondsOf' {x : Work} {k i : ℕ} (hk : k ∈ x.bondsOf i) : k < x.bonds.size := by
   simp only [bondsOf, List.mem_filter, List.mem_range, numBonds] at hk; exact hk.1
 
@@ -579,12 +641,15 @@ lemma bondsOf_perm (h : WalkRel Q π ρ m m') (i : ℕ) :
   · rintro ⟨k, hk, rfl⟩
     exact (h.mem_bondsOf (lt_of_mem_bondsOf' hk) i).2 hk
 
+/-- Related copies give every atom the same `degree`. -/
 lemma degree (h : WalkRel Q π ρ m m') (i : ℕ) : m'.degree i = m.degree i := by
   unfold Work.degree
   rw [(h.bondsOf_perm i).length_eq, List.length_map]
 
 end WalkRel
 
+/-- Folding the addition of `g k` over `l` into an integer adds the natural-number sum of `g`
+over `l`. -/
 lemma foldl_int_add (g : ℕ → ℕ) : ∀ (l : List ℕ) (init : Int),
     l.foldl (fun r k ↦ r + (g k : Int)) init = init + ((l.map g).sum : ℕ)
   | [], init => by simp
@@ -631,6 +696,7 @@ def kekSys (wa : ℕ → Bool) (ev0 : List ℕ) (out : Work) (atoms : List ℕ) 
   | some m' => pure m'
   | none => throw "Can't kekulize mol"
 
+/-- `kekulizeSystem` is `kekSys` on the system's atoms without repeats. -/
 lemma kekulizeSystem_eq (wa : ℕ → Bool) (ev0 : List ℕ) (rings : Array (List ℕ)) (out : Work)
     (system : List ℕ) :
     kekulizeSystem wa ev0 rings out system =
@@ -732,6 +798,8 @@ theorem kekSys_rel {Q : ℕ → Prop} {π ρ : ℕ → ℕ} {out out' : Work}
 
 /-! ### Results alike -/
 
+/-- Binding results alike by functions that take related values to results alike gives results
+alike. -/
 lemma ExRel.bind {α β γ δ : Type} {R : α → β → Prop} {S : γ → δ → Prop} {x : Except String α}
     {x' : Except String β} (h : ExRel R x x') {f : α → Except String γ}
     {f' : β → Except String δ} (hf : ∀ a a', R a a' → ExRel S (f a) (f' a')) :
@@ -742,6 +810,7 @@ lemma ExRel.bind {α β γ δ : Type} {R : α → β → Prop} {S : γ → δ �
   · exact h.elim
   · exact hf a a' h
 
+/-- `ExRel R` gives `ExRel S` if `R` implies `S` on the values the two results succeed with. -/
 lemma ExRel.imp {α β : Type} {R S : α → β → Prop} {x : Except String α} {x' : Except String β}
     (h : ExRel R x x') (hRS : ∀ a a', x = .ok a → x' = .ok a' → R a a' → S a a') :
     ExRel S x x' := by
@@ -751,6 +820,8 @@ lemma ExRel.imp {α β : Type} {R S : α → β → Prop} {x : Except String α}
   · exact h.elim
   · exact hRS a a' rfl rfl h
 
+/-- Two `foldlM`s over the same list, from related starts, with steps taking related values to
+results alike, give results alike. -/
 lemma ExRel.foldlM {α β γ : Type} {R : α → β → Prop} {f : α → γ → Except String α}
     {f' : β → γ → Except String β} (hf : ∀ a a' c, R a a' → ExRel R (f a c) (f' a' c)) :
     ∀ (l : List γ) (a : α) (a' : β), R a a' → ExRel R (l.foldlM f a) (l.foldlM f' a')
@@ -761,6 +832,7 @@ lemma ExRel.foldlM {α β γ : Type} {R : α → β → Prop} {f : α → γ →
 
 /-! ### Kekulization of a relisted copy, the same rings -/
 
+/-- `kekulize` unfolded, with `kekWa`, `kekEv0` and `kekFusedNbrs` named. -/
 lemma kekulize_eq (m : Work) (rings : Array (List ℕ)) :
     m.kekulize rings =
       if ((List.range m.numBonds).filter (m.bonds[·]!.kind == .aromatic)).isEmpty &&
@@ -775,11 +847,13 @@ namespace WalkRel
 
 variable {Q : ℕ → Prop} {π ρ : ℕ → ℕ} {m m' : Work}
 
+/-- Editing the same atom alike on both sides keeps the relation. -/
 lemma modifyAtom (h : WalkRel Q π ρ m m') (i : ℕ) (f : WAtom → WAtom) :
     WalkRel Q π ρ (m.modifyAtom i f) (m'.modifyAtom i f) :=
   h.of_skel (skel_modifyAtom _ _ _) (skel_modifyAtom _ _ _)
     (by simp only [Work.modifyAtom, h.atoms]) fun k hk hq ↦ h.kind k hk hq
 
+/-- With all kinds agreeing, `m'` has a bond of kind aromatic exactly when `m` has. -/
 lemma exists_arom (h : WalkRel (fun _ ↦ True) π ρ m m') :
     (∃ k < m'.bonds.size, (m'.bonds[k]! : WBond).kind = .aromatic) ↔
       ∃ k < m.bonds.size, (m.bonds[k]! : WBond).kind = .aromatic := by
@@ -795,6 +869,7 @@ lemma exists_arom (h : WalkRel (fun _ ↦ True) π ρ m m') :
 
 end WalkRel
 
+/-- Some bond is of kind aromatic, as `Array.any` or as an index below the number of bonds. -/
 lemma bonds_any_arom (m : Work) :
     m.bonds.any (·.kind == .aromatic) = true ↔
       ∃ k < m.bonds.size, (m.bonds[k]! : WBond).kind = .aromatic := by
@@ -805,6 +880,7 @@ lemma bonds_any_arom (m : Work) :
   · rintro ⟨k, hk, e⟩
     exact ⟨k, hk, by rw [getElem!_pos m.bonds k hk] at e; simp [e]⟩
 
+/-- The list of aromatic bond numbers is empty exactly when no bond is of kind aromatic. -/
 lemma filter_arom_isEmpty (m : Work) :
     ((List.range m.numBonds).filter (m.bonds[·]!.kind == .aromatic)).isEmpty =
       !(m.bonds.any (·.kind == .aromatic)) := by
@@ -812,6 +888,7 @@ lemma filter_arom_isEmpty (m : Work) :
     List.filter_eq_nil_iff]
   simp [numBonds]
 
+/-- Mapping both lists by `π`, injective below `N`, keeps whether they share an element. -/
 lemma any_contains_map {π : ℕ → ℕ} {N : ℕ} (hinj : ∀ i < N, ∀ j < N, π i = π j → i = j)
     {A B : List ℕ} (hA : ∀ x ∈ A, x < N) (hB : ∀ x ∈ B, x < N) :
     (A.map π).any (B.map π).contains = A.any B.contains := by
@@ -823,12 +900,14 @@ lemma any_contains_map {π : ℕ → ℕ} {N : ℕ} (hinj : ∀ i < N, ∀ j < N
   · rintro ⟨a, ha, hb⟩
     exact ⟨π a, ⟨a, ha, rfl⟩, a, hb, rfl⟩
 
+/-- The bonds of a ring of `m'` are its bonds in `m`, renumbered by `π`. -/
 lemma WalkRel.ringBonds {Q : ℕ → Prop} {π ρ : ℕ → ℕ} {m m' : Work} (h : WalkRel Q π ρ m m') :
     m'.ringBonds = fun r ↦ (m.ringBonds r).map π := by
   funext r
   rw [ringBonds_eq_filterMap, ringBonds_eq_filterMap, List.map_filterMap]
   simp only [h.bb]
 
+/-- Related copies give the same `kekFusedNbrs`. -/
 lemma WalkRel.kekFusedNbrs {Q : ℕ → Prop} {π ρ : ℕ → ℕ} {m m' : Work} (h : WalkRel Q π ρ m m')
     (rings : Array (List ℕ)) : m'.kekFusedNbrs rings = m.kekFusedNbrs rings := by
   have hget : ∀ t : ℕ, ((rings.map m'.ringBonds)[t]! : List ℕ) =
@@ -855,12 +934,15 @@ lemma WalkRel.kekFusedNbrs {Q : ℕ → Prop} {π ρ : ℕ → ℕ} {m m' : Work
   funext j
   rw [hget i, hget j, any_contains_map (fun a ha b hb e ↦ h.bij.inj ha hb e) (hlt i) (hlt j)]
 
+/-- Caching each side's own implicit H count at atom `i` keeps the relation. -/
 lemma modify2 {π ρ : ℕ → ℕ} {X X' : Work} (hX : WalkRel (fun _ ↦ True) π ρ X X') (i : ℕ) :
     WalkRel (fun _ ↦ True) π ρ (X.modifyAtom i ({ · with cachedImplicit := X.implicitHs i }))
       (X'.modifyAtom i ({ · with cachedImplicit := X'.implicitHs i })) := by
   rw [hX.relisted.implicitHs]
   exact hX.modifyAtom _ _
 
+/-- `clearAromatic` at the same atom on related copies fails alike or succeeds on related
+copies. -/
 lemma WalkRel.clearAromatic {π ρ : ℕ → ℕ} {out out' : Work}
     (h : WalkRel (fun _ ↦ True) π ρ out out') (ra : List ℕ) (i : ℕ) :
     ExRel (WalkRel (fun _ ↦ True) π ρ) (clearAromatic ra out i) (clearAromatic ra out' i) := by

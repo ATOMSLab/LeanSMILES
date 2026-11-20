@@ -17,6 +17,20 @@ every atom its
 distance from `r` (`Work.bfs_dist`): `some d` exactly when the shortest walk from `r` has `d`
 bonds, `none` when there is no walk. Its visiting order lists the reached atoms once each, by
 nondecreasing distance (`Work.bfs_order`).
+
+## Main definitions
+
+* `Work.Walk`: a walk of a given number of bonds from the root.
+* `Work.IsDist`: an atom's distance from the root, the length of a shortest walk.
+* `Work.BfsInv`: the invariant of the breadth-first search loop.
+* `Work.PathsDone`: every shortest path to the given atoms is stored.
+
+## Main statements
+
+* `Work.bfs_dist`, `Work.bfs_dist_none`: the search gives each atom its distance, and `none` to
+  atoms no walk reaches.
+* `Work.bfs_order`: the visiting order lists the reached atoms once each, by distance.
+* `Work.mem_allShortestPaths`: `allShortestPaths` stores every shortest path.
 -/
 
 @[expose] public section
@@ -25,6 +39,7 @@ namespace LeanSMILES.Aromaticity
 
 namespace Work
 
+/-- On a well-formed copy, both atoms of an adjacent pair are in range. -/
 lemma Adj.lt {m : Work} (hwf : m.WF) {u v : ℕ} (h : m.Adj u v) :
     u < m.numAtoms ∧ v < m.numAtoms := by
   obtain ⟨k, hk⟩ := h
@@ -39,12 +54,15 @@ lemma Adj.lt {m : Work} (hwf : m.WF) {u v : ℕ} (h : m.Adj u v) :
 
 /-- A walk of `d` bonds from `r` to `v`. -/
 inductive Walk (m : Work) (r : ℕ) : ℕ → ℕ → Prop
+  /-- The empty walk at the root. -/
   | refl : Walk m r r 0
+  /-- A walk to `u` extended by a bond from `u` to `v`. -/
   | step {u v d : ℕ} : Walk m r u d → m.Adj u v → Walk m r v (d + 1)
 
 /-- `v` is `d` bonds from `r`: a walk of `d` bonds, and none shorter. -/
 def IsDist (m : Work) (r v d : ℕ) : Prop := m.Walk r v d ∧ ∀ e, m.Walk r v e → d ≤ e
 
+/-- An atom has at most one distance from the root. -/
 lemma IsDist.unique {m : Work} {r v d e : ℕ} (h : m.IsDist r v d) (h' : m.IsDist r v e) :
     d = e :=
   le_antisymm (h.2 e h'.1) (h'.2 d h.1)
@@ -54,6 +72,7 @@ def visitStep (du : ℕ) (p : Array (Option ℕ) × Array ℕ) (e : ℕ × ℕ) 
     Array (Option ℕ) × Array ℕ :=
   if p.1[e.2]!.isNone then (p.1.set! e.2 (some (du + 1)), p.2.push e.2) else p
 
+/-- A visit of `u` is the fold of `visitStep` over `u`'s neighbours, at `u`'s distance. -/
 lemma bfsVisit_eq (m : Work) (u : ℕ) (p : Array (Option ℕ) × Array ℕ) :
     m.bfsVisit u p = (m.neighbors u).foldl (visitStep ((p.1[u]!).getD 0)) p := by
   unfold bfsVisit
@@ -134,18 +153,28 @@ lemma foldl_visitStep (N du : ℕ) : ∀ (L : List (ℕ × ℕ)) (dist : Array (
 ones, each with the length of a walk to it, the queue is ordered by distance and spans at most one
 step from its head, and every visited atom's neighbours are seen at most one step further. -/
 structure BfsInv (m : Work) (r h : ℕ) (dist : Array (Option ℕ)) (q : Array ℕ) : Prop where
+  /-- The distance array has one entry per atom. -/
   size : dist.size = m.numAtoms
+  /-- The atoms with a distance are exactly the queued ones. -/
   seen : ∀ x : ℕ, (dist[x]!).isSome ↔ x ∈ q.toList
+  /-- The queue repeats no atom. -/
   nodup : q.toList.Nodup
+  /-- Each recorded distance is the length of some walk from the root. -/
   walk : ∀ x d : ℕ, dist[x]! = some d → m.Walk r x d
+  /-- The queue is ordered by nondecreasing distance. -/
   sorted : q.toList.Pairwise fun a b ↦ (dist[a]!).getD 0 ≤ (dist[b]!).getD 0
+  /-- The head is within the queue. -/
   head : h ≤ q.toList.length
+  /-- Every queued atom is at most one step further than the head. -/
   spread : h < q.toList.length →
     ∀ x ∈ q.toList, (dist[x]!).getD 0 ≤ (dist[q.toList[h]!]!).getD 0 + 1
+  /-- Every neighbour of a visited atom is seen, at most one step further. -/
   closed : ∀ i < h, ∀ v, m.Adj q.toList[i]! v →
     (dist[v]!).isSome ∧ (dist[v]!).getD 0 ≤ (dist[q.toList[i]!]!).getD 0 + 1
+  /-- The root is at distance `0`. -/
   root : dist[r]! = some 0
 
+/-- Indexing into `l ++ l'` below `l.length` reads `l`. -/
 lemma getElem!_append_left' {l l' : List ℕ} {i : ℕ} (h : i < l.length) :
     (l ++ l')[i]! = l[i]! := by
   rw [getElem!_pos _ i (by simp; omega), getElem!_pos l i h, List.getElem_append_left h]
@@ -226,6 +255,7 @@ lemma BfsInv.visit {m : Work} (hwf : m.WF) {r h : ℕ} {dist : Array (Option ℕ
       · rw [hDold v hq]; exact hspread v hq
       · rw [hDnew v hn]
 
+/-- The queue holds at most `numAtoms` atoms. -/
 lemma BfsInv.length_le {m : Work} {r h : ℕ} {dist : Array (Option ℕ)} {q : Array ℕ}
     (I : m.BfsInv r h dist q) : q.toList.length ≤ m.numAtoms := by
   have hlt : ∀ x ∈ q.toList, x < m.numAtoms := fun x hx ↦ by

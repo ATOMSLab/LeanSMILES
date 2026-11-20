@@ -53,6 +53,20 @@ label-independent tests — a bond-order sum, a canonical string, ranks, a
 configuration equal to its own mirror image — so they commute with
 relabeling too (`Molecule.normalizeBrackets_relabel`, `dropFake_relabel`;
 together `Molecule.reduce_relabel`).
+
+## Main statements
+
+* `MolData.leavesAll_relabel_perm`: the leaves of the relabeled data are the relabeled leaves, up
+  to order.
+* `MolData.isDiscrete_of_mem_leavesAll`, `MolData.leavesAll_ne_nil`: with enough fuel every leaf
+  is discrete, and there is one.
+* `MolData.search_subset_leavesAll`, `MolData.exists_mem_search`, `MolData.min?_search_eq`:
+  pruning keeps only leaves of the full search and loses no string.
+* `MolData.canonical_relabel`: the canonical string of the relabeled data is that of the data.
+* `MolData.dropFake_relabel`: erasing the meaningless marks commutes with relabeling.
+* `Molecule.canonicalSmiles_relabel`, `Mol.canonicalSmiles_relabel`: relabeling the atoms does not
+  change the canonical SMILES.
+* `Molecule.canonicalSmiles_eq_of_sameBonds`: relisting the bonds does not change it either.
 -/
 
 public section
@@ -391,6 +405,8 @@ lemma numClasses_le_numClasses_refine (fuel : ℕ) (r : Ranks n) :
 
 -- One level of tie-breaking spends one unit of fuel: individualizing a tied atom adds a class and
 -- refining never merges any, so `n ≤ numClasses + fuel` survives the descent.
+/-- If `n ≤ numClasses r + (fuel + 1)` and `a` is in the lowest tied class, then individualizing
+`a` and refining leaves `n ≤ numClasses + fuel`. -/
 private lemma le_numClasses_refine_individualize_add {r : Ranks n} {c : ℕ}
     (hc : firstTie r = some c) {a : Fin n} (ha : a ∈ tiedAtoms r c) {fuel : ℕ}
     (hf : n ≤ numClasses r + (fuel + 1)) :

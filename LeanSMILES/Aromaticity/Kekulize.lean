@@ -29,6 +29,14 @@ Works one **fused ring system** at a time (rings sharing at least one bond):
    Following RDKit's walk exactly matters when a ring stays non-aromatic, since
    then the double-bond positions are visible in the result (`Cc1cccc2ncc12`).
 3. **Clear aromatic flags** (`markAtomsBonds`, `Kekulize.cpp:748-777`).
+
+## Main definitions
+
+* `Aromaticity.Work.needsDoubleBond`: whether an aromatic atom needs a double bond.
+* `Aromaticity.Work.KekState`: the state of `kekulizeWorker`'s walk.
+* `Aromaticity.Work.kekulizeWorker`: RDKit's `kekulizeWorker` for one fused system.
+* `Aromaticity.Work.kekulizeSystem`: one fused ring system of `Kekulize`.
+* `Aromaticity.Work.kekulize`: RDKit's `Kekulize` over the fused ring systems.
 -/
 
 @[expose] public section

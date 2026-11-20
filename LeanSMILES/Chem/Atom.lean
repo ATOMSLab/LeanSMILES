@@ -24,6 +24,15 @@ therefore not kept here: the parser turns them into the molecule's
 order-independent configuration (`Molecule.stereo`) and clears this field, and
 the writer computes the mark afresh for the order it writes.  The other named
 classes (`@AL1` … `@OH30`) are recorded as written and not interpreted.
+
+## Main definitions
+
+* `Chirality`: the chirality mark of a bracket atom, as written.
+* `Atom`: an atom: element or wildcard, aromatic flag, and the bracket decorations.
+* `Atom.totalH`: the written plus the inferred hydrogens.
+* `Atom.canBeBare`: whether the atom can be written without brackets.
+* `Atom.toBracket`, `Atom.toSmiles`: the atom as SMILES writes it, bracketed or bare when it can
+  be.
 -/
 
 @[expose] public section

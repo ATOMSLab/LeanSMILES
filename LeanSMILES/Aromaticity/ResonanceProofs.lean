@@ -17,6 +17,22 @@ import Mathlib.Tactic.Linarith
 Proofs of properties 1 and 2 of `Molecule.aromatize` stated in
 `LeanSMILES.Aromaticity.Resonance`, and the bridge with property 2 discharged.
 
+## Main definitions
+
+* `Aromaticity.movedD`: the bonds where two molecules' working copies differ in kind.
+* `Aromaticity.Pipeline`: Kekulé partners in lockstep through `aromatize` up to perception.
+
+## Main statements
+
+* `Aromaticity.relD_ofMolecule`: the working copies of Kekulé partners start in lockstep.
+* `Aromaticity.pipeline`: they stay in lockstep up to perception when the moved bonds avoid
+  `cleanUp`'s atoms.
+* `Aromaticity.aromaticBondsKekuleInvariant`: property 1.
+* `Aromaticity.aromatizeMergesExactlyResonance`: property 2.
+* `Molecule.aromaticCanonicalSmiles_eq_of_eqvGen_resonance`: chains of resonance moves keep the
+  aromatic canonical SMILES.
+* `Molecule.aromaticCanonicalSmiles_eq_of_eqvGen'`: the bridge, given property 3 only.
+
 A Kekulé structure needs no kekulizing (`Work.kekulize_of_noAromatic`), so
 `aromatize` is `freezeHs`, `cleanUp`, `cacheValences`, `assignRadicals`,
 `setAromaticity` and `finalizeHs`. The working copies of two Kekulé partners
@@ -47,24 +63,31 @@ variable {n : ℕ}
 /-- The working copy of a bond. -/
 def toWBond (b : Bond n) : WBond := { src := b.src.val, dst := b.dst.val, kind := b.kind }
 
+/-- The bonds of a molecule's working copy are its bonds, each as `toWBond`. -/
 lemma ofMolecule_bonds (m : Molecule n) :
     (Work.ofMolecule m).bonds = m.bonds.toArray.map toWBond := rfl
 
+/-- A molecule's working copy has as many bonds as the molecule. -/
 lemma ofMolecule_numBonds (m : Molecule n) : (Work.ofMolecule m).numBonds = m.bonds.length := by
   simp [Work.numBonds, ofMolecule_bonds]
 
+/-- A molecule's working copy has `n` atoms. -/
 lemma ofMolecule_numAtoms (m : Molecule n) : (Work.ofMolecule m).numAtoms = n := by
   simp [Work.numAtoms, Work.ofMolecule]
 
+/-- Bond `k` of a molecule's working copy is bond `k` of the molecule, as `toWBond`. -/
 lemma ofMolecule_bond (m : Molecule n) {k : ℕ} (hk : k < m.bonds.length) :
     (Work.ofMolecule m).bonds[k]! = toWBond m.bonds[k] := by
   rw [getElem!_pos _ k (by simpa [ofMolecule_bonds] using hk)]
   simp [ofMolecule_bonds]
 
+/-- Past the molecule's last bond, the working copy's bond lookup gives the default bond. -/
 lemma ofMolecule_bond_ge (m : Molecule n) {k : ℕ} (hk : m.bonds.length ≤ k) :
     (Work.ofMolecule m).bonds[k]! = default :=
   getElem!_neg _ k (by simpa [ofMolecule_bonds] using hk)
 
+/-- Atom `i` of a molecule's working copy: the element, aromatic flag, charge and written
+hydrogens of atom `i`, with no implicit hydrogens for a bracket atom or `*`. -/
 lemma ofMolecule_atom (m : Molecule n) (i : Fin n) :
     (Work.ofMolecule m).atoms[i.val]! =
       { z := (m.atom i).atomicNumber, aromatic := (m.atom i).aromatic,
@@ -73,12 +96,14 @@ lemma ofMolecule_atom (m : Molecule n) (i : Fin n) :
   rw [getElem!_pos _ i.val (by simp [Work.ofMolecule])]
   simp [Work.ofMolecule]
 
+/-- A molecule's working copy is well formed. -/
 lemma ofMolecule_wf (m : Molecule n) : WF (Work.ofMolecule m) := by
   intro k hk
   rw [ofMolecule_numBonds] at hk
   rw [ofMolecule_bond m hk, ofMolecule_numAtoms]
   exact ⟨m.bonds[k].src.isLt, m.bonds[k].dst.isLt, fun h ↦ m.bonds[k].ne (Fin.ext h)⟩
 
+/-- The working copy of a Kekulé structure has no aromatic atom and no aromatic bond. -/
 lemma noAromatic_ofMolecule (m : Molecule n) (hk : m.IsKekule) :
     NoAromatic (Work.ofMolecule m) := by
   refine ⟨fun k ↦ ?_, fun i ↦ ?_⟩
@@ -93,6 +118,7 @@ lemma noAromatic_ofMolecule (m : Molecule n) (hk : m.IsKekule) :
     · rw [getElem!_neg _ i (by simpa [Work.ofMolecule] using hlt)]
       rfl
 
+/-- With no aromatic bond, every atom's bond half-order sum is even. -/
 lemma even_bondHalfSum {w : Work} (h : NoAromatic w) (i : ℕ) : 2 ∣ w.bondHalfSum i := by
   refine List.dvd_sum fun x hx ↦ ?_
   obtain ⟨k, -, rfl⟩ := List.mem_map.mp hx
@@ -137,50 +163,61 @@ namespace KP
 variable {m₁ m₂ : Molecule n} (h : m₁.KekulePartner m₂)
 include h
 
+/-- Kekulé partners have the same atoms. -/
 lemma atoms : m₁.atoms = m₂.atoms := by
   simp only [Molecule.KekulePartner, Molecule.kekuleData, Prod.mk.injEq] at h
   exact h.1
 
+/-- Kekulé partners have the same bonds once double bonds are forgotten. -/
 lemma map_forget : m₁.bonds.map Bond.forgetDouble = m₂.bonds.map Bond.forgetDouble := by
   simp only [Molecule.KekulePartner, Molecule.kekuleData, Prod.mk.injEq] at h
   exact h.2.1
 
+/-- Kekulé partners have as many bonds. -/
 lemma length : m₁.bonds.length = m₂.bonds.length := by
   simpa using congrArg List.length (map_forget h)
 
+/-- Bond `k` of Kekulé partners is the same once double bonds are forgotten. -/
 lemma forget (k : ℕ) (h₁ : k < m₁.bonds.length) :
     m₁.bonds[k].forgetDouble = (m₂.bonds[k]'(length h ▸ h₁)).forgetDouble := by
   have := congrArg (·[k]?) (map_forget h)
   simpa [h₁, (length h ▸ h₁ : k < m₂.bonds.length)] using this
 
+/-- Kekulé partners give every atom the same bond-order sum. -/
 lemma bondOrderSum (i : Fin n) : m₁.bondOrderSum i = m₂.bondOrderSum i := by
   simp only [Molecule.KekulePartner, Molecule.kekuleData, Prod.mk.injEq] at h
   simpa using congrArg (·[i]) h.2.2.1
 
+/-- Kekulé partners have the same stereo marks. -/
 lemma stereo : m₁.stereo = m₂.stereo := by
   simp only [Molecule.KekulePartner, Molecule.kekuleData, Prod.mk.injEq] at h
   exact h.2.2.2
 
+/-- Bond `k` of Kekulé partners has the same first atom. -/
 lemma src (k : ℕ) (h₁ : k < m₁.bonds.length) :
     m₁.bonds[k].src = (m₂.bonds[k]'(length h ▸ h₁)).src := by
   simpa [Bond.forgetDouble] using congrArg Bond.src (forget h k h₁)
 
+/-- Bond `k` of Kekulé partners has the same second atom. -/
 lemma dst (k : ℕ) (h₁ : k < m₁.bonds.length) :
     m₁.bonds[k].dst = (m₂.bonds[k]'(length h ▸ h₁)).dst := by
   simpa [Bond.forgetDouble] using congrArg Bond.dst (forget h k h₁)
 
+/-- Bond `k` of Kekulé partners, given one kind `o`, is the same bond. -/
 lemma with_kind (k : ℕ) (h₁ : k < m₁.bonds.length) (o : BondKind) :
     { m₁.bonds[k] with kind := o } = { m₂.bonds[k]'(length h ▸ h₁) with kind := o } := by
   calc { m₁.bonds[k] with kind := o } = { m₁.bonds[k].forgetDouble with kind := o } := rfl
     _ = { (m₂.bonds[k]'(length h ▸ h₁)).forgetDouble with kind := o } := by rw [forget h k h₁]
     _ = { m₂.bonds[k]'(length h ▸ h₁) with kind := o } := rfl
 
+/-- Bond `k` of Kekulé partners has the same kind once double bonds are forgotten. -/
 lemma kind_forget (k : ℕ) (h₁ : k < m₁.bonds.length) :
     m₁.bonds[k].kind.forgetDouble = (m₂.bonds[k]'(length h ▸ h₁)).kind.forgetDouble := by
   simpa [Bond.forgetDouble] using congrArg Bond.kind (forget h k h₁)
 
 end KP
 
+/-- Two different kinds that agree once double bonds are forgotten are single and double. -/
 lemma isSD_of_forget {a b : BondKind} (h : a.forgetDouble = b.forgetDouble) (hab : a ≠ b) :
     isSD a = true ∧ isSD b = true ∧ a ≠ b := by
   revert h hab
@@ -190,6 +227,7 @@ lemma isSD_of_forget {a b : BondKind} (h : a.forgetDouble = b.forgetDouble) (hab
 def movedD (m₁ m₂ : Molecule n) (k : ℕ) : Bool :=
   (Work.ofMolecule m₁).bonds[k]!.kind != (Work.ofMolecule m₂).bonds[k]!.kind
 
+/-- A bond Kekulé partners differ on is in range. -/
 lemma movedD_lt {m₁ m₂ : Molecule n} (hp : m₁.KekulePartner m₂) {k : ℕ}
     (hk : movedD m₁ m₂ k = true) : k < m₁.bonds.length := by
   by_contra hlt
@@ -197,6 +235,7 @@ lemma movedD_lt {m₁ m₂ : Molecule n} (hp : m₁.KekulePartner m₂) {k : ℕ
     ofMolecule_bond_ge m₂ (by rw [← KP.length hp]; omega)] at hk
   simp at hk
 
+/-- The working copies of Kekulé partners are related by `RelD` on the bonds they differ on. -/
 lemma relD_ofMolecule {m₁ m₂ : Molecule n} (hp : m₁.KekulePartner m₂) :
     RelD (movedD m₁ m₂) (Work.ofMolecule m₁) (Work.ofMolecule m₂) := by
   have hsk : SameSkel (Work.ofMolecule m₁) (Work.ofMolecule m₂) := by
@@ -248,12 +287,15 @@ lemma avoidsCenters {m₁ m₂ : Molecule n} (hk : m₁.IsKekule) (hp : m₁.Kek
 
 /-! ### Through `aromatize` -/
 
+/-- When the prepared copy has nothing aromatic, `aromatize` skips kekulization: it is the output
+of `assignRadicals`, `setAromaticity` and `finalizeHs` on that copy. -/
 lemma aromatize_eq_of_noAromatic (m : Molecule n) (h : NoAromatic (Work.prepare m)) :
     m.aromatize = .ok (m.aromatizeOutput
       ((Work.prepare m).assignRadicals.setAromaticity
         (Work.prepare m).relevantCycles).finalizeHs) :=
   Molecule.aromatize_eq_ok.mpr ⟨_, kekulize_of_noAromatic _ h _, rfl⟩
 
+/-- A copy related by `RelD` to one with nothing aromatic has nothing aromatic. -/
 lemma Work.RelD.noAromatic {D : ℕ → Bool} {w₁ w₂ : Work} (h : RelD D w₁ w₂) (hn : NoAromatic w₁) :
     NoAromatic w₂ := by
   refine ⟨fun k hk ↦ ?_, fun i ↦ by rw [← h.atoms]; exact hn.2 i⟩
@@ -265,15 +307,25 @@ lemma Work.RelD.noAromatic {D : ℕ → Bool} {w₁ w₂ : Work} (h : RelD D w�
 /-- Kekulé partners whose moved bonds avoid `cleanUp`'s atoms run through `aromatize` in lockstep
 up to the marking of aromatic bonds. -/
 structure Pipeline (m₁ m₂ : Molecule n) (w₁ w₂ : Work) (rings : Array (List ℕ)) : Prop where
+  /-- The two copies differ only on the moved bonds, in lockstep. -/
   rel : RelD (movedD m₁ m₂) w₁ w₂
+  /-- The first copy has nothing aromatic. -/
   noArom : NoAromatic w₁
+  /-- The first copy is well formed. -/
   wf : WF w₁
+  /-- The first copy has as many bonds as `m₁`. -/
   size : w₁.bonds.size = m₁.bonds.length
+  /-- The first copy has the skeleton of `m₁`'s working copy. -/
   skel : SameSkel (Work.ofMolecule m₁) w₁
+  /-- `rings` are the relevant cycles of `m₁`'s working copy. -/
   rings_eq : (Work.ofMolecule m₁).relevantCycles = rings
+  /-- `m₁` aromatizes to the output of perception and `finalizeHs` on `w₁`. -/
   arom₁ : m₁.aromatize = .ok (m₁.aromatizeOutput (w₁.setAromaticity rings).finalizeHs)
+  /-- `m₂` aromatizes to the output of perception and `finalizeHs` on `w₂`. -/
   arom₂ : m₂.aromatize = .ok (m₂.aromatizeOutput (w₂.setAromaticity rings).finalizeHs)
 
+/-- Kekulé partners whose moved bonds avoid `cleanUp`'s atoms are in `Pipeline` after
+`assignRadicals`, over the relevant cycles of the first. -/
 lemma pipeline {m₁ m₂ : Molecule n} (hk : m₁.IsKekule) (hp : m₁.KekulePartner m₂)
     (hc : m₁.MovesAvoidCleanUp m₂) :
     Pipeline m₁ m₂ (Work.prepare m₁).assignRadicals (Work.prepare m₂).assignRadicals
@@ -298,9 +350,11 @@ lemma pipeline {m₁ m₂ : Molecule n} (hk : m₁.IsKekule) (hp : m₁.KekulePa
     exact this.symm
   · rw [aromatize_eq_of_noAromatic m₂ hn2, h3.toSameSkel.relevantCycles]
 
+/-- `withKinds` keeps the number of bonds. -/
 lemma length_withKinds (m : Molecule n) (w : Work) : (withKinds m w).length = m.bonds.length := by
   simp [withKinds]
 
+/-- Bond `k` of `withKinds m w` is bond `k` of `m` with the kind of bond `k` of `w`. -/
 lemma getElem_withKinds (m : Molecule n) (w : Work) {k : ℕ} {hk : k < (withKinds m w).length}
     (hw : k < w.bonds.size) :
     (withKinds m w)[k]'hk =
@@ -308,6 +362,8 @@ lemma getElem_withKinds (m : Molecule n) (w : Work) {k : ℕ} {hk : k < (withKin
         kind := (w.bonds[k]! : WBond).kind } := by
   simp [withKinds, hw]
 
+/-- The aromatic bonds of the output are those of `w`, bond by bond, when `w` has as many bonds
+as `m`. -/
 lemma aromaticBonds_aromatizeOutput (m : Molecule n) (w : Work)
     (hw : w.bonds.size = m.bonds.length) :
     (m.aromatizeOutput w).aromaticBonds =
@@ -320,12 +376,14 @@ lemma aromaticBonds_aromatizeOutput (m : Molecule n) (w : Work)
       List.getElem_range]
     rw [getElem_withKinds m w (by omega)]
 
+/-- Marking the bonds of `L` aromatic keeps the number of bonds. -/
 lemma size_foldl_markAromatic (w : Work) (L : List ℕ) :
     (L.foldl markAromatic w).bonds.size = w.bonds.size := by
   induction L generalizing w with
   | nil => rfl
   | cons b L ih => rw [List.foldl_cons, ih, size_markAromatic]
 
+/-- Marking the bonds of `L` aromatic and finalizing hydrogens keeps the number of bonds. -/
 lemma size_final (w : Work) (L : List ℕ) :
     (L.foldl markAromatic w).finalizeHs.bonds.size = w.bonds.size := by
   rw [finalizeHs_bonds, size_foldl_markAromatic]
@@ -337,12 +395,15 @@ lemma kind_final (w : Work) (L : List ℕ) (k : ℕ) (hk : k < w.bonds.size) :
       else (w.bonds[k]! : WBond).kind := by
   rw [finalizeHs_bonds, kind_foldl_markAromatic w L k hk]
 
+/-- Two bonds with the same ends and kind are equal. -/
 lemma wbond_ext {a b : WBond} (h₁ : a.src = b.src) (h₂ : a.dst = b.dst) (h₃ : a.kind = b.kind) :
     a = b := by
   cases a
   cases b
   simp_all
 
+/-- Two working copies with the same atoms, as many bonds, and the same bond at every position
+are equal. -/
 lemma work_ext {w w' : Work} (ha : w.atoms = w'.atoms) (hs : w.bonds.size = w'.bonds.size)
     (hb : ∀ k < w.bonds.size, w.bonds[k]! = w'.bonds[k]!) : w = w' := by
   cases w

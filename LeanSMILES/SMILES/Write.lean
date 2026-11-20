@@ -41,6 +41,20 @@ conjugated chain share the single bond between them, so a mark already placed
 is reused, and a mark placed later agrees with the ones already there: no atom
 gets two substituents on the same side, which a reader other than our parser
 would take for a different molecule or for none.
+
+## Main definitions
+
+* `Molecule.dfs`: the depth-first walk, recording ring closures.
+* `Molecule.listedLigands`: a centre's ligands in the order the string lists them.
+* `Molecule.cisTransDirs`: single-bond directions that make the parser read back each arrangement.
+* `Molecule.emit`: writing the spanning forest.
+* `Molecule.write`: the molecule written in a given rank order.
+* `Molecule.toSmiles`, `Mol.toSmiles`: the molecule written in its stored atom order.
+
+## Main statements
+
+* `Molecule.flagOf_dirFor`: the direction `dirFor` chooses gives the flag it was asked for.
+* `Molecule.flagOf_swap`: a mark gives the atoms at its two ends opposite flags.
 -/
 
 @[expose] public section

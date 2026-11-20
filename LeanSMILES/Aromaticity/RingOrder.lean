@@ -16,6 +16,27 @@ of atom lists; what it computes does not depend on the order of rings of equal s
 each ring's atom list starts and which way it runs.  This file proves the first part: marking the
 aromatic bonds depends only on the set of bonds marked (`Work.foldl_markAromatic_congr`), since
 marking a bond is idempotent and markings of two bonds commute.
+
+## Main definitions
+
+* `Work.RingEq`, `Work.RingsEquiv`: a ring started elsewhere or run the other way, and a list of
+  rings rewritten so and reordered.
+* `Work.firstDonor`, `Work.firstCand`: the donor type and candidacy the first ring containing an
+  atom gives it.
+* `Work.GroupReach`, `Work.NbrReach`: reachability through a group of rings, and along neighbour
+  lists.
+* `Work.IdxBij`, `Work.GraphIso`: inverse renumberings of `[0, n)`, and a renumbered graph.
+
+## Main statements
+
+* `Work.foldl_markAromatic_congr`: marking the aromatic bonds depends only on the set marked.
+* `Work.donorData_equiv`: the first pass of perception reads only the ring set.
+* `Work.fusedBonds_ringEq`: fused systems read each candidate ring only up to rotation and
+  reversal.
+* `Work.isConnectedSet_iff`: the connectivity test of a group of rings, characterized.
+* `Work.systemBonds_perm`: a fused system marks the same bonds whatever the order of its rings.
+* `Work.fusedBonds_renumber`: renumbered candidate rings make the same bonds aromatic.
+* `Work.setAromaticity_equiv`: perception reads only the ring set.
 -/
 
 @[expose] public section
@@ -60,6 +81,8 @@ namespace Work
 /-- The flag `markAromatic` sets. -/
 abbrev setArom : WAtom → WAtom := ({ · with aromatic := true })
 
+/-- Marking bond `a` makes it aromatic if it is single or double, and leaves every other bond
+alone. -/
 lemma getElem?_markAromatic_bonds' (w : Work) (a k : ℕ) :
     (w.markAromatic a).bonds[k]? =
       if k = a ∧ isSD (w.bonds[a]! : WBond).kind = true then
@@ -78,6 +101,8 @@ lemma getElem?_markAromatic_bonds' (w : Work) (a k : ℕ) :
         (w.bonds[a]! : WBond).kind == .double) = true from hsd)]
     simp [hsd]
 
+/-- Marking bond `a`, if it is single or double, flags its two atoms aromatic, and leaves every
+other atom alone. -/
 lemma getElem?_markAromatic_atoms' (w : Work) (a j : ℕ) :
     (w.markAromatic a).atoms[j]? =
       if isSD (w.bonds[a]! : WBond).kind = true ∧
@@ -100,6 +125,7 @@ lemma markAromatic_bond_of_ne (w : Work) {a b : ℕ} (h : b ≠ a) :
     ((w.markAromatic a).bonds[b]! : WBond) = w.bonds[b]! := by
   simp only [getElem!_def, getElem?_markAromatic_bonds', h, false_and, if_false]
 
+/-- Two copies with the same atoms and bonds at every index are equal. -/
 lemma ext_getElem? {w w' : Work} (ha : ∀ j : ℕ, w'.atoms[j]? = w.atoms[j]?)
     (hb : ∀ k : ℕ, w'.bonds[k]? = w.bonds[k]?) : w' = w := by
   cases w; cases w'
@@ -164,6 +190,7 @@ lemma foldl_markAromatic_congr {l l' : List ℕ} (h : ∀ b, b ∈ l ↔ b ∈ l
 
 /-! ### A ring's bonds do not depend on where its atom list starts or which way it runs -/
 
+/-- `ringBonds` unfolded: the bonds found between each atom and the next, cyclically. -/
 lemma ringBonds_eq_filterMap (w : Work) (r : List ℕ) :
     w.ringBonds r = (List.range r.length).filterMap fun t ↦
       w.bondBetween? r[t]! r[(t + 1) % r.length]! := rfl
@@ -181,12 +208,14 @@ lemma map_range_perm {n : ℕ} (f : ℕ → ℕ) (hf : ∀ t < n, f t < n)
     exact List.mem_range.2 (hf t (List.mem_range.1 ht))
   exact (List.subperm_of_subset hnd hsub).perm_of_length_le (by simp)
 
+/-- Entry `t` of `r.rotate k` is entry `(t + k) % r.length` of `r`. -/
 lemma getElem!_rotate {r : List ℕ} (k : ℕ) {t : ℕ} (ht : t < r.length) :
     (r.rotate k)[t]! = r[(t + k) % r.length]! := by
   have hlt : (t + k) % r.length < r.length := Nat.mod_lt _ (by omega)
   rw [getElem!_pos (r.rotate k) t (by rw [List.length_rotate]; exact ht),
     getElem!_pos r _ hlt, List.getElem_rotate]
 
+/-- Entry `t` of `r.reverse` is entry `r.length - 1 - t` of `r`. -/
 lemma getElem!_reverse' {r : List ℕ} {t : ℕ} (ht : t < r.length) :
     r.reverse[t]! = r[r.length - 1 - t]! := by
   rw [getElem!_pos r.reverse t (by rw [List.length_reverse]; exact ht),
@@ -265,6 +294,8 @@ lemma ringBonds_reverse (w : Work) (r : List ℕ) :
 
 /-! ### The same ring set -/
 
+/-- Under `List.Forall₂ P`, each member of the left list is related to some member of the
+right. -/
 lemma forall₂_mem_left {α β : Type*} {P : α → β → Prop} {l₁ : List α} {l₂ : List β}
     (h : List.Forall₂ P l₁ l₂) {a : α} (ha : a ∈ l₁) : ∃ b ∈ l₂, P a b := by
   induction h with
@@ -275,6 +306,8 @@ lemma forall₂_mem_left {α β : Type*} {P : α → β → Prop} {l₁ : List �
     · obtain ⟨b, hb, h⟩ := ih ha
       exact ⟨b, List.mem_cons_of_mem _ hb, h⟩
 
+/-- Under `List.Forall₂ P`, each member of the right list is related to some member of the
+left. -/
 lemma forall₂_mem_right {α β : Type*} {P : α → β → Prop} {l₁ : List α} {l₂ : List β}
     (h : List.Forall₂ P l₁ l₂) {b : β} (hb : b ∈ l₂) : ∃ a ∈ l₁, P a b := by
   induction h with
@@ -292,19 +325,22 @@ def RingEq (r r' : List ℕ) : Prop := ∃ k, r' = r.rotate k ∨ r' = (r.rotate
 def RingsEquiv (R R' : List (List ℕ)) : Prop :=
   ∃ L, List.Forall₂ RingEq R L ∧ L.Perm R'
 
+/-- Equivalent rings have the same length. -/
 lemma RingEq.length {r r' : List ℕ} (h : RingEq r r') : r'.length = r.length := by
   obtain ⟨k, rfl | rfl⟩ := h <;> simp
 
+/-- Equivalent rings have the same atoms. -/
 lemma RingEq.mem {r r' : List ℕ} (h : RingEq r r') (i : ℕ) : i ∈ r' ↔ i ∈ r := by
   obtain ⟨k, rfl | rfl⟩ := h <;> simp [List.mem_rotate]
 
+/-- The bonds of equivalent rings are permutations of each other. -/
 lemma RingEq.ringBonds (w : Work) {r r' : List ℕ} (h : RingEq r r') :
     (w.ringBonds r').Perm (w.ringBonds r) := by
   obtain ⟨k, rfl | rfl⟩ := h
   · exact ringBonds_rotate w r k
   · exact (ringBonds_reverse w _).trans (ringBonds_rotate w r k)
 
-/-- What a property of rings that reads only their atoms and lengths says of equivalent lists. -/
+/-- Every ring of a list equivalent to `R` is the same ring as one of `R` (`RingEq`). -/
 lemma RingsEquiv.forall_exists {R R' : List (List ℕ)} (h : RingsEquiv R R') :
     ∀ r' ∈ R', ∃ r ∈ R, RingEq r r' := by
   obtain ⟨L, hf, hp⟩ := h
@@ -312,6 +348,7 @@ lemma RingsEquiv.forall_exists {R R' : List (List ℕ)} (h : RingsEquiv R R') :
   obtain ⟨r, hr, hrr⟩ := forall₂_mem_right hf (hp.mem_iff.2 hr')
   exact ⟨r, hr, hrr⟩
 
+/-- Under `RingsEquiv R R'`, every ring of `R` is equivalent to some ring of `R'`. -/
 lemma RingsEquiv.exists_forall {R R' : List (List ℕ)} (h : RingsEquiv R R') :
     ∀ r ∈ R, ∃ r' ∈ R', RingEq r r' := by
   obtain ⟨L, hf, hp⟩ := h
@@ -319,6 +356,7 @@ lemma RingsEquiv.exists_forall {R R' : List (List ℕ)} (h : RingsEquiv R R') :
   obtain ⟨r', hr', hrr⟩ := forall₂_mem_left hf hr
   exact ⟨r', hp.mem_iff.1 hr', hrr⟩
 
+/-- Filtering both lists by a test that equivalent rings agree on keeps them equivalent. -/
 lemma RingsEquiv.filter {R R' : List (List ℕ)} (h : RingsEquiv R R') (p : List ℕ → Bool)
     (hp : ∀ r r', RingEq r r' → p r' = p r) : RingsEquiv (R.filter p) (R'.filter p) := by
   obtain ⟨L, hf, hperm⟩ := h
@@ -354,6 +392,7 @@ lemma donorType_congr (w : Work) {B B' : List ℕ} (h : ∀ k, k ∈ B ↔ k ∈
   unfold donorType exocyclicMultiple?
   rw [hc]
 
+/-- `ringDonor` reads the ring-bond set only through membership. -/
 lemma ringDonor_congr (w : Work) {B B' : List ℕ} (h : ∀ k, k ∈ B ↔ k ∈ B') (len i : ℕ) :
     w.ringDonor B' len i = w.ringDonor B len i := by
   simp only [ringDonor, donorType_congr w h]
@@ -372,15 +411,24 @@ def firstCand (w : Work) (B : List ℕ) (L : List (List ℕ)) (i : ℕ) : Bool :
 
 /-- What `donorData`'s first pass has done after the rings `L`. -/
 structure DonorOrdInv (w : Work) (B : List ℕ) (L : List (List ℕ)) (s : DonorState) : Prop where
+  /-- One `seen` flag per atom. -/
   seen_size : s.seen.size = w.numAtoms
+  /-- One candidate flag per atom. -/
   cand_size : s.cand.size = w.numAtoms
+  /-- One donor type per atom. -/
   donor_size : s.donor.size = w.numAtoms
+  /-- An atom is seen when some ring of `L` contains it. -/
   seen : ∀ i < w.numAtoms, s.seen[i]! = L.any (·.contains i)
+  /-- Each atom's donor type is the one its first ring in `L` gives it. -/
   donor : ∀ i < w.numAtoms, s.donor[i]! = firstDonor w B L i
+  /-- Each atom's candidate flag is the one its first ring in `L` gives it. -/
   cand : ∀ i < w.numAtoms, s.cand[i]! = firstCand w B L i
+  /-- The candidate rings are the rings of `L` whose atoms are all in range and candidates. -/
   candRings : s.candRings.toList =
     L.filter fun r ↦ r.all fun i ↦ decide (i < w.numAtoms) && firstCand w B L i
 
+/-- If a ring of `L` contains `i`, appending a ring does not change the first ring
+containing `i`. -/
 lemma find?_append_singleton_of_any {L : List (List ℕ)} {r : List ℕ} {i : ℕ}
     (h : L.any (·.contains i) = true) :
     (L ++ [r]).find? (·.contains i) = L.find? (·.contains i) := by
@@ -390,6 +438,8 @@ lemma find?_append_singleton_of_any {L : List (List ℕ)} {r : List ℕ} {i : �
   | none => rw [List.find?_eq_none] at hf; exact absurd hxi (by simpa using hf x hx)
   | some y => rfl
 
+/-- If no ring of `L` contains `i`, the first ring of `L ++ [r]` containing `i` is `r`, if it
+does. -/
 lemma find?_append_singleton_of_not_any {L : List (List ℕ)} {r : List ℕ} {i : ℕ}
     (h : L.any (·.contains i) = false) :
     (L ++ [r]).find? (·.contains i) = if r.contains i then some r else none := by
@@ -403,6 +453,7 @@ lemma find?_append_singleton_of_not_any {L : List (List ℕ)} {r : List ℕ} {i 
   simp only [List.find?_cons, List.find?_nil, Option.none_or]
   cases r.contains i <;> rfl
 
+/-- For an atom of `r`, rings after `r` do not change `firstCand`. -/
 lemma firstCand_append_of_mem {L : List (List ℕ)} {r : List ℕ} {w : Work} {B : List ℕ} {i : ℕ}
     (hi : i ∈ r) (L' : List (List ℕ)) :
     firstCand w B (L ++ r :: L') i = firstCand w B (L ++ [r]) i := by
@@ -418,18 +469,27 @@ lemma firstCand_append_of_mem {L : List (List ℕ)} {r : List ℕ} {w : Work} {B
 /-- What the first pass has done partway through ring `r`, after its atoms `rp`. -/
 structure DonorOrdInnerInv (w : Work) (B : List ℕ) (L : List (List ℕ)) (r rp : List ℕ)
     (s : DonorState) (a : Bool) : Prop where
+  /-- One `seen` flag per atom. -/
   seen_size : s.seen.size = w.numAtoms
+  /-- One candidate flag per atom. -/
   cand_size : s.cand.size = w.numAtoms
+  /-- One donor type per atom. -/
   donor_size : s.donor.size = w.numAtoms
+  /-- An atom is seen when a ring of `L` or the atoms `rp` contain it. -/
   seen : ∀ i < w.numAtoms, s.seen[i]! = (L.any (·.contains i) || rp.contains i)
+  /-- A seen atom's donor type is the one its first ring in `L ++ [r]` gives it. -/
   donor : ∀ i < w.numAtoms, s.donor[i]! =
     if (L.any (·.contains i) || rp.contains i) = true then firstDonor w B (L ++ [r]) i else .none
+  /-- A seen atom's candidate flag is the one its first ring in `L ++ [r]` gives it. -/
   cand : ∀ i < w.numAtoms, s.cand[i]! =
     if (L.any (·.contains i) || rp.contains i) = true then firstCand w B (L ++ [r]) i else false
+  /-- `a` records whether every atom of `rp` is in range and a candidate. -/
   allCand : a = rp.all fun i ↦ decide (i < w.numAtoms) && firstCand w B (L ++ [r]) i
+  /-- The candidate rings are still those of `L`. -/
   candRings : s.candRings.toList =
     L.filter fun r ↦ r.all fun i ↦ decide (i < w.numAtoms) && firstCand w B L i
 
+/-- Reading an array after `set!`: an out-of-range write changes nothing. -/
 lemma getElem!_set!_gen {α : Type} [Inhabited α] (a : Array α) (i j : ℕ) (v : α) :
     (a.set! i v)[j]! = if i = j ∧ j < a.size then v else a[j]! := by
   by_cases hj : j < a.size
@@ -438,18 +498,22 @@ lemma getElem!_set!_gen {α : Type} [Inhabited α] (a : Array α) (i j : ℕ) (v
   · rw [getElem!_neg _ j (by simpa using hj), getElem!_neg a j hj]
     simp [hj]
 
+/-- For an atom of `r` on no ring of `L`, `firstDonor` over `L ++ [r]` is `r`'s donor type. -/
 lemma firstDonor_of_not_any {w : Work} {B : List ℕ} {L : List (List ℕ)} {r : List ℕ} {i : ℕ}
     (hL : L.any (·.contains i) = false) (hr : i ∈ r) :
     firstDonor w B (L ++ [r]) i = w.ringDonor B r.length i := by
   unfold firstDonor
   rw [find?_append_singleton_of_not_any hL, if_pos (by simpa using hr)]
 
+/-- For an atom of `r` on no ring of `L`, `firstCand` over `L ++ [r]` is decided by `r`'s donor
+type. -/
 lemma firstCand_of_not_any {w : Work} {B : List ℕ} {L : List (List ℕ)} {r : List ℕ} {i : ℕ}
     (hL : L.any (·.contains i) = false) (hr : i ∈ r) :
     firstCand w B (L ++ [r]) i = w.isAromaticCandidate i (w.ringDonor B r.length i) := by
   unfold firstCand
   rw [find?_append_singleton_of_not_any hL, if_pos (by simpa using hr)]
 
+/-- One atom `x` of ring `r` keeps the inner invariant, with `x` added to the atoms done. -/
 lemma donorAtomStep_inv {w : Work} {B : List ℕ} {L : List (List ℕ)} {r rp : List ℕ}
     {s : DonorState} {a : Bool} {x : ℕ} (hx : x ∈ r) (hi : DonorOrdInnerInv w B L r rp s a) :
     DonorOrdInnerInv w B L r (rp ++ [x]) (w.donorAtomStep B r.length (s, a) x).1
@@ -522,6 +586,8 @@ lemma donorAtomStep_inv {w : Work} {B : List ℕ} {L : List (List ℕ)} {r rp : 
         rw [hz, hall, hi.allCand]
         simp [hxn]
 
+/-- Running the remaining atoms of ring `r` from the inner invariant reaches it with all of `r`
+done. -/
 lemma donorAtoms_inv (w : Work) (B : List ℕ) (L : List (List ℕ)) (r : List ℕ) :
     ∀ (rest rp : List ℕ) (s : DonorState) (a : Bool), rp ++ rest = r →
       DonorOrdInnerInv w B L r rp s a →
@@ -536,6 +602,7 @@ lemma donorAtoms_inv (w : Work) (B : List ℕ) (L : List (List ℕ)) (r : List �
     rw [List.foldl_cons]
     exact ih (rp ++ [x]) _ _ (by rw [← h]; simp) (donorAtomStep_inv hx hi)
 
+/-- One ring `r` keeps the first-pass invariant, with `r` added to the rings done. -/
 lemma donorRingStep_inv {w : Work} {B : List ℕ} {L : List (List ℕ)} {r : List ℕ}
     {s : DonorState} (hi : DonorOrdInv w B L s) :
     DonorOrdInv w B (L ++ [r]) (w.donorRingStep B s r) := by
@@ -709,6 +776,8 @@ lemma RingsEquiv.find?_length {R R' : List (List ℕ)} (h : RingsEquiv R R')
       have : q.length = r.length := by omega
       simp [this]
 
+/-- Ring-bond sets with the same members, and first rings containing `i` of the same length, give
+`i` the same donor type and candidacy. -/
 lemma firstDonor_eq_of_length {w : Work} {B B' : List ℕ} {L L' : List (List ℕ)} {i : ℕ}
     (hB : ∀ k, k ∈ B ↔ k ∈ B')
     (hl : (L'.find? (·.contains i)).map List.length = (L.find? (·.contains i)).map List.length) :
@@ -729,6 +798,7 @@ lemma firstDonor_eq_of_length {w : Work} {B B' : List ℕ} {L L' : List (List �
       rw [hl, ringDonor_congr w hB]
       exact ⟨rfl, rfl⟩
 
+/-- Two arrays of size `n` that agree at every index below `n` are equal. -/
 lemma array_ext_of_getElem! {α : Type} [Inhabited α] {a b : Array α} {n : ℕ} (ha : a.size = n)
     (hb : b.size = n) (h : ∀ i < n, a[i]! = b[i]!) : a = b := by
   apply Array.ext (by rw [ha, hb])
@@ -784,6 +854,7 @@ theorem donorData_equiv (w : Work) {R R' : Array (List ℕ)} (h : RingsEquiv R.t
 
 /-! ### Fused systems: rings written another way, in the same order -/
 
+/-- `eraseDups` leaves no repeats. -/
 lemma eraseDups_nodup : ∀ l : List ℕ, l.eraseDups.Nodup
   | [] => by simp
   | a :: as => by
@@ -792,10 +863,12 @@ lemma eraseDups_nodup : ∀ l : List ℕ, l.eraseDups.Nodup
 termination_by l => l.length
 decreasing_by exact Nat.lt_succ_of_le (List.length_filter_le _ _)
 
+/-- `eraseDups` of permuted lists are permuted. -/
 lemma perm_eraseDups {l l' : List ℕ} (h : l.Perm l') : l.eraseDups.Perm l'.eraseDups :=
   (List.perm_ext_iff_of_nodup (eraseDups_nodup l) (eraseDups_nodup l')).2 fun x ↦ by
     rw [List.mem_eraseDups, List.mem_eraseDups]; exact h.mem_iff
 
+/-- Permuted lists, deduplicated and sorted, are equal. -/
 lemma mergeSort_eraseDups_perm {l l' : List ℕ} (h : l.Perm l') :
     l.eraseDups.mergeSort (· ≤ ·) = l'.eraseDups.mergeSort (· ≤ ·) := by
   refine List.Perm.eq_of_pairwise (le := fun a b : ℕ ↦ decide (a ≤ b) = true)
@@ -814,6 +887,8 @@ lemma foldl_count_perm {l l' : List ℕ} (h : l.Perm l') (acc : Array ℕ) :
   simp only [Array.getElem?_modify]
   split_ifs <;> simp_all [Option.map_map, Function.comp_def]
 
+/-- `groupBonds` gives the same result when each ring's atoms and each ring's bonds are
+permuted. -/
 lemma groupBonds_ringEq {numAtoms : ℕ} {rb rb' C C' : Array (List ℕ)} {d : Array Donor}
     {nbrs : Array (List ℕ)} (hC : ∀ r : ℕ, (C'[r]!).Perm (C[r]!))
     (hR : ∀ r : ℕ, (rb'[r]!).Perm (rb[r]!)) (cur : List ℕ) :
@@ -827,6 +902,7 @@ lemma groupBonds_ringEq {numAtoms : ℕ} {rb rb' C C' : Array (List ℕ)} {d : A
     List.Perm.flatMap_left _ fun r _ ↦ hR r
   simp only [hcount, mergeSort_eraseDups_perm hall, hall.count_eq]
 
+/-- `fusedNbrs` gives the same result when each ring's bonds are permuted. -/
 lemma fusedNbrs_ringEq {rb rb' : Array (List ℕ)} (hs : rb'.size = rb.size)
     (hR : ∀ r : ℕ, (rb'[r]!).Perm (rb[r]!)) : fusedNbrs rb' = fusedNbrs rb := by
   have hc : ∀ i j : ℕ, ((rb'[i]!).filter (rb'[j]!).contains).length =
@@ -839,6 +915,8 @@ lemma fusedNbrs_ringEq {rb rb' : Array (List ℕ)} (hs : rb'.size = rb.size)
   unfold fusedNbrs
   simp only [hs, hc, hl]
 
+/-- `systemBonds` gives the same result when each ring's atoms and each ring's bonds are
+permuted. -/
 lemma systemBonds_ringEq {numAtoms : ℕ} {rb rb' C C' : Array (List ℕ)} {d : Array Donor}
     {nbrs : Array (List ℕ)} (hC : ∀ r : ℕ, (C'[r]!).Perm (C[r]!))
     (hR : ∀ r : ℕ, (rb'[r]!).Perm (rb[r]!)) (fused : List ℕ) :
@@ -889,6 +967,7 @@ theorem fusedBonds_ringEq {numAtoms : ℕ} {w : Work} {C C' : Array (List ℕ)} 
 def fusedPair (rb : Array (List ℕ)) (i j : ℕ) : Bool :=
   (rb[i]!).length ≤ 24 && (rb[j]!).length ≤ 24 && ((rb[i]!).filter (rb[j]!).contains).length == 1
 
+/-- A `for` loop that always continues, updating by `g` when `c` holds, is a fold. -/
 lemma forIn_ite_yield {β : Type} (l : List ℕ) (b : β) (c : ℕ → Prop) [DecidablePred c]
     (g : ℕ → β → β) :
     (forIn l b (fun a r ↦ if c a then pure (ForInStep.yield (g a r))
@@ -901,6 +980,7 @@ lemma forIn_ite_yield {β : Type} (l : List ℕ) (b : β) (c : ℕ → Prop) [De
     · simp only [if_pos hc]; exact ih _
     · simp only [if_neg hc]; exact ih _
 
+/-- `forIn_ite_yield` with a test that also reads the state. -/
 lemma forIn_ite_yield' {β : Type} (l : List ℕ) (b : β) (c : ℕ → β → Bool)
     (g : ℕ → β → β) :
     (forIn l b (fun a r ↦ if c a r = true then pure (ForInStep.yield (g a r))
@@ -914,12 +994,14 @@ lemma forIn_ite_yield' {β : Type} (l : List ℕ) (b : β) (c : ℕ → β → B
     · simp only [if_pos hc]; exact ih _
     · simp only [if_neg hc]; exact ih _
 
+/-- A `foldlM` in `Id` is a `foldl`. -/
 lemma foldlM_id {β : Type} (l : List ℕ) (b : β) (f : β → ℕ → Id β) :
     (l.foldlM f b).run = l.foldl (fun r a ↦ (f r a).run) b := by
   induction l generalizing b with
   | nil => rfl
   | cons x l ih => rw [List.foldlM_cons, List.foldl_cons]; exact ih _
 
+/-- `fusedNbrs` as nested folds over `i` and `j > i`, linking each fused pair both ways. -/
 lemma fusedNbrs_eq_foldl (rb : Array (List ℕ)) :
     fusedNbrs rb = (List.range rb.size).foldl (fun nbrs i ↦
       (List.range' (i + 1) (rb.size - (i + 1))).foldl (fun nbrs j ↦
@@ -942,6 +1024,7 @@ def fusedStep (rb : Array (List ℕ)) (nbrs : Array (List ℕ)) (p : ℕ × ℕ)
 def fusedPairs (n : ℕ) : List (ℕ × ℕ) :=
   (List.range n).flatMap fun i ↦ (List.range' (i + 1) (n - (i + 1))).map fun j ↦ (i, j)
 
+/-- The pairs visited are those with `p.1 < p.2 < n`. -/
 lemma mem_fusedPairs {n : ℕ} {p : ℕ × ℕ} : p ∈ fusedPairs n ↔ p.1 < p.2 ∧ p.2 < n := by
   obtain ⟨a, b⟩ := p
   simp only [fusedPairs, List.mem_flatMap, List.mem_range, List.mem_map, List.mem_range'_1,
@@ -950,11 +1033,13 @@ lemma mem_fusedPairs {n : ℕ} {p : ℕ × ℕ} : p ∈ fusedPairs n ↔ p.1 < p
   · rintro ⟨i, hi, j, ⟨hj1, hj2⟩, rfl, rfl⟩; omega
   · rintro ⟨h1, h2⟩; exact ⟨a, by omega, b, ⟨by omega, by omega⟩, rfl, rfl⟩
 
+/-- Reading an in-range entry after `modify k f`: `f` applied if it is entry `k`. -/
 lemma getElem!_modify_list (a : Array (List ℕ)) (k : ℕ) (f : List ℕ → List ℕ) {i : ℕ}
     (hi : i < a.size) : (a.modify k f)[i]! = if k = i then f a[i]! else a[i]! := by
   rw [getElem!_pos (a.modify k f) i (by simpa using hi), getElem!_pos a i hi,
     Array.getElem_modify]
 
+/-- `fusedNbrs` is a fold of `fusedStep` over `fusedPairs`. -/
 lemma fusedNbrs_eq_pairs (rb : Array (List ℕ)) :
     fusedNbrs rb = (fusedPairs rb.size).foldl (fusedStep rb) (Array.replicate rb.size []) := by
   rw [fusedNbrs_eq_foldl, fusedPairs, List.foldl_flatMap]
@@ -963,6 +1048,7 @@ lemma fusedNbrs_eq_pairs (rb : Array (List ℕ)) :
   rw [List.foldl_map]
   rfl
 
+/-- Folding `fusedStep` keeps the size of the neighbour array. -/
 lemma size_foldl_fusedStep (rb : Array (List ℕ)) :
     ∀ (P : List (ℕ × ℕ)) (nbrs : Array (List ℕ)), (P.foldl (fusedStep rb) nbrs).size = nbrs.size
   | [], _ => rfl
@@ -970,6 +1056,8 @@ lemma size_foldl_fusedStep (rb : Array (List ℕ)) :
     rw [List.foldl_cons, size_foldl_fusedStep rb P]
     unfold fusedStep; split <;> simp
 
+/-- After folding `fusedStep` over pairs `P` of distinct in-range rings, `j` is a neighbour of
+`i` when it was before or some fused pair of `P` joins `i` and `j`. -/
 lemma mem_foldl_fusedStep (rb : Array (List ℕ)) {n : ℕ} :
     ∀ (P : List (ℕ × ℕ)) (nbrs : Array (List ℕ)), nbrs.size = n →
       (∀ p ∈ P, p.1 < n ∧ p.2 < n ∧ p.1 ≠ p.2) → ∀ i < n, ∀ j,
@@ -1059,6 +1147,8 @@ def connRound (S : List ℕ) (nbrs : Array (List ℕ)) (seen : List ℕ) : List 
   seen.foldl (fun sn r ↦ (nbrs[r]!).foldl (fun sn v ↦
     if S.contains v && !sn.contains v then sn ++ [v] else sn) sn) seen
 
+/-- `isConnectedSet` unfolded: from the first ring, `rids.length` sweeps of `connRound` reach as
+many rings as the group has. -/
 lemma isConnectedSet_eq (rids : List ℕ) (nbrs : Array (List ℕ)) :
     isConnectedSet rids nbrs = match rids.head? with
       | none => true
@@ -1084,6 +1174,8 @@ lemma isConnectedSet_eq (rids : List ℕ) (nbrs : Array (List ℕ)) :
 def connInner (S : List ℕ) (vs sn : List ℕ) : List ℕ :=
   vs.foldl (fun sn v ↦ if S.contains v && !sn.contains v then sn ++ [v] else sn) sn
 
+/-- One ring's neighbours: `connInner` appends, adds no repeat, adds only members of `S` among
+`vs`, and adds all of them. -/
 lemma connInner_spec (S : List ℕ) :
     ∀ (vs sn : List ℕ), sn.Nodup →
       (∃ e, connInner S vs sn = sn ++ e) ∧ (connInner S vs sn).Nodup ∧
@@ -1133,6 +1225,8 @@ lemma connInner_spec (S : List ℕ) :
       · rw [he2]; exact List.mem_append_left _ (hx' hvS)
       · exact hall v hv hvS
 
+/-- `connInner` over the rings `L`: it appends, adds no repeat, adds only neighbours in `S` of
+rings of `L`, and adds all of them. -/
 lemma connOuter_spec (S : List ℕ) (nbrs : Array (List ℕ)) :
     ∀ (L sn : List ℕ), sn.Nodup →
       (∃ e, L.foldl (fun sn r ↦ connInner S (nbrs[r]!) sn) sn = sn ++ e) ∧
@@ -1156,6 +1250,7 @@ lemma connOuter_spec (S : List ℕ) (nbrs : Array (List ℕ)) :
       · rw [he2]; exact List.mem_append_left _ (hall1 v hv hvS)
       · exact hall2 r' hr' v hv hvS
 
+/-- A sweep is `connInner` over the rings seen at its start. -/
 lemma connRound_eq (S : List ℕ) (nbrs : Array (List ℕ)) (seen : List ℕ) :
     connRound S nbrs seen = seen.foldl (fun sn r ↦ connInner S (nbrs[r]!) sn) seen := rfl
 
@@ -1270,12 +1365,14 @@ theorem isConnectedSet_iff (rids : List ℕ) (nbrs : Array (List ℕ)) :
 
 /-! ### A group of rings, in any order -/
 
+/-- A ring reached from a ring of `S` is in `S`. -/
 lemma GroupReach.mem {S : List ℕ} {nbrs : Array (List ℕ)} {a v : ℕ} (ha : a ∈ S)
     (h : GroupReach S nbrs a v) : v ∈ S := by
   induction h with
   | refl => exact ha
   | tail _ hs _ => exact hs.1
 
+/-- Reachability through `S` depends only on the members of `S`. -/
 lemma GroupReach.congr {S S' : List ℕ} {nbrs : Array (List ℕ)} (hS : ∀ x, x ∈ S ↔ x ∈ S')
     {a v : ℕ} (h : GroupReach S nbrs a v) : GroupReach S' nbrs a v := by
   induction h with
@@ -1342,6 +1439,7 @@ lemma groupBonds_perm {numAtoms : ℕ} {rb C : Array (List ℕ)} {d : Array Dono
 
 /-! ### Groups of rings of one size -/
 
+/-- `List.range n` is strictly increasing. -/
 lemma pairwise_lt_range_n (n : ℕ) : (List.range n).Pairwise (· < ·) := by
   rw [List.range_eq_range']
   exact List.pairwise_lt_range' 1 (by omega)
@@ -1566,10 +1664,12 @@ lemma systemBonds_perm {numAtoms : ℕ} {rb C : Array (List ℕ)} {d : Array Don
 
 /-! ### Connected components -/
 
-/-- One step along the neighbour lists. -/
+/-- Reachability along the neighbour lists, in any number of steps. -/
 def NbrReach (nbrs : Array (List ℕ)) : ℕ → ℕ → Prop :=
   Relation.ReflTransGen fun a b ↦ b ∈ nbrs[a]!
 
+/-- Pushing the neighbours `L`: the new stack entries have no repeat, are unseen members of `L`,
+and end up marked; marks are kept and the size too. -/
 lemma pushNbrs_spec : ∀ (L : List ℕ) (sn : Array Bool) (st : List ℕ),
     (∀ v ∈ L, v < sn.size) →
     ∃ sn' new, L.foldl pushNbr (sn, st) = (sn', new ++ st) ∧ new.Nodup ∧ sn'.size = sn.size ∧
@@ -1734,18 +1834,25 @@ theorem mem_components_iff {n : ℕ} {nbrs : Array (List ℕ)} (hlt : ∀ i : �
 
 /-- `σ` and `ψ` are inverse renumberings of `[0, n)`. -/
 structure IdxBij (n : ℕ) (σ ψ : ℕ → ℕ) : Prop where
+  /-- `σ` maps `[0, n)` into itself. -/
   lt : ∀ i < n, σ i < n
+  /-- `ψ` maps `[0, n)` into itself. -/
   lt' : ∀ i < n, ψ i < n
+  /-- `ψ` undoes `σ` on `[0, n)`. -/
   left : ∀ i < n, ψ (σ i) = i
+  /-- `σ` undoes `ψ` on `[0, n)`. -/
   right : ∀ i < n, σ (ψ i) = i
 
+/-- The inverse renumbering. -/
 lemma IdxBij.symm {n : ℕ} {σ ψ : ℕ → ℕ} (h : IdxBij n σ ψ) : IdxBij n ψ σ :=
   ⟨h.lt', h.lt, h.right, h.left⟩
 
+/-- A renumbering is injective on `[0, n)`. -/
 lemma IdxBij.inj {n : ℕ} {σ ψ : ℕ → ℕ} (h : IdxBij n σ ψ) {i j : ℕ} (hi : i < n) (hj : j < n)
     (e : σ i = σ j) : i = j := by
   rw [← h.left i hi, ← h.left j hj, e]
 
+/-- Renumberings compose. -/
 lemma IdxBij.comp {n : ℕ} {σ ψ σ' ψ' : ℕ → ℕ} (h : IdxBij n σ ψ) (h' : IdxBij n σ' ψ') :
     IdxBij n (σ ∘ σ') (ψ' ∘ ψ) :=
   ⟨fun i hi ↦ h.lt _ (h'.lt i hi), fun i hi ↦ h'.lt' _ (h.lt' i hi),
@@ -1782,6 +1889,8 @@ lemma perm_index {α : Type} [Inhabited α] {l l' : List α} (h : l.Perm l') :
     rw [e2 i (hl ▸ hi), e1 _ (b2.lt i hi)]
     rfl
 
+/-- Two lists without repeats have as many members of the second in the first as the other way
+round. -/
 lemma length_filter_contains_comm {l1 l2 : List ℕ} (h1 : l1.Nodup) (h2 : l2.Nodup) :
     (l1.filter l2.contains).length = (l2.filter l1.contains).length := by
   apply List.Perm.length_eq
@@ -1799,6 +1908,7 @@ lemma fusedPair_comm {rb : Array (List ℕ)} {i j : ℕ} (hi : (rb[i]!).Nodup) (
   generalize decide ((rb[j]!).length ≤ 24) = b
   cases a <;> cases b <;> rfl
 
+/-- The fused-neighbour graph is symmetric. -/
 lemma fusedNbrs_symm (rb : Array (List ℕ)) :
     ∀ i j : ℕ, j ∈ (fusedNbrs rb)[i]! → i ∈ (fusedNbrs rb)[j]! := by
   intro i j h
@@ -1806,9 +1916,12 @@ lemma fusedNbrs_symm (rb : Array (List ℕ)) :
   obtain ⟨a, b, c⟩ := h
   exact ⟨b, a, c.symm⟩
 
+/-- Every fused neighbour is a ring index in range. -/
 lemma fusedNbrs_lt (rb : Array (List ℕ)) : ∀ i : ℕ, ∀ j ∈ (fusedNbrs rb)[i]!, j < rb.size :=
   fun i j h ↦ ((mem_fusedNbrs rb i j).1 h).2.1
 
+/-- When no ring repeats a bond, `j` neighbours `i` exactly when both are rings, different, and
+`fusedPair rb i j` holds. -/
 lemma mem_fusedNbrs_of_nodup {rb : Array (List ℕ)} (hnd : ∀ i < rb.size, (rb[i]!).Nodup)
     (i j : ℕ) : j ∈ (fusedNbrs rb)[i]! ↔
       i < rb.size ∧ j < rb.size ∧ i ≠ j ∧ fusedPair rb i j = true := by
@@ -1844,6 +1957,8 @@ lemma fusedNbrs_renumber {rb rb' : Array (List ℕ)} {σ ψ : ℕ → ℕ} (hs :
 def GraphIso (n : ℕ) (σ : ℕ → ℕ) (nbrs nbrs' : Array (List ℕ)) : Prop :=
   ∀ i j : ℕ, j ∈ nbrs'[i]! ↔ i < n ∧ j < n ∧ σ j ∈ nbrs[σ i]!
 
+/-- Reachability through a group in the renumbered graph gives reachability through the
+renumbered group in the original. -/
 lemma groupReach_map {n : ℕ} {σ : ℕ → ℕ} {nbrs nbrs' : Array (List ℕ)}
     (H : GraphIso n σ nbrs nbrs') {cur : List ℕ} {a v : ℕ} (h : GroupReach cur nbrs' a v) :
     GroupReach (cur.map σ) nbrs (σ a) (σ v) := by
@@ -1851,6 +1966,8 @@ lemma groupReach_map {n : ℕ} {σ : ℕ → ℕ} {nbrs nbrs' : Array (List ℕ)
   | refl => exact .refl
   | tail _ hs ih => exact ih.tail ⟨List.mem_map_of_mem hs.1, ((H _ _).1 hs.2).2.2⟩
 
+/-- What the renumbered group reaches in the original graph is the renumbering of something the
+group reaches in the renumbered graph. -/
 lemma groupReach_of_map {n : ℕ} {σ : ℕ → ℕ} {nbrs nbrs' : Array (List ℕ)}
     (H : GraphIso n σ nbrs nbrs') {cur : List ℕ} (hcur : ∀ x ∈ cur, x < n)
     {a : ℕ} (ha : a ∈ cur) {w : ℕ} (h : GroupReach (cur.map σ) nbrs (σ a) w) :
@@ -1884,6 +2001,7 @@ lemma isConnectedSet_map {n : ℕ} {σ ψ : ℕ → ℕ} {nbrs nbrs' : Array (Li
       obtain ⟨v', hv', e, h⟩ := groupReach_of_map H hcur hf (hr _ (List.mem_map_of_mem hv))
       rwa [hinj v' hv' v hv e] at h
 
+/-- Folds with steps that agree on the members of the list are equal. -/
 lemma foldl_congr_mem {α β : Type} {f g : β → α → β} :
     ∀ (l : List α) (b : β), (∀ x ∈ l, ∀ b, f b x = g b x) → l.foldl f b = l.foldl g b
   | [], _, _ => rfl
@@ -1891,6 +2009,7 @@ lemma foldl_congr_mem {α β : Type} {f g : β → α → β} :
     rw [List.foldl_cons, List.foldl_cons, h x List.mem_cons_self]
     exact foldl_congr_mem l _ fun y hy ↦ h y (List.mem_cons_of_mem _ hy)
 
+/-- `flatMap`s with maps that agree on the members of the list are equal. -/
 lemma flatMap_congr_mem {α β : Type} {f g : α → List β} :
     ∀ (l : List α), (∀ x ∈ l, f x = g x) → l.flatMap f = l.flatMap g
   | [], _ => rfl
@@ -1948,6 +2067,8 @@ lemma systemBonds_map {numAtoms n : ℕ} {σ ψ : ℕ → ℕ} {rb rb' C C' : Ar
   unfold systemBonds
   simp only [List.length_map, hall, hnew]
 
+/-- Reachability in the renumbered graph gives reachability between the renumbered vertices in the
+original. -/
 lemma nbrReach_map {n : ℕ} {σ : ℕ → ℕ} {nbrs nbrs' : Array (List ℕ)}
     (H : GraphIso n σ nbrs nbrs') {x y : ℕ} (h : NbrReach nbrs' x y) :
     NbrReach nbrs (σ x) (σ y) := by
@@ -1955,6 +2076,8 @@ lemma nbrReach_map {n : ℕ} {σ : ℕ → ℕ} {nbrs nbrs' : Array (List ℕ)}
   | refl => exact .refl
   | tail _ hs ih => exact ih.tail ((H _ _).1 hs).2.2
 
+/-- What `σ x` reaches in the original graph is `σ y` for some `y` that `x` reaches in the
+renumbered graph. -/
 lemma nbrReach_of_map {n : ℕ} {σ ψ : ℕ → ℕ} {nbrs nbrs' : Array (List ℕ)}
     (hb : IdxBij n σ ψ) (H : GraphIso n σ nbrs nbrs') (hlt : ∀ i : ℕ, ∀ j ∈ nbrs[i]!, j < n)
     {x : ℕ} (hx : x < n) {w : ℕ} (h : NbrReach nbrs (σ x) w) :
@@ -1989,6 +2112,7 @@ lemma components_map {n : ℕ} {σ ψ : ℕ → ℕ} {nbrs nbrs' : Array (List �
       obtain ⟨y, -, rfl, hr⟩ := nbrReach_of_map hb H hlt (hCl x hx) h
       exact ⟨y, (mem_components_iff hlt' hsym' hC' hx y).2 hr, rfl⟩
 
+/-- An empty system marks no bond. -/
 lemma systemBonds_nil {numAtoms : ℕ} {rb C : Array (List ℕ)} {d : Array Donor}
     {nbrs : Array (List ℕ)} : systemBonds numAtoms rb C d nbrs [] = [] := by
   unfold systemBonds
@@ -2040,6 +2164,7 @@ theorem fusedBonds_renumber {numAtoms : ℕ} {rb rb' C C' : Array (List ℕ)} {d
       rw [systemBonds_map hb H hrb hC ((components_spec hlt' hsym').2.2.1 F hF)]
       exact (systemBonds_perm hsym (hp.trans hDD) b).1 hbD
 
+/-- Indexing an array is indexing its list. -/
 lemma getElem!_eq_toList {α : Type} [Inhabited α] (X : Array α) (i : ℕ) :
     X[i]! = X.toList[i]! := by
   by_cases h : i < X.size
@@ -2047,6 +2172,7 @@ lemma getElem!_eq_toList {α : Type} [Inhabited α] (X : Array α) (i : ℕ) :
     simp
   · rw [getElem!_neg X i h, getElem!_neg X.toList i (by simpa using h)]
 
+/-- An in-range entry of `X.map f` is `f` of the entry of `X`. -/
 lemma getElem!_map_of_lt {α β : Type} [Inhabited α] [Inhabited β] (X : Array α) (f : α → β)
     {i : ℕ} (h : i < X.size) : (X.map f)[i]! = f X[i]! := by
   rw [getElem!_pos _ i (by simpa using h), getElem!_pos X i h, Array.getElem_map]

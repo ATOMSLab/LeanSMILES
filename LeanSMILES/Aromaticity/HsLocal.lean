@@ -18,6 +18,24 @@ its bonds (`Work.kindsAt`): explicit valence (`Loc.ev`), implicit hydrogens (`Lo
 perception's electron count and candidate test (`Loc.elec`, `Loc.cand`).  Each `Work` function is
 its local version at the atom (`Work.implicitHs_eq_loc` and the like), so a claim about one atom
 can be checked over finitely many records and bond lists, by `decide`.
+
+## Main definitions
+
+* `Loc.ev`, `Loc.impl`: RDKit's explicit valence and implicit hydrogen count at one atom.
+* `Loc.restore`: whether the `adjustHs` step gives back the cached hydrogen total.
+* `Loc.ndb`: kekulization's "needs a double bond" at one atom.
+* `Loc.elec`, `Loc.cand`: perception's π-electron count and candidate test at one atom.
+* `Work.kindsAt`: the kinds of the bonds at an atom, in bond order.
+
+## Main statements
+
+* `Work.implicitHs_eq_loc`, `Work.explicitValence_eq_loc`: the `Work` valence functions are their
+  local versions.
+* `Work.hsRestored_iff_loc`: `Work.HsRestored` is `Loc.restore` at the atom.
+* `Work.needsDoubleBond_eq_loc`, `Work.countAtomElec_eq_loc`,
+  `Work.isAromaticCandidate_eq_loc`: kekulization's and perception's tests, locally.
+* `Loc.impl_eq_of_ev_eq`: a neutral atom gets as many implied hydrogens read aromatic as plain,
+  within its default valence.
 -/
 
 @[expose] public section
@@ -121,6 +139,7 @@ def cand (a : WAtom) (ks : List BondKind) : Bool := Id.run do
 
 /-! ### What each local function reads -/
 
+/-- `Loc.ev` reads only the element, the charge and the written hydrogens of the record. -/
 lemma ev_congr {a b : WAtom} (hz : a.z = b.z) (hc : a.charge = b.charge)
     (he : a.explicitHs = b.explicitHs) (h : ℕ) (ar : Bool) : ev a h ar = ev b h ar := by
   cases a; cases b
@@ -128,6 +147,8 @@ lemma ev_congr {a b : WAtom} (hz : a.z = b.z) (hc : a.charge = b.charge)
   subst_vars
   rfl
 
+/-- `Loc.impl` reads only the element, the charge, the written hydrogens and the bracket flag of
+the record. -/
 lemma impl_congr {a b : WAtom} (hz : a.z = b.z) (hc : a.charge = b.charge)
     (he : a.explicitHs = b.explicitHs) (hn : a.noImplicit = b.noImplicit) (h : ℕ) (ar : Bool) :
     impl a h ar = impl b h ar := by
@@ -136,6 +157,40 @@ lemma impl_congr {a b : WAtom} (hz : a.z = b.z) (hc : a.charge = b.charge)
   subst_vars
   rfl
 
+/-- **A neutral atom that takes implied hydrogens gets as many read aromatic as read plain**,
+when its explicit valence is the same both ways and, where it is read aromatic, within its default
+valence.  RDKit fills an aromatic atom up to its default valence only and a plain one up to the
+next allowed valence; within the default valence the two are the same. -/
+lemma impl_eq_of_ev_eq {a : WAtom} (hn : a.noImplicit = false) (hc : a.charge = 0) {h h' : ℕ}
+    {ar : Bool} (he : ev a h ar = ev a h' false)
+    (hle : ar = true → ev a h' false ≤ defaultValence a.z) :
+    impl a h ar = impl a h' false := by
+  have heff : Work.effectiveZ a = a.z := by simp [Work.effectiveZ, hc]
+  have hhv : Work.canBeHypervalent a a.z = false := by
+    simp only [Work.canBeHypervalent, Bool.or_eq_false_iff, Bool.and_eq_false_iff,
+      decide_eq_false_iff_not, Bool.or_eq_false_iff, beq_eq_false_iff_ne]
+    omega
+  unfold impl
+  simp only [Id.run, hn, heff, hhv, he, Bool.false_eq_true, if_false]
+  cases ar
+  · rfl
+  · have hle' := hle rfl
+    unfold defaultValence at hle'
+    cases hv : (valences a.z).head? with
+    | none => rfl
+    | some dv =>
+      rw [hv] at hle'
+      simp only [Option.getD_some] at hle'
+      obtain ⟨tl, htl⟩ : ∃ tl, valences a.z = dv :: tl := by
+        cases hl : valences a.z with
+        | nil => simp [hl] at hv
+        | cons x tl =>
+          rw [hl, List.head?_cons, Option.some.injEq] at hv
+          exact ⟨tl, by rw [hv]⟩
+      simp [htl, hle']
+
+/-- `Loc.restore` reads only the element, the charge, the written hydrogens, the bracket flag, the
+cached implicit count and the `adjustHs` flag of the record. -/
 lemma restore_congr {a b : WAtom} (hz : a.z = b.z) (hc : a.charge = b.charge)
     (he : a.explicitHs = b.explicitHs) (hn : a.noImplicit = b.noImplicit)
     (hi : a.cachedImplicit = b.cachedImplicit) (hadj : a.adjustHs = b.adjustHs)
@@ -149,6 +204,8 @@ lemma restore_congr {a b : WAtom} (hz : a.z = b.z) (hc : a.charge = b.charge)
   rw [key]
   simp only [he, hi, hadj]
 
+/-- `Loc.ndb` reads only the element, the charge, the written hydrogens, the bracket flag, the
+cached implicit count and the radicals of the record. -/
 lemma ndb_congr {a b : WAtom} (hz : a.z = b.z) (hc : a.charge = b.charge)
     (he : a.explicitHs = b.explicitHs) (hn : a.noImplicit = b.noImplicit)
     (hi : a.cachedImplicit = b.cachedImplicit) (hr : a.radicals = b.radicals)
@@ -158,6 +215,7 @@ lemma ndb_congr {a b : WAtom} (hz : a.z = b.z) (hc : a.charge = b.charge)
   subst_vars
   rfl
 
+/-- `Loc.cv` reads only the written hydrogens and the cached valence of the record. -/
 lemma cv_congr {a b : WAtom} (he : a.explicitHs = b.explicitHs)
     (hv : a.cachedValence = b.cachedValence) (ks : List BondKind) : cv a ks = cv b ks := by
   cases a; cases b
@@ -165,6 +223,8 @@ lemma cv_congr {a b : WAtom} (he : a.explicitHs = b.explicitHs)
   subst_vars
   rfl
 
+/-- `Loc.elec` reads only the element, the charge, the hydrogens (written and cached implicit), the
+radicals and the cached valence of the record. -/
 lemma elec_congr {a b : WAtom} (hz : a.z = b.z) (hc : a.charge = b.charge)
     (he : a.explicitHs = b.explicitHs) (hi : a.cachedImplicit = b.cachedImplicit)
     (hr : a.radicals = b.radicals) (hv : a.cachedValence = b.cachedValence)
@@ -174,6 +234,8 @@ lemma elec_congr {a b : WAtom} (hz : a.z = b.z) (hc : a.charge = b.charge)
   subst_vars
   rfl
 
+/-- `Loc.cand` reads only the element, the charge, the hydrogens (written and cached implicit), the
+radicals and the cached valence of the record. -/
 lemma cand_congr {a b : WAtom} (hz : a.z = b.z) (hc : a.charge = b.charge)
     (he : a.explicitHs = b.explicitHs) (hi : a.cachedImplicit = b.cachedImplicit)
     (hr : a.radicals = b.radicals) (hv : a.cachedValence = b.cachedValence)
@@ -191,23 +253,30 @@ namespace Work
 def kindsAt (w : Work) (i : ℕ) : List BondKind :=
   (w.bondsOf i).map fun k ↦ (w.bonds[k]! : WBond).kind
 
+/-- An atom's bond half-order sum is `Loc.bhs` of the kinds of its bonds. -/
 lemma bondHalfSum_eq_loc (w : Work) (i : ℕ) : w.bondHalfSum i = Loc.bhs (w.kindsAt i) := by
   simp only [bondHalfSum, Loc.bhs, kindsAt, List.map_map, Function.comp_def]
 
+/-- An atom is aromatic for RDKit when its flag is set or one of its bonds is of kind
+`aromatic`. -/
 lemma isAromaticAtom_eq_loc (w : Work) (i : ℕ) :
     w.isAromaticAtom i =
       ((w.atoms[i]! : WAtom).aromatic || (w.kindsAt i).any (· == .aromatic)) := by
   simp only [isAromaticAtom, kindsAt, List.any_map, Function.comp_def]
 
+/-- An atom's degree is the number of its bond kinds. -/
 lemma degree_eq_loc (w : Work) (i : ℕ) : w.degree i = (w.kindsAt i).length := by
   simp [degree, kindsAt]
 
+/-- `Work.explicitValence` is `Loc.ev` at the atom's record. -/
 lemma explicitValence_eq_loc (w : Work) (i : ℕ) :
     w.explicitValence i = Loc.ev w.atoms[i]! (w.bondHalfSum i) (w.isAromaticAtom i) := rfl
 
+/-- `Work.implicitHs` is `Loc.impl` at the atom's record. -/
 lemma implicitHs_eq_loc (w : Work) (i : ℕ) :
     w.implicitHs i = Loc.impl w.atoms[i]! (w.bondHalfSum i) (w.isAromaticAtom i) := rfl
 
+/-- `Work.cachedValence` is `Loc.cv` at the atom's record and bond kinds. -/
 lemma cachedValence_eq_loc (w : Work) (i : ℕ) :
     w.cachedValence i = Loc.cv w.atoms[i]! (w.kindsAt i) := by
   simp only [cachedValence, Loc.cv, kekuleValence, bondHalfSum_eq_loc]
@@ -240,17 +309,21 @@ lemma hsRestored_iff_loc (w : Work) {i : ℕ} (hi : i < w.atoms.size) :
     simp only [hc, Bool.false_or, Bool.false_and, implicitHs_eq_loc, bondHalfSum_eq_loc]
     simp [hc.2]
 
+/-- `Work.needsDoubleBond`, with the aromatic bonds being those written aromatic, is `Loc.ndb` at
+the atom's record and bond kinds. -/
 lemma needsDoubleBond_eq_loc (w : Work) (ev0 i : ℕ) :
     w.needsDoubleBond (fun k ↦ (w.bonds[k]! : WBond).kind == .aromatic) ev0 i =
       Loc.ndb w.atoms[i]! (w.kindsAt i) ev0 := by
   unfold needsDoubleBond Loc.ndb kindsAt
   simp only [Id.run, List.forIn_map, degree, List.length_map]
 
+/-- `Work.countAtomElec` is `Loc.elec` at the atom's record and bond kinds. -/
 lemma countAtomElec_eq_loc (w : Work) (i : ℕ) :
     w.countAtomElec i = Loc.elec w.atoms[i]! (w.kindsAt i) := by
   unfold countAtomElec Loc.elec
   simp only [degree_eq_loc, cachedTotalHs, cachedValence_eq_loc]
 
+/-- For a donor type other than `none`, `Work.isAromaticCandidate` is `Loc.cand` at the atom. -/
 lemma isAromaticCandidate_eq_loc (w : Work) (i : ℕ) {d : Donor} (hd : d ≠ .none) :
     w.isAromaticCandidate i d = Loc.cand w.atoms[i]! (w.kindsAt i) := by
   have hd' : (d == Donor.none) = false := by cases d <;> first | rfl | exact absurd rfl hd

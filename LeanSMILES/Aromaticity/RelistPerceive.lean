@@ -18,6 +18,21 @@ most three bonds has at most one; with more it gets no donor type at all. So the
 (`Work.Relisted.donorData`), Hückel's rule picks the same groups, the bonds marked aromatic are the
 same bonds renumbered (`Work.Relisted.mem_aromaticBondList`), and perception keeps the relisting
 (`Work.Relisted.setAromaticity`).
+
+## Main definitions
+
+* `Work.Relisted.rbs`: the ring bonds of a list of rings, without repeats.
+* `Work.RbMap N π rb rb'`: `rb'` is the list of ring bonds `rb` with every bond renumbered by `π`.
+
+## Main statements
+
+* `Work.Relisted.donorType`: over the same rings, a relisted copy gives a ring atom the same
+  donor type.
+* `Work.Relisted.donorData`: the first pass agrees on a relisted copy.
+* `Work.RbMap.fusedBonds`: the bonds the second pass marks are the same bonds, renumbered.
+* `Work.Relisted.mem_aromaticBondList`: the bonds perception marks on a relisted copy are the same
+  bonds, renumbered.
+* `Work.Relisted.setAromaticity`: perception keeps the relisting.
 -/
 
 @[expose] public section
@@ -49,12 +64,14 @@ namespace Relisted
 
 variable {w w' : Work} {π ρ : ℕ → ℕ}
 
+/-- The bonds of a ring of `w` in a relisted copy are its bonds in `w`, renumbered by `π`. -/
 lemma ringBonds (h : Relisted w w' π ρ) (hwf : w.WF) (hnd : w.NbrsDistinct)
     (hnd' : w'.NbrsDistinct) {r : List ℕ} (hr : w.IsRing r) :
     w'.ringBonds r = (w.ringBonds r).map π := by
   have := (h.workIso hwf hnd hnd').ringBonds hwf hr
   rwa [List.map_id] at this
 
+/-- A ring bond is a bond of the working copy. -/
 lemma lt_of_mem_ringBonds' {x : Work} {r : List ℕ} {k : ℕ} (hk : k ∈ x.ringBonds r) :
     k < x.bonds.size := lt_of_mem_ringBonds hk
 
@@ -73,6 +90,7 @@ lemma mem_ringBondSet (h : Relisted w w' π ρ) (hwf : w.WF) (hnd : w.NbrsDistin
   · rintro ⟨r, hr, hk'⟩
     exact ⟨r, hr, by rw [h.ringBonds hwf hnd hnd' (hL r hr)]; exact List.mem_map_of_mem hk'⟩
 
+/-- A relisting keeps `hasMultipleBond`. -/
 lemma hasMultipleBond (h : Relisted w w' π ρ) (i : ℕ) :
     w'.hasMultipleBond i = w.hasMultipleBond i := by
   have e : ∀ x : Work, x.hasMultipleBond i = (x.kindsAt i).any isMultiple := fun x ↦ by
@@ -80,7 +98,7 @@ lemma hasMultipleBond (h : Relisted w w' π ρ) (i : ℕ) :
   rw [e, e, (h.kindsAt_perm i).any_eq']
 
 /-- **An atom of a ring with at most three bonds has at most one bond off the rings.** -/
-lemma off_ring_unique {x : Work} (hwf : x.WF) {B : List ℕ} {r : List ℕ} (hr : x.IsRing r)
+lemma off_ring_unique {x : Work} {B : List ℕ} {r : List ℕ} (hr : x.IsRing r)
     (hrB : ∀ k ∈ x.ringBonds r, k ∈ B) {i : ℕ} (hi : i ∈ r) (hdeg : (x.bondsOf i).length ≤ 3)
     (p : ℕ → Bool) (hp : ∀ k, p k = true → k ∉ B) :
     ∀ a ∈ x.neighbors i, ∀ b ∈ x.neighbors i, p a.1 = true → p b.1 = true → a = b := by
@@ -149,7 +167,7 @@ lemma donorType (h : Relisted w w' π ρ) (hwf : w.WF) (hnd : w.NbrsDistinct)
       !(rbs w L).contains e.1 && isMultiple (w.bonds[e.1]! : WBond).kind
     set p' : ℕ × ℕ → Bool := fun e ↦
       !(rbs w' L).contains e.1 && isMultiple (w'.bonds[e.1]! : WBond).kind
-    have hu := off_ring_unique hwf (B := rbs w L) (hL r hr)
+    have hu := off_ring_unique (B := rbs w L) (hL r hr)
       (fun k hk ↦ List.mem_eraseDups.2 (List.mem_flatMap.2 ⟨r, hr, hk⟩)) hi hdeg
       (fun k ↦ !(rbs w L).contains k && isMultiple (w.bonds[k]! : WBond).kind)
       (fun k hk hm ↦ by
@@ -174,12 +192,13 @@ lemma donorType (h : Relisted w w' π ρ) (hwf : w.WF) (hnd : w.NbrsDistinct)
       rw [List.find?_map]
       congr 1
       exact find?_congr_mem fun x hx ↦ by simp only [Function.comp_apply, hg x hx]
-    show ((w'.neighbors i).find? p').map (·.2) = ((w.neighbors i).find? p).map (·.2)
+    change ((w'.neighbors i).find? p').map (·.2) = ((w.neighbors i).find? p).map (·.2)
     rw [e1, e2, Option.map_map]
     rfl
   unfold Work.donorType
   simp only [Id.run, hex, h.countAtomElec, h.atom, hany, h.cachedValence, h.degree]
 
+/-- Over the same rings, a relisted copy gives an atom of them the same `ringDonor`. -/
 lemma ringDonor (h : Relisted w w' π ρ) (hwf : w.WF) (hnd : w.NbrsDistinct)
     (hnd' : w'.NbrsDistinct) {L : List (List ℕ)} (hL : ∀ r ∈ L, w.IsRing r) {r : List ℕ}
     (hr : r ∈ L) {i : ℕ} (hi : i ∈ r) (len : ℕ) :
@@ -187,6 +206,7 @@ lemma ringDonor (h : Relisted w w' π ρ) (hwf : w.WF) (hnd : w.NbrsDistinct)
   simp only [Work.ringDonor, h.donorType hwf hnd hnd' hL hr hi, h.atom, h.degree,
     h.hasMultipleBond]
 
+/-- Over the same rings, a relisted copy gives every atom the same `firstDonor`. -/
 lemma firstDonor (h : Relisted w w' π ρ) (hwf : w.WF) (hnd : w.NbrsDistinct)
     (hnd' : w'.NbrsDistinct) {L : List (List ℕ)} (hL : ∀ r ∈ L, w.IsRing r) (i : ℕ) :
     Work.firstDonor w' (rbs w' L) L i = Work.firstDonor w (rbs w L) L i := by
@@ -200,6 +220,7 @@ lemma firstDonor (h : Relisted w w' π ρ) (hwf : w.WF) (hnd : w.NbrsDistinct)
       exact List.contains_iff_mem.1 h1
     exact h.ringDonor hwf hnd hnd' hL hr hi _
 
+/-- Over the same rings, a relisted copy gives every atom the same `firstCand`. -/
 lemma firstCand (h : Relisted w w' π ρ) (hwf : w.WF) (hnd : w.NbrsDistinct)
     (hnd' : w'.NbrsDistinct) {L : List (List ℕ)} (hL : ∀ r ∈ L, w.IsRing r) (i : ℕ) :
     Work.firstCand w' (rbs w' L) L i = Work.firstCand w (rbs w L) L i := by
@@ -234,6 +255,8 @@ theorem donorData (h : Relisted w w' π ρ) (hwf : w.WF) (hnd : w.NbrsDistinct)
 
 /-! ### The second pass -/
 
+/-- Mapping by `f`, injective below `N`, keeps the count of an element below `N` in a list of
+elements below `N`. -/
 lemma count_map_inj {f : ℕ → ℕ} {l : List ℕ} {N : ℕ} (hl : ∀ x ∈ l, x < N)
     (hf : ∀ a < N, ∀ b < N, f a = f b → a = b) {x : ℕ} (hx : x < N) :
     (l.map f).count (f x) = l.count x := by
@@ -249,6 +272,7 @@ lemma count_map_inj {f : ℕ → ℕ} {l : List ℕ} {N : ℕ} (hl : ∀ x ∈ l
     · have : f a ≠ f x := fun h' ↦ e (hf a ha x hx h')
       simp [e, this]
 
+/-- Mapping both lists by `f`, injective below `N`, keeps how many elements of `l₁` are in `l₂`. -/
 lemma length_filter_contains_map {f : ℕ → ℕ} {l₁ l₂ : List ℕ} {N : ℕ}
     (h₁ : ∀ x ∈ l₁, x < N) (h₂ : ∀ x ∈ l₂, x < N) (hf : ∀ a < N, ∀ b < N, f a = f b → a = b) :
     ((l₁.map f).filter (l₂.map f).contains).length = (l₁.filter l₂.contains).length := by
@@ -256,7 +280,7 @@ lemma length_filter_contains_map {f : ℕ → ℕ} {l₁ l₂ : List ℕ} {N : �
   congr 1
   apply List.filter_congr
   intro x hx
-  show (l₂.map f).contains (f x) = l₂.contains x
+  change (l₂.map f).contains (f x) = l₂.contains x
   rw [Bool.eq_iff_iff, List.contains_iff_mem, List.contains_iff_mem, List.mem_map]
   exact ⟨fun ⟨y, hy, e⟩ ↦ hf y (h₂ y hy) x (h₁ x hx) e ▸ hy, fun hx' ↦ ⟨x, hx', rfl⟩⟩
 
@@ -269,11 +293,16 @@ variable {N : ℕ} {π : ℕ → ℕ} {rb rb' : Array (List ℕ)}
 
 /-- `rb'` is `rb` with every bond renumbered by `π`, injective below `N`. -/
 structure RbMap (N : ℕ) (π : ℕ → ℕ) (rb rb' : Array (List ℕ)) : Prop where
+  /-- As many rings. -/
   size : rb'.size = rb.size
+  /-- Ring `j` of `rb'` is ring `j` of `rb` renumbered. -/
   get : ∀ j : ℕ, rb'[j]! = (rb[j]! : List ℕ).map π
+  /-- Every bond of `rb` is below `N`. -/
   lt : ∀ j : ℕ, ∀ x ∈ (rb[j]! : List ℕ), x < N
+  /-- `π` is injective below `N`. -/
   inj : ∀ a < N, ∀ b < N, π a = π b → a = b
 
+/-- Renumbering the ring bonds keeps `fusedNbrs`. -/
 lemma RbMap.fusedNbrs (h : RbMap N π rb rb') : Work.fusedNbrs rb' = Work.fusedNbrs rb := by
   have hp : ∀ i j, fusedPair rb' i j = fusedPair rb i j := fun i j ↦ by
     unfold fusedPair
@@ -284,16 +313,19 @@ lemma RbMap.fusedNbrs (h : RbMap N π rb rb') : Work.fusedNbrs rb' = Work.fusedN
   funext nbrs q
   simp only [fusedStep, hp]
 
+/-- The bonds of a group of rings of `rb'`, in order, are those of `rb` renumbered. -/
 lemma RbMap.flat (h : RbMap N π rb rb') (cur : List ℕ) :
     cur.flatMap (rb'[·]!) = (cur.flatMap (rb[·]!)).map π := by
   rw [List.map_flatMap]
   exact flatMap_congr_mem cur fun j _ ↦ h.get j
 
+/-- The bonds of a group of rings of `rb` are below `N`. -/
 lemma RbMap.flat_lt (h : RbMap N π rb rb') (cur : List ℕ) :
     ∀ x ∈ cur.flatMap (rb[·]!), x < N := fun x hx ↦ by
   obtain ⟨j, -, hx⟩ := List.mem_flatMap.1 hx
   exact h.lt j x hx
 
+/-- A bond `groupBonds` returns is a bond of one of the group's rings. -/
 lemma mem_groupBonds_sub {numAtoms : ℕ} {rb C : Array (List ℕ)} {d : Array Donor}
     {nbrs : Array (List ℕ)} {cur : List ℕ} {b : ℕ}
     (hb : b ∈ Work.groupBonds numAtoms rb C d nbrs cur) : b ∈ cur.flatMap (rb[·]!) := by
@@ -327,6 +359,7 @@ lemma RbMap.groupBonds (h : RbMap N π rb rb') {numAtoms : ℕ} {C : Array (List
       exact ⟨List.mem_map_of_mem hbm, by rw [Relisted.count_map_inj hl h.inj (hl b hbm)]; exact hc⟩
   · simp
 
+/-- Renumbering a list of bonds below `N` keeps the number of distinct bonds. -/
 lemma eraseDups_map_length (h : RbMap N π rb rb') (l : List ℕ) (hl : ∀ x ∈ l, x < N) :
     (l.map π).eraseDups.length = l.eraseDups.length := by
   have hp : (l.map π).eraseDups.Perm (l.eraseDups.map π) :=
@@ -462,6 +495,8 @@ theorem mem_aromaticBondList (h : Relisted w w' π ρ) (hwf : w.WF) (hnd : w.Nbr
   rw [hd, hc, hN]
   exact hm.fusedBonds b'
 
+/-- Bond `k` after `markAromatic c`: made aromatic if it is `c` and single or double, else
+unchanged. -/
 lemma markAromatic_bond (x : Work) (c k : ℕ) (hk : k < x.bonds.size) :
     ((x.markAromatic c).bonds[k]! : WBond) =
       if k = c ∧ isSD (x.bonds[c]! : WBond).kind = true then
@@ -470,10 +505,13 @@ lemma markAromatic_bond (x : Work) (c k : ℕ) (hk : k < x.bonds.size) :
     ← getElem!_pos x.bonds k hk]
   split <;> rfl
 
+/-- `markAromatic` keeps the numbers of bonds and atoms. -/
 lemma markAromatic_sizes (x : Work) (c : ℕ) :
-    (x.markAromatic c).bonds.size = x.bonds.size ∧ (x.markAromatic c).atoms.size = x.atoms.size := by
+    (x.markAromatic c).bonds.size = x.bonds.size ∧
+      (x.markAromatic c).atoms.size = x.atoms.size := by
   unfold Work.markAromatic; dsimp only; split <;> simp [modifyAtom, setKind]
 
+/-- Marking bond `b` of `w` and bond `π b` of the relisted copy keeps the relisting. -/
 lemma markAromatic (h : Relisted w w' π ρ) {b : ℕ} (hb : b < w.bonds.size) :
     Relisted (w.markAromatic b) (w'.markAromatic (π b)) π ρ := by
   have hk := h.kind b hb
@@ -491,7 +529,10 @@ lemma markAromatic (h : Relisted w w' π ρ) {b : ℕ} (hb : b < w.bonds.size) :
       getElem?_markAromatic_atoms', hk, h.atoms]
     have e : ((w'.bonds[π b]! : WBond).src = j ∨ (w'.bonds[π b]! : WBond).dst = j) ↔
         ((w.bonds[b]! : WBond).src = j ∨ (w.bonds[b]! : WBond).dst = j) := by
-      rcases h.ends b hb with ⟨e1, e2⟩ | ⟨e1, e2⟩ <;> rw [e1, e2] <;> tauto
+      rcases h.ends b hb with ⟨e1, e2⟩ | ⟨e1, e2⟩
+      · rw [e1, e2]
+      · rw [e1, e2]
+        tauto
     by_cases hc : isSD (w.bonds[b]! : WBond).kind = true ∧
         ((w.bonds[b]! : WBond).src = j ∨ (w.bonds[b]! : WBond).dst = j)
     · rw [if_pos hc, if_pos ⟨hc.1, e.2 hc.2⟩]
@@ -520,6 +561,8 @@ lemma markAromatic (h : Relisted w w' π ρ) {b : ℕ} (hb : b < w.bonds.size) :
     · rw [if_neg (fun h' ↦ e ((heq k hk').1 h'.1)), if_neg (fun h' ↦ e h'.1)]
       exact this
 
+/-- Marking the bonds `L` of `w` and the bonds `L.map π` of the relisted copy keeps the
+relisting. -/
 lemma foldl_markAromatic (L : List ℕ) : ∀ {w w' : Work}, Relisted w w' π ρ →
     (∀ b ∈ L, b < w.bonds.size) →
     Relisted (L.foldl Work.markAromatic w) ((L.map π).foldl Work.markAromatic w') π ρ := by
@@ -544,9 +587,11 @@ end Relisted
 
 /-! ### Facts read off the bond list -/
 
+/-- Two working copies with the same bonds have the same `bondsOf`. -/
 lemma bondsOf_of_bonds {x y : Work} (h : y.bonds = x.bonds) : y.bondsOf = x.bondsOf := by
   funext i; simp only [bondsOf, numBonds, h]
 
+/-- `NbrsDistinct` depends only on the bonds. -/
 lemma nbrsDistinct_of_bonds {x y : Work} (h : y.bonds = x.bonds) (hx : x.NbrsDistinct) :
     y.NbrsDistinct := by
   intro c k₁ k₂ h₁ h₂ e
@@ -554,6 +599,7 @@ lemma nbrsDistinct_of_bonds {x y : Work} (h : y.bonds = x.bonds) (hx : x.NbrsDis
   rw [h] at e
   exact hx c k₁ k₂ h₁ h₂ e
 
+/-- Being a ring depends only on the bonds. -/
 lemma isRing_of_bonds {x y : Work} (h : y.bonds = x.bonds) {c : List ℕ} (hc : x.IsRing c) :
     y.IsRing c := by
   have hn : y.neighbors = x.neighbors := by

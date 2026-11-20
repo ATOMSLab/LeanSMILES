@@ -19,6 +19,18 @@ whose hydrogens RDKit counts on the Kekulé bonds (`Work.branchRec`); the count 
 hydrogen exactly when the Kekulé bond-order sum is the rounded valence less that hydrogen.  Where
 the two differ the count is wrong: the nitrogen of `c1cc[nH](C)c1`, rounded to five, gets three
 single bonds and no hydrogen.
+
+## Main definitions
+
+* `Loc.kekBaseL`: twice the bond-order sum with the aromatic bonds made single.
+* `Loc.branchTotCheck`: the check at an `[nH]`/`[pH]` with given bond kinds.
+
+## Main statements
+
+* `Loc.branchTot_ok`: the check holds for N and P and every list of at most three bond kinds.
+* `Loc.branchTot`: an `[nH]`/`[pH]` whose rounded valence is the one kekulization gives it keeps
+  its hydrogen.
+* `Work.kekBase_eq_loc`: `Work.kekBase` is `Loc.kekBaseL` of the atom's bond kinds.
 -/
 
 @[expose] public section
@@ -43,6 +55,7 @@ def branchTotCheck (z : ℕ) (pk : List BondKind) : Bool :=
     impl { z := z, aromatic := false, charge := 0, explicitHs := 0, noImplicit := false } h
       false == 1
 
+/-- `branchTotCheck` holds for N and P and every list of at most three bond kinds. -/
 theorem branchTot_ok :
     (([7, 15] : List ℕ).all fun z ↦ (lists 3).all (branchTotCheck z)) = true := by
   decide +kernel

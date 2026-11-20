@@ -15,6 +15,16 @@ public import LeanSMILES.Aromaticity.HsLocal
 nothing else, except at an aromatic neutral nitrogen or phosphorus with one written hydrogen
 (`[nH]`, `[pH]`), which it rewrites into a bare atom whose cached valence is its Kekulé bond-order
 sum and whose cached implicit hydrogens are counted on the Kekulé bonds (`Work.branchRec`).
+
+## Main definitions
+
+* `Work.branchRec`: the record `clearAromatic` gives an aromatic `[nH]` or `[pH]`.
+* `Work.IsBranch`: the atoms `clearAromatic` rewrites that way.
+
+## Main statements
+
+* `Work.kekulize_atom`: kekulization clears an atom's aromatic flag, or rewrites an aromatic
+  `[nH]`/`[pH]` into `branchRec`.
 -/
 
 @[expose] public section
@@ -42,6 +52,7 @@ def ClearOk (a0 : WAtom) (bs : Array WBond) (w : Work) (i : ℕ) : Prop :=
       branchRec a0 (({ atoms := #[], bonds := bs } : Work).bondHalfSum i)
         ((({ atoms := #[], bonds := bs } : Work).kindsAt i).any (· == .aromatic))))
 
+/-- One successful `clearAromatic` step keeps `ClearOk a0 bs` at atom `i`. -/
 lemma clearAromatic_clearOk {ra : List ℕ} {a0 : WAtom} {bs : Array WBond} {w w' : Work} {j : ℕ}
     (hw : clearAromatic ra w j = .ok w') (i : ℕ) (h : ClearOk a0 bs w i) : ClearOk a0 bs w' i := by
   obtain ⟨hb, ha⟩ := h
@@ -106,6 +117,7 @@ lemma clearAromatic_clearOk {ra : List ℕ} {a0 : WAtom} {bs : Array WBond} {w w
     · rw [modifyAtom_atom_of_ne _ hji]
       exact ha
 
+/-- A successful run of `clearAromatic` over the atoms `l` keeps `ClearOk a0 bs` at atom `i`. -/
 lemma foldlM_clearAromatic_clearOk {ra : List ℕ} {a0 : WAtom} {bs : Array WBond} (i : ℕ) :
     ∀ (l : List ℕ) (w w' : Work), l.foldlM (clearAromatic ra) w = .ok w' →
       ClearOk a0 bs w i → ClearOk a0 bs w' i

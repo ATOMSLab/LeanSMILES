@@ -15,12 +15,23 @@ public import LeanSMILES.Aromaticity.KekuleSim
 **At an atom with two bonds, perception marks both or neither** (`Work.mem_aromaticBondList_deg2`):
 every ring through the atom takes both of its bonds, so in every group of rings perception tries,
 the two bonds occur equally often, and `groupBonds` keeps a bond exactly when it occurs once.
+
+## Main statements
+
+* `Work.mem_aromaticBondList_deg2`: of the two bonds at an atom with two bonds, perception marks
+  both or neither.
+* `Work.IsRing.count_deg2`: a ring through an atom with two bonds lists each of them once, and a
+  ring not through it lists neither.
+* `Work.groupBonds_closed`, `Work.systemBonds_closed`: bonds that occur equally often in every
+  ring are kept together by `groupBonds`, and so by `systemBonds`.
 -/
 
 @[expose] public section
 
 namespace LeanSMILES.Aromaticity.Work
 
+/-- `filterMap f` of a list without duplicates has none, if no two entries of the list are sent
+to the same value. -/
 lemma nodup_filterMap_of {α β : Type*} {f : α → Option β} :
     ∀ {l : List α}, l.Nodup → (∀ a ∈ l, ∀ a' ∈ l, ∀ b, b ∈ f a → b ∈ f a' → a = a') →
       (l.filterMap f).Nodup

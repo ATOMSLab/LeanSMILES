@@ -29,6 +29,22 @@ accepts or rejects an arbitrary matrix, and `graphOfMatrix` reads a simple
 graph off the nonzero entries.  That a `Molecule`'s own matrix is a bond
 matrix, and that a bond matrix decodes back into a molecule, is
 `LeanSMILES.Chem.Graph`, which imports this file.
+
+## Main definitions
+
+* `IsBondMatrix`: symmetric, zero on the diagonal, every nonzero entry a bond order.
+* `BondMatrix n`, `FlatMatrix n`: the weighted and the 0/1 adjacency matrices, as subtypes.
+* `graphOfMatrix`: the simple graph of a matrix's nonzero entries.
+* `BondMatrix.check`, `BondMatrix.ofMatrix?`: the executable test, and decoding an arbitrary
+  matrix.
+* `BondMatrix.relabel`: relabeling the atoms of a bond matrix.
+* `BondMatrix.flatten`: forgetting the bond orders.
+
+## Main statements
+
+* `BondMatrix.check_iff`: `check` decides `IsBondMatrix`.
+* `BondMatrix.ofMatrix?_eq_some_iff`: decoding succeeds exactly on bond matrices.
+* `BondMatrix.graph_flatten`: flattening keeps the graph.
 -/
 
 @[expose] public section

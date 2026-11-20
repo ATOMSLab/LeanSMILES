@@ -32,6 +32,19 @@ molecule (README, "Findings about external tools").
 
 The proofs are kernel computations (`decide +kernel`): no compiled code is
 trusted.
+
+## Main definitions
+
+* `Molecule.radius3Example`: `C1=C(CO)C=C1CC` as the parser reads it.
+
+## Main statements
+
+* `Molecule.parse_radius3Example`: the parser reads `radius3Example` from the string.
+* `Molecule.morganBits_relabel_swap_ne`: swapping the two ring CH carbons changes the radius-3
+  fingerprint.
+* `Molecule.morganBits_relabel_swap_two`: the same swap leaves the radius-2 fingerprint alone.
+* `Molecule.not_forall_morganBits_relabel_three`: the radius bound of `morganBits_relabel` is
+  sharp.
 -/
 
 @[expose] public section

@@ -345,7 +345,7 @@ one RDKit accepts. The code is ported from the `canonical-smiles` branch's
 array-based sanitization (commit `5b5fe9e`) and still runs on an index-based
 working copy inside; its interface is `Molecule n → Except String (Molecule n)`.
 
-**Invariance: partly proved.** `LeanSMILES/Aromaticity/Invariance.lean`
+**Invariance: proved.** `LeanSMILES/Aromaticity/Invariance.lean`
 states what `aromatize` does not depend on: the numbering of the atoms
 (`aromatize_relabel`), the listing of the bonds (`aromatize_of_sameBonds`) and
 which Kekulé structure was written (`aromatize_of_kekuleVariant_of_chargesKept`,
@@ -357,18 +357,23 @@ one canonical SMILES (`canonicalSmiles_aromatize_eq`), and that a lowercase
 string and a Kekulé string of the same molecule do too, `c1cc[nH]c1` and
 `C1=CNC=C1` (`aromatize_of_isKekuleSpellingOf`).
 
-Proved so far: what `aromatize` keeps (the bond list's order, ends and marks,
-the configurations, the bond kinds of a Kekulé input that do not come out
-aromatic), that a Kekulé structure always aromatizes, and that **two Kekulé
-structures of one aromatic system aromatize to the same molecule**
-(`aromatize_of_kekuleVariant_of_chargesKept`), and that **every output is the
+Every statement in the file is proved, with only the standard axioms: what
+`aromatize` keeps (the bond list's order, ends and marks, the configurations,
+the bond kinds of a Kekulé input that do not come out aromatic), that a Kekulé
+structure always aromatizes, that **two Kekulé structures of one aromatic
+system aromatize to the same molecule**
+(`aromatize_of_kekuleVariant_of_chargesKept`), that **every output is the
 image of a Kekulé structure of itself** (`exists_kekule_aromatize`: the Kekulé
 structure the pipeline computes aromatizes back to the output, with the
 per-atom hydrogen and donor arithmetic decided by `decide +kernel` over every
-organic-subset element and bond pattern). Every corollary is proved from the
-statements it names. Still `sorry`: invariance under renumbering and relisting
-(they need ring perception's output to be canonical up to order), idempotence,
-and the lowercase/Kekulé spelling statement. The Kekulé statement without `ChargesKept` is false,
+organic-subset element and bond pattern), invariance under renumbering and
+relisting (ring perception's output is canonical up to order), the
+lowercase/Kekulé spelling statement, and idempotence. The last two hold where
+RDKit's rounded valence of each aromatic atom is the one kekulization gives it
+(`Molecule.RoundsToKekule`, true of all 5 009 tested inputs that keep their
+charges and aromatic bonds); idempotence with
+hypotheses on the output only is tested and not proved (docstring of
+`aromatize_aromatize`). The Kekulé statement without `ChargesKept` is false,
 so it is not stated: `O=P1[SiH]=CC=CC=1` aromatizes to `[O-][p+]1[siH]cccc1`, its other
 Kekulé structure `O=P1=[SiH]C=CC=C1` to itself (RDKit agrees), because
 `cleanUp`'s phosphorus rule looks at which ring neighbour carries the double

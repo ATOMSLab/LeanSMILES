@@ -22,6 +22,29 @@ the order in which a SMILES string happened to list neighbors or orient bonds:
   places up to the Klein four-group (section *Double bonds* below);
 * `Stereo n` — either, the stereochemistry one atom carries.
 
+## Main definitions
+
+* `Ligands n`: the four ligands of a centre, listed in some order.
+* `Tetra n`: a tetrahedral configuration, ligand listings up to even permutation.
+* `Tetra.ofMark`, `Tetra.isAnticlockwise`: the configuration a mark writes, and the mark a
+  configuration gets in a given listing.
+* `Planar n`: a double bond's cis/trans arrangement, listings up to the Klein four-group.
+* `Planar.ofCis`, `Planar.cis`: the arrangement putting two substituents cis or trans, and
+  whether an arrangement puts them cis.
+* `Stereo n`: a tetrahedral centre or a double-bond end.
+* `Tetra.map`, `Planar.map`, `Stereo.map`: relabeling the ligand atoms.
+
+## Main statements
+
+* `Tetra.isAnticlockwise_comp`: a reordering keeps the mark exactly when it is even.
+* `Tetra.ofMark_isAnticlockwise`: writing then reading a mark gives the configuration back.
+* `Tetra.mirror_ne`, `Tetra.eq_or_eq_mirror`: a centre with distinct ligands has exactly two
+  configurations.
+* `Tetra.isAnticlockwise_map`: the mark is label-independent.
+* `Planar.cis_ofCis`, `Planar.cis_flip`: reading back what was written, and the other arrangement
+  exchanges cis and trans.
+* `Planar.cis_map`: cis is label-independent.
+
 ## Tetrahedral centres
 
 SMILES writes `@` when, looking from the first listed ligand, the other three
@@ -559,7 +582,9 @@ end Planar
 /-- What an atom's stereochemistry is: a tetrahedral centre, or an end of a
 double bond with a cis/trans arrangement (both ends carry the same one). -/
 inductive Stereo (n : ℕ) where
+  /-- A tetrahedral centre with configuration `t`. -/
   | tetra (t : Tetra n)
+  /-- An end of a double bond with cis/trans arrangement `p`. -/
   | planar (p : Planar n)
   deriving DecidableEq
 

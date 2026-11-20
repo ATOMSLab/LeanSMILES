@@ -46,6 +46,22 @@ evaluate the fingerprint (the radius-3 proof is `decide +kernel`).
 
 Every intermediate is `Vector`/`Array` data, never a function returned from a
 definition (see `docs/design-molecular-representation.md` §8).
+
+## Main definitions
+
+* `sortBy`: insertion sort by a Boolean comparator, structurally recursive.
+* `Molecule.morganAtomInvariants`: the radius-0 identifiers.
+* `Molecule.morganLayer`: one radius: growing every live atom, then removing duplicates.
+* `Molecule.morganEnvironments`: all Morgan environments as (identifier, atom, radius).
+* `Molecule.morganIds`, `Molecule.morganBits`: the unfolded and the folded fingerprint.
+* `Molecule.morganVector`: the fingerprint as a bit vector, for featurization.
+* `tanimoto`: Tanimoto similarity of two lists of on-bits.
+* `SMILES.morganBits`: SMILES in, Morgan on-bits out.
+
+## Main statements
+
+* `perm_sortBy`: `sortBy` permutes its input, for every comparator.
+* `pairwise_sortBy`: `sortBy` sorts when the comparator is total and transitive.
 -/
 
 @[expose] public section

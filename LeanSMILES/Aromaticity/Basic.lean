@@ -24,6 +24,19 @@ bond kinds, aromatic flags and hydrogen counts back.
 Ported from the `canonical-smiles` branch's `Canonical/Sanitize.lean` (commit
 `5b5fe9e`), which matches RDKit 2026.09.1 on the oracle datasets; RDKit file and
 line references are to `Release_2026_09_1`.
+
+## Main definitions
+
+* `Aromaticity.elementTable`: RDKit's allowed valences and outer-shell electrons per element.
+* `Aromaticity.WAtom`, `Aromaticity.WBond`, `Aromaticity.Work`: the working copy of a molecule,
+  carrying RDKit's bookkeeping.
+* `Aromaticity.Work.ofMolecule`: the working copy of a molecule.
+* `Aromaticity.Work.explicitValence`, `Aromaticity.Work.implicitHs`: RDKit's explicit valence
+  and implicit hydrogen count.
+* `Aromaticity.Work.firstBadValence`: RDKit's strict valence check.
+* `Aromaticity.Work.finalizeHs`: RDKit's final hydrogen counts.
+* `Aromaticity.Work.assignRadicals`: RDKit's `assignRadicals`, for bracket atoms.
+* `Aromaticity.Work.cleanUp`: RDKit's `cleanUp`: nitrogen, phosphorus and halogen rules.
 -/
 
 @[expose] public section

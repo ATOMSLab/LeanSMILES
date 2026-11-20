@@ -23,6 +23,21 @@ lies in at most one system (`Work.fusedSystems_spec`): a system only changes bon
 aromatic atoms, and its double bonds join two of its own candidates.  Every aromatic atom lies in
 some ring (else `kekulize` fails), hence in some system, so every bond written aromatic between
 aromatic atoms ends up single or double.
+
+## Main definitions
+
+* `Work.kekWa`, `Work.kekEv0`: the bonds written aromatic and the explicit valences `kekulize`
+  reads before it starts.
+* `Work.candOf`: an atom that is aromatic and needs a double bond.
+* `Work.SysInv`: what holds after the systems processed so far.
+* `Work.CvOk`: what kekulization may leave as an atom's cached valence and written hydrogens.
+
+## Main statements
+
+* `Work.sysInv_step`, `Work.sysInv_foldlM`: `SysInv` survives one more system, and all of them.
+* `Work.kekulize_correct`: kekulization places a matching of double bonds covering every
+  candidate, makes the other bonds written aromatic single, and keeps the rest.
+* `Work.kekulize_cvOk`: what kekulization caches at an atom.
 -/
 
 @[expose] public section
@@ -33,6 +48,7 @@ namespace LeanSMILES.Aromaticity.Work
 def kekWa (m : Work) (k : ℕ) : Bool :=
   ((List.range m.numBonds).filter (m.bonds[·]!.kind == .aromatic)).contains k
 
+/-- A bond is treated as written aromatic exactly when it is in range and its kind is aromatic. -/
 lemma kekWa_iff {m : Work} {k : ℕ} :
     m.kekWa k = true ↔ k < m.bonds.size ∧ (m.bonds[k]! : WBond).kind = .aromatic := by
   simp [kekWa, numBonds]
@@ -67,21 +83,29 @@ open Classical in
 aromatic at an aromatic atom of `P` are single, the rest are as in `m`; `D` is a matching of
 candidates of `P` covering them. -/
 structure SysInv (P : ℕ → Prop) (out : Work) (D : ℕ → Bool) : Prop where
+  /-- The atoms are those of `m`. -/
   atoms : out.atoms = m.atoms
+  /-- The bonds join the same atoms as in `m`. -/
   skel : SameSkel m out
+  /-- Bonds of `D` are double, other bonds written aromatic at an aromatic atom of `P` single,
+  the rest as in `m`. -/
   kinds : ∀ k, (out.bonds[k]! : WBond).kind = if D k = true then .double else
     if wa k = true ∧ ∃ x, P x ∧ (m.atoms[x]! : WAtom).aromatic = true ∧ k ∈ m.bondsOf x
     then .single else (m.bonds[k]! : WBond).kind
+  /-- A bond of `D` is in range, written aromatic, and joins candidates of `P`. -/
   dOk : ∀ k, D k = true → k < m.bonds.size ∧ wa k = true ∧
     ∀ x, (m.bonds[k]! : WBond).touches x = true → P x ∧ candOf m wa ev0 x = true
+  /-- No atom lies on two bonds of `D`. -/
   matching : ∀ k₁ k₂ x, D k₁ = true → D k₂ = true → (m.bonds[k₁]! : WBond).touches x = true →
     (m.bonds[k₂]! : WBond).touches x = true → k₁ = k₂
+  /-- Every candidate of `P` in range lies on a bond of `D`. -/
   cover : ∀ x, P x → candOf m wa ev0 x = true → x < m.atoms.size →
     ∃ k, D k = true ∧ (m.bonds[k]! : WBond).touches x = true
 
 variable {m wa ev0}
 
-lemma sysInv_start : SysInv m wa ev0 (fun _ ↦ False) m (fun _ ↦ false) where
+/-- Before any system: `m` itself, with no atoms collected and no bonds in `D`. -/
+lemma sysInv_start :SysInv m wa ev0 (fun _ ↦ False) m (fun _ ↦ false) where
   atoms := rfl
   skel := SameSkel.refl m
   kinds k := by simp
@@ -384,6 +408,7 @@ def CvOk (w : Work) (i : ℕ) (cv : Option ℕ) (e : ℕ) : Prop :=
     ((w.atoms[i]! : WAtom).explicitHs = 0 ∧
       (w.atoms[i]! : WAtom).cachedValence = some (w.bondHalfSum i / 2))
 
+/-- Folding `halfOrder` over the bonds `l` from `s` adds their half-order sum to `s`. -/
 lemma foldl_halfOrder (w : Work) (l : List ℕ) (s : ℕ) :
     l.foldl (fun s k ↦ s + halfOrder (w.bonds[k]! : WBond).kind) s =
       s + (l.map fun k ↦ halfOrder (w.bonds[k]! : WBond).kind).sum := by
@@ -391,11 +416,13 @@ lemma foldl_halfOrder (w : Work) (l : List ℕ) (s : ℕ) :
   | nil => simp
   | cons k l ih => simp only [List.foldl_cons, ih, List.map_cons, List.sum_cons]; omega
 
+/-- `bondHalfSum` depends only on the bonds. -/
 lemma bondHalfSum_congr {w w' : Work} (h : w'.bonds = w.bonds) :
     w'.bondHalfSum = w.bondHalfSum := by
   funext i
   simp only [bondHalfSum, bondsOf, numBonds, h]
 
+/-- `CvOk` at atom `i` carries over to a copy with the same bonds and the same record at `i`. -/
 lemma CvOk.of_atom {w w' : Work} {i : ℕ} {cv : Option ℕ} {e : ℕ} (hb : w'.bonds = w.bonds)
     (ha : (w'.atoms[i]! : WAtom) = (w.atoms[i]! : WAtom)) (h : CvOk w i cv e) :
     CvOk w' i cv e := by
@@ -403,6 +430,7 @@ lemma CvOk.of_atom {w w' : Work} {i : ℕ} {cv : Option ℕ} {e : ℕ} (hb : w'.
   rw [ha, bondHalfSum_congr hb]
   exact h
 
+/-- One successful `clearAromatic` step keeps the bonds and keeps `CvOk` at atom `i`. -/
 lemma clearAromatic_cvOk {ra : List ℕ} {w w' : Work} {j : ℕ} (hw : clearAromatic ra w j = .ok w')
     (i : ℕ) {cv : Option ℕ} {e : ℕ} (h : CvOk w i cv e) :
     w'.bonds = w.bonds ∧ CvOk w' i cv e := by
@@ -444,6 +472,7 @@ lemma clearAromatic_cvOk {ra : List ℕ} {w w' : Work} {j : ℕ} (hw : clearArom
     · refine CvOk.of_atom (w := w) rfl ?_ h
       rw [modifyAtom_atom_of_ne _ hji]
 
+/-- A successful run of `clearAromatic` over the atoms `l` keeps `CvOk` at atom `i`. -/
 lemma foldlM_clearAromatic_cvOk {ra : List ℕ} (i : ℕ) {cv : Option ℕ} {e : ℕ} :
     ∀ (l : List ℕ) (w w' : Work), l.foldlM (clearAromatic ra) w = .ok w' → CvOk w i cv e →
       CvOk w' i cv e

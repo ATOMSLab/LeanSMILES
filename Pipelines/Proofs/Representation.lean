@@ -31,6 +31,19 @@ Molecular representations — Proofs.
   | `clip c r` | `d c²` (for any `r`) |
   | `canonical r` | that of `r` |
   | `r₁ ++ r₂` | `R₁² + R₂²` |
+
+## Main definitions
+
+* `Representation.Bounded`: `‖r M‖² ≤ R²` for every molecule.
+
+## Main statements
+
+* `Molecule.bondOrder_eq_adjMatrix`: `bondOrder` is the toolkit's bond-order matrix.
+* `Representation.bondOrders_getElem`: `bondOrders k` lists that matrix row by row.
+* `Representation.canonical_relabel`: a canonical representation ignores atom numbering.
+* `Representation.morgan_bounded`, `Representation.bondOrders_bounded`,
+  `Representation.clip_bounded`, `Representation.canonical_bounded`,
+  `Representation.append_bounded`: the feature bounds of the table.
 -/
 
 @[expose] public section

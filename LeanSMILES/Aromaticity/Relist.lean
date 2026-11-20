@@ -18,6 +18,23 @@ turned round (`ρ` the inverse). The bonds at an atom are the same bonds renumbe
 (`Work.Relisted.kindsAt_perm`), and everything read at an atom from its record and the kinds of its
 bonds is unchanged. With no two bonds between the same atoms, the bond between two atoms is
 renumbered by `π` (`Work.Relisted.bondBetween?`), so the relisting is a `Work.WorkIso`.
+
+## Main definitions
+
+* `Work.Relisted w w' π ρ`: `w'` is `w` with bond `k` listed as `π k`, perhaps turned round.
+* `Work.pO`, `Work.pCN`, `Work.scanP`: what the phosphorus scan of `cleanUp` looks for, one
+  neighbour at a time.
+
+## Main statements
+
+* `Work.Relisted.bondsOf_perm`, `Work.Relisted.kindsAt_perm`: the bonds at an atom are the same
+  bonds renumbered, and their kinds the same up to order.
+* `Work.Relisted.neighbors_perm`: the neighbours of an atom are the same, the bonds renumbered.
+* `Work.Relisted.bondBetween?`: the bond between two atoms is renumbered by `π`.
+* `Work.Relisted.workIso`: a relisting is a `Work.WorkIso` with the atoms kept.
+* `Work.Relisted.freezeHs`, `Work.Relisted.cacheValences`, `Work.Relisted.assignRadicals`,
+  `Work.Relisted.finalizeHs`: these passes keep the relisting.
+* `Work.Relisted.quiet`: `cleanUp` leaves a relisted copy alone when it leaves the copy alone.
 -/
 
 @[expose] public section
@@ -26,10 +43,15 @@ namespace LeanSMILES.Aromaticity.Work
 
 /-- `w'` is `w` with bond `k` listed as `π k`, perhaps turned round. -/
 structure Relisted (w w' : Work) (π ρ : ℕ → ℕ) : Prop where
+  /-- The atoms are the same. -/
   atoms : w'.atoms = w.atoms
+  /-- There are as many bonds. -/
   size : w'.bonds.size = w.bonds.size
+  /-- `π` and `ρ` are inverse renumberings of the bonds. -/
   bij : IdxBij w.bonds.size π ρ
+  /-- Bond `π k` of `w'` has the kind of bond `k` of `w`. -/
   kind : ∀ k < w.bonds.size, (w'.bonds[π k]! : WBond).kind = (w.bonds[k]! : WBond).kind
+  /-- Bond `π k` of `w'` has the endpoints of bond `k` of `w`, in the same or the other order. -/
   ends : ∀ k < w.bonds.size,
     ((w'.bonds[π k]! : WBond).src = (w.bonds[k]! : WBond).src ∧
       (w'.bonds[π k]! : WBond).dst = (w.bonds[k]! : WBond).dst) ∨
@@ -40,6 +62,7 @@ namespace Relisted
 
 variable {w w' : Work} {π ρ : ℕ → ℕ}
 
+/-- Bond `π k` of `w'` touches the same atoms as bond `k` of `w`. -/
 lemma touches (h : Relisted w w' π ρ) {k : ℕ} (hk : k < w.bonds.size) (i : ℕ) :
     (w'.bonds[π k]! : WBond).touches i = (w.bonds[k]! : WBond).touches i := by
   simp only [WBond.touches]
@@ -47,6 +70,7 @@ lemma touches (h : Relisted w w' π ρ) {k : ℕ} (hk : k < w.bonds.size) (i : �
   · rw [e1, e2]
   · rw [e1, e2, Bool.or_comm]
 
+/-- Bond `π k` is at atom `i` in `w'` exactly when bond `k` is at `i` in `w`. -/
 lemma mem_bondsOf (h : Relisted w w' π ρ) {k : ℕ} (hk : k < w.bonds.size) (i : ℕ) :
     π k ∈ w'.bondsOf i ↔ k ∈ w.bondsOf i := by
   simp only [bondsOf, List.mem_filter, List.mem_range, numBonds, h.size, h.touches hk,
@@ -64,7 +88,7 @@ lemma bondsOf_perm (h : Relisted w w' π ρ) (i : ℕ) :
   constructor
   · intro hk'
     have hk's : k' < w.bonds.size := by
-      simp only [bondsOf, List.mem_filter, List.mem_range, numBonds, h.size] at hk'; exact hk'.1
+      simp only [List.mem_filter, List.mem_range, numBonds, h.size] at hk'; exact hk'.1
     refine ⟨ρ k', ?_, h.bij.right k' hk's⟩
     rw [← h.mem_bondsOf (h.bij.lt' k' hk's), h.bij.right k' hk's]
     exact hk'
@@ -81,50 +105,63 @@ lemma kindsAt_perm (h : Relisted w w' π ρ) (i : ℕ) : (w'.kindsAt i).Perm (w.
     simp only [bondsOf, List.mem_filter, List.mem_range, numBonds] at hk; exact hk.1
   exact h.kind k this
 
+/-- Atom `i` of `w'` is atom `i` of `w`. -/
 lemma atom (h : Relisted w w' π ρ) (i : ℕ) : (w'.atoms[i]! : WAtom) = w.atoms[i]! := by
   rw [h.atoms]
 
+/-- `Loc.bhs` does not depend on the order of the kinds. -/
 lemma bhs_perm {ks ks' : List BondKind} (h : ks'.Perm ks) : Loc.bhs ks' = Loc.bhs ks :=
   (h.map _).sum_eq
 
+/-- A relisting keeps every atom's `bondHalfSum`. -/
 lemma bondHalfSum (h : Relisted w w' π ρ) (i : ℕ) : w'.bondHalfSum i = w.bondHalfSum i := by
   rw [bondHalfSum_eq_loc, bondHalfSum_eq_loc, bhs_perm (h.kindsAt_perm i)]
 
+/-- A relisting keeps every atom's `degree`. -/
 lemma degree (h : Relisted w w' π ρ) (i : ℕ) : w'.degree i = w.degree i := by
   rw [degree_eq_loc, degree_eq_loc, (h.kindsAt_perm i).length_eq]
 
+/-- A relisting keeps `isAromaticAtom`. -/
 lemma isAromaticAtom (h : Relisted w w' π ρ) (i : ℕ) :
     w'.isAromaticAtom i = w.isAromaticAtom i := by
   rw [isAromaticAtom_eq_loc, isAromaticAtom_eq_loc, h.atom, (h.kindsAt_perm i).any_eq']
 
+/-- A relisting keeps `explicitValence`. -/
 lemma explicitValence (h : Relisted w w' π ρ) (i : ℕ) :
     w'.explicitValence i = w.explicitValence i := by
   rw [explicitValence_eq_loc, explicitValence_eq_loc, h.atom, h.bondHalfSum, h.isAromaticAtom]
 
+/-- A relisting keeps `implicitHs`. -/
 lemma implicitHs (h : Relisted w w' π ρ) (i : ℕ) : w'.implicitHs i = w.implicitHs i := by
   rw [implicitHs_eq_loc, implicitHs_eq_loc, h.atom, h.bondHalfSum, h.isAromaticAtom]
 
+/-- A relisting keeps `totalHs`. -/
 lemma totalHs (h : Relisted w w' π ρ) (i : ℕ) : w'.totalHs i = w.totalHs i := by
   simp only [Work.totalHs, h.implicitHs, h.atom]
 
+/-- A relisting keeps `kekuleValence`. -/
 lemma kekuleValence (h : Relisted w w' π ρ) (i : ℕ) :
     w'.kekuleValence i = w.kekuleValence i := by
   simp only [Work.kekuleValence, h.bondHalfSum, h.atom]
 
+/-- A relisting keeps `cachedValence`. -/
 lemma cachedValence (h : Relisted w w' π ρ) (i : ℕ) :
     w'.cachedValence i = w.cachedValence i := by
   simp only [Work.cachedValence, h.kekuleValence, h.atom]
 
+/-- A relisting keeps `radicalCount`. -/
 lemma radicalCount (h : Relisted w w' π ρ) (i : ℕ) :
     w'.radicalCount i = w.radicalCount i := by
   simp only [Work.radicalCount, h.kekuleValence, h.atom]
 
+/-- A relisting keeps `countAtomElec`. -/
 lemma countAtomElec (h : Relisted w w' π ρ) (i : ℕ) :
     w'.countAtomElec i = w.countAtomElec i := by
   unfold Work.countAtomElec
   simp only [h.degree, Work.cachedTotalHs, h.cachedValence, h.atom]
   rfl
 
+/-- A relisting keeps `isAromaticCandidate`. -/
 lemma isAromaticCandidate (h : Relisted w w' π ρ) (i : ℕ) (d : Donor) :
     w'.isAromaticCandidate i d = w.isAromaticCandidate i d := by
   unfold Work.isAromaticCandidate
@@ -138,6 +175,7 @@ lemma isAromaticCandidate (h : Relisted w w' π ρ) (i : ℕ) (d : Donor) :
     exact ((h.kindsAt_perm i).filter _).length_eq
   simp only [h.degree, h.cachedValence, h.atom, hf]
 
+/-- A relisting of a well-formed copy is well-formed. -/
 lemma wf (h : Relisted w w' π ρ) (hwf : w.WF) : w'.WF := by
   intro k' hk'
   have hk's : k' < w.bonds.size := by simpa [numBonds, h.size] using hk'
@@ -147,6 +185,7 @@ lemma wf (h : Relisted w w' π ρ) (hwf : w.WF) : w'.WF := by
   simp only [numAtoms, h.atoms] at this ⊢
   rcases e with ⟨e1, e2⟩ | ⟨e1, e2⟩ <;> rw [e1, e2] <;> omega
 
+/-- For a bond `k` at atom `i`, bond `π k` of `w'` has the same other end at `i` as bond `k`. -/
 lemma other (h : Relisted w w' π ρ) (hwf : w.WF) {k i : ℕ} (hk : k ∈ w.bondsOf i) :
     (w'.bonds[π k]! : WBond).other i = (w.bonds[k]! : WBond).other i := by
   have hks : k < w.bonds.size := by
@@ -155,7 +194,10 @@ lemma other (h : Relisted w w' π ρ) (hwf : w.WF) {k i : ℕ} (hk : k ∈ w.bon
   have hne := (hwf k hks).2.2
   simp only [WBond.touches, Bool.or_eq_true, beq_iff_eq] at ht
   simp only [WBond.other, beq_iff_eq]
-  rcases h.ends k hks with ⟨e1, e2⟩ | ⟨e1, e2⟩ <;> rw [e1, e2] <;> split_ifs <;> omega
+  rcases h.ends k hks with ⟨e1, e2⟩ | ⟨e1, e2⟩
+  · rw [e1, e2]
+  · rw [e1, e2]
+    split_ifs <;> omega
 
 /-- **The neighbours of an atom are the same, the bonds renumbered.** -/
 lemma neighbors_perm (h : Relisted w w' π ρ) (hwf : w.WF) (i : ℕ) :
@@ -166,6 +208,8 @@ lemma neighbors_perm (h : Relisted w w' π ρ) (hwf : w.WF) (i : ℕ) :
   exact List.Perm.of_eq (List.map_congr_left fun k hk ↦ by
     simp only [Function.comp_apply, h.other hwf hk])
 
+/-- With no two bonds between the same atoms, `bondBetween? u v` is `k` exactly when `k` is a
+bond joining `u` and `v`, in either order. -/
 lemma bondBetween?_eq_some_iff {x : Work} (hwf : x.WF) (hnd : x.NbrsDistinct) {u v k : ℕ} :
     x.bondBetween? u v = some k ↔ k < x.bonds.size ∧
       (((x.bonds[k]! : WBond).src = u ∧ (x.bonds[k]! : WBond).dst = v) ∨
@@ -210,7 +254,10 @@ lemma bondBetween? (h : Relisted w w' π ρ) (hwf : w.WF) (hnd : w.NbrsDistinct)
       (w'.bonds[π k]! : WBond).dst = u)) ↔ (((w.bonds[k]! : WBond).src = u ∧
       (w.bonds[k]! : WBond).dst = v) ∨ ((w.bonds[k]! : WBond).src = v ∧
       (w.bonds[k]! : WBond).dst = u))) := fun k hk ↦ by
-    rcases h.ends k hk with ⟨e1, e2⟩ | ⟨e1, e2⟩ <;> rw [e1, e2] <;> tauto
+    rcases h.ends k hk with ⟨e1, e2⟩ | ⟨e1, e2⟩
+    · rw [e1, e2]
+    · rw [e1, e2]
+      tauto
   cases h0 : w.bondBetween? u v with
   | some k =>
     obtain ⟨hks, he⟩ := (bondBetween?_eq_some_iff hwf hnd).1 h0
@@ -242,15 +289,18 @@ lemma of_atoms (h : Relisted w w' π ρ) {v v' : Work} (hb : v.bonds = w.bonds)
   ⟨ha, by rw [hb, hb', h.size], hb ▸ h.bij, fun k hk ↦ by rw [hb, hb']; exact h.kind k (hb ▸ hk),
     fun k hk ↦ by rw [hb, hb']; exact h.ends k (hb ▸ hk)⟩
 
+/-- `freezeHs` keeps the relisting. -/
 lemma freezeHs (h : Relisted w w' π ρ) : Relisted w.freezeHs w'.freezeHs π ρ := by
   refine h.of_atoms rfl rfl ?_
   simp only [Work.freezeHs, numAtoms, h.atoms, h.totalHs]
 
+/-- `cacheValences` keeps the relisting. -/
 lemma cacheValences (h : Relisted w w' π ρ) : Relisted w.cacheValences w'.cacheValences π ρ := by
   refine h.of_atoms rfl rfl ?_
   simp only [Work.cacheValences, numAtoms, h.atoms, h.explicitValence, h.implicitHs,
     h.isAromaticAtom]
 
+/-- `radicalStep` at the same atom keeps the relisting. -/
 lemma radicalStep (h : Relisted w w' π ρ) (j : ℕ) :
     Relisted (Work.radicalStep w j) (Work.radicalStep w' j) π ρ := by
   unfold Work.radicalStep
@@ -260,6 +310,7 @@ lemma radicalStep (h : Relisted w w' π ρ) (j : ℕ) :
   · exact h
   · exact h.of_atoms rfl rfl (by simp only [modifyAtom, h.atoms])
 
+/-- `assignRadicals` keeps the relisting. -/
 lemma assignRadicals (h : Relisted w w' π ρ) : Relisted w.assignRadicals w'.assignRadicals π ρ := by
   unfold Work.assignRadicals
   rw [show w'.numAtoms = w.numAtoms by simp [numAtoms, h.atoms]]
@@ -268,6 +319,7 @@ lemma assignRadicals (h : Relisted w w' π ρ) : Relisted w.assignRadicals w'.as
   | nil => exact h
   | cons j l ih => exact ih (h.radicalStep j)
 
+/-- `adjustHsStep` at the same atom keeps the relisting. -/
 lemma adjustHsStep (h : Relisted w w' π ρ) (j : ℕ) :
     Relisted (Work.adjustHsStep w j) (Work.adjustHsStep w' j) π ρ := by
   unfold Work.adjustHsStep
@@ -279,6 +331,7 @@ lemma adjustHsStep (h : Relisted w w' π ρ) (j : ℕ) :
     · exact h
   · exact h
 
+/-- `finalizeHs` keeps the relisting. -/
 lemma finalizeHs (h : Relisted w w' π ρ) : Relisted w.finalizeHs w'.finalizeHs π ρ := by
   unfold Work.finalizeHs
   dsimp only
@@ -312,11 +365,14 @@ def pCN (w : Work) (e : ℕ × ℕ) : Bool :=
 def scanP (w : Work) (p : Option (ℕ × ℕ) × Bool) (e : ℕ × ℕ) : Option (ℕ × ℕ) × Bool :=
   if pO w e then (some e, p.2) else if pCN w e then (p.1, true) else p
 
+/-- `phosphorusScan` is a fold of `scanP` over the neighbours. -/
 lemma phosphorusScan_eq_foldl (w : Work) (i : ℕ) :
     w.phosphorusScan i = (w.neighbors i).foldl (scanP w) (none, false) := by
   unfold phosphorusScan
   congr 1
 
+/-- Folding `scanP` over `L` finds an `=O` when the start had one or some neighbour is `pO`, and
+sets the flag when the start had it or some neighbour is `pCN` but not `pO`. -/
 lemma foldl_scanP (w : Work) : ∀ (L : List (ℕ × ℕ)) (p : Option (ℕ × ℕ) × Bool),
     ((L.foldl (scanP w) p).1.isSome = true ↔ p.1.isSome = true ∨ ∃ x ∈ L, pO w x = true) ∧
       ((L.foldl (scanP w) p).2 = true ↔ p.2 = true ∨ ∃ x ∈ L, pO w x = false ∧ pCN w x = true)
@@ -334,6 +390,8 @@ lemma foldl_scanP (w : Work) : ∀ (L : List (ℕ × ℕ)) (p : Option (ℕ × �
       · simp only [Bool.not_eq_true] at hc
         simp [ho, hc]
 
+/-- `phosphorusScan` finds an `=O` exactly when some neighbour is `pO`, and sets its flag exactly
+when some neighbour is `pCN` but not `pO`. -/
 lemma phosphorusScan_iff (w : Work) (i : ℕ) :
     ((w.phosphorusScan i).1.isSome = true ↔ ∃ x ∈ w.neighbors i, pO w x = true) ∧
       ((w.phosphorusScan i).2 = true ↔
@@ -352,11 +410,15 @@ lemma mem_neighbors (h : Relisted w w' π ρ) (hwf : w.WF) {i : ℕ} {x : ℕ ×
   obtain ⟨y, hy, rfl⟩ := List.mem_map.1 ((h.neighbors_perm hwf i).mem_iff.1 hx)
   exact ⟨y, hy, rfl⟩
 
+/-- The bond to a neighbour keeps its kind under the renumbering. -/
 lemma kind_nbr (h : Relisted w w' π ρ) {i : ℕ} {y : ℕ × ℕ} (hy : y ∈ w.neighbors i) :
     (w'.bonds[π y.1]! : WBond).kind = (w.bonds[y.1]! : WBond).kind := by
   obtain ⟨k, hk, rfl⟩ := List.mem_map.1 hy
-  exact h.kind k (by simp only [bondsOf, List.mem_filter, List.mem_range, numBonds] at hk; exact hk.1)
+  exact h.kind k (by
+    simp only [bondsOf, List.mem_filter, List.mem_range, numBonds] at hk; exact hk.1)
 
+/-- A property `P'` holds of some neighbour of `i` in `w'` exactly when `P` holds of some neighbour
+in `w`, if `P'` of the renumbered neighbour is `P` of the original. -/
 lemma exists_nbr_iff (h : Relisted w w' π ρ) (hwf : w.WF) (i : ℕ) (P : ℕ × ℕ → Prop)
     (P' : ℕ × ℕ → Prop) (hP : ∀ y ∈ w.neighbors i, P' (π y.1, y.2) ↔ P y) :
     (∃ x ∈ w'.neighbors i, P' x) ↔ ∃ y ∈ w.neighbors i, P y := by

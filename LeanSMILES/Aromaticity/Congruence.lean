@@ -15,6 +15,23 @@ atom keeping its sum of bond orders (`Work.Swapped`): another Kekulé structure 
 Every quantity aromaticity perception reads at an atom is a function of the multiset of bond kinds
 there, which the swap keeps (`Work.Swapped.perm_map`), so the two copies have the same hydrogen
 counts, valences, donor types and candidacies, and the same rings.
+
+## Main definitions
+
+* `Work.Swapped`: two copies that differ only by single/double swaps on the bonds `F`, every atom
+  keeping its sum of bond orders.
+* `Work.KindRel`: the weaker relation the mark fold of `setAromaticity` keeps.
+* `Work.Hypervalent`: an atom `cleanUp` could rewrite at.
+
+## Main statements
+
+* `Work.Swapped.perm_map`: the bonds at an atom have the same kinds in both copies, up to order.
+* `Work.Swapped.relevantCycles_eq`: swapped copies have the same rings.
+* `Work.Swapped.finish_eq`: swapped copies finish alike, if perception makes every bond of `F`
+  aromatic in one of them.
+* `Work.Swapped.quiet`, `Work.quiet_of_agree`: `cleanUp` does nothing on a copy that agrees, in
+  what it reads, with one it does nothing on.
+* `Work.not_hypervalent_of_isAromaticCandidate`: an aromatic candidate is not hypervalent.
 -/
 
 @[expose] public section
@@ -131,33 +148,47 @@ variable {F : ℕ → Bool} {w w' : Work}
 
 namespace Swapped
 
+/-- A bond swap, read the other way round. -/
+protected lemma symm (h : Swapped F w w') : Swapped F w' w :=
+  ⟨h.atoms.symm, h.size.symm, fun k ↦ (h.ends k).symm, fun k hk ↦ (h.kind k hk).symm,
+    fun k hk ↦ ⟨(h.sd k hk).2, (h.sd k hk).1⟩, fun i ↦ (h.sum i).symm⟩
+
+/-- Each bond of a swapped copy, read with `!`, has the same first atom. -/
 lemma src (h : Swapped F w w') (k : ℕ) : w'.bonds[k]!.src = w.bonds[k]!.src :=
   (ends_getElem! h.size h.ends k).1
 
+/-- Each bond of a swapped copy, read with `!`, has the same second atom. -/
 lemma dst (h : Swapped F w w') (k : ℕ) : w'.bonds[k]!.dst = w.bonds[k]!.dst :=
   (ends_getElem! h.size h.ends k).2
 
+/-- A swapped copy has as many atoms. -/
 lemma numAtoms_eq (h : Swapped F w w') : w'.numAtoms = w.numAtoms := by
   simp [numAtoms, h.atoms]
 
+/-- A swapped copy has as many bonds. -/
 lemma numBonds_eq (h : Swapped F w w') : w'.numBonds = w.numBonds := h.size
 
+/-- A swapped copy has the same bonds at every atom. -/
 lemma bondsOf_eq (h : Swapped F w w') : w'.bondsOf = w.bondsOf := by
   funext i
   simp only [bondsOf, h.numBonds_eq, WBond.touches, h.src, h.dst]
 
+/-- A swapped copy has the same `(bond, neighbor)` pairs at every atom. -/
 lemma neighbors_eq (h : Swapped F w w') : w'.neighbors = w.neighbors := by
   funext i
   simp only [neighbors, h.bondsOf_eq, WBond.other, h.src, h.dst]
 
+/-- A swapped copy has the same degree at every atom. -/
 lemma degree_eq (h : Swapped F w w') : w'.degree = w.degree := by
   funext i
   simp only [degree, h.bondsOf_eq]
 
+/-- A swapped copy has the same bond between any two atoms. -/
 lemma bondBetween?_eq (h : Swapped F w w') : w'.bondBetween? = w.bondBetween? := by
   funext i j
   simp only [bondBetween?, h.numBonds_eq, h.src, h.dst]
 
+/-- A swapped copy has the same bonds around every ring. -/
 lemma ringBonds_eq (h : Swapped F w w') : w'.ringBonds = w.ringBonds := by
   funext ring
   simp only [ringBonds, h.bondBetween?_eq]
@@ -166,22 +197,26 @@ lemma ringBonds_eq (h : Swapped F w w') : w'.ringBonds = w.ringBonds := by
 lemma relevantCycles_eq (h : Swapped F w w') : w'.relevantCycles = w.relevantCycles := by
   exact relevantCycles_congr h.neighbors_eq h.bondBetween?_eq h.numAtoms_eq h.numBonds_eq
 
+/-- A bond at an atom is in range. -/
 lemma mem_bondsOf_lt {i k : ℕ} (hk : k ∈ w.bondsOf i) : k < w.bonds.size := by
   simp only [bondsOf, List.mem_filter, List.mem_range, numBonds] at hk
   exact hk.1
 
+/-- Off `F`, a bond in range has the same kind, read with `!`, in both copies. -/
 lemma kind_eq (h : Swapped F w w') {k : ℕ} (hk : k < w.bonds.size) (hF : F k = false) :
     w'.bonds[k]!.kind = w.bonds[k]!.kind := by
   have := h.kind k hF
   rw [kind?_eq_of_lt w hk, kind?_eq_of_lt w' (h.size ▸ hk)] at this
   exact Option.some.inj this
 
+/-- On `F`, a bond in range of the first copy is single or double, read with `!`. -/
 lemma sd_left (h : Swapped F w w') {k : ℕ} (hk : k < w.bonds.size) (hF : F k = true) :
     IsSD w.bonds[k]!.kind := by
   obtain ⟨⟨x, hx, hsd⟩, -⟩ := h.sd k hF
   rw [kind?_eq_of_lt w hk] at hx
   exact Option.some.inj hx ▸ hsd
 
+/-- On `F`, a bond in range of the swapped copy is single or double, read with `!`. -/
 lemma sd_right (h : Swapped F w w') {k : ℕ} (hk : k < w.bonds.size) (hF : F k = true) :
     IsSD w'.bonds[k]!.kind := by
   obtain ⟨-, ⟨x, hx, hsd⟩⟩ := h.sd k hF
@@ -272,38 +307,48 @@ lemma length_filter_eq (h : Swapped F w w') (i : ℕ) (p : BondKind → Bool) :
   simpa [List.countP_map, List.countP_eq_length_filter, List.filter_map, Function.comp_def]
     using this
 
+/-- A swapped copy has the same aromatic atoms. -/
 lemma isAromaticAtom_eq (h : Swapped F w w') : w'.isAromaticAtom = w.isAromaticAtom := by
   funext i
   simp only [isAromaticAtom, h.atoms, h.any_eq i (· == .aromatic)]
 
+/-- A swapped copy has the same explicit valence at every atom. -/
 lemma explicitValence_eq (h : Swapped F w w') : w'.explicitValence = w.explicitValence := by
   funext i
   simp only [explicitValence, h.atoms, h.sum, h.isAromaticAtom_eq]
 
+/-- A swapped copy has the same implicit hydrogen count at every atom. -/
 lemma implicitHs_eq (h : Swapped F w w') : w'.implicitHs = w.implicitHs := by
   funext i
   simp only [implicitHs, h.atoms, h.explicitValence_eq, h.isAromaticAtom_eq]
 
+/-- A swapped copy has the same total hydrogen count at every atom. -/
 lemma totalHs_eq (h : Swapped F w w') : w'.totalHs = w.totalHs := by
   funext i
   simp only [totalHs, h.atoms, h.implicitHs_eq]
 
+/-- A swapped copy has the same Kekulé valence at every atom. -/
 lemma kekuleValence_eq (h : Swapped F w w') : w'.kekuleValence = w.kekuleValence := by
   funext i
   simp only [kekuleValence, h.atoms, h.sum]
 
+/-- A swapped copy has the same cached valence at every atom. -/
 lemma cachedValence_eq (h : Swapped F w w') : w'.cachedValence = w.cachedValence := by
   funext i
   simp only [cachedValence, h.atoms, h.kekuleValence_eq]
 
+/-- A swapped copy has the same cached hydrogen total at every atom. -/
 lemma cachedTotalHs_eq (h : Swapped F w w') : w'.cachedTotalHs = w.cachedTotalHs := by
   funext i
   simp only [cachedTotalHs, h.atoms]
 
+/-- A swapped copy has the same `countAtomElec` at every atom. -/
 lemma countAtomElec_eq (h : Swapped F w w') : w'.countAtomElec = w.countAtomElec := by
   funext i
   simp only [countAtomElec, h.atoms, h.degree_eq, h.cachedTotalHs_eq, h.cachedValence_eq]
 
+/-- A swapped copy has the same `exocyclicMultiple?` with ring bonds `rbs`, when `rbs` contains
+the bonds of `F`. -/
 lemma exocyclicMultiple?_eq (h : Swapped F w w') (rbs : List ℕ)
     (hF : ∀ k, F k = true → rbs.contains k = true) :
     w'.exocyclicMultiple? rbs = w.exocyclicMultiple? rbs := by
@@ -319,6 +364,8 @@ lemma exocyclicMultiple?_eq (h : Swapped F w w') (rbs : List ℕ)
   · have hm : k ∈ rbs := by simpa using hF k hFk
     simp [hm]
 
+/-- A swapped copy has the same donor types with ring bonds `rbs`, when `rbs` contains the bonds
+of `F`. -/
 lemma donorType_eq (h : Swapped F w w') (rbs : List ℕ)
     (hF : ∀ k, F k = true → rbs.contains k = true) :
     w'.donorType rbs = w.donorType rbs := by
@@ -326,22 +373,27 @@ lemma donorType_eq (h : Swapped F w w') (rbs : List ℕ)
   simp only [donorType, h.atoms, h.countAtomElec_eq, h.exocyclicMultiple?_eq rbs hF,
     h.any_ring_eq rbs hF i isMultiple, h.cachedValence_eq, h.degree_eq]
 
+/-- A swapped copy has the same aromatic candidates. -/
 lemma isAromaticCandidate_eq (h : Swapped F w w') :
     w'.isAromaticCandidate = w.isAromaticCandidate := by
   funext i d
   simp only [isAromaticCandidate, h.atoms, h.cachedValence_eq, h.degree_eq,
     h.length_filter_eq i isMultiple]
 
+/-- A swapped copy has a double or triple bond at the same atoms. -/
 lemma hasMultipleBond_eq (h : Swapped F w w') : w'.hasMultipleBond = w.hasMultipleBond := by
   funext i
   simp only [hasMultipleBond, h.any_eq i isMultiple]
 
+/-- A swapped copy has the same `ringDonor` with ring bonds `rbs`, when `rbs` contains the bonds
+of `F`. -/
 lemma ringDonor_eq (h : Swapped F w w') (rbs : List ℕ)
     (hF : ∀ k, F k = true → rbs.contains k = true) :
     w'.ringDonor rbs = w.ringDonor rbs := by
   funext len i
   simp only [ringDonor, h.donorType_eq rbs hF, h.atoms, h.degree_eq, h.hasMultipleBond_eq]
 
+/-- A swapped copy has the same radical count at every atom. -/
 lemma radicalCount_eq (h : Swapped F w w') : w'.radicalCount = w.radicalCount := by
   funext i
   simp only [radicalCount, h.atoms, h.kekuleValence_eq]
@@ -351,12 +403,14 @@ lemma withAtoms (h : Swapped F w w') (A : Array WAtom) :
     Swapped F { w with atoms := A } { w' with atoms := A } :=
   ⟨rfl, h.size, h.ends, h.kind, h.sd, h.sum⟩
 
+/-- Freezing the hydrogen counts of both copies keeps the swap. -/
 lemma freezeHs (h : Swapped F w w') : Swapped F w.freezeHs w'.freezeHs := by
   have e : w'.freezeHs = { w' with atoms := w.freezeHs.atoms } := by
     simp only [Work.freezeHs, numAtoms, h.atoms, h.totalHs_eq]
   rw [e]
   exact h.withAtoms _
 
+/-- Caching the valences of both copies keeps the swap. -/
 lemma cacheValences (h : Swapped F w w') : Swapped F w.cacheValences w'.cacheValences := by
   have e : w'.cacheValences = { w' with atoms := w.cacheValences.atoms } := by
     simp only [Work.cacheValences, numAtoms, h.atoms, h.explicitValence_eq, h.implicitHs_eq,
@@ -364,6 +418,7 @@ lemma cacheValences (h : Swapped F w w') : Swapped F w.cacheValences w'.cacheVal
   rw [e]
   exact h.withAtoms _
 
+/-- One step of `assignRadicals` at the same atom of both copies keeps the swap. -/
 lemma radicalStep (h : Swapped F w w') (i : ℕ) :
     Swapped F (w.radicalStep i) (w'.radicalStep i) := by
   unfold Work.radicalStep
@@ -376,11 +431,14 @@ lemma radicalStep (h : Swapped F w w') (i : ℕ) :
     rw [e]
     exact h.withAtoms _
 
+/-- `assignRadicals` on both copies keeps the swap. -/
 lemma assignRadicals (h : Swapped F w w') : Swapped F w.assignRadicals w'.assignRadicals := by
   unfold Work.assignRadicals
   rw [show w'.numAtoms = w.numAtoms from h.numAtoms_eq]
   exact foldl_sim (Swapped F) _ _ _ _ _ h fun _ _ i _ hb ↦ hb.radicalStep i
 
+/-- A swapped copy has the same first-pass data (donor types and candidate rings), when every bond
+of `F` is a bond of one of the rings. -/
 lemma donorData_eq (h : Swapped F w w') (rings : Array (List ℕ))
     (hF : ∀ k, F k = true → k ∈ rings.toList.flatMap w.ringBonds) :
     w'.donorData rings = w.donorData rings := by
@@ -396,6 +454,8 @@ lemma donorData_eq (h : Swapped F w w') (rings : Array (List ℕ))
     simp only [Work.donorRingStep, hatom]
   simp only [Work.donorData, h.ringBonds_eq, hstep, h.numAtoms_eq]
 
+/-- A swapped copy has the same `aromaticBondList`, when every bond of `F` is a bond of one of
+the rings. -/
 lemma aromaticBondList_eq (h : Swapped F w w') (rings : Array (List ℕ))
     (hF : ∀ k, F k = true → k ∈ rings.toList.flatMap w.ringBonds) :
     w'.aromaticBondList rings = w.aromaticBondList rings := by
@@ -417,6 +477,7 @@ structure KindRel (F : ℕ → Bool) (w w' : Work) : Prop where
   kind : ∀ k, w'.kind? k = w.kind? k ∨
     F k = true ∧ (∃ x, w.kind? k = some x ∧ IsSD x) ∧ ∃ x, w'.kind? k = some x ∧ IsSD x
 
+/-- Swapped copies are related by `KindRel`. -/
 lemma Swapped.kindRel (h : Swapped F w w') : KindRel F w w' := by
   refine ⟨h.atoms, h.size, h.ends, fun k ↦ ?_⟩
   cases hk : F k
@@ -425,9 +486,11 @@ lemma Swapped.kindRel (h : Swapped F w w') : KindRel F w w' := by
 
 namespace KindRel
 
+/-- Each bond, read with `!`, has the same first atom in both copies. -/
 lemma src (h : KindRel F w w') (k : ℕ) : w'.bonds[k]!.src = w.bonds[k]!.src :=
   (ends_getElem! h.size h.ends k).1
 
+/-- Each bond, read with `!`, has the same second atom in both copies. -/
 lemma dst (h : KindRel F w w') (k : ℕ) : w'.bonds[k]!.dst = w.bonds[k]!.dst :=
   (ends_getElem! h.size h.ends k).2
 
@@ -467,6 +530,7 @@ lemma mark (h : KindRel F w w') (b s d : ℕ) :
       cases h1 : w.bonds[k]? <;> cases h2 : w'.bonds[k]? <;> simp_all
     · exact h.kind k
 
+/-- `markAromatic` of the same bond in both copies keeps the relation. -/
 lemma markAromatic (h : KindRel F w w') (b : ℕ) :
     KindRel F (w.markAromatic b) (w'.markAromatic b) := by
   unfold Work.markAromatic
@@ -627,79 +691,84 @@ def Hypervalent (w : Work) (i : ℕ) : Prop :=
     (w.atoms[i]!.z = 17 ∨ w.atoms[i]!.z = 35 ∨ w.atoms[i]!.z = 53) ∧
       (w.explicitValence i = 3 ∨ w.explicitValence i = 5 ∨ w.explicitValence i = 7))
 
+/-- The bond of a `(bond, neighbor)` pair of atom `i` is a bond at `i`. -/
 lemma mem_bondsOf_of_mem_neighbors {w : Work} {i k j : ℕ} (h : (k, j) ∈ w.neighbors i) :
     k ∈ w.bondsOf i := by
   simp only [neighbors, List.mem_map, Prod.mk.injEq] at h
   obtain ⟨k', hk', rfl, -⟩ := h
   exact hk'
 
-namespace Swapped
-
-lemma nitroCand_eq (h : Swapped F w w') : w'.nitroCand = w.nitroCand := by
-  funext i
-  simp only [nitroCand, h.atoms, h.explicitValence_eq]
-
-lemma phosphorusGuard_eq (h : Swapped F w w') : w'.phosphorusGuard = w.phosphorusGuard := by
-  funext i
-  simp only [phosphorusGuard, h.atoms, h.explicitValence_eq, h.degree_eq]
-
-lemma halogenGuard_eq (h : Swapped F w w') : w'.halogenGuard = w.halogenGuard := by
-  funext i
-  simp only [halogenGuard, h.atoms, h.explicitValence_eq, h.neighbors_eq]
-
-/-- **`cleanUp` does nothing on another Kekulé structure either**, if it does nothing on `w` and no
-bond of `F` touches an atom it could rewrite at. -/
-theorem quiet (h : Swapped F w w') (hq : w.Quiet)
-    (hc : ∀ k, F k = true → ∀ i, k ∈ w.bondsOf i → ¬ Hypervalent w i) : w'.Quiet := by
-  have hsz : w'.atoms.size = w.atoms.size := by rw [h.atoms]
+/-- **`cleanUp` does nothing on a copy that agrees with one it does nothing on, in what it
+reads**: the same elements, charges, explicit valences and bond ends, and the same bond kinds at
+every atom it could rewrite at (`Hypervalent`).  `Work.Swapped.quiet` is the case of two
+Kekulé structures; this one also relates a lowercase molecule to a Kekulé structure of it. -/
+lemma quiet_of_agree {w w' : Work} (hsz : w'.atoms.size = w.atoms.size)
+    (hbs : w'.bonds.size = w.bonds.size)
+    (hsrc : ∀ k : ℕ, (w'.bonds[k]! : WBond).src = (w.bonds[k]! : WBond).src)
+    (hdst : ∀ k : ℕ, (w'.bonds[k]! : WBond).dst = (w.bonds[k]! : WBond).dst)
+    (hz : ∀ i : ℕ, (w'.atoms[i]! : WAtom).z = (w.atoms[i]! : WAtom).z)
+    (hch : ∀ i : ℕ, (w'.atoms[i]! : WAtom).charge = (w.atoms[i]! : WAtom).charge)
+    (hev : ∀ i : ℕ, w'.explicitValence i = w.explicitValence i)
+    (hkind : ∀ i : ℕ, Hypervalent w i → ∀ k ∈ w.bondsOf i,
+      (w'.bonds[k]! : WBond).kind = (w.bonds[k]! : WBond).kind)
+    (hq : w.Quiet) : w'.Quiet := by
+  have hbo : w'.bondsOf = w.bondsOf := by
+    funext i; simp only [bondsOf, numBonds, hbs, WBond.touches, hsrc, hdst]
+  have hnb : w'.neighbors = w.neighbors := by
+    funext i; simp only [neighbors, hbo, WBond.other, hsrc, hdst]
+  have hdeg : w'.degree = w.degree := by funext i; simp only [degree, hbo]
   have kindEq : ∀ i, Hypervalent w i → ∀ x ∈ w.neighbors i,
-      w'.bonds[x.1]!.kind = w.bonds[x.1]!.kind := by
+      (w'.bonds[x.1]! : WBond).kind = (w.bonds[x.1]! : WBond).kind := by
     intro i hv ⟨k, j⟩ hx
-    have hk := mem_bondsOf_of_mem_neighbors hx
-    cases hF : F k
-    · exact h.kind_eq (mem_bondsOf_lt hk) hF
-    · exact absurd hv (hc k hF i hk)
+    exact hkind i hv k (mem_bondsOf_of_mem_neighbors hx)
+  have hNC : w'.nitroCand = w.nitroCand := by
+    funext i; simp only [nitroCand, hz, hch, hev]
+  have hPG : w'.phosphorusGuard = w.phosphorusGuard := by
+    funext i; simp only [phosphorusGuard, hch, hev, hdeg]
+  have hHG : w'.halogenGuard = w.halogenGuard := by
+    funext i; simp only [halogenGuard, hch, hev, hnb, hz]
   have hvN : ∀ i, w.nitroCand i = true → Hypervalent w i := by
     intro i hn
     simp only [nitroCand, Bool.and_eq_true, beq_iff_eq] at hn
     exact ⟨hn.1.2, .inl ⟨.inl hn.1.1, hn.2⟩⟩
   refine ⟨fun i hi ↦ ?_, fun i hi hn ↦ ?_, fun i hi ↦ ?_⟩
   · have hw := (nitroStep_fst_eq_iff w [] i).mp (hq.1 i (hsz ▸ hi))
-    rw [nitroStep_fst_eq_iff, h.nitroCand_eq, h.neighbors_eq]
+    rw [nitroStep_fst_eq_iff, hNC, hnb]
     intro hn x hx
     rw [← hw hn x hx]
-    simp only [nitroO, h.atoms, kindEq i (hvN i hn) x hx]
-  · rw [h.nitroCand_eq] at hn
+    simp only [nitroO, hz, hch, kindEq i (hvN i hn) x hx]
+  · rw [hNC] at hn
     have hw := (azideStep_eq_iff w i).mp (hq.2.1 i (hsz ▸ hi) hn)
-    rw [azideStep_eq_iff, h.neighbors_eq]
+    rw [azideStep_eq_iff, hnb]
     intro x hx
     rw [← hw x hx]
-    simp only [azideN, h.atoms, kindEq i (hvN i hn) x hx]
+    simp only [azideN, hz, hch, kindEq i (hvN i hn) x hx]
   · have hi' : i < w.atoms.size := hsz ▸ hi
     have hw := hq.2.2 i hi'
     unfold cleanUpStep at hw ⊢
-    simp only [h.atoms] at ⊢
-    by_cases hz : (w.atoms[i]!.z == 15) = true
-    · simp only [hz, if_true] at hw ⊢
-      rw [phosphorusCleanup_eq_iff w' hi, h.phosphorusGuard_eq]
+    simp only [hz] at ⊢
+    by_cases hz15 : ((w.atoms[i]! : WAtom).z == 15) = true
+    · simp only [hz15, if_true] at hw ⊢
+      rw [phosphorusCleanup_eq_iff w' hi, hPG]
       have hw' := (phosphorusCleanup_eq_iff w hi').mp hw
       intro hg
       have hv : Hypervalent w i := by
         simp only [phosphorusGuard, Bool.or_eq_false_iff, bne_eq_false_iff_eq] at hg
-        simp only [beq_iff_eq] at hz
-        exact ⟨hg.1.1, .inl ⟨.inr hz, hg.1.2⟩⟩
+        simp only [beq_iff_eq] at hz15
+        exact ⟨hg.1.1, .inl ⟨.inr hz15, hg.1.2⟩⟩
       have hs : w'.phosphorusScan i = w.phosphorusScan i := by
         unfold phosphorusScan
-        rw [h.neighbors_eq]
+        rw [hnb]
         refine foldl_congr_mem (fun s x hx ↦ ?_) _
         obtain ⟨k, j⟩ := x
-        simp only [h.atoms, h.degree_eq, kindEq i hv (k, j) hx]
+        simp only [hz, hch, hdeg, kindEq i hv (k, j) hx]
       rw [hs]
       exact hw' hg
-    · simp only [hz, Bool.false_eq_true, if_false] at hw ⊢
-      by_cases hz' : (w.atoms[i]!.z == 17 || w.atoms[i]!.z == 35 || w.atoms[i]!.z == 53) = true
+    · simp only [hz15, Bool.false_eq_true, if_false] at hw ⊢
+      by_cases hz' : ((w.atoms[i]! : WAtom).z == 17 || (w.atoms[i]! : WAtom).z == 35 ||
+          (w.atoms[i]! : WAtom).z == 53) = true
       · simp only [hz', if_true] at hw ⊢
-        rw [halogenCleanup_eq_iff w' hi, h.halogenGuard_eq, h.neighbors_eq]
+        rw [halogenCleanup_eq_iff w' hi, hHG, hnb]
         have hw' := (halogenCleanup_eq_iff w hi').mp hw
         intro hg kj hkj
         have hv : Hypervalent w i := by
@@ -713,6 +782,19 @@ theorem quiet (h : Swapped F w w') (hq : w.Quiet)
         rw [kindEq i hv kj hkj]
         exact hw' hg kj hkj
       · simp only [hz', Bool.false_eq_true, if_false]
+
+namespace Swapped
+
+/-- **`cleanUp` does nothing on another Kekulé structure either**, if it does nothing on `w` and no
+bond of `F` touches an atom it could rewrite at.  A case of `quiet_of_agree`. -/
+theorem quiet (h : Swapped F w w') (hq : w.Quiet)
+    (hc : ∀ k, F k = true → ∀ i, k ∈ w.bondsOf i → ¬ Hypervalent w i) : w'.Quiet :=
+  quiet_of_agree (by rw [h.atoms]) h.size h.src h.dst (fun i ↦ by rw [h.atoms])
+    (fun i ↦ by rw [h.atoms]) (fun i ↦ congrFun h.explicitValence_eq i)
+    (fun i hv k hk ↦ by
+      cases hF : F k
+      · exact h.kind_eq (mem_bondsOf_lt hk) hF
+      · exact absurd hv (hc k hF i hk)) hq
 
 end Swapped
 

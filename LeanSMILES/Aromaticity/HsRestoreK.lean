@@ -18,6 +18,16 @@ at every atom of `aromatize`'s kekulized working copy, after radicals and percep
 hydrogen step restores the total cached before kekulization.  The atom-level arithmetic is
 `Loc.bare_ok` and `Loc.branch_ok`; this file carries each atom of the pipeline to the finitely
 many cases they check.
+
+## Main statements
+
+* `Work.kindsAt_kekulize_mem`: the kinds kekulization gives the bonds at an atom are one of
+  `Loc.kekAll`'s.
+* `Work.hsRestored_kekulize`: `adjustHs` gives back the cached hydrogens at every atom of the
+  kekulized copy.
+* `Work.perceived_atom_of_noArom`, `Work.perceived_atom`: what perception leaves at an atom of a
+  Kekulé copy.
+* `Work.radicals_assignRadicals`: `assignRadicals` gives a bracketed atom its radical count.
 -/
 
 @[expose] public section
@@ -26,6 +36,7 @@ namespace LeanSMILES.Aromaticity.Work
 
 /-! ### Setting up -/
 
+/-- Bond `k` of the working copy of `m` is `m`'s bond `k`, endpoints as atom numbers. -/
 lemma ofMolecule_bond {n : ℕ} (m : Molecule n) {k : ℕ} (hk : k < m.bonds.length) :
     ((ofMolecule m).bonds[k]! : WBond) =
       { src := m.bonds[k].src.val, dst := m.bonds[k].dst.val, kind := m.bonds[k].kind } := by
@@ -36,6 +47,7 @@ lemma aromatic_prepare {n : ℕ} (m : Molecule n) (i : Fin n) :
     ((prepare m).atoms[i.val]! : WAtom).aromatic = (m.atom i).aromatic := by
   rw [prepare_atom, cleaned_atom, ofMolecule_atom]
 
+/-- An atom number past the molecule's atoms reads as not aromatic in `prepare m`. -/
 lemma aromatic_prepare_of_ge {n : ℕ} (m : Molecule n) {x : ℕ} (hx : n ≤ x) :
     ((prepare m).atoms[x]! : WAtom).aromatic = false := by
   have : (prepare m).atoms.size = n := by
@@ -100,6 +112,8 @@ theorem kekulize_prepare_correct {n : ℕ} {m : Molecule n} {K : Work}
   · rw [aromatic_prepare_of_ge m (by omega)] at hx
     cases hx
 
+/-- A list without duplicates in which some entry satisfies `p`, and at most one does, has exactly
+one entry satisfying `p`. -/
 lemma length_filter_eq_one {l : List ℕ} {p : ℕ → Bool} (hnd : l.Nodup)
     (hu : ∀ a ∈ l, ∀ b ∈ l, p a = true → p b = true → a = b) (he : ∃ a ∈ l, p a = true) :
     (l.filter p).length = 1 := by
@@ -122,6 +136,7 @@ lemma length_filter_eq_one {l : List ℕ} {p : ℕ → Bool} (hnd : l.Nodup)
       exact ih ht (fun a ha b hb ↦ hu a (List.mem_cons_of_mem _ ha) b (List.mem_cons_of_mem _ hb))
         he'
 
+/-- Zipping two maps of one list is the map to pairs. -/
 lemma zip_map_map {α β γ : Type*} (l : List α) (f : α → β) (g : α → γ) :
     (l.map f).zip (l.map g) = l.map fun a ↦ (f a, g a) := by
   induction l with
@@ -223,7 +238,7 @@ lemma setAromaticity_atom (w : Work) (rings : Array (List ℕ)) (j : ℕ) :
   dsimp only
   split
   · rw [atom_modifyAtom, atom_modifyAtom]
-    simp only [atoms_setKind, size_atoms_modifyAtom]
+    simp only [atoms_setKind, size_modifyAtom_atoms]
     split <;> split <;> simp_all
   · exact hx
 
@@ -279,7 +294,7 @@ lemma setAromaticity_flag (w : Work) (rings : Array (List ℕ))
           refine ⟨hb, ?_⟩
           simpa [WBond.touches] using hc
         rw [atom_modifyAtom, atom_modifyAtom] at hj
-        simp only [atoms_setKind, size_atoms_modifyAtom] at hj
+        simp only [atoms_setKind, size_modifyAtom_atoms] at hj
         by_cases hd : (x.bonds[b]! : WBond).dst = j ∧ j < x.atoms.size
         · exact ⟨b, hmem j (by simp [WBond.touches, hd.1]), hkb⟩
         by_cases hs : (x.bonds[b]! : WBond).src = j ∧ j < x.atoms.size
@@ -314,11 +329,14 @@ lemma countAtomElec_nonneg_of_cand (w : Work) {i : ℕ} {rbs : List ℕ} {len : 
 
 /-! ### Small facts for the assembly -/
 
+/-- A bracketed atom with no implicit hydrogen cached keeps its hydrogens (`Loc.restore`). -/
 lemma restore_of_noImplicit {a : WAtom} (hn : a.noImplicit = true) (hc : a.cachedImplicit = 0)
     (ks : List BondKind) (ar : Bool) : Loc.restore a ks ar = true := by
   have h0 : Loc.impl a (Loc.bhs ks) ar = 0 := by simp [Loc.impl, hn]
   simp [Loc.restore, h0, hc]
 
+/-- Without the aromatic step, an atom whose implicit count on bonds `ks` is the cached one keeps
+its hydrogens. -/
 lemma restore_of_quiet {a : WAtom} {ks : List BondKind} (hadj : a.adjustHs = false)
     (h : Loc.impl a (Loc.bhs ks) false = a.cachedImplicit) : Loc.restore a ks false = true := by
   simp [Loc.restore, hadj, h]
@@ -329,6 +347,7 @@ lemma organic_aromatic_z : ∀ e : Element, e.inOrganicSubset = true →
     e.atomicNumber ∈ ([5, 6, 7, 8, 15, 16] : List ℕ) := by
   decide +kernel
 
+/-- A donor type that passes the candidate test is not `none`. -/
 lemma isAromaticCandidate_donor_ne {w : Work} {i : ℕ} {d : Donor}
     (h : w.isAromaticCandidate i d = true) : d ≠ .none := by
   rintro rfl
@@ -336,6 +355,7 @@ lemma isAromaticCandidate_donor_ne {w : Work} {i : ℕ} {d : Donor}
   have e : (Donor.none == Donor.none) = true := rfl
   simp [Id.run, e] at h
 
+/-- A list containing two different entries has length at least two. -/
 lemma two_le_length_of_ne {l : List ℕ} {a b : ℕ} (hab : a ≠ b) (ha : a ∈ l) (hb : b ∈ l) :
     2 ≤ l.length := by
   match l, ha, hb with
@@ -345,6 +365,7 @@ lemma two_le_length_of_ne {l : List ℕ} {a b : ℕ} (hab : a ≠ b) (ha : a ∈
   | [], ha, _ => cases ha
   | _ :: _ :: _, _, _ => simp
 
+/-- A marking of `kk` with no aromatic kind is `kk` itself. -/
 lemma marks_eq_of_noArom : ∀ {kk sk : List BondKind}, sk ∈ Loc.marks kk →
     sk.any (· == .aromatic) = false → sk = kk
   | [], sk, h, _ => by simpa [Loc.marks] using h
@@ -359,6 +380,7 @@ lemma marks_eq_of_noArom : ∀ {kk sk : List BondKind}, sk ∈ Loc.marks kk →
         simp at ha
       · cases h
 
+/-- A marking of `kk` has as many kinds as `kk`. -/
 lemma length_of_mem_marks : ∀ {kk sk : List BondKind}, sk ∈ Loc.marks kk → sk.length = kk.length
   | [], sk, h => by simp_all [Loc.marks]
   | k :: ks, sk, h => by
@@ -371,6 +393,7 @@ lemma length_of_mem_marks : ∀ {kk sk : List BondKind}, sk ∈ Loc.marks kk →
         simp [length_of_mem_marks ht]
       · cases h
 
+/-- With no aromatic kind in `pk`, its only kekulized form is `pk` itself. -/
 lemma kekAll_eq_of_noArom : ∀ {need : Bool} {pk kk : List BondKind}, kk ∈ Loc.kekAll need pk →
     pk.any (· == .aromatic) = false → kk = pk
   | need, [], kk, h, _ => by cases need <;> simp_all [Loc.kekAll]
@@ -381,6 +404,7 @@ lemma kekAll_eq_of_noArom : ∀ {need : Bool} {pk kk : List BondKind}, kk ∈ Lo
     obtain ⟨t, ht, rfl⟩ := List.mem_map.1 h
     rw [kekAll_eq_of_noArom ht ha.2]
 
+/-- A kekulized form of `pk` has as many kinds as `pk`. -/
 lemma length_of_mem_kekAll : ∀ {need : Bool} {pk kk : List BondKind},
     kk ∈ Loc.kekAll need pk → kk.length = pk.length
   | need, [], kk, h => by cases need <;> simp_all [Loc.kekAll]
@@ -397,6 +421,8 @@ lemma length_of_mem_kekAll : ∀ {need : Bool} {pk kk : List BondKind},
     · obtain ⟨t, ht, rfl⟩ := List.mem_map.1 h
       simp [length_of_mem_kekAll ht]
 
+/-- The bonds `kekulize` treats as written aromatic are those whose kind, read with `!`, is
+aromatic. -/
 lemma kekWa_eq (w : Work) : w.kekWa = fun k ↦ (w.bonds[k]! : WBond).kind == .aromatic := by
   funext k
   by_cases hk : k < w.bonds.size
@@ -412,12 +438,14 @@ lemma kekWa_eq (w : Work) : w.kekWa = fun k ↦ (w.bonds[k]! : WBond).kind == .a
     rw [h1, getElem!_neg w.bonds k hk]
     rfl
 
+/-- The explicit valence `kekulize` reads at an atom is that atom's explicit valence. -/
 lemma kekEv0_getElem! (w : Work) {i : ℕ} (hi : i < w.atoms.size) :
     w.kekEv0[i]! = w.explicitValence i := by
   have : i < w.kekEv0.length := by simpa [kekEv0, numAtoms] using hi
   rw [getElem!_pos w.kekEv0 i this]
   simp [kekEv0]
 
+/-- An atom with a non-negative electron count has default valence above one. -/
 lemma elec_nonneg_dv {a : WAtom} {ks : List BondKind} (h : 0 ≤ Loc.elec a ks) :
     1 < defaultValence a.z := by
   by_contra hd
@@ -429,6 +457,7 @@ lemma elec_nonneg_dv {a : WAtom} {ks : List BondKind} (h : 0 ≤ Loc.elec a ks) 
     rfl
   omega
 
+/-- An atom with a non-negative electron count has at most three bonds. -/
 lemma elec_nonneg_length {a : WAtom} {ks : List BondKind} (h : 0 ≤ Loc.elec a ks) :
     ks.length ≤ 3 := by
   by_contra hl
@@ -443,6 +472,8 @@ lemma elec_nonneg_length {a : WAtom} {ks : List BondKind} (h : 0 ≤ Loc.elec a 
     · simp [Id.run, hd, h3]; rfl
   omega
 
+/-- If `R` relates two lists entrywise, every entry of the first is related to some entry of the
+second. -/
 lemma forall₂_exists_right {α β : Type*} {R : α → β → Prop} :
     ∀ {l₁ : List α} {l₂ : List β}, List.Forall₂ R l₁ l₂ → ∀ x ∈ l₁, ∃ y ∈ l₂, R x y
   | _, _, .nil, _, hx => by cases hx
@@ -951,6 +982,7 @@ lemma donorOk_of_donorType (w : Work) (rbs : List ℕ) (i : ℕ) (h : w.donorTyp
 
 /-! ### What perception leaves at an atom, for reuse -/
 
+/-- A ring of one copy is a ring of any copy with the same skeleton. -/
 lemma IsRing.of_sameSkel {w w' : Work} (h : SameSkel w' w) {c : List ℕ} (hc : w.IsRing c) :
     w'.IsRing c := by
   have hadj : w'.Adj = w.Adj := by
@@ -959,9 +991,9 @@ lemma IsRing.of_sameSkel {w w' : Work} (h : SameSkel w' w) {c : List ℕ} (hc : 
   exact ⟨hc.nodup, hc.three, hadj ▸ hc.chain, hadj ▸ hc.close⟩
 
 /-- **What perception leaves at an atom of a Kekulé copy** (no aromatic atom or bond), over rings
-of that copy: its bonds' kinds are a marking of the Kekulé ones, it is aromatic exactly when one is marked, and if one is, it lies on a ring
-(two bonds at least), passes the candidate test, has a donor type, and at two bonds has every
-single or double bond marked. -/
+of that copy: its bonds' kinds are a marking of the Kekulé ones, it is aromatic exactly when one
+is marked, and if one is, it lies on a ring (two bonds at least), passes the candidate test, has a
+donor type, and at two bonds has every single or double bond marked. -/
 theorem perceived_atom_of_noArom {K : Work} (hna : K.NoArom) {R : Array (List ℕ)}
     (hringsK : ∀ r ∈ R.toList, K.IsRing r) (i : ℕ) :
     let S := K.assignRadicals.setAromaticity R
@@ -1101,6 +1133,7 @@ theorem perceived_atom {n : ℕ} {m : Molecule n} {K : Work}
 
 /-! ### Small facts for the witness -/
 
+/-- The bond-order sum of kinds `ks` is half of `Loc.bhs ks`. -/
 lemma order_sum_eq_bhs (ks : List BondKind) :
     (ks.map BondKind.order).sum = (Loc.bhs ks : ℚ) / 2 := by
   induction ks with
@@ -1109,6 +1142,7 @@ lemma order_sum_eq_bhs (ks : List BondKind) :
     simp only [List.map_cons, List.sum_cons, ih, Loc.bhs, Nat.cast_add]
     cases k <;> simp [BondKind.order, halfOrder] <;> linarith
 
+/-- With no aromatic kind, twice the bond-order sum is even. -/
 lemma bhs_even_of_noArom : ∀ {ks : List BondKind}, ks.any (· == .aromatic) = false →
     Loc.bhs ks % 2 = 0
   | [], _ => rfl
@@ -1118,12 +1152,15 @@ lemma bhs_even_of_noArom : ∀ {ks : List BondKind}, ks.any (· == .aromatic) = 
     simp only [Loc.bhs, List.map_cons, List.sum_cons] at ih ⊢
     cases k <;> simp_all [halfOrder] <;> omega
 
+/-- `Loc.donorOk` reads only the element, the charge, the hydrogens, the radicals and the cached
+valence of the record. -/
 lemma donorOk_congr {a b : WAtom} (hz : a.z = b.z) (hc : a.charge = b.charge)
     (he : a.explicitHs = b.explicitHs) (hi : a.cachedImplicit = b.cachedImplicit)
     (hr : a.radicals = b.radicals) (hv : a.cachedValence = b.cachedValence) (ks : List BondKind) :
     Loc.donorOk a ks = Loc.donorOk b ks := by
   simp only [Loc.donorOk, Loc.elec_congr hz hc he hi hr hv, Loc.cv_congr he hv, he, hc]
 
+/-- `Work.radicalCount` is `Loc.radC` at the atom's element, charge and Kekulé valence. -/
 lemma radicalCount_eq_loc (w : Work) (i : ℕ) :
     w.radicalCount i = Loc.radC (w.atoms[i]! : WAtom).z (w.atoms[i]! : WAtom).charge
       (w.bondHalfSum i / 2 + (w.atoms[i]! : WAtom).explicitHs) := rfl

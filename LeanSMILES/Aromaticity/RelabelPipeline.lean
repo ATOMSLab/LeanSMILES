@@ -15,6 +15,16 @@ The pipeline commutes with relabeling the atoms
 A permutation `σ` of `Fin n` acts on atom numbers (`finPermFun`); the working copy of the relabeled
 molecule is the relabeled working copy (`Work.ofMolecule_relabel`), and the passes after
 kekulization commute with it (`Work.finish_relabelW`).
+
+## Main definitions
+
+* `finPermFun`: a permutation of `Fin n` acting on atom numbers, the identity past `n`.
+
+## Main statements
+
+* `Work.ofMolecule_relabel`: the working copy of a relabeled molecule is the relabeled copy.
+* `Work.finish_relabelW`: the passes after kekulization commute with relabeling.
+* `Work.quiet_relabelW`: a copy `cleanUp` leaves alone stays so when relabeled.
 -/
 
 @[expose] public section
@@ -25,13 +35,16 @@ namespace LeanSMILES.Aromaticity
 def finPermFun {n : ℕ} (σ : Equiv.Perm (Fin n)) : ℕ → ℕ :=
   fun i ↦ if h : i < n then (σ ⟨i, h⟩).val else i
 
+/-- `finPermFun σ` sends atom numbers below `n` below `n`. -/
 lemma finPermFun_lt {n : ℕ} (σ : Equiv.Perm (Fin n)) {i : ℕ} (h : i < n) : finPermFun σ i < n := by
   simp [finPermFun, h]
 
+/-- On the number of an atom `i : Fin n`, `finPermFun σ` is `σ i`. -/
 lemma finPermFun_fin {n : ℕ} (σ : Equiv.Perm (Fin n)) (i : Fin n) :
     finPermFun σ i.val = (σ i).val := by
   simp [finPermFun]
 
+/-- `finPermFun σ` and `finPermFun σ.symm` are inverse bijections of the first `n` numbers. -/
 lemma idxBij_finPermFun {n : ℕ} (σ : Equiv.Perm (Fin n)) :
     Work.IdxBij n (finPermFun σ) (finPermFun σ.symm) :=
   ⟨fun _ h ↦ finPermFun_lt σ h, fun _ h ↦ finPermFun_lt σ.symm h,
@@ -39,6 +52,7 @@ lemma idxBij_finPermFun {n : ℕ} (σ : Equiv.Perm (Fin n)) :
 
 namespace Work
 
+/-- Entry `j < n` of `f` mapped over `Fin n` as an array is `f ⟨j, hj⟩`. -/
 lemma getElem!_finRangeMap {α : Type} [Inhabited α] {n : ℕ} (f : Fin n → α) {j : ℕ}
     (hj : j < n) : ((List.finRange n).toArray.map f)[j]! = f ⟨j, hj⟩ := by
   rw [getElem!_pos _ j (by simpa using hj)]
@@ -71,6 +85,7 @@ theorem ofMolecule_relabel {n : ℕ} (m : Molecule n) (σ : Equiv.Perm (Fin n)) 
     intro b _
     simp [Bond.map, finPermFun_fin]
 
+/-- Perception keeps a working copy well formed and keeps its number of atoms. -/
 lemma setAromaticity_wf_size {w : Work} (hwf : w.WF) (R : Array (List ℕ)) :
     (w.setAromaticity R).WF ∧ (w.setAromaticity R).atoms.size = w.atoms.size := by
   unfold setAromaticity
@@ -105,6 +120,8 @@ section CleanUp
 
 variable {w : Work} {σ ψ : ℕ → ℕ}
 
+/-- In a well-formed copy, a `(bond, neighbor)` pair of an atom has its bond and its neighbor in
+range. -/
 lemma nbr_lt (hwf : w.WF) {i : ℕ} {x : ℕ × ℕ} (hx : x ∈ w.neighbors i) :
     x.1 < w.bonds.size ∧ x.2 < w.atoms.size := by
   refine ⟨?_, (Adj.lt hwf (adj_of_mem_neighbors (k := x.1) hx)).2⟩
@@ -112,18 +129,25 @@ lemma nbr_lt (hwf : w.WF) {i : ℕ} {x : ℕ × ℕ} (hx : x ∈ w.neighbors i) 
   simp only [bondsOf, List.mem_filter, List.mem_range, numBonds] at hk
   exact hk.1
 
+/-- A renamed atom is a `nitroCand` exactly when the original atom is. -/
 lemma nitroCand_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) {i : ℕ}
     (hi : i < w.atoms.size) : (w.relabelW σ ψ).nitroCand (σ i) = w.nitroCand i := by
   simp only [nitroCand, atom_relabelW hb hi, explicitValence_relabelW hwf hb hi]
 
+/-- A neighbor pair of an atom, its neighbor renamed, is a `nitroO` in the renamed copy exactly
+when it is one in `w`. -/
 lemma nitroO_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) {i : ℕ} {x : ℕ × ℕ}
     (hx : x ∈ w.neighbors i) : (w.relabelW σ ψ).nitroO (x.1, σ x.2) = w.nitroO x := by
   simp only [nitroO, atom_relabelW hb (nbr_lt hwf hx).2, kind_relabelW]
 
+/-- A neighbor pair of an atom, its neighbor renamed, is an `azideN` in the renamed copy exactly
+when it is one in `w`. -/
 lemma azideN_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) {i : ℕ} {x : ℕ × ℕ}
     (hx : x ∈ w.neighbors i) : (w.relabelW σ ψ).azideN (x.1, σ x.2) = w.azideN x := by
   simp only [azideN, atom_relabelW hb (nbr_lt hwf hx).2, kind_relabelW]
 
+/-- At a renamed atom, `phosphorusScan` finds a `=O` exactly when it does at the original atom,
+and the same `=C`/`=N` flag. -/
 lemma phosphorusScan_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) {i : ℕ}
     (hi : i < w.atoms.size) :
     ((w.relabelW σ ψ).phosphorusScan (σ i)).1.isSome = (w.phosphorusScan i).1.isSome ∧
@@ -138,6 +162,8 @@ lemma phosphorusScan_relabelW (hwf : w.WF) (hb : IdxBij w.numAtoms σ ψ) {i : �
   rw [atom_relabelW hb hj, degree_relabelW hwf hb hj, kind_relabelW]
   split_ifs <;> simp_all
 
+/-- `cleanUpStep` changes nothing at `i` exactly when, for phosphorus, `phosphorusCleanup` changes
+nothing, and for chlorine, bromine or iodine, `halogenCleanup` changes nothing. -/
 lemma cleanUpStep_eq_iff' {i : ℕ} :
     cleanUpStep w i = w ↔
       ((w.atoms[i]! : WAtom).z = 15 → w.phosphorusCleanup i = w) ∧

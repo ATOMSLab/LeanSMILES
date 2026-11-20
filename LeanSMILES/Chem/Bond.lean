@@ -24,6 +24,22 @@ the two endpoints are `Fin n`, so a bond cannot dangle.  `src`/`dst` keep the
 order the SMILES string introduced the endpoints in, which is what the `/` `\`
 stereo marks refer to; the undirected edge `s(src, dst) : Sym2 (Fin n)` is
 what Mathlib's `SimpleGraph` sees.
+
+## Main definitions
+
+* `BondKind`: single, double, triple, quadruple or aromatic.
+* `BondKind.order`: the exact bond order in `ℚ`, `3/2` for aromatic.
+* `BondDir`: the directional single-bond marks `/` and `\`.
+* `Bond n`: a bond between two distinct atoms of an `n`-atom molecule.
+* `Bond.edge`: the undirected edge `s(src, dst)`, for Mathlib.
+* `Bond.map`: transport along an injective relabeling of the atoms.
+
+## Main statements
+
+* `BondKind.order_injective`: an order determines the kind.
+* `BondKind.ofOrder?_order`: a kind's order reads back as that kind.
+* `Bond.edge_not_isDiag`: a bond's edge is never a loop.
+* `Bond.edge_map`: relabeling commutes with taking the undirected edge.
 -/
 
 @[expose] public section

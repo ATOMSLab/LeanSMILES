@@ -14,6 +14,13 @@ Reads a molecule table such as `datasets/delaney-processed.csv`: one row per
 molecule, a `smiles` column, and numeric columns. Columns are found by their
 header names, so their order and any extra columns do not matter; fields may be
 quoted (`"2,2',3,4,6-PCB"`), with `""` for a quote inside a quoted field.
+
+## Main definitions
+
+* `CSVparser.Feature`: the numeric columns the parser knows, by header name.
+* `CSVparser.Molecule`: one row of the table, a SMILES string and its numeric features.
+* `CSVparser.parse`: a table's contents to an array of rows.
+* `CSVparser.load`: `parse` of the file at a path, as a pure function.
 -/
 
 public section
@@ -51,6 +58,7 @@ def Molecule.get (m : Molecule) (f : Feature) : Float :=
 def Molecule.features (m : Molecule) : Array Float :=
   m.values.toArray.map Prod.snd
 
+/-- A cell read as a JSON number; `0.0` if it is not one. -/
 private def parseFloat (s : String) : Float :=
   match Lean.Json.parse s.trimAscii.toString with
   | .ok (.num n) => n.toFloat
@@ -82,6 +90,8 @@ def parse (contents : String) (features := Feature.all) : Array Molecule :=
           | none => 0.0)
       acc.push { smiles := cells.getD smilesCol "" |>.trimAscii.toString, values }
 
+/-- The contents of the file at `path`, read by `unsafeIO`; the empty string if it cannot be
+read. -/
 private unsafe def readFileUnsafe (path : System.FilePath) : String :=
   match unsafeIO (IO.FS.readFile path) with
   | .ok s    => s

@@ -26,6 +26,15 @@ The sparse residual is the dense residual.
   `SparseProblem.toProblem`.
 * **Soundness** (`SparseProblem.checkResidual_sound`): `Problem.checkResidual_sound`,
   verbatim.
+
+## Main statements
+
+* `Problem.residualAt_apply`: the exact residual `(A θ − b)ᵢ`, entrywise.
+* `SparseProblem.scatter_getElem`: scatter-add over the rows is `Xᵀ v`.
+* `SparseProblem.residual_eq`, `SparseProblem.loss_eq`: the sparse residual and loss are those of
+  `toProblem`.
+* `SparseProblem.checkResidual_eq`: the sparse check is the dense check.
+* `SparseProblem.checkResidual_sound`: a passing check puts `θ` within `ε` of every `u` in `ℝ`.
 -/
 
 @[expose] public section
@@ -64,8 +73,8 @@ theorem addAt_getElem (acc : Vec ℚ d) (c : ℚ) (l : List (Fin d)) (i : Fin d)
     push_cast
     grind
 
--- Scatter-add over any list of rows, from any accumulator: `scatter_getElem` before the
--- rows are `List.finRange m` and the accumulator is `vzero`.
+/-- Scatter-add over any list of rows `rs`, from any accumulator: entry `i` gains
+`Σ_{r ∈ rs} count(i, row r) · vᵣ`. -/
 private theorem foldl_addAt_getElem (bits : Vector (List (Fin d)) m) (v : Vec ℚ m) (i : Fin d)
     (rs : List (Fin m)) (acc : Vec ℚ d) :
     (rs.foldl (fun acc r ↦ addAt acc v[r] bits[r]) acc)[i] =

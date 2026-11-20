@@ -20,6 +20,22 @@ atoms, the `i`-th at distance `i`, consecutive ones bonded (`Work.PathOK`).  A c
 joins two such paths that share only the root, by a bond (odd cycles) or through a common
 neighbour (even cycles); the distances keep its atoms distinct.  Choosing among the candidates
 (`candidateCycles`, `relevantCycles`) only keeps some of them.
+
+## Main definitions
+
+* `Work.Adj`: two atoms joined by a bond.
+* `Work.PathOK`: a shortest path from the root, read off the distances.
+* `Work.IsRing`: a ring, distinct atoms (at least three) bonded around.
+* `Work.kekFusedNbrs`, `Work.systemAtoms`: the fused-ring neighbours and the atoms of a fused
+  system, as kekulization builds them.
+
+## Main statements
+
+* `Work.isRing_of_mem_relevantCycles`: every ring of the ring set is a genuine cycle.
+* `Work.IsRing.shared_bond`: two rings at an atom with at most three bonds share a bond.
+* `components_spec`: `components` lists disjoint, neighbour-closed sets covering `[0, n)`.
+* `Work.fusedSystems_spec`: every ring atom is in some fused system, and an atom with at most
+  three bonds is in at most one.
 -/
 
 @[expose] public section
@@ -42,6 +58,7 @@ namespace Work
 /-- Atoms `u` and `v` are joined by a bond. -/
 def Adj (m : Work) (u v : ℕ) : Prop := ∃ k, (k, v) ∈ m.neighbors u
 
+/-- Adjacency is symmetric. -/
 lemma Adj.symm {m : Work} {u v : ℕ} (h : m.Adj u v) : m.Adj v u := by
   obtain ⟨k, hk⟩ := h
   obtain ⟨k', hk', e⟩ := List.mem_map.mp hk
@@ -57,6 +74,7 @@ lemma Adj.symm {m : Work} {u v : ℕ} (h : m.Adj u v) : m.Adj v u := by
       true_and] at hk' ⊢
     split <;> split <;> simp_all
 
+/-- An atom in `u`'s neighbour list is adjacent to `u`. -/
 lemma adj_of_mem_neighbors {m : Work} {u v k : ℕ} (h : (k, v) ∈ m.neighbors u) : m.Adj u v :=
   ⟨k, h⟩
 
@@ -65,6 +83,7 @@ lemma adj_of_mem_neighbors {m : Work} {u v k : ℕ} (h : (k, v) ∈ m.neighbors 
 /-- Distance `0` belongs to the root alone. -/
 def ZeroAt (dist : Array (Option ℕ)) (r : ℕ) : Prop := ∀ v, dist[v]! = some 0 ↔ v = r
 
+/-- One visit keeps distance `0` at the root alone. -/
 lemma zeroAt_bfsVisit (m : Work) {r u : ℕ} {p : Array (Option ℕ) × Array ℕ}
     (h : ZeroAt p.1 r) : ZeroAt (m.bfsVisit u p).1 r := by
   unfold bfsVisit
@@ -92,6 +111,7 @@ lemma zeroAt_bfsVisit (m : Work) {r u : ℕ} {p : Array (Option ℕ) × Array �
       · exact h w
     · exact h
 
+/-- The search loop keeps distance `0` at the root alone. -/
 lemma zeroAt_bfsLoop (m : Work) {r : ℕ} :
     ∀ (fuel head : ℕ) (p : Array (Option ℕ) × Array ℕ), ZeroAt p.1 r →
       ZeroAt (m.bfsLoop fuel head p).1 r
@@ -102,6 +122,7 @@ lemma zeroAt_bfsLoop (m : Work) {r : ℕ} :
     · exact zeroAt_bfsLoop m fuel _ _ (zeroAt_bfsVisit m h)
     · exact h
 
+/-- From an in-range root, the search gives distance `0` to the root alone. -/
 lemma zeroAt_bfs (m : Work) {r : ℕ} (hr : r < m.numAtoms) : ZeroAt (m.bfs r).1 r := by
   unfold bfs
   apply zeroAt_bfsLoop
@@ -128,10 +149,15 @@ lemma zeroAt_bfs (m : Work) {r : ℕ} (hr : r < m.numAtoms) : ZeroAt (m.bfs r).1
 /-- A path from the root `r` to `w` at distance `d`: `d + 1` atoms, starting at `r` and ending at
 `w`, consecutive ones bonded, the `i`-th at distance `i`. -/
 structure PathOK (m : Work) (dist : Array (Option ℕ)) (r w d : ℕ) (p : List ℕ) : Prop where
+  /-- The path has `d + 1` atoms. -/
   length : p.length = d + 1
+  /-- It starts at the root. -/
   head : p.head? = some r
+  /-- It ends at `w`. -/
   last : p.getLast? = some w
+  /-- Consecutive atoms are bonded. -/
   chain : p.IsChain m.Adj
+  /-- The `i`-th atom is at distance `i`. -/
   dist : ∀ i (h : i < p.length), dist[p[i]]! = some i
 
 /-- Every path stored for an atom at distance `d` is a `PathOK` path. -/
@@ -139,6 +165,8 @@ def PathsOK (m : Work) (dist : Array (Option ℕ)) (r : ℕ) (paths : Array (Lis
     Prop :=
   ∀ w d, dist[w]! = some d → ∀ p ∈ paths[w]!, m.PathOK dist r w d p
 
+/-- One step of `allShortestPaths` stores only `PathOK` paths, if distance `0` is the root's
+alone. -/
 lemma pathsOK_step (m : Work) {dist : Array (Option ℕ)} {r : ℕ} (hz : ZeroAt dist r)
     {paths : Array (List (List ℕ))} (h : m.PathsOK dist r paths) (v : ℕ) :
     m.PathsOK dist r (m.shortestPathsStep dist r paths v) := by
@@ -183,6 +211,8 @@ lemma pathsOK_step (m : Work) {dist : Array (Option ℕ)} {r : ℕ} (hz : ZeroAt
     · cases hu'
   · exact h w d hw p hp
 
+/-- Every path `allShortestPaths` stores is a `PathOK` path, if distance `0` is the root's
+alone. -/
 lemma pathsOK_allShortestPaths (m : Work) {dist : Array (Option ℕ)} {r : ℕ} (hz : ZeroAt dist r)
     (order : Array ℕ) :
     m.PathsOK dist r (m.allShortestPaths dist order r) := by
@@ -240,18 +270,22 @@ lemma PathOK.dist_le {m : Work} {dist : Array (Option ℕ)} {r w d : ℕ} {p : L
 
 /-- A ring: distinct atoms, at least three, consecutive ones bonded, the last to the first. -/
 structure IsRing (m : Work) (c : List ℕ) : Prop where
+  /-- The atoms are distinct. -/
   nodup : c.Nodup
+  /-- There are at least three. -/
   three : 3 ≤ c.length
+  /-- Consecutive atoms are bonded. -/
   chain : c.IsChain m.Adj
+  /-- The last atom is bonded to the first. -/
   close : ∀ a ∈ c.getLast?, ∀ b ∈ c.head?, m.Adj a b
 
+/-- A list of consecutively bonded atoms is still one reversed. -/
 lemma isChain_reverse_of_symm {m : Work} {l : List ℕ} (h : l.IsChain m.Adj) :
     l.reverse.IsChain m.Adj := by
   rw [List.isChain_reverse]
   exact h.imp fun _ _ h ↦ h.symm
 
-/-- Two paths from `r` that share only `r`, the first extended by `mid`, closed into a ring by a
-bond between their ends. -/
+/-- Two paths from `r` that share only `r` are closed into a ring by a bond between their ends. -/
 lemma isRing_join {m : Work} {r : ℕ} {p qt : List ℕ}
     (hpc : p.IsChain m.Adj) (hpn : p.Nodup) (hph : p.head? = some r)
     (hqc : (r :: qt).IsChain m.Adj) (hqn : (r :: qt).Nodup) (hqt : qt ≠ [])
@@ -282,6 +316,7 @@ lemma isRing_join {m : Work} {r : ℕ} {p qt : List ℕ}
     have := List.IsChain.rel_head hqc
     exact this.symm
 
+/-- A `PathOK` path to an atom at distance `d` is the root followed by `d` atoms. -/
 lemma PathOK.cons {m : Work} {dist : Array (Option ℕ)} {r w d : ℕ} {p : List ℕ}
     (h : m.PathOK dist r w d p) : ∃ pt, p = r :: pt ∧ pt.length = d := by
   obtain ⟨a, pt, rfl⟩ := List.exists_cons_of_length_pos (by rw [h.length]; omega : 0 < p.length)
@@ -290,6 +325,7 @@ lemma PathOK.cons {m : Work} {dist : Array (Option ℕ)} {r w d : ℕ} {p : List
   subst this
   exact ⟨pt, rfl, by have := h.length; simp at this; omega⟩
 
+/-- Paths with `disjointTails` share no atom after their first. -/
 lemma not_mem_tail_of_disjointTails {p q : List ℕ} (h : disjointTails p q = true) :
     ∀ a ∈ p.tail, a ∉ q.tail := by
   simp only [disjointTails, List.all_eq_true] at h
@@ -308,6 +344,8 @@ lemma PathOK.not_mem {m : Work} {dist : Array (Option ℕ)} {r w d x dx : ℕ} {
   cases e
   omega
 
+/-- Every odd cycle found at an atom at nonzero distance is a ring, when the stored paths are
+`PathOK`. -/
 lemma isRing_of_mem_oddCycles (m : Work) {dist : Array (Option ℕ)} {r : ℕ}
     {paths : Array (List (List ℕ))} (hp : m.PathsOK dist r paths) {x dx : ℕ}
     (hx : dist[x]! = some dx) (hdx : dx ≠ 0) {c : List ℕ} (hc : c ∈ m.oddCycles dist paths x dx) :
@@ -351,12 +389,15 @@ lemma isRing_of_mem_oddCycles (m : Work) {dist : Array (Option ℕ)} {r : ℕ}
     · cases hc
   · cases hc
 
+/-- Putting an atom in front of a nonempty list keeps its last atom. -/
 lemma getLast?_cons_of_ne_nil {r : ℕ} {qt : List ℕ} (h : qt ≠ []) :
     (r :: qt).getLast? = qt.getLast? := by
   obtain ⟨z, hz⟩ := Option.ne_none_iff_exists'.1 (mt List.getLast?_eq_none_iff.1 h)
   rw [List.getLast?_cons, hz]
   rfl
 
+/-- Every even cycle found at an atom at distance at least `2` is a ring, when the stored paths
+are `PathOK`. -/
 lemma isRing_of_mem_evenCycles (m : Work) {dist : Array (Option ℕ)} {r : ℕ}
     {paths : Array (List (List ℕ))} (hp : m.PathsOK dist r paths) {x dx : ℕ}
     (hx : dist[x]! = some dx) (hdx : 2 ≤ dx) {c : List ℕ}
@@ -430,6 +471,7 @@ lemma isRing_of_mem_evenCycles (m : Work) {dist : Array (Option ℕ)} {r : ℕ}
         exact hxp hy⟩
   · cases hc
 
+/-- Every cycle found at an atom is a ring, when the stored paths are `PathOK`. -/
 lemma isRing_of_mem_cyclesAt (m : Work) {dist : Array (Option ℕ)} {r : ℕ}
     {paths : Array (List (List ℕ))} (hp : m.PathsOK dist r paths) {x : ℕ} {c : List ℕ}
     (hc : c ∈ m.cyclesAt dist paths x) : m.IsRing c := by
@@ -447,6 +489,7 @@ lemma isRing_of_mem_cyclesAt (m : Work) {dist : Array (Option ℕ)} {r : ℕ}
         · exact isRing_of_mem_evenCycles m hp hx (by omega) hc
         · cases hc
 
+/-- Every cycle found from an in-range root is a ring. -/
 lemma isRing_of_mem_cyclesFrom (m : Work) {r : ℕ} (hr : r < m.numAtoms) {c : List ℕ}
     (hc : c ∈ m.cyclesFrom r) : m.IsRing c := by
   unfold cyclesFrom at hc
@@ -454,6 +497,7 @@ lemma isRing_of_mem_cyclesFrom (m : Work) {r : ℕ} (hr : r < m.numAtoms) {c : L
   exact isRing_of_mem_cyclesAt m
     (pathsOK_allShortestPaths m (zeroAt_bfs m hr) (m.bfs r).2) hc
 
+/-- Every candidate cycle is a ring. -/
 lemma isRing_of_mem_candidateCycles (m : Work) {e : ℕ × List ℕ}
     (he : e ∈ m.candidateCycles) : m.IsRing e.2 := by
   unfold candidateCycles at he
@@ -519,6 +563,7 @@ theorem isRing_of_mem_relevantCycles (m : Work) {c : List ℕ} (hc : c ∈ m.rel
 
 /-! ### Ring bonds at an atom -/
 
+/-- `bondBetween?` does not depend on the order of the two atoms. -/
 lemma bondBetween?_comm (m : Work) (u v : ℕ) : m.bondBetween? u v = m.bondBetween? v u := by
   unfold bondBetween?
   congr 1
@@ -537,6 +582,7 @@ lemma bondBetween?_spec {m : Work} {u v k : ℕ} (h : m.bondBetween? u v = some 
     beq_iff_eq]
   refine ⟨⟨hk, by omega⟩, ⟨hk, by omega⟩, fun y hy ↦ by omega⟩
 
+/-- `bondBetween?` finds a bond between adjacent atoms. -/
 lemma bondBetween?_of_adj {m : Work} {u v : ℕ} (h : m.Adj u v) :
     ∃ k, m.bondBetween? u v = some k := by
   obtain ⟨k, hk⟩ := h
@@ -551,6 +597,7 @@ lemma bondBetween?_of_adj {m : Work} {u v : ℕ} (h : m.Adj u v) :
   simp only [WBond.touches, WBond.other, Bool.or_eq_true, beq_iff_eq, Bool.and_eq_true] at h2 ⊢
   split <;> omega
 
+/-- For `t < n`, `(t + 1) % n` is `t + 1`, or `0` at the end. -/
 lemma succ_mod {t n : ℕ} (ht : t < n) : (t + 1) % n = if t + 1 < n then t + 1 else 0 := by
   split
   · exact Nat.mod_eq_of_lt (by assumption)
@@ -572,6 +619,7 @@ lemma IsRing.adj_get {m : Work} {c : List ℕ} (h : m.IsRing c) {t : ℕ} (ht : 
     · rw [List.getLast?_eq_getElem?, ← ht', List.getElem?_eq_getElem ht]; rfl
     · rw [List.head?_eq_getElem?, List.getElem?_eq_getElem h0]; rfl
 
+/-- The bond between atom `t` of a ring and the next is a ring bond. -/
 lemma mem_ringBonds_of {m : Work} {c : List ℕ} {t k : ℕ} (ht : t < c.length)
     (hk : m.bondBetween? c[t]! c[(t + 1) % c.length]! = some k) : k ∈ m.ringBonds c :=
   List.mem_filterMap.2 ⟨t, List.mem_range.2 ht, hk⟩
@@ -646,6 +694,7 @@ end Work
 
 /-! ### Connected components -/
 
+/-- Marking an in-range unmarked entry leaves one fewer `false`. -/
 lemma count_false_set! (sn : Array Bool) {v : ℕ} (hv : v < sn.size) (h : sn[v]! = false) :
     (sn.set! v true).toList.count false + 1 = sn.toList.count false := by
   rw [getElem!_pos sn v hv] at h
@@ -657,6 +706,7 @@ lemma count_false_set! (sn : Array Bool) {v : ℕ} (hv : v < sn.size) (h : sn[v]
   simp only [BEq.rfl, ↓reduceIte, Bool.true_beq, Bool.false_eq_true, Nat.add_zero]
   omega
 
+/-- `set!` keeps the size of an array. -/
 lemma size_set!_any {α : Type} (a : Array α) (i : ℕ) (v : α) : (a.set! i v).size = a.size := by
   simp
 
@@ -748,12 +798,19 @@ lemma foldl_pushNbr (L : List ℕ) (sn : Array Bool) (st : List ℕ)
 /-- The state of the search of one component, the atoms of earlier components being `O`. -/
 structure DfsInv (n : ℕ) (nbrs : Array (List ℕ)) (O : ℕ → Prop) (seen : Array Bool)
     (comp stack : List ℕ) : Prop where
+  /-- One mark per vertex. -/
   size : seen.size = n
+  /-- The marked vertices are those of earlier components, the component and the stack. -/
   seenIff : ∀ x, seen[x]! = true ↔ x < n ∧ (O x ∨ x ∈ comp ∨ x ∈ stack)
+  /-- The component and the stack are in range. -/
   lt : ∀ x, x ∈ comp ∨ x ∈ stack → x < n
+  /-- The component and the stack hold no vertex of an earlier component. -/
   notOld : ∀ x, x ∈ comp ∨ x ∈ stack → ¬ O x
+  /-- Every neighbour of a vertex of the component is marked. -/
   closed : ∀ i ∈ comp, ∀ j ∈ nbrs[i]!, seen[j]! = true
 
+/-- With enough fuel, the search of one component ends with an empty stack and the invariant
+kept, and a marked vertex stays marked. -/
 lemma dfsComp_inv {n : ℕ} {nbrs : Array (List ℕ)} (hlt : ∀ i : ℕ, ∀ j ∈ nbrs[i]!, j < n)
     {O : ℕ → Prop} :
     ∀ (fuel : ℕ) (seen : Array Bool) (comp stack : List ℕ), DfsInv n nbrs O seen comp stack →
@@ -837,12 +894,19 @@ lemma dfsComp_inv {n : ℕ} {nbrs : Array (List ℕ)} (hlt : ∀ i : ℕ, ∀ j 
 /-- The state of `components` after some start atoms: the components found so far. -/
 structure CompInv (n : ℕ) (nbrs : Array (List ℕ)) (seen : Array Bool) (comps : List (List ℕ)) :
     Prop where
+  /-- One mark per vertex. -/
   size : seen.size = n
+  /-- The marked vertices are those of the components found. -/
   seenIff : ∀ x, seen[x]! = true ↔ ∃ C ∈ comps, x ∈ C
+  /-- The components are in range. -/
   lt : ∀ C ∈ comps, ∀ x ∈ C, x < n
+  /-- The components are disjoint. -/
   pairwise : comps.Pairwise fun C D ↦ ∀ x ∈ C, x ∉ D
+  /-- Each component is closed under neighbours. -/
   closed : ∀ C ∈ comps, ∀ i ∈ C, ∀ j ∈ nbrs[i]!, j ∈ C
 
+/-- One start atom of `components` keeps the invariant, marks the start atom, and keeps every
+mark. -/
 lemma componentsStep_inv {n : ℕ} {nbrs : Array (List ℕ)} (hlt : ∀ i : ℕ, ∀ j ∈ nbrs[i]!, j < n)
     (hsym : ∀ i j : ℕ, j ∈ nbrs[i]! → i ∈ nbrs[j]!) {s : ℕ} (hs : s < n)
     {seen : Array Bool} {comps : List (List ℕ)} (h : CompInv n nbrs seen comps) :
@@ -1009,6 +1073,8 @@ def kekFusedNbrs (m : Work) (rings : Array (List ℕ)) : Array (List ℕ) :=
 def systemAtoms (rings : Array (List ℕ)) (system : List ℕ) : List ℕ :=
   (system.flatMap (rings[·]!)).eraseDups
 
+/-- Ring `j` is a fused neighbour of ring `i` when both are in range, differ, and share a ring
+bond. -/
 lemma mem_kekFusedNbrs {m : Work} {rings : Array (List ℕ)} {i j : ℕ} :
     j ∈ (m.kekFusedNbrs rings)[i]! ↔ i < rings.size ∧ j < rings.size ∧ j ≠ i ∧
       ∃ k ∈ m.ringBonds rings[i]!, k ∈ m.ringBonds rings[j]! := by
@@ -1031,6 +1097,7 @@ lemma mem_kekFusedNbrs {m : Work} {rings : Array (List ℕ)} {i j : ℕ} :
     · intro h; exact absurd h List.not_mem_nil
     · exact fun h ↦ absurd h.1 hi
 
+/-- An atom is in a system's atoms when it is on one of the system's rings. -/
 lemma mem_systemAtoms {rings : Array (List ℕ)} {system : List ℕ} {x : ℕ} :
     x ∈ systemAtoms rings system ↔ ∃ i ∈ system, x ∈ rings[i]! := by
   unfold systemAtoms

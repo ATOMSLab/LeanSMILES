@@ -33,6 +33,25 @@ configurations along with everything else (`relabelStereo`).
 
 The one piece of chemistry in this file is `assignImplicitH`, the OpenSMILES
 default-valence rule for bare organic-subset atoms.  Everything else is graph.
+
+## Main definitions
+
+* `Molecule n`: a molecule with `n` atoms; `Mol` bundles one with its size.
+* `relabelVec`, `relabelStereo`: transporting per-atom vectors and configurations along a
+  relabeling.
+* `Molecule.bondBetween`, `Molecule.degree`, `Molecule.bondOrderSum`: the bond joining two atoms,
+  and an atom's degree and bond-order sum.
+* `Molecule.assignImplicitH`: the OpenSMILES default-valence rule, filling in `Atom.implicitH`.
+* `Molecule.normalizeBrackets`: every atom in bracket normal form.
+* `Molecule.relabel`: relabeling the atoms by a permutation.
+
+## Main statements
+
+* `Molecule.relabel_relabel`: relabeling twice is relabeling by the composite.
+* `Molecule.degree_relabel`, `Molecule.bondOrderSum_relabel`: relabeling preserves degrees and
+  bond-order sums.
+* `Molecule.normalizeBrackets_normalizeBrackets`: bracket normalization is idempotent.
+* `Molecule.normalizeBrackets_relabel`: bracket normalization commutes with relabeling.
 -/
 
 @[expose] public section
@@ -310,7 +329,7 @@ def normalizeBrackets : Molecule n :=
   simp [normalizeBrackets, mapAtoms, atom]
 
 /-- Bracket normalization keeps every atom's hydrogen count. -/
-@[simp] lemma totalH_normalizeBrackets (i : Fin n) :
+lemma totalH_normalizeBrackets (i : Fin n) :
     (m.normalizeBrackets.atom i).totalH = (m.atom i).totalH := by
   simp
 

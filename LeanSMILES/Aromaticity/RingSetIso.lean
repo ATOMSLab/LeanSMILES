@@ -16,6 +16,21 @@ The ring set follows a renumbering
 found from any root is represented (`Work.candidateCycles_spec`). Under a renumbering
 (`Work.WorkIso`) each candidate matches one of the other copy, with the same ring up to start and
 direction and the bonds renamed (`Work.WorkIso.candidate`).
+
+## Main definitions
+
+* `Work.bitMap`: a mask with its bits renamed.
+
+## Main statements
+
+* `Work.candidateCycles_spec`: the candidates are one per mask, tagged with their masks, and
+  cover every cycle found from a root.
+* `Work.xspan_bitMap_iff`: renaming the bits keeps the span.
+* `Work.WorkIso.candidate`: each candidate matches one of the renamed copy.
+* `Work.WorkIso.relevant_iff`: relevance is kept by the matching.
+* `Work.WorkIso.relevantCycles`: the ring set follows the renumbering.
+* `Work.WorkIso.setAromaticity_relevantCycles`: perception over the renamed copy's ring set is
+  perception over the original ring set renamed.
 -/
 
 @[expose] public section
@@ -24,6 +39,8 @@ namespace LeanSMILES.Aromaticity
 
 namespace Work
 
+/-- Folding `addCandidate` over `L` keeps the masks distinct and each tag the cycle's mask, adds
+only cycles of `L`, represents every cycle of `L` by its mask, and drops nothing. -/
 lemma foldl_addCandidate (m : Work) : ∀ (L : List (List ℕ)) (cands : Array (ℕ × List ℕ)),
     (cands.toList.map (·.1)).Nodup → (∀ e ∈ cands.toList, e.1 = m.cycleMask e.2) →
     ((L.foldl m.addCandidate cands).toList.map (·.1)).Nodup ∧
@@ -127,6 +144,7 @@ theorem candidateCycles_spec (m : Work) :
 def bitMap (π : ℕ → ℕ) (n v : ℕ) : ℕ :=
   (List.range n).foldl (fun acc k ↦ if v.testBit k then acc ||| (1 <<< π k) else acc) 0
 
+/-- Bit `j` of `bitMap π n v` is set when `j = π k` for some set bit `k < n` of `v`. -/
 lemma testBit_bitMap (π : ℕ → ℕ) (n v j : ℕ) :
     (bitMap π n v).testBit j = decide (∃ k < n, π k = j ∧ v.testBit k = true) := by
   have key : ∀ (L : List ℕ) (init : ℕ),
@@ -164,6 +182,7 @@ lemma testBit_bitMap (π : ℕ → ℕ) (n v j : ℕ) :
   rw [bitMap, key, Nat.zero_testBit, Bool.false_or]
   simp only [List.mem_range]
 
+/-- Renaming the bits by a map injective below `n` commutes with xor. -/
 lemma bitMap_xor {π : ℕ → ℕ} {n : ℕ} (hinj : ∀ a < n, ∀ b < n, π a = π b → a = b) (a b : ℕ) :
     bitMap π n (a ^^^ b) = bitMap π n a ^^^ bitMap π n b := by
   apply Nat.eq_of_testBit_eq
@@ -180,9 +199,11 @@ lemma bitMap_xor {π : ℕ → ℕ} {n : ℕ} (hinj : ∀ a < n, ∀ b < n, π a
       fun c ⟨k', hk', e, _⟩ ↦ h ⟨k', hk', e⟩
     simp only [e, decide_false, Bool.xor_false]
 
+/-- Renaming the bits of `0` gives `0`. -/
 lemma bitMap_zero (π : ℕ → ℕ) (n : ℕ) : bitMap π n 0 = 0 :=
   Nat.eq_of_testBit_eq fun j ↦ by simp [testBit_bitMap]
 
+/-- A number whose set bits are all below `n` is below `2 ^ n`. -/
 lemma lt_two_pow_of_testBit {v n : ℕ} (h : ∀ j, v.testBit j = true → j < n) : v < 2 ^ n :=
   Nat.lt_pow_two_of_testBit v fun j hj ↦ by
     by_contra h'
@@ -207,6 +228,7 @@ lemma bitMap_bitMap {π ρ : ℕ → ℕ} {n : ℕ} (hb : IdxBij n π ρ) {v : �
       cases h
     exact ⟨π j, hb.lt j hj, hb.left j hj, j, hj, rfl, h⟩
 
+/-- A sum of masks of `S`, its bits renamed, is a sum of the renamed masks of `S`. -/
 lemma xspan_map_bitMap {π : ℕ → ℕ} {n : ℕ} (hinj : ∀ a < n, ∀ b < n, π a = π b → a = b)
     {S : List ℕ} {v : ℕ} (h : XSpan S v) : XSpan (S.map (bitMap π n)) (bitMap π n v) := by
   induction h with
@@ -236,15 +258,18 @@ lemma cycleMask_lt (m : Work) (c : List ℕ) : m.cycleMask c < 2 ^ m.numBonds :=
 
 /-! ### Matching the candidates -/
 
+/-- A candidate's mask counts its atoms. -/
 lemma popcount_of_mem_candidateCycles (m : Work) {e : ℕ × List ℕ}
     (he : e ∈ m.candidateCycles.toList) : popcount e.1 = e.2.length := by
   rw [((candidateCycles_spec m).2.1 e he).1]
   exact (isRing_of_mem_candidateCycles m (Array.mem_def.2 he)).popcount_cycleMask
 
+/-- Bond `j` is a ring bond of `c` exactly when bit `j` of `c`'s mask is set. -/
 lemma mem_ringBonds_iff_testBit (m : Work) (c : List ℕ) (j : ℕ) :
     j ∈ m.ringBonds c ↔ (m.cycleMask c).testBit j = true := by
   rw [testBit_cycleMask, decide_eq_true_eq]
 
+/-- A ring bond is in range. -/
 lemma lt_of_mem_ringBonds {m : Work} {c : List ℕ} {k : ℕ} (hk : k ∈ m.ringBonds c) :
     k < m.numBonds := by
   rw [ringBonds_eq_filterMap, List.mem_filterMap] at hk
@@ -372,6 +397,7 @@ lemma relevantCycles_pairwise (m : Work) :
     ← popcount_of_mem_candidateCycles m (List.mem_mergeSort.1 (List.mem_filter.1 hb).1)]
   exact h
 
+/-- Every cycle of the ring set is a ring. -/
 lemma relevantCycles_isRing (m : Work) : ∀ c ∈ m.relevantCycles.toList, m.IsRing c :=
   fun _ hc ↦ isRing_of_mem_relevantCycles m (Array.mem_def.2 hc)
 
@@ -393,6 +419,7 @@ lemma cand_eq_of_map (I : WorkIso w w' σ ψ π ρ) (hwf : w.WF) {e d : ℕ × L
     rw [((candidateCycles_spec w).2.1 e he).1, ((candidateCycles_spec w).2.1 d hd).1, h2]
   exact Prod.ext h1 h2
 
+/-- A candidate is determined by its atoms. -/
 lemma cand_eq_of_snd {m : Work} {e d : ℕ × List ℕ} (he : e ∈ m.candidateCycles.toList)
     (hd : d ∈ m.candidateCycles.toList) (h : e.2 = d.2) : e = d := by
   refine Prod.ext ?_ h

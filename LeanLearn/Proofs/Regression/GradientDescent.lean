@@ -29,6 +29,20 @@ assume the step-size condition `2ηΛ ≤ 1` with `η > 0`.
 The condition only involves the data through a bound on the feature norms:
 `‖xᵣ‖² ≤ R²` for every sample gives `Λ ≤ R² + λ` (`smoothness_le`), so
 `2η (R² + λ) ≤ 1` can be checked before training.
+
+## Main definitions
+
+* `Problem.smoothness`: `Λ = (1/m) ∑ᵣ ‖xᵣ‖² + λ`, the curvature bound of the step-size condition.
+
+## Main statements
+
+* `Problem.loss_gdStep_le`: a step lowers the loss by at least `2η ‖A θ - b‖²`.
+* `Problem.loss_gradientDescent_antitone`: the loss never increases along gradient descent.
+* `Problem.loss_gradientDescent_le`: after `k ≥ 1` steps, `L(θₖ) ≤ L(u) + ‖u‖² / (2ηk)`.
+* `Problem.loss_gradientDescent_le_add`: the excess over every `u` with `‖u‖² ≤ B ≤ 2ηkε` is at
+  most `ε`.
+* `Problem.smoothness_le`: a per-sample bound `R²` on the squared feature norms gives
+  `Λ ≤ R² + λ`.
 -/
 
 @[expose] public section
@@ -86,7 +100,7 @@ theorem loss_gdStep_le {η : ℝ} (hη : 0 ≤ η) (hstep : 2 * η * P.smoothnes
   linarith [mul_le_mul_of_nonneg_left hC (by positivity : 0 ≤ 4 * η ^ 2),
     mul_le_mul_of_nonneg_right hstep hN]
 
--- One step never increases the loss: the decrease `2η ‖A θ - b‖²` of `loss_gdStep_le` is `≥ 0`.
+/-- One step never increases the loss, with `0 ≤ η` and `2ηΛ ≤ 1`. -/
 private theorem loss_gdStep_le_loss {η : ℝ} (hη : 0 ≤ η) (hstep : 2 * η * P.smoothness ≤ 1)
     (θ : Vec ℝ (d + 1)) : P.loss (gdStep P.normalMatrix P.normalVector η θ) ≤ P.loss θ :=
   (P.loss_gdStep_le hη hstep θ).trans (sub_le_self _ (by positivity))

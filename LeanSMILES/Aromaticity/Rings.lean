@@ -26,6 +26,22 @@ kept from strictly smaller sizes. Bond sets are bitmasks (`Nat`).
 
 Ring membership (`Molecule.inRingVector`) does not need this: it only asks
 *whether* a bond is on some cycle.
+
+## Main definitions
+
+* `Aromaticity.Work.bfs`: breadth-first distances from a root, and the visiting order.
+* `Aromaticity.Work.candidateCycles`: the candidate cycles, one per bond set.
+* `Aromaticity.Work.relevantCycles`: RDKit's ring set, the relevant cycles.
+* `Aromaticity.components`: the connected components of a graph given by neighbor lists.
+* `Aromaticity.Work.onCycle`: whether a bond lies on a cycle.
+* `Aromaticity.Work.ringBonds`: the bond indices around a ring given as atoms.
+
+## Main statements
+
+* `Aromaticity.Work.bfs_congr`: the search reads the copy only through its neighbour lists and
+  sizes.
+* `Aromaticity.Work.relevantCycles_congr`: ring perception reads the copy only through its
+  neighbour lists, `bondBetween?` and sizes.
 -/
 
 @[expose] public section

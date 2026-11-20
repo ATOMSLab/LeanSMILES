@@ -32,6 +32,15 @@ public import LeanSMILES.Depict.Graph
    which `wedges` checks by the signed volume of the neighbors.
 
 Coordinates are in bond lengths, `y` up.
+
+## Main definitions
+
+* `Depict.Pt`: a point in the plane.
+* `Depict.layoutComponent`: one component laid out by classical MDS and stress majorisation.
+* `Depict.layoutCage`: a cage-like component laid out in 3D and projected.
+* `Depict.fixDoubleBonds`: enforcing the cis/trans arrangement of the double bonds.
+* `Depict.layout`: coordinates for every atom.
+* `Depict.StereoBond`, `Depict.wedges`: the wedge or hash bond drawn for each stereocentre.
 -/
 
 @[expose] public section

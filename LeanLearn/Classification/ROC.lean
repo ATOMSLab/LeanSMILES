@@ -19,6 +19,12 @@ together, so ties give a diagonal step, as in scikit-learn's `roc_curve`.
 `roc_auc_score`): the probability that a random class-1 sample scores above a
 random class-0 sample, ties counting one half. 1 is a perfect ranking, 0.5 a
 random one.
+
+## Main definitions
+
+* `rocCurve`: the (false-positive rate, true-positive rate) points of (score, class) pairs.
+* `auc`: the trapezoidal area under a curve.
+* `rocAuc`: `auc` of the `rocCurve`.
 -/
 
 @[expose] public section

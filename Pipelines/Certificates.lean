@@ -45,6 +45,16 @@ residual certifies.
 The check is plain `ℚ` arithmetic on the data, so `decide +kernel` can run it whenever the
 kernel can evaluate the representation (`bondOrders`, but not `morgan`, whose hashing the
 kernel cannot reduce).
+
+## Main definitions
+
+* `Pipeline.checkGD`: the gradient-descent check from a feature bound `R²`, a budget `B` and a
+  tolerance `ε`.
+* `Pipeline.checkGDData`: the gradient-descent check with the exact smoothness of the data.
+* `Pipeline.checkSolver`: the Jacobi or Gauss–Seidel witness check on the exact normal equations.
+* `Pipeline.checkResidual`: the residual check on trained parameters.
+* `Pipeline.certifiedSolverExcess`, `Pipeline.gdTolerance`, `Pipeline.gdRate`,
+  `Pipeline.residualExcess`: the guarantee each check certifies.
 -/
 
 @[expose] public section

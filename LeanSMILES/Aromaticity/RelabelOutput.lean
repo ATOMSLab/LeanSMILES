@@ -12,6 +12,14 @@ public import LeanSMILES.Aromaticity.KekulizeRelabel
 
 The output molecule from a relabeled working copy is the relabeled output
 (`Molecule.aromatizeOutput_relabel`).
+
+## Main statements
+
+* `Molecule.outAtom_relabel`: an output atom read from a relabeled copy is the original one's.
+* `Molecule.aromatizeOutput_relabel`: the output from a relabeled working copy is the relabeled
+  output.
+* `Aromaticity.Work.ringBonds_eq_of_ends`: copies with the same bond ends have the same ring
+  bonds.
 -/
 
 @[expose] public section
@@ -20,6 +28,8 @@ namespace LeanSMILES
 
 open Aromaticity Aromaticity.Work
 
+/-- Atom `j` of the output read from the relabeled copy, for the relabeled molecule, is atom
+`σ.symm j` of the output read from `W` for `m`. -/
 lemma Molecule.outAtom_relabel {n : ℕ} (m : Molecule n) {W : Work} (hwf : WF W)
     (hn : W.atoms.size = n) (σ : Equiv.Perm (Fin n)) (j : Fin n) :
     (m.relabel σ).outAtom (W.relabelW (finPermFun σ) (finPermFun σ.symm)) j =
@@ -35,6 +45,8 @@ lemma Molecule.outAtom_relabel {n : ℕ} (m : Molecule n) {W : Work} (hwf : WF W
   dsimp only
   rw [ha, hj, atom_relabelW hb hi, implicitHs_relabelW hwf hb hi, isAromaticAtom_relabelW hwf hb hi]
 
+/-- The bonds of the relabeled molecule with the relabeled copy's kinds are `m`'s bonds with
+`W`'s kinds, relabeled. -/
 lemma withKinds_relabel {n : ℕ} (m : Molecule n) (W : Work) (σ : Equiv.Perm (Fin n)) :
     withKinds (m.relabel σ) (W.relabelW (finPermFun σ) (finPermFun σ.symm)) =
       (withKinds m W).map (Bond.map σ σ.injective) := by
@@ -64,6 +76,8 @@ theorem Molecule.aromatizeOutput_relabel {n : ℕ} (m : Molecule n) {W : Work} (
 
 namespace Aromaticity.Work
 
+/-- Two copies with as many bonds and the same ends at every bond find the same bond between any
+two atoms. -/
 lemma bondBetween?_eq_of_ends {w w' : Work} (hs : w'.bonds.size = w.bonds.size)
     (he : ∀ k : ℕ, w'.bonds[k]?.map (fun b : WBond ↦ (b.src, b.dst)) =
       w.bonds[k]?.map (fun b : WBond ↦ (b.src, b.dst))) : w'.bondBetween? = w.bondBetween? := by
@@ -75,16 +89,19 @@ lemma bondBetween?_eq_of_ends {w w' : Work} (hs : w'.bonds.size = w.bonds.size)
   funext u v
   simp only [bondBetween?, hB, hsrc, hdst]
 
+/-- Two copies with as many bonds and the same ends at every bond give every ring the same bonds. -/
 lemma ringBonds_eq_of_ends {w w' : Work} (hs : w'.bonds.size = w.bonds.size)
     (he : ∀ k : ℕ, w'.bonds[k]?.map (fun b : WBond ↦ (b.src, b.dst)) =
       w.bonds[k]?.map (fun b : WBond ↦ (b.src, b.dst))) : w'.ringBonds = w.ringBonds := by
   funext r
   rw [ringBonds_eq_filterMap, ringBonds_eq_filterMap, bondBetween?_eq_of_ends hs he]
 
+/-- Renaming keeps the kind of every bond, as an option. -/
 lemma kind?_relabelW (w : Work) (σ ψ : ℕ → ℕ) (k : ℕ) : (w.relabelW σ ψ).kind? k = w.kind? k := by
   simp only [kind?, getElem?_relabelW_bonds, Option.map_map]
   rfl
 
+/-- Two copies with the same ends at every bond still have the same ends once both are renamed. -/
 lemma ends_relabelW {w w' : Work} (σ ψ : ℕ → ℕ)
     (he : ∀ k : ℕ, w'.bonds[k]?.map (fun b : WBond ↦ (b.src, b.dst)) =
       w.bonds[k]?.map (fun b : WBond ↦ (b.src, b.dst))) (k : ℕ) :

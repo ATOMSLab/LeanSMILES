@@ -40,6 +40,23 @@ For the normal equations of a ridge problem (`λ ≥ 0`):
   coordinate (it is coordinate descent).
 * **Fixed points are optimal** (`loss_le_of_jacobiStep_eq_self`): a fixed point of Jacobi
   solves the normal equations, so it minimises the loss.
+
+## Main definitions
+
+* `DiagDominant`: weighted diagonal dominance with weights `w` and ratio `ρ`.
+* `offDiagWeight`, `weightedMass`: the row sums `∑_{j≠i} |Aᵢⱼ| wⱼ` and the constant
+  `Γ = ∑ᵢⱼ |Aᵢⱼ| wᵢ wⱼ`.
+
+## Main statements
+
+* `exists_solution`: a weighted diagonally dominant system has a solution.
+* `jacobiStep_bound`, `gsSweep_bound`: a Jacobi step and a Gauss–Seidel sweep contract by `ρ`.
+* `jacobi_bound`, `gaussSeidel_bound`: from `θ = 0`, the error after `k` steps is at most
+  `ρᵏ β wᵢ`.
+* `Problem.loss_jacobi_le`, `Problem.loss_gaussSeidel_le`: after `k` steps,
+  `L(θₖ) ≤ L(u) + Γ β² ρ²ᵏ` for every `u`.
+* `Problem.loss_gaussSeidel_antitone`: Gauss–Seidel never increases the loss.
+* `Problem.loss_le_of_jacobiStep_eq_self`: a fixed point of Jacobi minimises the loss.
 -/
 
 @[expose] public section
@@ -52,8 +69,8 @@ variable {n : ℕ}
 
 /-! ## Off-diagonal sums -/
 
--- a sum over `j ≠ i` written with an `if` (the shape of `offDiag` and `offDiagWeight`) is the
--- sum over `univ.erase i` (the shape Gershgorin's theorem and `sum_erase_eq_sub` use)
+/-- A sum over `j ≠ i` written with an `if` (the shape of `offDiag` and `offDiagWeight`) is the
+sum over `univ.erase i` (the shape Gershgorin's theorem and `sum_erase_eq_sub` use). -/
 private theorem sum_ite_eq_sum_erase (f : Fin n → ℝ) (i : Fin n) :
     ∑ j : Fin n, (if j = i then 0 else f j) = ∑ j ∈ univ.erase i, f j := by
   rw [← sum_erase_add _ _ (mem_univ i), if_pos rfl, add_zero]
@@ -125,12 +142,14 @@ section Update
 
 variable {A : Mat ℝ n n} {b θs : Vec ℝ n}
 
--- the residual of row `i`, with the diagonal term split off
+/-- The residual of row `i`, with the diagonal term split off:
+`(A θ - b)ᵢ = ∑_{j≠i} Aᵢⱼ θⱼ + Aᵢᵢ θᵢ - bᵢ`. -/
 private theorem residual_getElem_eq (θ : Vec ℝ n) (i : Fin n) :
     (residual A b θ)[i] = offDiag A θ i + A[i][i] * θ[i] - b[i] := by
   simp [residual, offDiag, matVec]
 
--- `coordSolve` moves coordinate `i` by `t` with `Aᵢᵢ t = -rᵢ`: the step cancels the residual
+/-- When `Aᵢᵢ ≠ 0`, `coordSolve` moves coordinate `i` by `t` with `Aᵢᵢ t = -rᵢ`, where `r` is the
+residual. -/
 private theorem residual_getElem_eq_neg_mul (θ : Vec ℝ n) {i : Fin n} (hA : A[i][i] ≠ 0) :
     (residual A b θ)[i] = -(A[i][i] * (coordSolve A b θ i - θ[i])) := by
   rw [coordSolve_of_ne hA, residual_getElem_eq, mul_sub, mul_div_cancel₀ _ hA]
@@ -173,7 +192,7 @@ variable {A : Mat ℝ n n} {b θs w : Vec ℝ n} {ρ : ℝ}
 
 /-- Entry `i` of a Jacobi step is `coordSolve` at `i`: every coordinate is updated from the old
 `θ`. -/
-@[simp] theorem jacobiStep_getElem (θ : Vec ℝ n) (i : Fin n) :
+theorem jacobiStep_getElem (θ : Vec ℝ n) (i : Fin n) :
     (jacobiStep A b θ)[i] = coordSolve A b θ i := by
   simp [jacobiStep]
 
@@ -406,12 +425,12 @@ update. -/
 noncomputable def coord (i : Fin (d + 1)) (t : ℝ) : Vec ℝ (d + 1) :=
   Vector.ofFn fun j ↦ if j = i then t else 0
 
--- entry `j` of `t eᵢ`
+/-- Entry `j` of `t eᵢ` is `t` if `j = i` and `0` otherwise. -/
 private theorem coord_getElem (i : Fin (d + 1)) (t : ℝ) (j : Fin (d + 1)) :
     (coord i t)[j] = if j = i then t else 0 := by
   simp [coord]
 
--- `⟪v, t eᵢ⟫ = vᵢ t`
+/-- `⟪v, t eᵢ⟫ = vᵢ t`. -/
 private theorem sum_mul_coord (v : Vec ℝ (d + 1)) (i : Fin (d + 1)) (t : ℝ) :
     ∑ j : Fin (d + 1), v[j] * (coord i t)[j] = v[i] * t := by
   simp only [coord_getElem, mul_ite, mul_zero, sum_ite_eq', mem_univ, if_true]
@@ -423,7 +442,7 @@ theorem curvature_coord (i : Fin (d + 1)) (t : ℝ) :
     mem_univ, if_true]
   ring
 
--- a Gauss–Seidel update moves along coordinate `i`, by `coordSolve` minus the old value
+/-- A Gauss–Seidel update moves along coordinate `i`, by `coordSolve` minus the old value. -/
 private theorem gsUpdate_eq_vadd_coord {A : Mat ℝ (d + 1) (d + 1)} {b : Vec ℝ (d + 1)}
     (θ : Vec ℝ (d + 1)) (i : Fin (d + 1)) :
     gsUpdate A b θ i = vadd θ (coord i (coordSolve A b θ i - θ[i])) := vext fun j ↦ by

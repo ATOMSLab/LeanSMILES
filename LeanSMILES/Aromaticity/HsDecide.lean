@@ -17,6 +17,24 @@ of at most three bond kinds before kekulization, every way kekulization can make
 double, and every set of them perception can make aromatic again (`Loc.bare_ok`, `Loc.branch_ok`,
 by `decide`).  An atom that perception makes aromatic passes its candidate test; an atom written
 lowercase has at least two aromatic bonds.
+
+## Main definitions
+
+* `Loc.lists`, `Loc.kekAll`, `Loc.marks`: the bond lists, their kekulized forms, and the ways
+  perception can mark them aromatic.
+* `Loc.bareP`, `Loc.branchP`, `Loc.branchK`: the cached records of a bare atom and of an
+  `[nH]`/`[pH]` before and after kekulization.
+* `Loc.bareCheck`, `Loc.branchCheck`: the `adjustHs` checks at those atoms.
+
+## Main statements
+
+* `Loc.bare_restore`: `adjustHs` restores the hydrogens of a bare atom.
+* `Loc.branch_restore`: `adjustHs` restores the hydrogens of the `[nH]`/`[pH]` kekulization
+  rewrites.
+* `Loc.bareKek_ok`, `Loc.bareNonArom_ok`, `Loc.bareArom_ok`, `Loc.branchH_ok`: the hydrogen totals
+  of the witness, by `decide`.
+* `Loc.mem_lists`, `Loc.mem_kekAll`, `Loc.mem_marks`, `Loc.mem_nonArom`: the enumerations contain
+  the real cases.
 -/
 
 @[expose] public section
@@ -102,18 +120,23 @@ def branchCheck (z : ℕ) (pk : List BondKind) : Bool :=
       if aromS && (sk.length < 2 || elec aK kk < 0 || !cand aK kk) then true
       else restore aK sk aromS
 
+/-- `bareCheck` holds at every element and charge of `bareZC`, lowercase or not, and every list of
+at most three bond kinds. -/
 theorem bare_ok :
     (bareZC.all fun (z, ch) ↦
       (lists 3).all (bareCheck z ch true) && (lists 3).all (bareCheck z ch false)) = true := by
   decide +kernel
 
+/-- `branchCheck` holds for N and P and every list of at most three bond kinds. -/
 theorem branch_ok : (([7, 15] : List ℕ).all fun z ↦ (lists 3).all (branchCheck z)) = true := by
   decide +kernel
 
 /-! ### The enumerations contain the real cases -/
 
+/-- Every bond kind is in `kinds5`. -/
 lemma mem_kinds5 (k : BondKind) : k ∈ kinds5 := by cases k <;> simp [kinds5]
 
+/-- Every list of at most `n` bond kinds is in `lists n`. -/
 lemma mem_lists : ∀ (n : ℕ) (l : List BondKind), l.length ≤ n → l ∈ lists n
   | 0, [], _ => by simp [lists]
   | 0, _ :: _, h => by simp at h
@@ -125,6 +148,8 @@ lemma mem_lists : ∀ (n : ℕ) (l : List BondKind), l.length ≤ n → l ∈ li
 /-- How kekulization relates a kind before to a kind after. -/
 def KekRel (p k : BondKind) : Prop := if p = .aromatic then k = .single ∨ k = .double else k = p
 
+/-- A list `kk` related to `pk` by `KekRel` at every position is in `kekAll need pk`, when exactly
+one aromatic kind became double if `need`, none otherwise. -/
 lemma mem_kekAll : ∀ (pk kk : List BondKind), List.Forall₂ KekRel pk kk → ∀ need : Bool,
     ((pk.zip kk).filter (fun pq ↦ pq.1 == .aromatic && pq.2 == .double)).length =
       (if need then 1 else 0) → kk ∈ kekAll need pk
@@ -156,6 +181,7 @@ lemma mem_kekAll : ∀ (pk kk : List BondKind), List.Forall₂ KekRel pk kk → 
 /-- How perception relates a kind before marking to the kind after. -/
 def MarkRel (k s : BondKind) : Prop := s = k ∨ (s = .aromatic ∧ (k = .single ∨ k = .double))
 
+/-- A list `sk` related to `kk` by `MarkRel` at every position is in `marks kk`. -/
 lemma mem_marks : ∀ (kk sk : List BondKind), List.Forall₂ MarkRel kk sk → sk ∈ marks kk
   | [], [], .nil => by simp [marks]
   | k :: ks, s :: ss, .cons hks hr => by
@@ -285,6 +311,8 @@ def bareKekCheck (z : ℕ) (ch : ℤ) (pk : List BondKind) : Bool :=
   (kekAll (ndb aP pk (aP.cachedValence.getD 0)) pk).all fun kk ↦
     impl { aP with aromatic := false } (bhs kk) false == aP.cachedImplicit
 
+/-- `bareKekCheck` holds at every element and charge of `bareZC` and every list of at most three
+bond kinds. -/
 theorem bareKek_ok :
     (bareZC.all fun (z, ch) ↦ (lists 3).all (bareKekCheck z ch)) = true := by
   decide +kernel
@@ -307,6 +335,8 @@ def bareNonAromCheck (e : Element) (h : ℕ) : Bool :=
     { z := e.atomicNumber, aromatic := false, charge := 0, explicitHs := 0, noImplicit := false }
   Molecule.readsDifferentlyInRDKit b q || impl w h false == Molecule.implicitHydrogens b q
 
+/-- `bareNonAromCheck` holds at every organic-subset element and every even bond half-sum up to
+`16`. -/
 theorem bareNonArom_ok :
     (organic.all fun e ↦ (List.range 9).all fun t ↦ bareNonAromCheck e (2 * t)) = true := by
   decide +kernel
@@ -330,6 +360,8 @@ def bareAromCheck (e : Element) (kk : List BondKind) : Bool :=
       Molecule.readsDifferentlyInRDKit b q || elec aK kk < 0 || !cand aK kk || !donorOk aK kk ||
       impl w0 h false == T
 
+/-- `bareAromCheck` holds at every organic-subset element and every list of at most three
+non-aromatic bond kinds. -/
 theorem bareArom_ok : (organic.all fun e ↦ (nonArom 3).all (bareAromCheck e)) = true := by
   decide +kernel
 
@@ -341,6 +373,7 @@ def branchHCheck (z : ℕ) (pk : List BondKind) : Bool :=
   (kekAll (ndb aP pk (aP.cachedValence.getD 0)) pk).all fun kk ↦
     (branchK z pk kk).cachedImplicit ≤ 1
 
+/-- `branchHCheck` holds for N and P and every list of at most three bond kinds. -/
 theorem branchH_ok : (([7, 15] : List ℕ).all fun z ↦ (lists 3).all (branchHCheck z)) = true := by
   decide +kernel
 
@@ -348,10 +381,13 @@ end LeanSMILES.Aromaticity.Loc
 
 namespace LeanSMILES.Aromaticity.Loc
 
+/-- OpenSMILES's default valences of every element are at most `6`. -/
 lemma defaultValences_le_six : ∀ e : Element, ∀ v ∈ e.defaultValences, v ≤ 6 := by decide
 
+/-- Every allowed valence in RDKit's `elementTable` is at most `6`. -/
 lemma elementTable_le_six : ∀ x ∈ elementTable, ∀ v ∈ x.2.1, v ≤ 6 := by decide
 
+/-- RDKit's allowed valences of every element are at most `6`. -/
 lemma valences_le_six (z : ℕ) : ∀ v ∈ valences z, v ≤ 6 := by
   intro v hv
   unfold valences at hv
@@ -417,26 +453,32 @@ end LeanSMILES.Aromaticity.Loc
 
 namespace LeanSMILES.Aromaticity.Loc
 
+/-- OpenSMILES's implicit hydrogen count reads only the element, the aromatic flag and the written
+hydrogens of the atom. -/
 lemma implicitHydrogens_congr {a b : Atom} (he : a.element = b.element)
     (har : a.aromatic = b.aromatic) (hh : a.explicitH = b.explicitH) (q : ℚ) :
     Molecule.implicitHydrogens a q = Molecule.implicitHydrogens b q := by
   unfold Molecule.implicitHydrogens
   rw [he, har, hh]
 
+/-- `Molecule.readsDifferentlyInRDKit` reads only the element and the aromatic flag of the atom. -/
 lemma readsDifferently_congr {a b : Atom} (he : a.element = b.element)
     (har : a.aromatic = b.aromatic) (q : ℚ) :
     Molecule.readsDifferentlyInRDKit a q = Molecule.readsDifferentlyInRDKit b q := by
   unfold Molecule.readsDifferentlyInRDKit
   rw [he, har]
 
+/-- Every element of the organic subset is in `organic`. -/
 lemma mem_organic (e : Element) (h : e.inOrganicSubset = true) : e ∈ organic := by
   cases e <;> simp_all [Element.inOrganicSubset, organic]
 
+/-- An element of `organic` has atomic number at most `16`, or is Cl, Br or I. -/
 lemma organic_z {e : Element} (h : e ∈ organic) : e.atomicNumber ≤ 16 ∨ e.atomicNumber = 17 ∨
     e.atomicNumber = 35 ∨ e.atomicNumber = 53 := by
   simp only [organic, List.mem_cons, List.not_mem_nil, or_false] at h
   rcases h with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> decide
 
+/-- An element of `organic` has a nonzero atomic number. -/
 lemma organic_z_pos {e : Element} (h : e ∈ organic) : e.atomicNumber ≠ 0 := by
   simp only [organic, List.mem_cons, List.not_mem_nil, or_false] at h
   rcases h with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;> decide
@@ -445,6 +487,7 @@ end LeanSMILES.Aromaticity.Loc
 
 namespace LeanSMILES.Aromaticity.Loc
 
+/-- Every list of at most `n` bond kinds, none of them aromatic, is in `nonArom n`. -/
 lemma mem_nonArom : ∀ (n : ℕ) (l : List BondKind), l.any (· == .aromatic) = false →
     l.length ≤ n → l ∈ nonArom n
   | 0, [], _, _ => by simp [nonArom]

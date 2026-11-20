@@ -17,6 +17,19 @@ A ring (`Work.IsRing`) has one bond per atom and repeats none (`IsRing.ringBonds
 `IsRing.ringBonds_length`); its bond mask has exactly those bits (`testBit_cycleMask`), so the
 mask's popcount is the ring's length (`IsRing.popcount_cycleMask`). Two rings with the same bonds
 are one ring, started elsewhere or run the other way (`IsRing.ringEq_of_ringBonds`).
+
+## Main definitions
+
+* `Work.REdge`: two atoms consecutive in a ring, cyclically.
+
+## Main statements
+
+* `Work.IsRing.ringBonds_nodup`, `Work.IsRing.ringBonds_length`: a ring has one bond per atom
+  and repeats none.
+* `Work.testBit_cycleMask`: a cycle's mask has exactly its ring bonds set.
+* `Work.IsRing.popcount_cycleMask`: a ring's mask counts its atoms.
+* `Work.IsRing.ringEq_of_ringBonds`: two rings with the same bonds are one ring.
+* `Work.setAromaticity_equiv_of_isRing`: perception reads only the ring set, for rings.
 -/
 
 @[expose] public section
@@ -25,6 +38,7 @@ namespace LeanSMILES.Aromaticity
 
 namespace Work
 
+/-- In a list without repeats, two in-range indices with the same entry are equal. -/
 lemma getElem!_inj {c : List ℕ} (hnd : c.Nodup) {i j : ℕ} (hi : i < c.length)
     (hj : j < c.length) (e : c[i]! = c[j]!) : i = j := by
   rw [getElem!_pos c i hi, getElem!_pos c j hj] at e
@@ -64,6 +78,7 @@ lemma IsRing.ringBonds_nodup {m : Work} {c : List ℕ} (hc : m.IsRing c) :
     rw [succ_mod ht'] at h2
     split_ifs at h1 h2 <;> omega
 
+/-- A `filterMap` that keeps every element keeps the length. -/
 lemma length_filterMap_of_isSome {α β : Type} (f : α → Option β) :
     ∀ {l : List α}, (∀ a ∈ l, (f a).isSome) → (l.filterMap f).length = l.length
   | [], _ => rfl
@@ -140,11 +155,13 @@ lemma IsRing.popcount_cycleMask {m : Work} {c : List ℕ} (hc : m.IsRing c) :
 def REdge (c : List ℕ) (u v : ℕ) : Prop :=
   ∃ t < c.length, c[t]! = u ∧ c[(t + 1) % c.length]! = v
 
+/-- The first atom of a ring edge is on the ring. -/
 lemma REdge.mem_left {c : List ℕ} {u v : ℕ} (h : REdge c u v) : u ∈ c := by
   obtain ⟨t, ht, rfl, -⟩ := h
   rw [getElem!_pos c t ht]
   exact List.getElem_mem _
 
+/-- The second atom of a ring edge is on the ring. -/
 lemma REdge.mem_right {c : List ℕ} {u v : ℕ} (h : REdge c u v) : v ∈ c := by
   obtain ⟨t, ht, -, rfl⟩ := h
   rw [getElem!_pos c _ (Nat.mod_lt _ (by omega))]

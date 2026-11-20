@@ -19,6 +19,25 @@ numbered, but not of where the double bonds are drawn. The two Kekulé structure
 the other, so they get different strings. This file says which drawings are one molecule and
 gives them one string.
 
+## Main definitions
+
+* `Molecule.IsKekule`: a Kekulé structure, no aromatic atom or bond.
+* `Molecule.KekulePartner`: same atoms, configurations and skeleton, single and double bonds
+  moved, every bond-order sum kept.
+* `Molecule.KekuleRedraw`: one renumbering or one Kekulé move.
+* `Molecule.kekuleClass`: the Kekulé partners, found by trying every placement of double bonds.
+* `Molecule.movable`: the bonds the Kekulé partners disagree about.
+* `Molecule.delocalize`: the movable bonds, and the atoms on them, written aromatic.
+* `Molecule.kekuleCanonicalSmiles`: the canonical SMILES of the delocalized molecule.
+
+## Main statements
+
+* `Molecule.KekulePartner.kind_eq_of_not_movable`: a bond that is not movable has the same kind in
+  every partner.
+* `Molecule.KekulePartner.delocalize_eq`: Kekulé partners delocalize to the same molecule.
+* `Molecule.delocalize_relabel`: delocalizing commutes with renumbering.
+* `Molecule.kekuleCanonicalSmiles_eq_of_eqvGen`: one molecule, one string.
+
 ## The class
 
 Two drawings are **Kekulé partners** (`Molecule.KekulePartner`) when they have the same atoms,

@@ -35,6 +35,15 @@ equations** `A θ = b`:
   `A = (1/m) ∑ᵣ xᵣ xᵣᵀ + λ I`,  `b = (1/m) ∑ᵣ yᵣ xᵣ`.
 
 Every solver in `Solvers.lean` works on `(A, b)`.
+
+## Main definitions
+
+* `Vec`, `Mat`: length-`n` vectors and matrices stored as rows.
+* `dot`, `matVec`, `vadd`, `vsub`, `smul`: vector arithmetic that runs on `Float`.
+* `Problem`: features, targets and the ridge penalty.
+* `Problem.normalMatrix`, `Problem.normalVector`: the normal equations `A θ = b`.
+* `Problem.loss`: the ridge loss `L(θ)`.
+* `Problem.map`: the problem read in another scalar, e.g. exact `ℚ` data as `Float` or `ℝ`.
 -/
 
 @[expose] public section

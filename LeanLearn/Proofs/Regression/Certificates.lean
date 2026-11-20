@@ -19,6 +19,19 @@ Solver certificates — soundness, and the bridge from exact `ℚ` data to its `
 * **What a passing check gives** (`SolverWitness.check_sound`): weighted diagonal dominance
   of `A` in `ℝ`, the bound on the right-hand side, and the certified excess below `ε` — the
   hypotheses of `loss_jacobi_le` and `loss_gaussSeidel_le`.
+
+## Main definitions
+
+* `castMat`, `castVec`: a rational matrix or vector, read in `ℝ`.
+
+## Main statements
+
+* `Problem.map_normalMatrix`, `Problem.map_normalVector`: the normal equations of the data read
+  in `ℝ` are the casts of the exact ones.
+* `Problem.checkResidual_sound`: a passing residual check puts the cast of `θ` within `ε` of the
+  loss of every `u`.
+* `SolverWitness.check_sound`: a passing witness check gives, in `ℝ`, the hypotheses of
+  `loss_jacobi_le` and `loss_gaussSeidel_le`.
 -/
 
 @[expose] public section

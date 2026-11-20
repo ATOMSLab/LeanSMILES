@@ -29,6 +29,15 @@ the editor's infoview (`LeanSMILES.Depict.Widget`).
 the wedge/hash flags, so that any other toolkit can read the depicted
 stereochemistry back; `tools/check_depiction.py` does exactly that with RDKit
 over `datasets/stereo.smi`.
+
+## Main definitions
+
+* `Depict.Xml`: an XML element tree, and `Depict.Xml.render` its serialization.
+* `Depict.Highlight`: atoms and bonds to draw on a coloured background.
+* `Depict.svgWith`, `Depict.svgOf`: the SVG drawing of a depiction graph.
+* `Depict.molBlockWith`, `Depict.molBlockOf`: the MDL mol block of the drawing.
+* `Molecule.svg`, `Molecule.svgString`, `Molecule.molBlock`: the drawing of a molecule, and the
+  same for `Mol`.
 -/
 
 @[expose] public section
