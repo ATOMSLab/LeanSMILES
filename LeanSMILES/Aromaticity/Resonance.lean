@@ -17,8 +17,10 @@ must do for canonical SMILES to give them one string.
 ## Main definitions
 
 * `Molecule.CleanUpTarget`: an atom RDKit's `cleanUp` may rewrite.
-* `Molecule.MovesAvoidCleanUp`, `Molecule.CleanUpTargetsApart`, `Molecule.RingsCoverCycles`: the
-  hypotheses the three properties need.
+* `Molecule.MovesAvoidCleanUp`, `Molecule.CleanUpTargetsApart`: the hypotheses the three
+  properties need.
+* `Molecule.RingsCoverCycles`: ring perception misses no ring bond. True of every molecule
+  (`Molecule.ringsCoverCycles`); property 1 uses it.
 * `Molecule.ResonanceStructure`: a Kekulé partner differing only on bonds the model makes aromatic.
 * `Aromaticity.AromaticBondsKekuleInvariant`, `Aromaticity.AromatizeMergesExactlyResonance`,
   `Aromaticity.AromatizeRelabelKekule`: properties 1, 2 and 3 of `aromatize`, as `Prop`s.
@@ -32,6 +34,10 @@ must do for canonical SMILES to give them one string.
   numbering.
 * `Molecule.aromaticCanonicalSmiles_eq_of_eqvGen`: given properties 2 and 3, any chain of
   redrawings keeps the aromatic canonical SMILES.
+
+The three properties are proved in other files, and
+`Molecule.aromaticCanonicalSmiles_eq_of_eqvGen_redraw`
+(`LeanSMILES.Aromaticity.CleanUpRelabel`) is the last statement with nothing assumed.
 
 `Molecule.canonicalSmiles_relabel` makes canonical SMILES independent of how
 the atoms are numbered. It says nothing about bond orders. The Kekulé
@@ -56,8 +62,7 @@ strings. Whether two such drawings are one molecule is a chemical question:
 
 Three properties of `aromatize`, stated here as `Prop`s:
 
-1. `AromaticBondsKekuleInvariant`: Kekulé partners get the same aromatic bonds
-   (with a second hypothesis, below).
+1. `AromaticBondsKekuleInvariant`: Kekulé partners get the same aromatic bonds.
 2. `AromatizeMergesExactlyResonance`: Kekulé partners aromatize to one molecule
    exactly when they differ only on aromatic bonds.
 3. `AromatizeRelabelKekule`: on Kekulé input, aromatizing commutes with
@@ -83,27 +88,29 @@ first hypothesis. `lake exe resonance-test` checks all three properties on the
 data, with and without the hypotheses, and checks that the counterexamples
 still fail without them.
 
-**Status.** Properties 1 and 2, with their hypothesis, are theorems:
-`Aromaticity.aromaticBondsKekuleInvariant` and
-`Aromaticity.aromatizeMergesExactlyResonance`
-(`LeanSMILES.Aromaticity.ResonanceProofs`, on the lockstep simulation of
-`LeanSMILES.Aromaticity.KekuleSim`). Property 3 is not proved, only checked on
-the data. A proof needs `Work.relevantCycles` to give the same rings, in some
-order and drawn from some atom, after renumbering. Its breadth-first search is
-a `while` loop, which Lean cannot unfold. It also needs `setAromaticity` not to
-depend on the order of the rings, and `cleanUp` not to depend on the order of
-the atoms.
+**Status.** All three, with their hypotheses, are theorems.
+`Aromaticity.aromatizeMergesExactlyResonance` (property 2) is in
+`LeanSMILES.Aromaticity.ResonanceProofs`, on the lockstep simulation of
+`LeanSMILES.Aromaticity.KekuleSim`. `Aromaticity.aromaticBondsKekuleInvariant`
+(property 1) is in `LeanSMILES.Aromaticity.RingCover`.
+`Aromaticity.aromatizeRelabelKekule` (property 3) is in
+`LeanSMILES.Aromaticity.CleanUpRelabel`: the ring set of a renumbered copy is
+the renumbered ring set, `setAromaticity` reads the rings only up to their
+order, and `cleanUp` gives the same copy in any order of the atoms when the
+atoms it rewrites are apart.
 
-Property 1 has a second hypothesis, `Molecule.RingsCoverCycles`, about the
-molecule and not about the pair: every bond on a cycle is a bond of one of the
+Property 1 rests on a fact about the molecule and not about the pair,
+`Molecule.RingsCoverCycles`: every bond on a cycle is a bond of one of the
 rings perception looks at (`Work.relevantCycles`). Donor typing asks of each
 double bond whether it is a ring bond, and a moved bond must get the same
 answer in both partners. A moved bond lies on a cycle
-(`Work.RelD.onCycle_of_D`), so with this hypothesis it is a ring bond. The
-relevant cycles span the cycle space, so the hypothesis should hold of every
-molecule, but `relevantCycles` searches with a `while` loop, which Lean cannot
-unfold, and nothing is proved about what it returns. `resonance-test` finds no
-molecule that fails it. Property 2 does not need it: there the moved bonds come
+(`Work.RelD.onCycle_of_D`), so it is a ring bond. The fact holds of every
+molecule (`Molecule.ringsCoverCycles`, `LeanSMILES.Aromaticity.RingCover`): a
+shortest cycle through the bond is one of the candidates ring perception
+enumerates, and it is not a sum of strictly smaller ones. This uses that a
+molecule has no two bonds between the same atoms; of two parallel bonds each
+is on a cycle and neither on a ring. `resonance-test` still checks it on every
+structure. Property 2 does not need it: there the moved bonds come
 out aromatic, and a bond the model makes aromatic is a bond of one of the rings
 (`Work.mem_flatMap_ringBonds_of_mem_aromaticBondList`).
 
@@ -204,9 +211,9 @@ def ringBondNumbers (m : Molecule n) : List ℕ :=
 /-- Ring perception misses no ring bond of `m`: every bond on a cycle (`Work.onCycle`: its two
 atoms are still joined without it) is a bond of one of the rings perception looks at.
 
-This should hold of every molecule, since the relevant cycles span the cycle space. It is a fact
-about `Work.relevantCycles` that is not proved, so property 1 takes it as a hypothesis. It reads
-only which atoms the bonds join, so Kekulé partners have it together. -/
+It holds of every molecule (`Molecule.ringsCoverCycles`, in `LeanSMILES.Aromaticity.RingCover`),
+because a molecule has no two bonds between the same atoms, and property 1 uses it. It reads only
+which atoms the bonds join, so Kekulé partners have it together. -/
 def RingsCoverCycles (m : Molecule n) : Prop :=
   ∀ k < m.bonds.length, (Aromaticity.Work.ofMolecule m).onCycle k = true → k ∈ m.ringBondNumbers
 
@@ -304,12 +311,11 @@ drawn, as long as the double bonds do not move next to an atom `cleanUp` rewrite
 (`Molecule.MovesAvoidCleanUp`). Without that it is false: `O=P1=CC=CC=B1` comes out aromatic and
 its partner `O=P1C=CC=CB=1` does not.
 
-`Molecule.RingsCoverCycles` is not about the two drawings. It says ring perception misses no ring
-bond of the skeleton, which is not proved of `Work.relevantCycles`; no molecule is known to fail
-it. -/
+The proof uses that ring perception misses no ring bond of the skeleton
+(`Molecule.RingsCoverCycles`), which is true of every molecule and is not about the two
+drawings. -/
 def AromaticBondsKekuleInvariant : Prop :=
   ∀ ⦃n : ℕ⦄ (m₁ m₂ : Molecule n), m₁.IsKekule → m₁.KekulePartner m₂ → m₁.MovesAvoidCleanUp m₂ →
-    m₁.RingsCoverCycles →
     m₁.aromatize.map Molecule.aromaticBonds = m₂.aromatize.map Molecule.aromaticBonds
 
 /-- **Property 2.** Kekulé partners aromatize to one molecule exactly when they differ only on

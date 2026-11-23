@@ -280,8 +280,8 @@ def Work.reachSweep (m : Work) (skip : Nat) (seen : Array Bool) : Array Bool :=
 
 /-- Is bond `k` on a cycle: are its endpoints still joined without it? `numAtoms` sweeps from
 one endpoint reach everything reachable. This is RDKit's "is the bond in a ring of the ring set"
-(`numBondRings`): the relevant cycles span the cycle space, so every bond on a cycle lies on a
-relevant cycle. -/
+(`numBondRings`): in a graph with no two bonds between the same atoms, every bond on a cycle lies
+on a relevant cycle (`Work.mem_ringBonds_of_onCycle`). -/
 def Work.onCycle (m : Work) (k : Nat) : Bool :=
   let b := m.bonds[k]!
   ((m.reachSweep k)^[m.numAtoms] ((Array.replicate m.numAtoms false).set! b.src true))[b.dst]!

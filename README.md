@@ -405,8 +405,8 @@ working copies differing only in where the double bonds sit are perceived alike
 
 | File | Two drawings are one molecule when | Needs | Proved |
 | --- | --- | --- | --- |
-| `Aromaticity/Invariance.lean` | double bonds moved on bonds that come out aromatic (`KekuleVariant`) | the output keeps the input's charges (`ChargesKept`) | that step; with renumbering and relisting, open |
-| `Aromaticity/Resonance.lean` | Kekulé partners that differ only on bonds that come out aromatic (`ResonanceStructure`) | no moved bond at an atom `cleanUp` may rewrite (`MovesAvoidCleanUp`) | that step and its converse; with renumbering, open |
+| `Aromaticity/Invariance.lean` | double bonds moved on bonds that come out aromatic (`KekuleVariant`) | the output keeps the input's charges (`ChargesKept`) | all of it, with renumbering and relisting (`canonicalSmiles_aromatize_eq`) |
+| `Aromaticity/Resonance.lean` | Kekulé partners that differ only on bonds that come out aromatic (`ResonanceStructure`) | no moved bond at an atom `cleanUp` may rewrite (`MovesAvoidCleanUp`); for renumbering, those atoms apart (`CleanUpTargetsApart`) | all of it, with renumbering (`aromaticCanonicalSmiles_eq_of_eqvGen_redraw`) |
 | `SMILES/KekuleClass.lean` | Kekulé partners, renumbered any way | nothing | all of it, for its own canonical form |
 
 `Invariance.lean` is the section above. `Resonance.lean` states three properties
@@ -416,14 +416,19 @@ molecule exactly when they differ only on aromatic bonds; and aromatizing a
 Kekulé structure commutes with renumbering. From the last two it proves that
 every renumbering and resonance move leaves the canonical SMILES of the
 aromatized molecule unchanged (`aromaticCanonicalSmiles_eq_of_eqvGen`).
-Property 2 is proved (`aromatizeMergesExactlyResonance`), so chains of
-resonance moves alone need no further assumption
-(`aromaticCanonicalSmiles_eq_of_eqvGen_resonance`). Property 1 is proved with
-one more hypothesis, `RingsCoverCycles`, about the molecule and not the pair:
-ring perception misses no bond on a cycle. A moved bond lies on a cycle
-(`Work.RelD.onCycle_of_D`), but nothing is proved about what `relevantCycles`
-returns; no molecule in the test fails it. Property 3 is checked on data only. Its hypothesis and
-`Invariance.lean`'s differ: `ChargesKept` says `cleanUp` rewrote nothing,
+All three properties are proved. Property 2 is `aromatizeMergesExactlyResonance`,
+so chains of resonance moves alone keep the string
+(`aromaticCanonicalSmiles_eq_of_eqvGen_resonance`). Property 1
+(`aromaticBondsKekuleInvariant`, `Aromaticity/RingCover.lean`) rests on a fact
+about the molecule and not the pair: ring perception misses no bond on a cycle
+(`Molecule.ringsCoverCycles`). A shortest cycle through the bond is one of the
+candidates ring perception enumerates and is not a sum of smaller ones; this
+uses that a molecule has no two bonds between the same atoms. Property 3
+(`aromatizeRelabelKekule`, `Aromaticity/CleanUpRelabel.lean`) needs the atoms
+`cleanUp` may rewrite to be apart (`CleanUpTargetsApart`): `cleanUp` then gives
+the same result in any order of the atoms. With all three,
+`aromaticCanonicalSmiles_eq_of_eqvGen_redraw` assumes no property. The
+hypothesis about `cleanUp` here and `Invariance.lean`'s differ: `ChargesKept` says `cleanUp` rewrote nothing,
 `MovesAvoidCleanUp` lets it rewrite away from the moved bonds (a nitro group
 written `N(=O)=O` on a benzene ring is covered by the second, not the first).
 The test enumerates every Kekulé partner of each molecule:

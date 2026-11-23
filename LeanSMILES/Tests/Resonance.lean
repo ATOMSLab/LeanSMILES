@@ -24,15 +24,16 @@ double bonds (up to `cap` of them). Then check:
 3. `AromatizeRelabelKekule`: renumbering the Kekulé structure and then
    aromatizing gives the aromatized molecule renumbered.
 
-Properties 1 and 2 are proved (`LeanSMILES.Aromaticity.ResonanceProofs`) for pairs
-whose moved bonds avoid the atoms `cleanUp` rewrites (`Molecule.MovesAvoidCleanUp`);
-property 1 also needs ring perception to miss no ring bond of the molecule
-(`Molecule.RingsCoverCycles`), which should hold of every molecule but is not
-proved. Property 3 is stated for molecules whose `cleanUp` atoms are apart
-(`Molecule.CleanUpTargetsApart`). The report counts the pairs and molecules these
-hypotheses leave out, and checks the statements both with and without them: the
+All three are proved. Properties 1 and 2 (`LeanSMILES.Aromaticity.RingCover`,
+`LeanSMILES.Aromaticity.ResonanceProofs`) hold for pairs whose moved bonds avoid the
+atoms `cleanUp` rewrites (`Molecule.MovesAvoidCleanUp`); property 1 uses that ring
+perception misses no ring bond of the molecule (`Molecule.RingsCoverCycles`), which
+is true of every molecule (`Molecule.ringsCoverCycles`). Property 3
+(`LeanSMILES.Aromaticity.CleanUpRelabel`) holds for molecules whose `cleanUp` atoms
+are apart (`Molecule.CleanUpTargetsApart`). The report counts the pairs and molecules
+these hypotheses leave out, and checks the statements both with and without them: the
 three counterexamples, parsed as written, fail without them. A molecule that fails
-`RingsCoverCycles` has a bond on a cycle that `Work.relevantCycles` misses, so
+`RingsCoverCycles` would have a bond on a cycle that `Work.relevantCycles` misses, so
 that count must be 0.
 
 `AromatizeRelabel` (property 3 on the input as written, lowercase included) is
@@ -246,7 +247,7 @@ def report (name : String) (t : Tally) : IO Bool := do
   IO.println s!"  2 same molecule ↔ differ only on aromatic bonds: fails on {t.fail2} pairs  \
     [spec, proved]; {t.fail2all} without the hypothesis  [info]"
   IO.println s!"  3 aromatize commutes with renumbering: fails on {t.fail3} as molecules, \
-    {t.fail3canon} as canonical SMILES  [spec]; {t.fail3all} as molecules without the \
+    {t.fail3canon} as canonical SMILES  [spec, proved]; {t.fail3all} as molecules without the \
     hypothesis  [info]"
   IO.println s!"  partners with more than one canonical SMILES: before aromatize {t.splitBefore}, \
     after {t.splitAfter}  [info]"

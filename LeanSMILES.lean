@@ -65,6 +65,8 @@ public import LeanSMILES.Aromaticity.Invariance
 public import LeanSMILES.Aromaticity.Resonance
 public import LeanSMILES.Aromaticity.KekuleSim
 public import LeanSMILES.Aromaticity.ResonanceProofs
+public import LeanSMILES.Aromaticity.RingCover
+public import LeanSMILES.Aromaticity.CleanUpRelabel
 public import LeanSMILES.Depict.Graph
 public import LeanSMILES.Depict.Layout
 public import LeanSMILES.Depict.Svg

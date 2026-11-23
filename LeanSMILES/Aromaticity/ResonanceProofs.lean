@@ -27,7 +27,8 @@ Proofs of properties 1 and 2 of `Molecule.aromatize` stated in
 * `Aromaticity.relD_ofMolecule`: the working copies of Kekulé partners start in lockstep.
 * `Aromaticity.pipeline`: they stay in lockstep up to perception when the moved bonds avoid
   `cleanUp`'s atoms.
-* `Aromaticity.aromaticBondsKekuleInvariant`: property 1.
+* `Aromaticity.aromaticBonds_aromatize_eq_of_ringsCoverCycles`: property 1, given that ring
+  perception misses no ring bond.
 * `Aromaticity.aromatizeMergesExactlyResonance`: property 2.
 * `Molecule.aromaticCanonicalSmiles_eq_of_eqvGen_resonance`: chains of resonance moves keep the
   aromatic canonical SMILES.
@@ -42,12 +43,13 @@ every pass up to perception (`pipeline`). Perception sees them alike when every
 moved bond is a bond of one of the rings (`Work.RelD.aromaticBondList`).
 Property 1 gets that from `Molecule.RingsCoverCycles`, since a moved bond lies on
 a cycle (`Work.RelD.onCycle_of_D`), and reads the aromatic bonds off the result
-(`Aromaticity.aromaticBondsKekuleInvariant`). Property 2
+(`Aromaticity.aromaticBonds_aromatize_eq_of_ringsCoverCycles`;
+`LeanSMILES.Aromaticity.RingCover` proves `RingsCoverCycles` of every molecule
+and concludes property 1). Property 2
 compares the results bond by bond, and gets it from the bonds that come out
 aromatic (`Aromaticity.aromatizeMergesExactlyResonance`).
 
-Property 3 is not proved here; see the status in
-`LeanSMILES.Aromaticity.Resonance`.
+Property 3 is proved in `LeanSMILES.Aromaticity.CleanUpRelabel`.
 -/
 
 @[expose] public section
@@ -468,10 +470,13 @@ lemma ringsCoverCycles_iff_of_kekulePartner {m₁ m₂ : Molecule n} (hp : m₁.
 
 /-! ### Properties 1 and 2 -/
 
-/-- **Property 1.** Kekulé partners whose moved bonds avoid the atoms `cleanUp` rewrites get the
-same aromatic bonds, when ring perception misses no ring bond. -/
-theorem aromaticBondsKekuleInvariant : AromaticBondsKekuleInvariant := by
-  intro n m₁ m₂ hk hp hc hr
+/-- **Property 1, given that ring perception misses no ring bond.** Kekulé partners whose moved
+bonds avoid the atoms `cleanUp` rewrites get the same aromatic bonds. The hypothesis holds of
+every molecule (`Molecule.ringsCoverCycles`), which gives property 1 itself
+(`aromaticBondsKekuleInvariant`, in `LeanSMILES.Aromaticity.RingCover`). -/
+theorem aromaticBonds_aromatize_eq_of_ringsCoverCycles {m₁ m₂ : Molecule n} (hk : m₁.IsKekule)
+    (hp : m₁.KekulePartner m₂) (hc : m₁.MovesAvoidCleanUp m₂) (hr : m₁.RingsCoverCycles) :
+    m₁.aromatize.map Molecule.aromaticBonds = m₂.aromatize.map Molecule.aromaticBonds := by
   have P := pipeline hk hp hc
   set rings := (Work.prepare m₁).relevantCycles
   set w₁ := (Work.prepare m₁).assignRadicals
