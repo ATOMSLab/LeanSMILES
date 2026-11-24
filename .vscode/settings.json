@@ -1,0 +1,7 @@
+{
+  // Cap Lean's worker threads: the editor's server and the builds it starts run at most
+  // 4 Lean jobs at once instead of one per core, which kept memory under control.
+  "lean4.serverEnv": {
+    "LEAN_NUM_THREADS": "4"
+  }
+}

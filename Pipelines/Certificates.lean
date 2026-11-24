@@ -1,0 +1,166 @@
+/-
+Copyright (c) 2026 DeMarko Fulcher. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: DeMarko Fulcher
+-/
+module
+
+public import Pipelines.Pipeline
+public import LeanLearn.Regression.Certificates
+
+/-!
+# Pipelines.Certificates
+
+Certificate checks for a pipeline.
+
+Exact `ℚ` computations that decide whether a pipeline can be certified: all before training,
+except `checkResidual`, which checks the trained model.
+Each check returns a `Bool`; its soundness theorem in `Pipelines/Proofs/Certificates.lean`
+turns `true` into a guarantee about the trained model.
+
+**Gradient descent** (`Pipeline.checkGD`). Given a feature bound `R²` for the
+representation (a theorem, e.g. `morgan_bounded`), a parameter budget `B` and a tolerance
+`ε`, the check is arithmetic on the hyperparameters: `λ ≥ 0`, `η > 0`,
+`2η (R² + 1 + λ) ≤ 1`, `k > 0` and `B ≤ 2ηkε`. `maxStepSize` is the largest step size that
+passes, and `gdTolerance` the smallest `ε` that does.
+
+**Gradient descent, on the data** (`Pipeline.checkGDData`). The same step-size condition
+with the smoothness computed exactly from the training set, `Λ = (1/m) ∑ᵣ ‖xᵣ‖² + λ`
+(`smoothnessExact`), instead of bounded for every molecule: `λ ≥ 0`, `η > 0`, `2ηΛ ≤ 1`,
+`k > 0`. No feature bound for the representation is needed, so the step can be as large as
+the data allows (`maxStepSizeData = 1/(2Λ)`), and the guarantee is the rate itself:
+`L(θ) ≤ L(u) + ‖u‖² / (2ηk)` for every `u` (`gdRate = 1/(2ηk)`).
+
+**Jacobi and Gauss–Seidel** (`Pipeline.checkSolver`). The generic witness check of
+`LeanLearn.Regression.SolverWitness` (weighted diagonal dominance, a bound on the optimum,
+the certified excess `Γ β² ρ²ᵏ` below `ε`), run on the pipeline's exact normal equations.
+`suggestWitness` proposes the unit-weight witness and `certifiedSolverExcess` is the bound
+it certifies, if it passes.
+
+**After training** (`Pipeline.checkResidual`). The trained parameters, read exactly, are
+checked against the exact normal equations: `‖A θ - b‖² ≤ ε λ`. No condition on `A`, any
+`λ > 0`, any solver in any arithmetic; `residualExcess` is the bound `‖A θ - b‖² / λ` the
+residual certifies.
+
+The check is plain `ℚ` arithmetic on the data, so `decide +kernel` can run it whenever the
+kernel can evaluate the representation (`bondOrders`, but not `morgan`, whose hashing the
+kernel cannot reduce).
+
+## Main definitions
+
+* `Pipeline.checkGD`: the gradient-descent check from a feature bound `R²`, a budget `B` and a
+  tolerance `ε`.
+* `Pipeline.checkGDData`: the gradient-descent check with the exact smoothness of the data.
+* `Pipeline.checkSolver`: the Jacobi or Gauss–Seidel witness check on the exact normal equations.
+* `Pipeline.checkResidual`: the residual check on trained parameters.
+* `Pipeline.certifiedSolverExcess`, `Pipeline.gdTolerance`, `Pipeline.gdRate`,
+  `Pipeline.residualExcess`: the guarantee each check certifies.
+-/
+
+@[expose] public section
+
+namespace Pipelines
+
+open LeanLearn LeanLearn.Regression
+
+namespace Pipeline
+
+variable {m d : ℕ} (p : Pipeline m d)
+
+/-- The number of iterations of a Jacobi or Gauss–Seidel algorithm, the `k` that `checkSolver`
+certifies; `none` for gradient descent, whose checks are `checkGD` and `checkGDData`. -/
+def solverIters : Algorithm → Option ℕ
+  | .jacobi k => some k
+  | .gaussSeidel k => some k
+  | .gradientDescent _ _ => none
+
+/-- The Jacobi / Gauss–Seidel check, before training: `λ ≥ 0` and `W.check` for the pipeline's
+`k` steps and tolerance `ε` on its exact normal equations (`false` for gradient descent). A
+pass puts the trained model within `ε` of the optimum (`checkSolver_sound`). -/
+def checkSolver (W : SolverWitness (d + 1)) (ε : ℚ) : Bool :=
+  match solverIters p.algorithm with
+  | some k =>
+    decide (0 ≤ p.ridge) && W.check p.exactProblem.normalMatrix p.exactProblem.normalVector k ε
+  | none => false
+
+/-- The unit-weight witness (`SolverWitness.unitWeights`) on the pipeline's exact normal
+equations, computed before training; `certifiedSolverExcess` runs `checkSolver` on it. -/
+def suggestWitness : SolverWitness (d + 1) :=
+  SolverWitness.unitWeights p.exactProblem.normalMatrix p.exactProblem.normalVector
+
+/-- `Γ β² ρ²ᵏ`, the excess loss witness `W` certifies on the pipeline's exact normal matrix for
+its `k` iterations (`0` for gradient descent, which has its own certificate). -/
+def certifiedExcess (W : SolverWitness (d + 1)) : ℚ :=
+  W.excess p.exactProblem.normalMatrix ((solverIters p.algorithm).getD 0)
+
+/-- Before training: the excess loss the suggested witness certifies, if `checkSolver` accepts
+it at that tolerance — how close to the optimum Jacobi or Gauss–Seidel is guaranteed to end
+(`checkSolver_sound`). `none` when the check fails. -/
+def certifiedSolverExcess : Option ℚ :=
+  let W := p.suggestWitness
+  let e := p.certifiedExcess W
+  if p.checkSolver W e then some e else none
+
+/-! ### After training: the residual certificate -/
+
+/-- The residual check, after training, on parameters `θ` (the trained `Float` model read
+exactly, say): `λ > 0` and `‖A θ - b‖² ≤ ε λ` on the pipeline's exact normal equations. A pass
+puts `θ` within `ε` of the optimum, whatever solver produced it (`checkResidual_sound`). -/
+def checkResidual (θ : Vec ℚ (d + 1)) (ε : ℚ) : Bool := p.exactProblem.checkResidual θ ε
+
+/-- `‖A θ - b‖² / λ`, after training: the excess training loss the residual at `θ` certifies,
+the smallest `ε` that `checkResidual` accepts when `λ > 0` (`checkResidual_sound`). -/
+def residualExcess (θ : Vec ℚ (d + 1)) : ℚ := p.exactProblem.residualExcess θ
+
+/-! ### Gradient descent -/
+
+/-- The gradient-descent check, before training: `λ ≥ 0`, `η > 0`, `2η (R² + 1 + λ) ≤ 1`, `k > 0`
+and `B ≤ 2ηkε`, for a feature bound `R²` proved for the representation, a parameter budget `B`
+and a tolerance `ε` (`false` for the other algorithms). Soundness: `checkGD_sound`. -/
+def checkGD (R2 B ε : ℚ) : Bool :=
+  match p.algorithm with
+  | .gradientDescent η k =>
+    decide (0 ≤ p.ridge) && decide (0 < η) && decide (2 * η * (R2 + 1 + p.ridge) ≤ 1) &&
+      decide (0 < k) && decide (B ≤ 2 * η * k * ε)
+  | _ => false
+
+/-- The largest step size `checkGD` accepts for feature bound `R²`: `1 / (2 (R² + 1 + λ))`. -/
+def maxStepSize (R2 : ℚ) : ℚ := 1 / (2 * (R2 + 1 + p.ridge))
+
+/-- The smallest tolerance `ε` that `checkGD` accepts for budget `B`: `B / (2ηk)` (`0` for the
+other algorithms). -/
+def gdTolerance (B : ℚ) : ℚ :=
+  match p.algorithm with
+  | .gradientDescent η k => B / (2 * η * k)
+  | _ => 0
+
+/-! ### Gradient descent, on the data -/
+
+/-- `Λ = (1/m) ∑ᵣ ‖xᵣ‖² + λ` of the pipeline's exact problem (`Problem.smoothnessExact`): the
+smoothness in `checkGDData`'s step-size condition, computed from this training set rather than
+bounded for every molecule; read in `ℝ`, it is `(p.problem ℝ).smoothness` (`smoothness_real`). -/
+def smoothnessExact : ℚ := p.exactProblem.smoothnessExact
+
+/-- The gradient-descent check on the data, before training: `λ ≥ 0`, `η > 0`, `2ηΛ ≤ 1` with
+`Λ` the exact smoothness of this training set, and `k > 0` — no feature bound, unlike `checkGD`.
+A pass gives `L(θ) ≤ L(u) + ‖u‖² / (2ηk)` for **every** `u` (`checkGDData_sound`). -/
+def checkGDData : Bool :=
+  match p.algorithm with
+  | .gradientDescent η k =>
+    decide (0 ≤ p.ridge) && decide (0 < η) && decide (2 * η * p.smoothnessExact ≤ 1) &&
+      decide (0 < k)
+  | _ => false
+
+/-- The largest step size `checkGDData` accepts: `1 / (2Λ)`. -/
+def maxStepSizeData : ℚ := 1 / (2 * p.smoothnessExact)
+
+/-- `1 / (2ηk)`, the rate constant in `checkGDData_sound`: after `k` steps of size `η`,
+`L(θ) ≤ L(u) + ‖u‖² / (2ηk)` for every `u` (`0` for the other algorithms). -/
+def gdRate : ℚ :=
+  match p.algorithm with
+  | .gradientDescent η k => 1 / (2 * η * k)
+  | _ => 0
+
+end Pipeline
+
+end Pipelines

@@ -1,0 +1,380 @@
+/-
+Copyright (c) 2026 Tyler Josephson. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Tyler Josephson
+-/
+module
+
+public import LeanSMILES.SMILES.Parse
+
+/-!
+# LeanSMILES.Fingerprint.Morgan
+
+Morgan (ECFP-like) fingerprints on the typed `Molecule n`, ported from the
+`canonical-smiles` branch's `LeanSMILES/Fingerprint/Morgan.lean`, itself a
+port of RDKit's `GetMorganGenerator(radius=2, fpSize=2048)`
+(`Fingerprints/MorganGenerator.cpp`, `FingerprintUtil.cpp`, RDKit 2026.09.1).
+
+1. **Radius 0.** Each atom gets a 32-bit number from its own properties:
+   element, number of neighbors including H, H count, charge, isotope mass
+   shift, and whether it is in a ring.
+2. **Each radius 1, 2, ….** Each atom's number is re-hashed together with its
+   sorted (bond type, neighbor's number) pairs, so it describes a bigger and
+   bigger neighborhood (an "environment").
+3. **Duplicates.** If two atoms' environments cover exactly the same bonds,
+   only the smallest (identifier, atom) is kept; an environment already seen at
+   a smaller radius is dropped, and its atom stops growing ("dead", contributes 0).
+4. **Folding.** Each identifier `id` sets bit `id mod fpSize`.
+
+All arithmetic is unsigned 32-bit with wrap-around (boost's `hash_combine`).
+
+**What this branch sees.** The fingerprint is computed on the graph *as
+written*: no aromaticity perception, no nitro rewrite, and hydrogens written
+as `[H]` atoms stay atoms (RDKit removes them).  So the bits equal RDKit's
+exactly when the as-written bond types and hydrogen counts equal RDKit's
+sanitized ones — which `lake exe morgan-test` checks.  `Molecule.aromatize`
+(`LeanSMILES/Aromaticity/`) gives a molecule RDKit's bonds and hydrogens first.
+
+**Atom order.** Up to radius 2 the fingerprint does not depend on the order of
+the atoms: `Molecule.morganBits_relabel` (`Fingerprint/MorganInvariance.lean`).
+From radius 3 it can, here and in RDKit, because duplicate environments are
+broken by atom index: `Molecule.not_forall_morganBits_relabel_three`
+(`Fingerprint/MorganRadius3.lean`) proves it on a concrete molecule.
+
+Lists are sorted with `sortBy`, a structurally recursive insertion sort, so the kernel can
+evaluate the fingerprint (the radius-3 proof is `decide +kernel`).
+
+Every intermediate is `Vector`/`Array` data, never a function returned from a
+definition (see `docs/design-molecular-representation.md` §8).
+
+## Main definitions
+
+* `sortBy`: insertion sort by a Boolean comparator, structurally recursive.
+* `Molecule.morganAtomInvariants`: the radius-0 identifiers.
+* `Molecule.morganLayer`: one radius: growing every live atom, then removing duplicates.
+* `Molecule.morganEnvironments`: all Morgan environments as (identifier, atom, radius).
+* `Molecule.morganIds`, `Molecule.morganBits`: the unfolded and the folded fingerprint.
+* `Molecule.morganVector`: the fingerprint as a bit vector, for featurization.
+* `tanimoto`: Tanimoto similarity of two lists of on-bits.
+* `SMILES.morganBits`: SMILES in, Morgan on-bits out.
+
+## Main statements
+
+* `perm_sortBy`: `sortBy` permutes its input, for every comparator.
+* `pairwise_sortBy`: `sortBy` sorts when the comparator is total and transitive.
+-/
+
+@[expose] public section
+
+namespace LeanSMILES
+
+/-! ### Sorting -/
+
+/-- Insert `a` before the first element it is `le` to. -/
+def insertBy {α : Type*} (le : α → α → Bool) (a : α) : List α → List α
+  | [] => [a]
+  | b :: l => if le a b then a :: b :: l else b :: insertBy le a l
+
+/-- Insertion sort by a Boolean comparator. It is structurally recursive, so the kernel
+can run it (`decide +kernel` in `Fingerprint/MorganRadius3.lean`), which the
+well-founded recursion of `List.mergeSort` does not allow. Each comparator the
+fingerprint sorts by is a total order on the lists it sorts, and such a list has only
+one sorted order, so the result is the one `List.mergeSort` gives. -/
+def sortBy {α : Type*} (le : α → α → Bool) : List α → List α
+  | [] => []
+  | a :: l => insertBy le a (sortBy le l)
+
+section SortBy
+
+variable {α : Type*} {le : α → α → Bool}
+
+/-- Inserting `a` is a permutation of consing it: the comparator only chooses the position. -/
+lemma perm_insertBy (a : α) (l : List α) : (insertBy le a l).Perm (a :: l) := by
+  induction l with
+  | nil => simp [insertBy]
+  | cons b l ih =>
+    unfold insertBy
+    split
+    · exact .refl _
+    · exact (ih.cons b).trans (.swap a b l)
+
+/-- `insertBy le a l` holds exactly `a` and the elements of `l`, whatever `le` decides. -/
+lemma mem_insertBy {a x : α} {l : List α} : x ∈ insertBy le a l ↔ x = a ∨ x ∈ l :=
+  (perm_insertBy a l).mem_iff.trans List.mem_cons
+
+/-- `sortBy` permutes its input for every comparator, even one that is not an order. -/
+lemma perm_sortBy (l : List α) : (sortBy le l).Perm l := by
+  induction l with
+  | nil => simp [sortBy]
+  | cons a l ih => exact (perm_insertBy a _).trans (ih.cons a)
+
+/-- Sorting does not change membership; the `simp` normal form of `x ∈ sortBy le l`. -/
+@[simp] lemma mem_sortBy {x : α} {l : List α} : x ∈ sortBy le l ↔ x ∈ l :=
+  (perm_sortBy l).mem_iff
+
+/-- Inserting into a `le`-sorted list keeps it sorted when `le` is total and transitive:
+the inductive step of `pairwise_sortBy`. -/
+lemma pairwise_insertBy (total : ∀ a b, (le a b || le b a) = true)
+    (trans : ∀ a b c, le a b = true → le b c = true → le a c = true) (a : α) {l : List α}
+    (hl : l.Pairwise fun x y ↦ le x y = true) :
+    (insertBy le a l).Pairwise fun x y ↦ le x y = true := by
+  induction l <;> grind [insertBy, List.pairwise_cons, mem_insertBy]
+
+/-- `sortBy` sorts when `le` is total and transitive: each element is `le` every later one.
+Totality is needed because `insertBy` only ever tests `le a b`, never `le b a`. -/
+lemma pairwise_sortBy (total : ∀ a b, (le a b || le b a) = true)
+    (trans : ∀ a b c, le a b = true → le b c = true → le a c = true) (l : List α) :
+    (sortBy le l).Pairwise fun x y ↦ le x y = true := by
+  induction l <;> grind [sortBy, pairwise_insertBy]
+
+end SortBy
+
+end LeanSMILES
+
+namespace LeanSMILES.Molecule
+
+variable {n : ℕ}
+
+/-! ### Hashing -/
+
+/-- boost's `hash_combine` on 32-bit values:
+`seed ^ (v + 0x9e3779b9 + (seed << 6) + (seed >> 2))`. -/
+def hashCombine (seed v : UInt32) : UInt32 :=
+  seed ^^^ (v + 0x9e3779b9 + (seed <<< (6 : UInt32)) + (seed >>> (2 : UInt32)))
+
+/-- Hash of a list of values, starting from seed 0 (`hash_range`). -/
+def hashList (vs : List UInt32) : UInt32 := vs.foldl hashCombine 0
+
+/-- Hash of a pair (`hash_value(std::pair)`). -/
+def hashPair (a b : UInt32) : UInt32 := hashCombine (hashCombine 0 a) b
+
+/-- A signed integer as RDKit stores it in a `uint32` (negative numbers wrap). -/
+def intToUInt32 (i : ℤ) : UInt32 :=
+  (if 0 ≤ i then i.toNat else (4294967296 + i).toNat).toUInt32
+
+/-- RDKit's `Chem.BondType` value, which Morgan hashes (aromatic is 12, not an
+order like 3/2). -/
+def rdkitBondType : BondKind → UInt32
+  | .single => 1
+  | .double => 2
+  | .triple => 3
+  | .quadruple => 4
+  | .aromatic => 12
+
+/-! ### Isotope mass shift
+
+RDKit uses `int(mass − atomic weight)` per atom (`FingerprintUtil.cpp:252-254`):
+0 without an isotope; for an isotope the exact mass from RDKit's isotope table,
+or the isotope number itself if the isotope is not in the table
+(`Atom.cpp:644-655`).  Only the isotopes whose exact mass gives a different
+answer than the isotope number are listed. -/
+
+-- GENERATED by tools/rdkit_isotope_table.py (canonical-smiles branch) from RDKit 2026.09.1
+/-- Atomic weight in millionths (RDKit `PeriodicTable::getAtomicWeight`). -/
+def atomicWeightMicro : List (ℕ × ℕ) :=
+  [(1, 1008000), (2, 4003000), (4, 9012000), (5, 10812000), (6, 12011000), (7, 14007000),
+   (8, 15999000), (9, 18998000), (10, 20180000), (13, 26982000), (14, 28086000),
+   (15, 30974000), (16, 32067000), (17, 35453000), (18, 39948000), (31, 69723000),
+   (32, 72610000), (33, 74922000), (34, 78960000), (35, 79904000), (36, 83800000),
+   (49, 114818000), (50, 118711000), (51, 121760000), (52, 127600000), (53, 126904000),
+   (54, 131290000)]
+
+/-- Known isotopes (element, isotope, mass shift) whose exact mass gives a
+different shift than the isotope number would. -/
+def isotopeShiftExceptions : List (ℕ × ℕ × ℤ) :=
+  [(1, 2, 1), (1, 3, 2), (1, 4, 3), (1, 5, 4), (1, 6, 5), (1, 7, 6), (2, 3, 0), (2, 5, 1),
+   (2, 6, 2), (2, 7, 3), (2, 8, 4), (2, 9, 5), (2, 10, 6), (4, 5, -3), (4, 6, -2), (4, 7, -1),
+   (4, 10, 1), (4, 11, 2), (4, 12, 3), (4, 13, 4), (4, 14, 5), (4, 15, 6), (4, 16, 7),
+   (6, 8, -3), (6, 9, -2), (6, 10, -1), (6, 11, 0), (6, 16, 4), (6, 17, 5), (6, 18, 6),
+   (6, 19, 7), (6, 20, 8), (6, 21, 9), (6, 22, 10), (7, 10, -3), (7, 11, -2), (7, 12, -1),
+   (7, 17, 3), (7, 18, 4), (7, 19, 5), (7, 20, 6), (7, 21, 7), (7, 22, 8), (7, 23, 9),
+   (7, 24, 10), (7, 25, 11), (13, 28, 0), (13, 29, 1), (15, 32, 0), (15, 33, 1), (15, 34, 2),
+   (15, 35, 3), (33, 77, 1), (33, 78, 2), (33, 79, 3), (34, 66, -13), (34, 67, -12),
+   (34, 68, -11), (34, 69, -10), (34, 70, -9), (34, 71, -8), (34, 72, -7), (34, 73, -6),
+   (34, 74, -5), (34, 75, -4), (34, 76, -3), (34, 77, -2), (34, 78, -1), (34, 80, 0),
+   (34, 81, 1), (34, 82, 2), (34, 83, 3), (34, 84, 4), (34, 85, 5), (34, 86, 6), (34, 87, 7),
+   (34, 88, 8), (34, 89, 9), (34, 90, 10), (34, 91, 11), (34, 92, 12), (34, 93, 13)]
+-- END GENERATED
+
+/-- RDKit's isotope mass shift `int(mass − atomic weight)` (truncated toward
+zero) for element `z` with isotope `iso` (`none` or `some 0`: no isotope). -/
+def isotopeMassShift (z : ℕ) : Option ℕ → ℤ
+  | none | some 0 => 0
+  | some iso =>
+    match isotopeShiftExceptions.find? (fun (z', i, _) ↦ z' == z && i == iso) with
+    | some (_, _, d) => d
+    | none =>
+      match atomicWeightMicro.lookup z with
+      | some w => Int.tdiv ((iso : ℤ) * 1000000 - w) 1000000
+      | none => 0
+
+/-! ### Ring membership
+
+A bond lies on a ring iff its endpoints stay connected when it is removed —
+iff it is not a bridge (`SimpleGraph.IsBridge`, whose Mathlib lemma
+`isBridge_iff_adj_and_forall_cycle_notMem` is the theorem this definition
+would be related to). -/
+
+/-- One sweep over the bond list: every bond other than `skip` with exactly one
+endpoint in `seen` adds the other endpoint. -/
+def reachStep (m : Molecule n) (skip : Sym2 (Fin n)) (seen : Vector Bool n) : Vector Bool n :=
+  m.bonds.foldl (init := seen) fun seen b ↦
+    if b.edge != skip then
+      if seen[b.src] && !seen[b.dst] then seen.set b.dst.val true b.dst.isLt
+      else if seen[b.dst] && !seen[b.src] then seen.set b.src.val true b.src.isLt
+      else seen
+    else seen
+
+/-- Atoms reachable from `start` without using the bond `skip`; `n` sweeps over
+the bond list always suffice. -/
+def reachableWithout (m : Molecule n) (skip : Sym2 (Fin n)) (start : Fin n) : Vector Bool n :=
+  (m.reachStep skip)^[n] ((Vector.replicate n false).set start.val true start.isLt)
+
+/-- The bond lies on a cycle. -/
+def bondInRing (m : Molecule n) (b : Bond n) : Bool :=
+  (m.reachableWithout b.edge b.src)[b.dst]
+
+/-- The edges that lie on cycles. -/
+def ringEdges (m : Molecule n) : List (Sym2 (Fin n)) :=
+  (m.bonds.filter m.bondInRing).map (·.edge)
+
+/-- For every atom, whether it touches a ring bond. -/
+def inRingVector (m : Molecule n) : Vector Bool n :=
+  let ring := m.ringEdges
+  Vector.ofFn fun i ↦ (m.bondsAt i).any fun b ↦ ring.contains b.edge
+
+/-! ### The fingerprint -/
+
+/-- Each atom's neighbors as (bond index, neighbor), in bond-list order —
+RDKit's adjacency order. -/
+def adjacency (m : Molecule n) : Vector (List (ℕ × Fin n)) n :=
+  Vector.ofFn fun i ↦ m.bonds.zipIdx.filterMap fun (b, k) ↦
+    if b.src = i then some (k, b.dst) else if b.dst = i then some (k, b.src) else none
+
+/-- RDKit's bond type of every bond, by bond index. -/
+def bondKinds (m : Molecule n) : Array UInt32 := m.bonds.toArray.map fun b ↦ rdkitBondType b.kind
+
+/-- Radius-0 identifiers (`getConnectivityInvariants`): element, total degree, total H
+count (counting neighboring `[H]` atoms), charge, isotope mass shift, and a ring flag. -/
+def morganAtomInvariants (m : Molecule n) : Vector UInt32 n :=
+  let inRing := m.inRingVector
+  Vector.ofFn fun i ↦
+    let a := m.atom i
+    let hNeighbors := ((m.neighbors i).filter fun o ↦ (m.atom o).element == some .H).length
+    let base := [a.atomicNumber.toUInt32, (m.degree i + a.totalH).toUInt32,
+      (a.totalH + hNeighbors).toUInt32, intToUInt32 a.charge,
+      intToUInt32 (isotopeMassShift a.atomicNumber a.isotope)]
+    hashList (if inRing[i] then base ++ [1] else base)
+
+/-- What one radius hands to the next. -/
+structure MorganState (n : ℕ) where
+  /-- Identifiers from the previous radius (dead atoms: 0). -/
+  cur : Vector UInt32 n
+  /-- The bonds each atom's environment covers, as a bitmask over bond indices. -/
+  prevEnv : Vector ℕ n
+  /-- Atoms that have stopped growing. -/
+  dead : Vector Bool n
+  /-- Bond sets already emitted. -/
+  seen : List ℕ
+  /-- The environments emitted so far, as (identifier, atom, radius). -/
+  result : List (UInt32 × Fin n × ℕ)
+
+/-- The bonds an atom's environment covers one radius further out: what it
+covered, its own bonds, and its neighbors' previous environments. -/
+def growEnv (adj : Vector (List (ℕ × Fin n)) n) (prevEnv : Vector ℕ n) (a : Fin n) : ℕ :=
+  adj[a].foldl (fun env (k, o) ↦ env ||| (1 <<< k) ||| prevEnv[o]) prevEnv[a]
+
+/-- An atom's identifier one radius further out: its sorted (bond type, neighbor
+identifier) pairs, hashed onto (layer, own identifier). -/
+def growId (adj : Vector (List (ℕ × Fin n)) n) (kinds : Array UInt32) (cur : Vector UInt32 n)
+    (layer : ℕ) (a : Fin n) : UInt32 :=
+  let pairs := sortBy (fun p q ↦ p.1 < q.1 || (p.1 == q.1 && p.2 ≤ q.2))
+    (adj[a].map fun (k, o) ↦ (kinds[k]!, cur[o]))
+  pairs.foldl (fun h (t, v) ↦ hashCombine h (hashPair t v)) (hashCombine layer.toUInt32 cur[a])
+
+/-- One step of duplicate removal: an environment whose bond set was already
+emitted kills its atom; otherwise it is emitted at radius `layer + 1`. -/
+def dedupStep (layer : ℕ) (acc : Vector Bool n × List (UInt32 × Fin n × ℕ) × List ℕ)
+    (t : UInt32 × Fin n × ℕ) : Vector Bool n × List (UInt32 × Fin n × ℕ) × List ℕ :=
+  if acc.2.2.contains t.2.2 then (acc.1.set t.2.1.val true t.2.1.isLt, acc.2.1, acc.2.2)
+  else (acc.1, acc.2.1 ++ [(t.1, t.2.1, layer + 1)], t.2.2 :: acc.2.2)
+
+/-- RDKit's order for duplicate removal: by identifier, then by atom index. -/
+def envLE (p q : UInt32 × Fin n × ℕ) : Bool := p.1 < q.1 || (p.1 == q.1 && p.2.1.val ≤ q.2.1.val)
+
+/-- The atoms that grow this round: not dead, and with at least one neighbor. -/
+def roundAlive (adj : Vector (List (ℕ × Fin n)) n) (s : MorganState n) : Vector Bool n :=
+  Vector.ofFn fun a ↦ !s.dead[a] && !adj[a].isEmpty
+
+/-- This round's (identifier, atom, bond set) triples, one per live atom, in atom order. -/
+def roundTriples (adj : Vector (List (ℕ × Fin n)) n) (kinds : Array UInt32) (layer : ℕ)
+    (s : MorganState n) : List (UInt32 × Fin n × ℕ) :=
+  let alive := roundAlive adj s
+  (List.finRange n).filterMap fun a ↦
+    if alive[a] then some (growId adj kinds s.cur layer a, a, growEnv adj s.prevEnv a) else none
+
+/-- One radius (`MorganGenerator.cpp:280-503`). Every live atom grows its
+environment and identifier; then, in (identifier, atom) order, one atom per new
+bond set is emitted and the others die. Atoms with no neighbors die too. -/
+def morganLayer (adj : Vector (List (ℕ × Fin n)) n) (kinds : Array UInt32) (layer : ℕ)
+    (s : MorganState n) : MorganState n :=
+  let alive := roundAlive adj s
+  let acc := (sortBy envLE (roundTriples adj kinds layer s)).foldl (dedupStep layer)
+    (Vector.ofFn fun a ↦ s.dead[a] || adj[a].isEmpty, s.result, s.seen)
+  { cur := Vector.ofFn fun a ↦ if alive[a] then growId adj kinds s.cur layer a else 0
+    prevEnv := Vector.ofFn fun a ↦ if alive[a] then growEnv adj s.prevEnv a else s.prevEnv[a]
+    dead := acc.1
+    seen := acc.2.2
+    result := acc.2.1 }
+
+/-- The state before radius 1: every atom's radius-0 identifier, already emitted. -/
+def morganInit (m : Molecule n) : MorganState n :=
+  let inv := m.morganAtomInvariants
+  { cur := inv, prevEnv := Vector.replicate n 0, dead := Vector.replicate n false, seen := [],
+    result := (List.finRange n).map fun i ↦ (inv[i], i, 0) }
+
+/-- All Morgan environments as (identifier, atom, radius), in RDKit's order
+(`MorganGenerator.cpp:280-503`). Bond sets are bitmasks over bond indices. -/
+def morganEnvironments (m : Molecule n) (radius : ℕ := 2) : List (UInt32 × Fin n × ℕ) :=
+  ((List.range radius).foldl (fun s layer ↦ morganLayer m.adjacency m.bondKinds layer s)
+    m.morganInit).result
+
+/-- Unfolded Morgan fingerprint: each distinct identifier with its count,
+sorted by identifier (RDKit's `GetSparseCountFingerprint`). -/
+def morganIds (m : Molecule n) (radius : ℕ := 2) : List (UInt32 × ℕ) :=
+  let ids := (m.morganEnvironments radius).map (·.1)
+  let sorted := sortBy (· ≤ ·) ids
+  sorted.eraseDups.map fun id ↦ (id, sorted.count id)
+
+/-- Folded Morgan fingerprint: the sorted on-bits (RDKit's `GetFingerprint`). -/
+def morganBits (m : Molecule n) (radius : ℕ := 2) (fpSize : ℕ := 2048) : List ℕ :=
+  sortBy (· ≤ ·) ((m.morganIds radius).map fun (id, _) ↦ id.toNat % fpSize).eraseDups
+
+/-- The fingerprint as a bit vector of length `fpSize`, for featurization. -/
+def morganVector (m : Molecule n) (radius : ℕ := 2) (fpSize : ℕ := 2048) : Vector Bool fpSize :=
+  (m.morganBits radius fpSize).foldl (init := Vector.replicate fpSize false) fun v b ↦
+    if h : b < fpSize then v.set b true h else v
+
+end LeanSMILES.Molecule
+
+namespace LeanSMILES
+
+/-- Tanimoto similarity of two bit sets, exact: shared bits / bits in either. -/
+def tanimoto (a b : List ℕ) : ℚ :=
+  let common := (a.filter b.contains).length
+  let union := a.length + b.length - common
+  if union == 0 then 0 else (common : ℚ) / (union : ℚ)
+
+/-- Unfolded Morgan fingerprint of a bundled molecule. -/
+def Mol.morganIds (M : Mol) (radius : ℕ := 2) : List (UInt32 × ℕ) := M.mol.morganIds radius
+
+/-- Folded Morgan fingerprint of a bundled molecule. -/
+def Mol.morganBits (M : Mol) (radius : ℕ := 2) (fpSize : ℕ := 2048) : List ℕ :=
+  M.mol.morganBits radius fpSize
+
+/-- SMILES in, Morgan on-bits out (radius 2, 2048 bits by default). -/
+def SMILES.morganBits (s : String) (radius : ℕ := 2) (fpSize : ℕ := 2048) :
+    Except SMILES.ParseError (List ℕ) :=
+  (SMILES.parse s).map (·.morganBits radius fpSize)
+
+end LeanSMILES

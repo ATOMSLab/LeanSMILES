@@ -1,0 +1,183 @@
+/-
+Copyright (c) 2026 Tyler Josephson. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Tyler Josephson
+-/
+module
+
+public import LeanSMILES.SMILES.Canon
+public import LeanSMILES.Chem.Graph
+public import LeanSMILES.Fingerprint.Morgan
+public import Mathlib.Logic.Equiv.Fin.Rotate
+-- The same modules again as `meta` imports: the `#eval`s run their code at elaboration time.
+meta import LeanSMILES.SMILES.Canon
+meta import LeanSMILES.Chem.Graph
+meta import LeanSMILES.Fingerprint.Morgan
+meta import Mathlib.Logic.Equiv.Fin.Rotate
+
+/-!
+# One molecule, every representation
+
+Caffeine, C₈H₁₀N₄O₂, walked through the pipeline one representation at a
+time.  Open this file in the editor; the Infoview shows each `#eval`.
+
+```
+        O
+        ‖
+  CH₃–N–C   C––N–CH₃
+       |   ‖    ‖
+   O═C   C–––N  CH
+       \ /       ‖
+   CH₃–N         N
+```
+
+Fourteen heavy atoms: eight carbons, four nitrogens, two oxygens.  Two fused
+rings, nine ring atoms, all written aromatic.  Three N-methyls.
+-/
+
+public section
+
+open LeanSMILES LeanSMILES.SMILES LeanSMILES.Molecule
+
+/-- Caffeine as PubChem writes it. -/
+def caffeine : String := "Cn1cnc2c1c(=O)n(C)c(=O)n2C"
+
+/-! ### 1. The string becomes tokens
+
+`tokenize` is the only place SMILES *syntax* lives: atoms (bare or bracketed),
+bond symbols, ring-closure digits, branch parentheses, `.` for fragments.
+Lowercase symbols are read as aromatic atoms.  A `Token` is a `TokenKind`
+with its position in the string; shown here one token per entry. -/
+
+/-- A token, in one word. -/
+def Token.show (t : Token) : String :=
+  match t.kind with
+  | .atom a => a.toSmiles
+  | .bond k => k.symbol
+  | .dirBond d => s!"dir {repr d}"
+  | .dot => "."
+  | .branchOpen => "("
+  | .branchClose => ")"
+  | .ring k => s!"ring {k}"
+
+#eval (tokenize caffeine).map fun ts ↦ ts.toList.map Token.show
+
+/-! ### 2. Tokens become a `Molecule`
+
+`parse` runs the tokens through a small state machine (open branches, pending
+ring closures) and returns `Mol`, a molecule bundled with its atom count `n`.
+Inside is `Molecule n`: a `Vector Atom n` and a `List (Bond n)`, where every
+bond's endpoints are `Fin n`, so a bond cannot point at an atom that is not
+there.  The `Repr` shows each atom as SMILES would write it alone, and each
+bond as `src kind dst`. -/
+
+#eval parse caffeine
+
+/-- The parsed molecule, for the rest of the file. `#eval`s whose result type mentions
+`caffeineMol.n` are fine: `Mol.ofSmiles!` is irreducible, so the elaborator never runs the parse
+(design notes §8). -/
+def caffeineMol : Mol := Mol.ofSmiles! caffeine
+
+#eval caffeineMol.n            -- 14 atoms
+#eval caffeineMol.mol.numBonds -- 15 bonds: 14 atoms, 2 rings, 14 - 1 + 2
+
+/-! ### 3. Atoms
+
+An `Atom` records what the string said: element, aromatic flag, and the
+bracket decorations (none here).  `parse` then fills `implicitH` by the
+OpenSMILES default-valence rule; the written hydrogen count is `explicitH`,
+and `totalH` is their sum. -/
+
+#eval caffeineMol.mol.atoms.toList
+
+-- Hydrogens per atom, and the ten of C₈H₁₀N₄O₂.
+#eval (List.finRange caffeineMol.n).map fun i ↦ (caffeineMol.mol.atom i).totalH
+#eval ((List.finRange caffeineMol.n).map fun i ↦ (caffeineMol.mol.atom i).totalH).sum
+
+/-! ### 4. Bonds and the molecular graph
+
+Bonds are typed (`single`, `double`, `aromatic`, …) and carry a proof that
+their endpoints differ, which is what lets `Molecule.graph` be a Mathlib
+`SimpleGraph`.  Degrees here count heavy-atom neighbors; hydrogens are
+counts on atoms, not vertices. -/
+
+#eval caffeineMol.mol.bonds
+
+-- Each atom's heavy-atom neighbors, by index.
+#eval (List.finRange caffeineMol.n).map fun i ↦ (i.val, (caffeineMol.mol.neighbors i).map (·.val))
+
+-- The same degrees, from Mathlib's `SimpleGraph.degree` on `caffeineMol.mol.graph`,
+-- and the handshake lemma `Molecule.sum_degrees` checked numerically.
+#eval (List.finRange caffeineMol.n).map fun i ↦ caffeineMol.mol.graph.degree i
+#eval (∑ i, caffeineMol.mol.graph.degree i, 2 * caffeineMol.mol.numBonds)
+
+-- Which atoms lie on a ring (nine of the fourteen).
+#eval caffeineMol.mol.inRingVector.toList
+
+/-! ### 5. The adjacency matrix
+
+`adjMatrix` is the bond-order-weighted adjacency matrix over `ℚ`: `1`, `2`,
+`3`, or `3/2` for an aromatic bond, zero elsewhere, symmetric with zero
+diagonal.  `toBondMatrix` is the same matrix as the subtype `BondMatrix n`,
+whose type says it came from a molecule; `flatten` forgets the orders and
+gives Mathlib's 0/1 `IsAdjMatrix`. -/
+
+#eval caffeineMol.mol.adjMatrix
+#eval caffeineMol.mol.toBondMatrix.flatten
+
+-- The bond kind between atoms 5 and 6 (aromatic), 6 and 7 (the `=O`), 0 and 1.
+#eval (List.finRange caffeineMol.n).map fun i ↦ (List.finRange caffeineMol.n).map fun j ↦
+  (caffeineMol.mol.toBondMatrix.kindAt i j).map BondKind.symbol
+
+/-! ### 6. Normal form
+
+A symmetric matrix cannot remember which end of a bond the string wrote
+first, or the order of the bond list.  `normalize` forgets exactly that and
+nothing else (`normalEquiv`), so a molecule in normal form *is* its atoms
+plus its bond matrix.  The parsed molecule is not normal — ring closures are
+stored from the closing atom back to the opening one. -/
+
+#eval caffeineMol.isNormal
+#eval caffeineMol.normalize.isNormal
+#eval caffeineMol.normalize.mol.bonds
+
+/-! ### 7. Canonical ranks and the canonical SMILES
+
+Canonicalization is a relabeling.  The search reads the molecule as atoms
+plus bond matrix (`toMolData`).  Each atom gets an invariant (degree,
+element, hydrogens, aromatic, charge, …); ranks are refined by neighbors'
+ranks until nothing splits; ties are broken by trying every tied atom —
+skipping those a verified symmetry shows redundant — and keeping the
+lexicographically smallest string.  `canonicalPerm` is the
+resulting permutation, `canonicalize` applies it, and the canonical SMILES is
+the canonical molecule written in its new atom order. -/
+
+-- The initial invariants, and how many classes refinement reaches.
+#eval (List.finRange caffeineMol.n).map caffeineMol.mol.toMolData.atomInvariant
+#eval numClasses caffeineMol.mol.toMolData.initialRanks
+
+-- Where each atom goes.
+#eval
+  let σ := caffeineMol.mol.canonicalPerm
+  (List.finRange caffeineMol.n).map fun i ↦ (i.val, (σ i).val)
+
+#eval caffeineMol.canonicalSmiles
+#eval caffeineMol.canonicalize.toSmiles == caffeineMol.canonicalSmiles
+
+-- Any other way of writing caffeine lands on the same string.
+#eval (Mol.ofSmiles! "O=c1c2c(ncn2C)n(C)c(=O)n1C").canonicalSmiles == caffeineMol.canonicalSmiles
+#eval (caffeineMol.relabel (finRotate caffeineMol.n)).canonicalSmiles == caffeineMol.canonicalSmiles
+-- Brackets that only repeat the default hydrogen count are dropped first, so `[n]` is `n`.
+#eval (Mol.ofSmiles! "C[n]1cnc2c1c(=O)n(C)c(=O)n2C").canonicalSmiles == caffeineMol.canonicalSmiles
+
+/-! ### 8. Morgan fingerprint
+
+Circular environments of radius 0, 1, 2 around each atom, hashed as RDKit
+does; `morganIds` lists the environment hashes with their counts, and
+`morganBits` folds them into 2048 bit positions. -/
+
+#eval caffeineMol.morganIds
+#eval caffeineMol.morganBits
+
+-- Caffeine against theobromine (one N-methyl fewer), as Tanimoto similarity.
+#eval tanimoto caffeineMol.morganBits (Mol.ofSmiles! "Cn1cnc2c1c(=O)[nH]c(=O)n2C").morganBits

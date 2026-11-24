@@ -1,0 +1,428 @@
+/-
+Copyright (c) 2026 Samiha Sharlin. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Samiha Sharlin
+-/
+module
+
+public import LeanSMILES.Chem.Molecule
+
+/-!
+# LeanSMILES.Aromaticity.Basic
+
+The bookkeeping RDKit's kekulization and aromaticity perception need, beyond
+what a `Molecule n` records: RDKit's allowed-valence lists and outer-electron
+counts, its explicit and implicit valence (`Atom.cpp`), cached values, and
+radicals.
+
+The perception passes run on `Work`, a working copy of a `Molecule n` indexed by
+plain numbers (atom `i` is `Fin` atom `i`, bond `k` is the `k`-th bond of
+`Molecule.bonds`), carrying that bookkeeping per atom. `Molecule.aromatize`
+(`LeanSMILES.Aromaticity.Perceive`) builds it, runs the passes, and writes the
+bond kinds, aromatic flags and hydrogen counts back.
+
+Ported from the `canonical-smiles` branch's `Canonical/Sanitize.lean` (commit
+`5b5fe9e`), which matches RDKit 2026.09.1 on the oracle datasets; RDKit file and
+line references are to `Release_2026_09_1`.
+
+## Main definitions
+
+* `Aromaticity.elementTable`: RDKit's allowed valences and outer-shell electrons per element.
+* `Aromaticity.WAtom`, `Aromaticity.WBond`, `Aromaticity.Work`: the working copy of a molecule,
+  carrying RDKit's bookkeeping.
+* `Aromaticity.Work.ofMolecule`: the working copy of a molecule.
+* `Aromaticity.Work.explicitValence`, `Aromaticity.Work.implicitHs`: RDKit's explicit valence
+  and implicit hydrogen count.
+* `Aromaticity.Work.firstBadValence`: RDKit's strict valence check.
+* `Aromaticity.Work.finalizeHs`: RDKit's final hydrogen counts.
+* `Aromaticity.Work.assignRadicals`: RDKit's `assignRadicals`, for bracket atoms.
+* `Aromaticity.Work.cleanUp`: RDKit's `cleanUp`: nitrogen, phosphorus and halogen rules.
+-/
+
+@[expose] public section
+
+namespace LeanSMILES.Aromaticity
+
+/-! ### RDKit's element data -/
+
+/-- Atomic number, RDKit's allowed valences (smallest first; the first is the
+default) and outer-shell electrons (`atomic_data.cpp`), for the elements whose
+valence RDKit constrains. Other elements get no implicit hydrogens and are
+never aromatic. -/
+def elementTable : List (ℕ × List ℕ × ℕ) :=
+  [(1, [1], 1), (2, [0], 2), (4, [2], 2), (5, [3], 3), (6, [4], 4), (7, [3], 5), (8, [2], 6),
+   (9, [1], 7), (10, [0], 8), (13, [3], 3), (14, [4], 4), (15, [3, 5], 5), (16, [2, 4, 6], 6),
+   (17, [1], 7), (18, [0], 8), (31, [3], 3), (32, [4], 4), (33, [3, 5], 5), (34, [2, 4, 6], 6),
+   (35, [1], 7), (36, [0], 8), (49, [3], 3), (50, [2, 4], 4), (51, [3, 5], 5),
+   (52, [2, 4, 6], 6), (53, [1, 3, 5], 7), (54, [0, 2, 4, 6], 8)]
+
+/-- RDKit's allowed valences of element `z`; empty if it does not constrain them. -/
+def valences (z : ℕ) : List ℕ := ((elementTable.find? (·.1 == z)).map (·.2.1)).getD []
+
+/-- RDKit's default valence (the first allowed one), `0` if none. -/
+def defaultValence (z : ℕ) : ℕ := (valences z).head?.getD 0
+
+/-- Outer-shell electrons (5 for N, 6 for O); `0` for elements not in the table. -/
+def outerElectrons (z : ℕ) : ℕ := ((elementTable.find? (·.1 == z)).map (·.2.2)).getD 0
+
+/-- RDKit's `isEarlyAtom` (`Atom.cpp:58`), on the table above: elements left of
+carbon in their row, whose charges count the other way in kekulization. -/
+def isEarly (z : ℕ) : Bool := [4, 5, 13, 31, 32, 49, 50, 51].contains z
+
+/-- RDKit's `moreElectroNegative` (`PeriodicTable.h:304`): more outer electrons,
+or the same number and a smaller atomic number. -/
+def moreElectronegative (z₁ z₂ : ℕ) : Bool :=
+  outerElectrons z₂ < outerElectrons z₁ ||
+    (outerElectrons z₁ == outerElectrons z₂ && z₁ < z₂)
+
+/-- Bond order in half-units, so aromatic (3/2) stays an integer: RDKit's
+`getBondTypeAsDouble` times two. -/
+def halfOrder : BondKind → ℕ
+  | .single => 2
+  | .double => 4
+  | .triple => 6
+  | .quadruple => 8
+  | .aromatic => 3
+
+/-- Double or triple: what aromaticity perception counts as a multiple bond (aromatic is not). -/
+def isMultiple (k : BondKind) : Bool := k == .double || k == .triple
+
+/-! ### The working copy -/
+
+/-- An atom with RDKit's sanitization bookkeeping. -/
+structure WAtom where
+  /-- Atomic number (`0` for `*`). -/
+  z : ℕ
+  /-- Aromatic flag: lowercase in the input, then whatever perception decides. -/
+  aromatic : Bool
+  /-- Formal charge as written; `cleanUp` may move it. -/
+  charge : ℤ
+  /-- Hydrogens written in brackets, plus any `adjustHs` adds back. -/
+  explicitHs : ℕ
+  /-- Bracket atoms get no implicit hydrogens. -/
+  noImplicit : Bool
+  /-- Total H count fixed before kekulization (RDKit keeps it from then on). -/
+  frozenHs : Option ℕ := none
+  /-- Unpaired electrons (bracket atoms only). -/
+  radicals : ℕ := 0
+  /-- Explicit valence as cached before kekulization; aromaticity reads this. -/
+  cachedValence : Option ℕ := none
+  /-- Implicit H count cached at the same time. -/
+  cachedImplicit : ℕ := 0
+  /-- Was aromatic before kekulization: `adjustHs` may give it hydrogens back. -/
+  adjustHs : Bool := false
+  deriving Inhabited
+
+/-- A bond of the working copy: endpoints as atom numbers, and its kind. -/
+structure WBond where
+  /-- The atom written first. -/
+  src : ℕ
+  /-- The atom written second. -/
+  dst : ℕ
+  /-- Its kind; kekulization and perception rewrite this. -/
+  kind : BondKind
+  deriving Inhabited
+
+/-- Is atom `i` an endpoint of `b`? -/
+def WBond.touches (b : WBond) (i : ℕ) : Bool := b.src == i || b.dst == i
+
+/-- The endpoint of `b` other than `i` (`src` if `i` is neither). -/
+def WBond.other (b : WBond) (i : ℕ) : ℕ := if b.src == i then b.dst else b.src
+
+/-- A molecule's working copy: atoms and bonds by number, carrying RDKit's bookkeeping. -/
+structure Work where
+  /-- Atom `i` is `Fin` atom `i` of the source molecule. -/
+  atoms : Array WAtom
+  /-- Bond `k` is the `k`-th bond of `Molecule.bonds`. -/
+  bonds : Array WBond
+  deriving Inhabited
+
+/-- The working copy of a molecule. Bracket atoms (and `*`) take no implicit
+hydrogens. -/
+def Work.ofMolecule {n : ℕ} (m : Molecule n) : Work where
+  atoms := (List.finRange n).toArray.map fun i ↦
+    let a := m.atom i
+    { z := a.atomicNumber, aromatic := a.aromatic, charge := a.charge,
+      explicitHs := a.explicitH.getD 0, noImplicit := a.explicitH.isSome || a.element.isNone }
+  bonds := m.bonds.toArray.map fun b ↦ { src := b.src.val, dst := b.dst.val, kind := b.kind }
+
+namespace Work
+
+variable (m : Work)
+
+/-- Number of atoms; atom numbers run from `0` to `numAtoms - 1`. -/
+def numAtoms : ℕ := m.atoms.size
+
+/-- Number of bonds; bond numbers run from `0` to `numBonds - 1`. -/
+def numBonds : ℕ := m.bonds.size
+
+/-- Bond numbers at atom `i`, in bond order. -/
+def bondsOf (i : ℕ) : List ℕ := (List.range m.numBonds).filter fun k ↦ m.bonds[k]!.touches i
+
+/-- `(bond, neighbor)` pairs of atom `i`, in bond order (RDKit's adjacency order). -/
+def neighbors (i : ℕ) : List (ℕ × ℕ) := (m.bondsOf i).map fun k ↦ (k, m.bonds[k]!.other i)
+
+/-- RDKit's `getDegree`: bonds at atom `i`, hydrogen counts not included. -/
+def degree (i : ℕ) : ℕ := (m.bondsOf i).length
+
+/-- The bond joining `i` and `j`, if any. -/
+def bondBetween? (i j : ℕ) : Option ℕ :=
+  (List.range m.numBonds).find? fun k ↦
+    let b := m.bonds[k]!
+    (b.src == i && b.dst == j) || (b.src == j && b.dst == i)
+
+/-- Bond `k` with its kind replaced by `o`; an out-of-range `k` changes nothing. -/
+def setKind (k : ℕ) (o : BondKind) : Work :=
+  { m with bonds := m.bonds.modify k fun b ↦ { b with kind := o } }
+
+/-- Atom `i` updated by `f`; an out-of-range `i` changes nothing. -/
+def modifyAtom (i : ℕ) (f : WAtom → WAtom) : Work := { m with atoms := m.atoms.modify i f }
+
+/-! ### Valence and hydrogens (`Atom.cpp:350-613`) -/
+
+/-- RDKit's `isAromaticAtom`: lowercase, or touching an aromatic bond. -/
+def isAromaticAtom (i : ℕ) : Bool :=
+  m.atoms[i]!.aromatic || (m.bondsOf i).any fun k ↦ m.bonds[k]!.kind == .aromatic
+
+/-- Twice the sum of the bond orders at atom `i` (aromatic counting 3/2). -/
+def bondHalfSum (i : ℕ) : ℕ := ((m.bondsOf i).map (halfOrder m.bonds[·]!.kind)).sum
+
+/-- Charged atoms take the valences of the isoelectronic element (N⁺ like C). -/
+def effectiveZ (a : WAtom) : ℕ := (a.z - a.charge).toNat
+
+/-- P, S (and As, Se) with a negative charge that takes the effective atomic number `eff` to
+the halogen or beyond keep their own valence list instead of the isoelectronic element's. -/
+def canBeHypervalent (a : WAtom) (eff : ℕ) : Bool :=
+  (16 < eff && (a.z == 15 || a.z == 16)) || (34 < eff && (a.z == 33 || a.z == 34))
+
+/-- RDKit's explicit valence: bond orders plus written hydrogens, with the
+aromatic snap to an allowed valence and "round x.5 up" (`Atom.cpp:350-415`). -/
+def explicitValence (i : ℕ) : ℕ := Id.run do
+  let a := m.atoms[i]!
+  let mut accum := 2 * a.explicitHs + m.bondHalfSum i
+  let valens := valences (effectiveZ a)
+  if let some dv := valens.head? then
+    if 2 * dv < accum && m.isAromaticAtom i then
+      let pval := (valens.filter (2 * · ≤ accum)).getLast?.getD dv
+      if accum ≤ 2 * pval + 3 then accum := 2 * pval
+  return (accum + 1) / 2
+
+/-- RDKit's implicit hydrogen count (`Atom.cpp:458-613`). -/
+def implicitHs (i : ℕ) : ℕ := Id.run do
+  let a := m.atoms[i]!
+  if a.noImplicit then return 0
+  let mut eff := effectiveZ a
+  let mut ev : ℤ := m.explicitValence i
+  if canBeHypervalent a eff then
+    eff := a.z
+    ev := ev - a.charge
+  let valens := valences eff
+  let some dv := valens.head? | return 0
+  if m.isAromaticAtom i then
+    return if ev ≤ dv then (dv - ev).toNat else 0
+  match (valens.map Int.ofNat).find? (ev ≤ ·) with
+  | some v => return (v - ev).toNat
+  | none => return 0
+
+/-- RDKit's metals (`QueryOps::isMetal`, Marvin's `M`): every element except `*`, H, the noble
+gases, B, C, N, O, F, Si, P, S, Cl, As, Se, Br, Te, I and At. -/
+def isMetal (z : ℕ) : Bool :=
+  !([0, 1, 2, 5, 6, 7, 8, 9, 10, 14, 15, 16, 17, 18, 33, 34, 35, 36, 52, 53, 54, 85, 86] :
+    List ℕ).contains z
+
+/-- RDKit's strict valence check (`updatePropertyCache(true)`, `Atom.cpp`): the first atom whose
+explicit valence is above every valence its element allows, with that valence. Allowed valences
+are read as `implicitHs` reads them (charged atoms like the isoelectronic element, hypervalent P
+and S with their own list); an element without a list is not checked. RDKit's error for
+`CC(C)(C)(C)(C)C`: "Explicit valence for atom # 1 C, 5, is greater than permitted".
+
+An atom with a single bond to a metal is not checked either: RDKit's `cleanUpOrganometallics`
+turns such bonds of an over-valent atom into dative ones, which do not count toward its valence
+(ferrocene written with single C–Fe bonds). Not ported, so the check errs towards accepting. -/
+def firstBadValence : Option (ℕ × ℕ) :=
+  (List.range m.numAtoms).findSome? fun i ↦
+    let a := m.atoms[i]!
+    let ev := m.explicitValence i
+    let eff := effectiveZ a
+    let (eff, evc) : ℕ × ℤ := if canBeHypervalent a eff then (a.z, ev - a.charge) else (eff, ev)
+    let valens := valences eff
+    let toMetal := (m.bondsOf i).any fun k ↦
+      let b := m.bonds[k]!
+      b.kind == .single && isMetal m.atoms[if b.src == i then b.dst else b.src]!.z
+    if valens.isEmpty || valens.any (fun v ↦ evc ≤ v) || toMetal then none else some (i, ev)
+
+/-- Total hydrogens: frozen if set, else written plus implicit. -/
+def totalHs (i : ℕ) : ℕ := m.atoms[i]!.frozenHs.getD (m.atoms[i]!.explicitHs + m.implicitHs i)
+
+/-- Fix every atom's total H count, as RDKit does before kekulization. -/
+def freezeHs : Work :=
+  { m with atoms := (List.range m.numAtoms).toArray.map fun i ↦
+      { m.atoms[i]! with frozenHs := some (m.totalHs i) } }
+
+/-- Cache explicit valence and implicit H count (`updatePropertyCache` before
+kekulization) and mark the atoms `adjustHs` may touch (`MolOps.cpp:419`). -/
+def cacheValences : Work :=
+  { m with atoms := (List.range m.numAtoms).toArray.map fun i ↦
+      { m.atoms[i]! with cachedValence := some (m.explicitValence i),
+                         cachedImplicit := m.implicitHs i,
+                         adjustHs := m.isAromaticAtom i } }
+
+/-- One atom of `finalizeHs`' first pass: an atom that is or was aromatic and would lose implicit
+hydrogens gets them back as written ones. -/
+def adjustHsStep (w : Work) (i : ℕ) : Work :=
+  let a := w.atoms[i]!
+  if a.adjustHs || w.isAromaticAtom i then
+    let new := w.implicitHs i
+    if new < a.cachedImplicit then
+      w.modifyAtom i ({ · with explicitHs := a.explicitHs + (a.cachedImplicit - new) })
+    else w
+  else w
+
+/-- RDKit's final H counts (`adjustHs`, `MolOps.cpp:380-415`, then the last
+`updatePropertyCache`): implicit counts are recomputed on the final graph, and an
+atom that is or was aromatic and would lose implicit hydrogens gets them back as
+written ones (pyrrole's N–H). -/
+def finalizeHs : Work :=
+  let w := (List.range m.numAtoms).foldl adjustHsStep m
+  let totals := (List.range w.numAtoms).map fun i ↦ w.atoms[i]!.explicitHs + w.implicitHs i
+  { w with atoms := (List.range w.numAtoms).toArray.map fun i ↦
+      { w.atoms[i]! with frozenHs := some totals[i]! } }
+
+/-- Explicit valence on the Kekulé graph: integer bond orders plus written Hs. -/
+def kekuleValence (i : ℕ) : ℕ :=
+  m.bondHalfSum i / 2 + m.atoms[i]!.explicitHs
+
+/-- The explicit valence aromaticity sees (`Atom::getValence`): the cached one. -/
+def cachedValence (i : ℕ) : ℕ := m.atoms[i]!.cachedValence.getD (m.kekuleValence i)
+
+/-- Total hydrogens as aromaticity sees them: written plus cached implicit. -/
+def cachedTotalHs (i : ℕ) : ℕ := m.atoms[i]!.explicitHs + m.atoms[i]!.cachedImplicit
+
+/-- The unpaired electrons `assignRadicals` gives the bracket atom `i`: the octet (duet for H,
+He) minus outer electrons and valence, plus the charge, clipped like RDKit. -/
+def radicalCount (i : ℕ) : ℕ := Id.run do
+  let a := m.atoms[i]!
+  let z := a.z
+  let no : ℤ := outerElectrons z
+  let tv : ℤ := m.kekuleValence i
+  let base : ℤ := if z == 1 || z == 2 then 2 else 8
+  let mut nr : ℤ := base - no - tv + a.charge
+  if nr < 0 then
+    nr := 0
+    if 1 < (valences z).length then
+      if let some v := ((valences z).map Int.ofNat).find? (fun v ↦ 0 ≤ v - tv + a.charge) then
+        nr := v - tv + a.charge
+  let nr2 := no - tv - a.charge
+  if 0 ≤ nr2 then nr := min nr nr2
+  return nr.toNat
+
+/-- One atom of `assignRadicals`: a bracket atom other than `*` gets its `radicalCount`. -/
+def radicalStep (w : Work) (i : ℕ) : Work :=
+  let a := w.atoms[i]!
+  if !a.noImplicit || a.z == 0 then w
+  else w.modifyAtom i ({ · with radicals := w.radicalCount i })
+
+/-- `MolOps::assignRadicals` (`MolOps.cpp:437`), for bracket atoms: unpaired electrons are the
+octet (duet for H, He) minus outer electrons and valence, plus the charge, clipped like RDKit. -/
+def assignRadicals : Work := (List.range m.numAtoms).foldl radicalStep m
+
+/-! ### Cleanup (`MolOps.cpp:51-329`)
+
+RDKit's `MolOps::cleanUp` rewrites a few "hypervalent" ways of writing groups
+into their charge-separated forms, before kekulization:
+
+* nitro and N-oxide: neutral 5-valent N with `=O`  →  `[N+]-[O-]`
+  (`CN(=O)=O` → `C[N+](=O)[O-]`, `n1=O` → `[n+]1[O-]`)
+* azide-like: such an N with `#N`  →  `[N+]=[N-]`
+* P with `=O` and `=C`/`=N`  →  `[P+]-[O-]`
+* Cl/Br/I bonded only to O, valence 3/5/7: each `=O` → `-[O-]` (perchlorate)
+-/
+
+/-- One atom of `nitrogensCleanup`'s first pass: a neutral 5-valent N is remembered, and its first
+neutral `=O` (in bond order) becomes `-O⁻`, the N becoming `N⁺`. -/
+def nitroStep (p : Work × List ℕ) (i : ℕ) : Work × List ℕ :=
+  let (w, consider) := p
+  let a := w.atoms[i]!
+  if a.z != 7 || a.charge != 0 || w.explicitValence i != 5 then (w, consider) else
+  -- the first neutral O on a double bond becomes -O⁻
+  let firstO := (w.neighbors i).find? fun (k, j) ↦
+    w.atoms[j]!.z == 8 && w.atoms[j]!.charge == 0 && w.bonds[k]!.kind == .double
+  match firstO with
+  | some (k, j) =>
+    (((w.setKind k .single).modifyAtom i ({ · with charge := 1 })).modifyAtom j
+      ({ · with charge := -1 }), consider ++ [i])
+  | none => (w, consider ++ [i])
+
+/-- One atom of `nitrogensCleanup`'s second pass: the first triple bond of `i` to a neutral N
+becomes double, `i` becoming `N⁺` and the other N `N⁻`. -/
+def azideStep (w : Work) (i : ℕ) : Work :=
+  let firstN := (w.neighbors i).find? fun (k, j) ↦
+    w.atoms[j]!.z == 7 && w.atoms[j]!.charge == 0 && w.bonds[k]!.kind == .triple
+  match firstN with
+  | some (k, j) =>
+    ((w.setKind k .double).modifyAtom i ({ · with charge := 1 })).modifyAtom j
+      ({ · with charge := -1 })
+  | none => w
+
+/-- `MolOps.cpp:51-136`: nitro, N-oxide and azide-like nitrogens. -/
+def nitrogensCleanup : Work :=
+  let (w, consider) := (List.range m.numAtoms).foldl nitroStep (m, [])
+  consider.foldl azideStep w
+
+/-- What `phosphorusCleanup` looks for around atom `i`: the last neutral `=O` (bond and atom), and
+whether there is a `=C` or `=N` whose atom has at least two neighbours. -/
+def phosphorusScan (i : ℕ) : Option (ℕ × ℕ) × Bool :=
+  (m.neighbors i).foldl (init := ((none : Option (ℕ × ℕ)), false)) fun (dblO, dblCN) (k, j) ↦
+    let b := m.atoms[j]!
+    if b.z == 8 && b.charge == 0 && m.bonds[k]!.kind == .double then (some (k, j), dblCN)
+    else if (b.z == 6 || b.z == 7) && 2 ≤ m.degree j && m.bonds[k]!.kind == .double then
+      (dblO, true)
+    else (dblO, dblCN)
+
+/-- `MolOps.cpp:138-180`: neutral 5-valent P with three neighbours, `=O` and
+`=C`/`=N` (the C/N having ≥ 2 neighbours). The last such `=O` becomes `-O⁻`. -/
+def phosphorusCleanup (i : ℕ) : Work :=
+  let a := m.atoms[i]!
+  if a.charge != 0 || m.explicitValence i != 5 || m.degree i != 3 then m else
+  let (dblO, dblCN) := m.phosphorusScan i
+  match dblO with
+  | some (k, j) =>
+    if dblCN then
+      ((m.setKind k .single).modifyAtom j ({ · with charge := -1 })).modifyAtom i
+        ({ · with charge := 1 })
+    else m
+  | none => m
+
+/-- One neighbour of `halogenCleanup`: a `=O` becomes `-O⁻`, and the count of them goes up. -/
+def halogenStep (p : Work × ℤ) (kj : ℕ × ℕ) : Work × ℤ :=
+  let (w, fc) := p
+  let (k, j) := kj
+  if w.bonds[k]!.kind == .double then
+    ((w.setKind k .single).modifyAtom j ({ · with charge := -1 }), fc + 1)
+  else (w, fc)
+
+/-- `MolOps.cpp:182-215`: neutral Cl/Br/I with valence 3, 5 or 7 bonded only to
+O. Every `=O` becomes `-O⁻`; the halogen's charge is the number changed. -/
+def halogenCleanup (i : ℕ) : Work :=
+  let a := m.atoms[i]!
+  if a.charge != 0 || ![3, 5, 7].contains (m.explicitValence i) then m else
+  let nbrs := m.neighbors i
+  if !nbrs.all (fun (_, j) ↦ m.atoms[j]!.z == 8) then m else
+  let (w, fc) := nbrs.foldl halogenStep (m, 0)
+  w.modifyAtom i ({ · with charge := fc })
+
+/-- One atom of `cleanUp`'s second pass: phosphorus and halogen rules. -/
+def cleanUpStep (w : Work) (i : ℕ) : Work :=
+  let z := w.atoms[i]!.z
+  if z == 15 then w.phosphorusCleanup i
+  else if z == 17 || z == 35 || z == 53 then w.halogenCleanup i
+  else w
+
+/-- `MolOps::cleanUp` (`MolOps.cpp:315-329`). -/
+def cleanUp : Work :=
+  let w := m.nitrogensCleanup
+  (List.range w.numAtoms).foldl cleanUpStep w
+
+end Work
+
+end LeanSMILES.Aromaticity

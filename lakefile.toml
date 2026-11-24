@@ -1,0 +1,127 @@
+name = "LeanSMILES"
+version = "0.1.0"
+keywords = ["math", "chemistry", "machine learning"]
+defaultTargets = ["LeanSMILES", "LeanLearn", "Pipelines"]
+
+[leanOptions]
+pp.unicode.fun = true # pretty-prints `fun a ↦ b`
+relaxedAutoImplicit = false
+weak.linter.mathlibStandardSet = true
+maxSynthPendingDepth = 3
+
+[[require]]
+name = "mathlib"
+scope = "leanprover-community"
+rev = "v4.30.0-rc1"
+
+
+# Three libraries, one direction of dependency:
+#   LeanSMILES  — SMILES → typed molecular graph → canonical SMILES, fingerprints (imports Mathlib)
+#   LeanLearn   — learning algorithms on tabular data and their proofs (imports Mathlib only)
+#   Pipelines   — molecules as tabular data: representations, certified pipelines, walkthroughs
+#                 (the only library that imports both)
+[[lean_lib]]
+name = "LeanSMILES"
+globs = ["LeanSMILES.*"]
+
+[[lean_lib]]
+name = "LeanLearn"
+globs = ["LeanLearn.*"]
+
+[[lean_lib]]
+name = "Pipelines"
+globs = ["Pipelines.*"]
+
+# Tests against RDKit's answers in datasets/ (run from the repository root)
+[[lean_exe]]
+name = "validity-test"
+root = "LeanSMILES.Tests.Validity"
+
+[[lean_exe]]
+name = "oracle-test"
+root = "LeanSMILES.Tests.Oracle"
+
+[[lean_exe]]
+name = "morgan-test"
+root = "LeanSMILES.Tests.Morgan"
+
+[[lean_exe]]
+name = "charge-test"
+root = "LeanSMILES.Tests.Charge"
+
+# Parse error message tests added by Hao Liu.
+[[lean_exe]]
+name = "parse-errors-test"
+root = "LeanSMILES.Tests.ParseErrors"
+
+# LeanLearn: the Float solvers and the shared regression definitions (Hao Liu)
+[[lean_exe]]
+name = "ols-float-test"
+root = "LeanLearn.Tests.OLSFloat"
+
+[[lean_exe]]
+name = "ridge-float-test"
+root = "LeanLearn.Tests.RidgeFloat"
+
+[[lean_exe]]
+name = "linear-model-test"
+root = "LeanLearn.Tests.LinearModel"
+
+# Pipelines: logistic regression on Morgan fingerprints vs scikit-learn (tools/sklearn_egfr.py)
+[[lean_exe]]
+name = "logistic-test"
+root = "Pipelines.Tests.Logistic"
+
+# Molecule.aromatize vs RDKit: bond types, hydrogens, Morgan
+[[lean_exe]]
+name = "aromaticity-test"
+root = "LeanSMILES.Tests.Aromaticity"
+
+# The statements of LeanSMILES/Aromaticity/Invariance.lean, as written, on
+# datasets/aromatize-invariance.smi (or the files given); `--dump` prints aromatize's outputs
+[[lean_exe]]
+name = "invariance-test"
+root = "LeanSMILES.Tests.AromatizeInvariance"
+
+# The resonance specification (LeanSMILES.Aromaticity.Resonance) checked on the data
+[[lean_exe]]
+name = "resonance-test"
+root = "LeanSMILES.Tests.Resonance"
+
+# What the Kekulé-class canonical form (LeanSMILES.SMILES.KekuleClass) costs, on worst cases
+[[lean_exe]]
+name = "kekule-bench"
+root = "LeanSMILES.Tests.KekuleBench"
+
+# Pipelines: ridge regression of Delaney log solubility on Morgan fingerprints vs scikit-learn
+# (tools/sklearn_delaney.py); `--svg PATH` also writes the parity plot
+[[lean_exe]]
+name = "ridge-test"
+root = "Pipelines.Tests.Ridge"
+
+# 2D depiction: SVG drawings and mol blocks from the command line
+[[lean_exe]]
+name = "depict"
+root = "LeanSMILES.Depict.Main"
+
+# Checks every drawing of datasets/stereo.smi and writes out/stereo.sdf for
+# tools/check_depiction.py (RDKit reads the stereochemistry back)
+[[lean_exe]]
+name = "depict-test"
+root = "LeanSMILES.Tests.Depict"
+
+# The web API's Lean worker (server/workers/leanWorker.js spawns .lake/build/bin/worker)
+[[lean_exe]]
+name = "worker"
+root = "Worker"
+
+# Experiment: the verified dense solvers (Gauss–Seidel, gradient descent) on folded Morgan bits
+[[lean_exe]]
+name = "morgan-dense-test"
+root = "Pipelines.Tests.MorganDense"
+
+# Stereochemistry vs RDKit and InChI: canonical SMILES per stereoisomer, and the
+# parser's reading of @/@@ and / \ (datasets/stereo-*.tsv from tools/rdkit_stereo.py)
+[[lean_exe]]
+name = "stereo-test"
+root = "LeanSMILES.Tests.Stereo"

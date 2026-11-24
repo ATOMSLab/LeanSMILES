@@ -1,0 +1,142 @@
+/-
+Copyright (c) 2026 Tyler Josephson. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Ejike Ugwuanyi
+-/
+module
+
+public import LeanSMILES.SMILES.Parse
+public import LeanSMILES.Depict.Svg
+public import LeanSMILES.Depict.Fingerprint
+
+/-!
+# LeanSMILES.Depict.Cli
+
+The `depict` executable (root `LeanSMILES.Depict.Main`): drawings from the
+command line.
+
+```
+lake exe depict "C[C@H](N)C(=O)O"            SVG on standard output
+lake exe depict "C[C@H](N)C(=O)O" out.svg    …or into a file
+lake exe depict --mol "F/C=C/F"              MDL mol block (wedge/hash flags)
+lake exe depict --html in.smi out.html       a gallery page, one SMILES per line
+lake exe depict --sdf in.smi out.sdf         per line: the SMILES, then its mol
+                                             block, for tools/check_depiction.py
+lake exe depict --bit <smiles> <bit> out.svg  the molecule with the atoms that set
+                                             one Morgan bit highlighted
+lake exe depict --fingerprint <smiles> [<smiles2>] out.svg
+                                             Morgan fingerprint as a grid and a
+                                             barcode; bits shared with smiles2
+                                             highlighted
+```
+
+## Main definitions
+
+* `Depict.readSmi`: the SMILES of a `.smi` file.
+* `Depict.gallery`: the HTML page of `depict --html`.
+* `Depict.sdf`: the file of `depict --sdf`.
+* `Depict.main`: the `depict` command.
+-/
+
+@[expose] public section
+
+open LeanSMILES LeanSMILES.SMILES
+
+namespace LeanSMILES.Depict
+
+/-- The help text `main` prints, with exit code 1, when the arguments fit none of its modes. -/
+def usage : String :=
+  "\n".intercalate [
+    "usage:",
+    "  lake exe depict <smiles> [out.svg]         SVG drawing",
+    "  lake exe depict --mol <smiles>             MDL mol block with wedge/hash flags",
+    "  lake exe depict --html <in.smi> <out.html> gallery of one SMILES per line",
+    "  lake exe depict --sdf <in.smi> <out.sdf>   mol blocks for tools/check_depiction.py",
+    "  lake exe depict --bit <smiles> <bit> <out.svg>  one Morgan bit highlighted",
+    "  lake exe depict --fingerprint <smiles> [<smiles2>] <out.svg>",
+    "                                             Morgan fingerprint (grid and barcode)"]
+
+/-- The SMILES of a `.smi` file: the first space-separated field of each line that is neither
+blank nor a `#` comment, leading whitespace ignored. -/
+def readSmi (path : String) : IO (Array String) := do
+  let lines ← IO.FS.lines path
+  return lines.filterMap fun l ↦
+    let s := l.trimAscii.toString
+    if s.isEmpty || s.startsWith "#" then none
+    else (s.splitOn " ").head?.map fun w ↦ w.trimAscii.toString
+
+/-- The HTML page of `depict --html`: one card per SMILES, its drawing (or its parse error, in
+red) above the SMILES itself. -/
+def gallery (smiles : Array String) : String :=
+  let cards := smiles.toList.map fun s ↦
+    let body := match parse s with
+      | .ok M => (M.svg 28).render
+      | .error e => s!"<p style=\"color:#b02a37\">{Xml.escape (toString e)}</p>"
+    s!"<div style=\"display:inline-block;margin:6px;padding:8px;border:1px solid #ddd;\
+      border-radius:6px;vertical-align:top;background:#fff\">{body}\
+      <div style=\"font:11px monospace;max-width:260px;overflow-wrap:anywhere\">\
+      {Xml.escape s}</div></div>"
+  "<!doctype html><html><head><meta charset=\"utf-8\"><title>LeanSMILES depictions\
+  </title></head><body style=\"font-family:system-ui,sans-serif;background:#f6f8fa;\
+  margin:16px\">" ++ String.join cards ++ "</body></html>"
+
+/-- The file of `depict --sdf`, read by `tools/check_depiction.py`: per SMILES, the SMILES on a
+line of its own, then its mol block (or a line `ERROR: …`), then `$$$$`. -/
+def sdf (smiles : Array String) : String :=
+  String.join <| smiles.toList.map fun s ↦
+    match parse s with
+    | .ok M => s!"{s}\n{M.molBlock}$$$$\n"
+    | .error e => s!"{s}\nERROR: {e}\n$$$$\n"
+
+/-- The `depict` command, in the modes of the module docstring: exit code 0 on success, 1 after
+printing the usage text or the parse error of a SMILES given on the command line. -/
+def main (args : List String) : IO UInt32 := do
+  match args with
+  | ["--mol", s] =>
+    match parse s with
+    | .ok M =>
+      IO.print M.molBlock
+      return 0
+    | .error e =>
+      IO.eprintln s!"{e}"
+      return 1
+  | ["--html", inp, out] =>
+    IO.FS.writeFile out (gallery (← readSmi inp))
+    IO.println s!"wrote {out}"
+    return 0
+  | ["--bit", s, bit, out] =>
+    match smilesBitSvg s bit.toNat! with
+    | .ok x => IO.FS.writeFile out x.render; IO.println s!"wrote {out}"; return 0
+    | .error e => IO.eprintln e; return 1
+  | ["--fingerprint", s, out] | ["--fingerprint", s, _, out] =>
+    let other := match args with
+      | [_, _, t, _] => some t
+      | _ => none
+    match smilesFingerprintSvg s other with
+    | .ok x => IO.FS.writeFile out x.render; IO.println s!"wrote {out}"; return 0
+    | .error e => IO.eprintln e; return 1
+  | ["--sdf", inp, out] =>
+    IO.FS.writeFile out (sdf (← readSmi inp))
+    IO.println s!"wrote {out}"
+    return 0
+  | [s] | [s, _] =>
+    if s.startsWith "--" then
+      IO.println usage
+      return 1
+    match parse s with
+    | .error e =>
+      IO.eprintln s!"{e}"
+      return 1
+    | .ok M =>
+      let svg := M.svgString
+      match args with
+      | [_, out] =>
+        IO.FS.writeFile out svg
+        IO.println s!"wrote {out}"
+      | _ => IO.println svg
+      return 0
+  | _ =>
+    IO.println usage
+    return 1
+
+end LeanSMILES.Depict

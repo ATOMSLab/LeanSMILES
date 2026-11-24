@@ -1,0 +1,445 @@
+/-
+Copyright (c) 2026 Tyler Josephson. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Tyler Josephson
+-/
+module
+
+public import LeanSMILES.Chem.Atom
+public import LeanSMILES.Chem.Bond
+public import LeanSMILES.Chem.Stereo
+
+/-!
+# LeanSMILES.Chem.Molecule
+
+A molecule with `n` atoms is a `Vector Atom n` together with a list of bonds
+between distinct atoms, no two of which join the same pair — so the molecular
+graph is a *simple* graph, which is what Mathlib's `SimpleGraph` is.  The size
+is a type index: `Fin n` is the atom type, bonds cannot dangle, and relabeling
+the atoms is a permutation `Equiv.Perm (Fin n)`.
+
+The structure is RDKit-shaped (typed atoms and bonds, index-based) rather than
+pysmiles-shaped (attribute dictionaries on an untyped graph), and the
+invariants RDKit checks at runtime — endpoints in range, no self-bond, no
+duplicate bond — are the type here: a `Molecule n` cannot violate them.
+
+Stereochemistry is a third component, `stereo`, one entry per atom
+(`LeanSMILES.Chem.Stereo`): a tetrahedral centre's ligands up to even
+permutation (`Tetra n`), or, at both ends of a double bond, its cis/trans
+arrangement (`Planar n`).  It does not depend on how a SMILES string happened
+to list neighbors or orient bonds — which is what `@`/`@@` and `/`/`\` refer
+to, and the parser and writer translate — so relabeling the atoms moves the
+configurations along with everything else (`relabelStereo`).
+
+The one piece of chemistry in this file is `assignImplicitH`, the OpenSMILES
+default-valence rule for bare organic-subset atoms.  Everything else is graph.
+
+## Main definitions
+
+* `Molecule n`: a molecule with `n` atoms; `Mol` bundles one with its size.
+* `relabelVec`, `relabelStereo`: transporting per-atom vectors and configurations along a
+  relabeling.
+* `Molecule.bondBetween`, `Molecule.degree`, `Molecule.bondOrderSum`: the bond joining two atoms,
+  and an atom's degree and bond-order sum.
+* `Molecule.assignImplicitH`: the OpenSMILES default-valence rule, filling in `Atom.implicitH`.
+* `Molecule.normalizeBrackets`: every atom in bracket normal form.
+* `Molecule.relabel`: relabeling the atoms by a permutation.
+
+## Main statements
+
+* `Molecule.relabel_relabel`: relabeling twice is relabeling by the composite.
+* `Molecule.degree_relabel`, `Molecule.bondOrderSum_relabel`: relabeling preserves degrees and
+  bond-order sums.
+* `Molecule.normalizeBrackets_normalizeBrackets`: bracket normalization is idempotent.
+* `Molecule.normalizeBrackets_relabel`: bracket normalization commutes with relabeling.
+-/
+
+@[expose] public section
+
+namespace LeanSMILES
+
+/-- A molecule with `n` atoms. -/
+structure Molecule (n : ℕ) where
+  /-- The atoms, numbered in order of appearance in the SMILES string. -/
+  atoms : Vector Atom n
+  /-- The bonds, in the order the SMILES string introduced them. -/
+  bonds : List (Bond n)
+  /-- No two bonds join the same pair of atoms: the molecular graph is simple. -/
+  nodup : (bonds.map Bond.edge).Nodup
+  /-- The stereochemistry of each atom, `none` where there is none: a
+  tetrahedral centre's configuration, or a stereo double bond's arrangement
+  (at both of its ends). -/
+  stereo : Vector (Option (Stereo n)) n
+
+/-- A molecule whose size is not known at the type level — what a parser
+returns. -/
+structure Mol where
+  /-- The number of atoms. -/
+  n : ℕ
+  /-- The molecule. -/
+  mol : Molecule n
+
+section RelabelVec
+
+variable {n : ℕ} {α : Type*}
+
+/-- Transport a per-atom vector along a relabeling: position `σ i` receives
+what `i` had. `relabel` does this to the atoms. -/
+def relabelVec (σ : Equiv.Perm (Fin n)) (v : Vector α n) : Vector α n :=
+  Vector.ofFn fun i ↦ v[σ.symm i]
+
+/-- Position `j` of `relabelVec σ v` holds what `v` had at position `σ.symm j`. -/
+@[simp] lemma getElem_relabelVec (σ : Equiv.Perm (Fin n)) (v : Vector α n) (j : ℕ) (h : j < n) :
+    (relabelVec σ v)[j] = v[σ.symm ⟨j, h⟩] := Vector.getElem_ofFn h
+
+/-- Position `σ i` of `relabelVec σ v` holds what `v` had at `i`: the defining property, with no
+`σ.symm` in sight. -/
+lemma relabelVec_apply (σ : Equiv.Perm (Fin n)) (v : Vector α n) (i : Fin n) :
+    (relabelVec σ v)[σ i] = v[i] := by simp
+
+/-- Relabeling a vector twice is relabeling by the composite: first `σ`, then `τ`. -/
+lemma relabelVec_relabelVec (σ τ : Equiv.Perm (Fin n)) (v : Vector α n) :
+    relabelVec τ (relabelVec σ v) = relabelVec (σ.trans τ) v := Vector.ext fun _ _ ↦ by simp
+
+/-- No stereocentres. -/
+def noStereo (n : ℕ) : Vector (Option (Stereo n)) n := Vector.replicate n none
+
+/-- Transport configurations along a relabeling: position `σ i` receives what
+`i` had, with its ligands relabeled too. `relabel` does this to `stereo`. -/
+def relabelStereo (σ : Equiv.Perm (Fin n)) (v : Vector (Option (Stereo n)) n) :
+    Vector (Option (Stereo n)) n :=
+  Vector.ofFn fun i ↦ v[σ.symm i].map (Stereo.map σ)
+
+/-- Position `j` of `relabelStereo σ v` holds what `v` had at `σ.symm j`, relabeled. -/
+@[simp] lemma getElem_relabelStereo (σ : Equiv.Perm (Fin n)) (v : Vector (Option (Stereo n)) n)
+    (j : ℕ) (h : j < n) : (relabelStereo σ v)[j] = v[σ.symm ⟨j, h⟩].map (Stereo.map σ) := by
+  simp [relabelStereo, Vector.getElem_ofFn]
+
+/-- Position `σ i` of `relabelStereo σ v` holds `i`'s configuration, relabeled. -/
+lemma relabelStereo_apply (σ : Equiv.Perm (Fin n)) (v : Vector (Option (Stereo n)) n) (i : Fin n) :
+    (relabelStereo σ v)[σ i] = v[i].map (Stereo.map σ) := by
+  simp [relabelStereo, Vector.getElem_ofFn]
+
+/-- A vector is `relabelStereo σ v` iff position `σ i` holds `i`'s configuration,
+relabeled, for every `i`. -/
+lemma eq_relabelStereo_of_apply (σ : Equiv.Perm (Fin n)) {v' v : Vector (Option (Stereo n)) n}
+    (h : ∀ i, v'[σ i] = v[i].map (Stereo.map σ)) : v' = relabelStereo σ v := by
+  apply Vector.ext
+  intro j hj
+  simpa using h (σ.symm ⟨j, hj⟩)
+
+/-- Relabeling configurations twice is relabeling by the composite: first `σ`, then `τ`. -/
+lemma relabelStereo_relabelStereo (σ τ : Equiv.Perm (Fin n)) (v : Vector (Option (Stereo n)) n) :
+    relabelStereo τ (relabelStereo σ v) = relabelStereo (σ.trans τ) v := by
+  ext i hi
+  simp [relabelStereo, Vector.getElem_ofFn, Option.map_map, Function.comp_def, Stereo.map_map]
+
+/-- With no stereocentres there is nothing to relabel. -/
+@[simp] lemma relabelStereo_noStereo (σ : Equiv.Perm (Fin n)) :
+    relabelStereo σ (noStereo n) = noStereo n := by
+  ext i hi
+  simp [relabelStereo, noStereo, Vector.getElem_ofFn]
+
+end RelabelVec
+
+namespace Molecule
+
+variable {n : ℕ} (m : Molecule n)
+
+/-- Two molecules with the same atoms, bonds and stereochemistry are equal: the `nodup` proof
+carries no data. -/
+@[ext] lemma ext {m m' : Molecule n} (ha : m.atoms = m'.atoms) (hb : m.bonds = m'.bonds)
+    (hs : m.stereo = m'.stereo) : m = m' := by
+  cases m
+  cases m'
+  congr
+
+instance : DecidableEq (Molecule n) := fun m m' ↦
+  decidable_of_iff (m.atoms = m'.atoms ∧ m.bonds = m'.bonds ∧ m.stereo = m'.stereo)
+    ⟨fun ⟨h1, h2, h3⟩ ↦ ext h1 h2 h3, fun h ↦ h ▸ ⟨rfl, rfl, rfl⟩⟩
+
+/-- The number of bonds. -/
+def numBonds : ℕ := m.bonds.length
+
+/-- The atom with index `i`. -/
+def atom (i : Fin n) : Atom := m.atoms[i]
+
+/-- The undirected edges, as Mathlib sees them. -/
+def edges : List (Sym2 (Fin n)) := m.bonds.map Bond.edge
+
+/-- The bonds at atom `i`. -/
+def bondsAt (i : Fin n) : List (Bond n) := m.bonds.filter (·.touches i)
+
+/-- The neighbors of atom `i`, in bond-list order. -/
+def neighbors (i : Fin n) : List (Fin n) := (m.bondsAt i).map (·.other i)
+
+/-- Number of bonds at atom `i` (heavy-atom degree; hydrogens are counts, not
+atoms, unless written as `[H]`). -/
+def degree (i : Fin n) : ℕ := (m.bondsAt i).length
+
+/-- Sum of bond orders at atom `i`, exact. -/
+def bondOrderSum (i : Fin n) : ℚ := ((m.bondsAt i).map (·.kind.order)).sum
+
+/-- The bond joining `i` and `j`, if any. Unique by `nodup`. -/
+def bondBetween (i j : Fin n) : Option (Bond n) :=
+  m.bonds.find? fun b ↦ decide (b.edge = s(i, j))
+
+/-- Whether some bond joins `i` and `j`. -/
+def adjacent (i j : Fin n) : Bool := (m.bondBetween i j).isSome
+
+/-- Among the bonds at `i`, the one whose other end is `j` is the bond between them. -/
+lemma find?_bondsAt_other (i j : Fin n) :
+    (m.bondsAt i).find? (fun b ↦ b.other i == j) = m.bondBetween i j := by
+  grind [bondsAt, bondBetween, Bond.touches_and_other_iff]
+
+/-- Replace every atom, keeping the bonds. -/
+def mapAtoms (f : Fin n → Atom → Atom) : Molecule n :=
+  { m with atoms := Vector.ofFn fun i ↦ f i m.atoms[i] }
+
+/-! ### Implicit hydrogens
+
+The OpenSMILES rule: a bare organic-subset atom has as many hydrogens as the
+smallest default valence not below its bond-order sum requires; if no default
+valence is large enough it has none.  Aromatic bonds count `3/2`, with the one
+adjustment in `implicitHydrogens` that keeps three-connected aromatic atoms
+Kekulé-consistent.  Bracket atoms, wildcards and every other element have
+exactly the hydrogens that were written. -/
+
+/-- Implicit hydrogen count for an atom with the given bond-order sum.
+
+Aromatic bonds count `3/2`, so an aromatic atom bonded to three neighbors —
+the nitrogen of `Cn1cccc1`, the sulfur of thiophene, a ring-fusion carbon —
+sums past its lowest valence to a value no Kekulé structure realizes.  Such an
+atom is snapped down to the largest valence not above its sum, when that is
+within `3/2` of it (the rule RDKit applies); otherwise `Cn1cccc1` would get an
+`NH` and thiophene an `SH`. -/
+def implicitHydrogens (a : Atom) (orderSum : ℚ) : ℕ :=
+  match a.element, a.explicitH with
+  | some e, none =>
+    let vs := e.defaultValences
+    let sum :=
+      match vs.head? with
+      | some v₀ =>
+        if a.aromatic && (v₀ : ℚ) < orderSum then
+          let p := (vs.filter fun v ↦ decide ((v : ℚ) ≤ orderSum)).getLast?.getD v₀
+          if orderSum - p ≤ (3 : ℚ) / 2 then (p : ℚ) else orderSum
+        else orderSum
+      | none => orderSum
+    match vs.find? (fun v ↦ decide (sum ≤ (v : ℚ))) with
+    | some v => (Rat.floor ((v : ℚ) - sum)).toNat
+    | none => 0
+  | _, _ => 0
+
+/-- Fill in `Atom.implicitH` for every atom from its bonds. The RDKit
+"sanitize" step, cut down to the one rule SMILES itself specifies. -/
+def assignImplicitH : Molecule n :=
+  m.mapAtoms fun i a ↦ { a with implicitH := implicitHydrogens a (m.bondOrderSum i) }
+
+/-! ### Bracket normal form
+
+A hydrogen count can be written two ways: inside brackets (`[nH]`, `[CH4]`) or, for a bare
+atom, left to the default-valence rule.  An atom that carries nothing else a bracket must hold
+has one normal form: bare when the rule gives it its hydrogens, bracketed with them when it
+does not.  Dropping redundant brackets is what makes `[n]1cncc1…` and `n1cncc1…` one canonical
+SMILES; adding the missing ones is what makes pyrrole parsed as `C1=CNC=C1` and aromatized —
+a bare aromatic nitrogen still holding its hydrogen — one canonical SMILES with `c1cc[nH]c1`,
+and writes it as `[nH]` rather than as a hydrogen-less `n`. -/
+
+/-- A bare atom that RDKit reads with a different hydrogen count from OpenSMILES: iodine at a
+bond-order sum of 2 or 4, and a non-aromatic nitrogen at 4.  OpenSMILES gives iodine the one
+default valence 1, so a bare `I` there has no hydrogen; RDKit allows it 1, 3 and 5 and fills it up
+to the next one with a hydrogen (`CI(C)C` is `C[IH](C)C` to RDKit).  OpenSMILES allows nitrogen
+3 and 5, so a bare `N` with four bonds has a hydrogen; RDKit allows only 3 and gives it none
+(`C[NH](C)(C)[Fe]` would come back as `CN(C)(C)[Fe]`, which RDKit reads as `C[N](C)(C)[Fe]`;
+RDKit's valence check, which would reject the four-valent nitrogen, skips atoms bonded to a
+metal).  Bracket normal form keeps such an atom bracketed, as RDKit's writer does, so that the
+output of `Molecule.aromatize` reads back as itself.  The other elements that may be written bare
+read alike wherever RDKit allows their valence. -/
+def readsDifferentlyInRDKit (a : Atom) (orderSum : ℚ) : Bool :=
+  (a.element == some .I && (orderSum == 2 || orderSum == 4)) ||
+    (a.element == some .N && !a.aromatic && orderSum == 4)
+
+/-- The atom in bracket normal form at bond-order sum `orderSum`, with the same hydrogen count.
+An atom with no isotope, charge, chirality or class, whose element may be written bare, is
+written bare when `implicitHydrogens` at `orderSum` gives the bare atom exactly its hydrogens,
+and in brackets with all of them otherwise.  Any other atom is itself.  `[n]` (two aromatic
+bonds and a methyl) and `[CH4]` become `n` and `C`; a bare aromatic nitrogen with one hydrogen
+and two aromatic bonds becomes `[nH]`; `[nH]`, `[CH3]` (a radical), `[C]`, `[13CH4]` and `[O-]`
+stay as they are.  Iodine at a bond-order sum of 2 or 4, and a non-aromatic nitrogen at 4, stay
+bracketed too (`readsDifferentlyInRDKit`): `CI(C)C` would mean no hydrogen here and one in
+RDKit.  A tetrahedral mark is not on the atom (the parser moves it to `Molecule.stereo`), so a
+parsed `[C@H]` counts as carrying none: it is unbracketed here and the writer brackets it again
+with the mark it computes. -/
+def normalizeBracket (a : Atom) (orderSum : ℚ) : Atom :=
+  let b : Atom := { a with explicitH := none, implicitH := 0 }
+  if b.canBeBare then
+    if implicitHydrogens b orderSum == a.totalH && !readsDifferentlyInRDKit b orderSum then
+      { b with implicitH := a.totalH }
+    else { b with explicitH := some a.totalH }
+  else a
+
+/-- Bracket normalization keeps the element. -/
+@[simp] lemma element_normalizeBracket (a : Atom) (s : ℚ) :
+    (normalizeBracket a s).element = a.element := by
+  dsimp only [normalizeBracket]; split <;> (try split) <;> rfl
+
+/-- Bracket normalization keeps the formal charge. -/
+@[simp] lemma charge_normalizeBracket (a : Atom) (s : ℚ) :
+    (normalizeBracket a s).charge = a.charge := by
+  dsimp only [normalizeBracket]; split <;> (try split) <;> rfl
+
+/-- Bracket normalization keeps the hydrogen count: it only moves it between the brackets and
+the default-valence rule. -/
+@[simp] lemma totalH_normalizeBracket (a : Atom) (s : ℚ) :
+    (normalizeBracket a s).totalH = a.totalH := by
+  dsimp only [normalizeBracket]; split <;> (try split) <;> simp [Atom.totalH]
+
+/-- Bracket normalization is idempotent: an atom in normal form stays as it is. -/
+@[simp] lemma normalizeBracket_normalizeBracket (a : Atom) (s : ℚ) :
+    normalizeBracket (normalizeBracket a s) s = normalizeBracket a s := by
+  by_cases h1 : ({ a with explicitH := none, implicitH := 0 } : Atom).canBeBare
+  · -- normalization reads only the bare-atom part and the hydrogen count, which it keeps
+    have key : ∀ x : Atom,
+        ({ x with explicitH := none, implicitH := 0 } : Atom) =
+          { a with explicitH := none, implicitH := 0 } →
+        x.totalH = a.totalH → normalizeBracket x s = normalizeBracket a s := by
+      intro x hx ht
+      unfold normalizeBracket
+      rw [hx, ht]
+      simp only [h1, if_true]
+    rw [key (normalizeBracket a s) ?_ (totalH_normalizeBracket a s)]
+    dsimp only [normalizeBracket]; split <;> (try split) <;> rfl
+  · have h : normalizeBracket a s = a := by
+      unfold normalizeBracket
+      simp only [h1, Bool.false_eq_true, if_false]
+    rw [h, h]
+
+/-- Every atom in bracket normal form (`normalizeBracket`, at the atom's own bond-order sum).
+The bonds, and every atom's element, charge and hydrogen count, are unchanged.
+Canonicalization starts here, and `aromatize` ends here. -/
+def normalizeBrackets : Molecule n :=
+  m.mapAtoms fun i a ↦ normalizeBracket a (m.bondOrderSum i)
+
+/-- Bracket normalization keeps the bonds, definitionally. -/
+@[simp] lemma bonds_normalizeBrackets : m.normalizeBrackets.bonds = m.bonds := rfl
+
+/-- Atom `i` in bracket normal form. -/
+@[simp] lemma atom_normalizeBrackets (i : Fin n) :
+    m.normalizeBrackets.atom i = normalizeBracket (m.atom i) (m.bondOrderSum i) := by
+  simp [normalizeBrackets, mapAtoms, atom]
+
+/-- Bracket normalization keeps every atom's hydrogen count. -/
+lemma totalH_normalizeBrackets (i : Fin n) :
+    (m.normalizeBrackets.atom i).totalH = (m.atom i).totalH := by
+  simp
+
+/-- Bracket normalization keeps every bond-order sum: it does not touch the bonds. -/
+@[simp] lemma bondOrderSum_normalizeBrackets (i : Fin n) :
+    m.normalizeBrackets.bondOrderSum i = m.bondOrderSum i := rfl
+
+/-- Bracket normalization is idempotent. -/
+@[simp] theorem normalizeBrackets_normalizeBrackets :
+    m.normalizeBrackets.normalizeBrackets = m.normalizeBrackets := by
+  refine ext (Vector.ext fun j hj ↦ ?_) rfl rfl
+  change m.normalizeBrackets.normalizeBrackets.atom ⟨j, hj⟩ = m.normalizeBrackets.atom ⟨j, hj⟩
+  simp only [atom_normalizeBrackets, bondOrderSum_normalizeBrackets,
+    normalizeBracket_normalizeBracket]
+
+@[deprecated (since := "2026-11-16")] alias unbracket := normalizeBracket
+@[deprecated (since := "2026-11-16")] alias element_unbracket := element_normalizeBracket
+@[deprecated (since := "2026-11-16")] alias charge_unbracket := charge_normalizeBracket
+@[deprecated (since := "2026-11-16")] alias totalH_unbracket := totalH_normalizeBracket
+@[deprecated (since := "2026-11-16")] alias dropRedundantBrackets := normalizeBrackets
+@[deprecated (since := "2026-11-16")]
+alias bonds_dropRedundantBrackets := bonds_normalizeBrackets
+@[deprecated (since := "2026-11-16")]
+alias atom_dropRedundantBrackets := atom_normalizeBrackets
+@[deprecated (since := "2026-11-16")]
+alias totalH_dropRedundantBrackets := totalH_normalizeBrackets
+
+/-! ### Relabeling -/
+
+/-- Relabel the atoms by a permutation: atom `i` becomes atom `σ i`. -/
+def relabel (σ : Equiv.Perm (Fin n)) : Molecule n where
+  atoms := Vector.ofFn fun i ↦ m.atoms[σ.symm i]
+  bonds := m.bonds.map (Bond.map σ σ.injective)
+  nodup := by
+    have h : (m.bonds.map (Bond.map σ σ.injective)).map Bond.edge
+        = (m.bonds.map Bond.edge).map (Sym2.map σ) := by
+      simp [List.map_map, Function.comp_def]
+    rw [h]
+    exact m.nodup.map (Sym2.map.injective σ.injective)
+  stereo := relabelStereo σ m.stereo
+
+/-- The edges of a relabeled molecule are the edges relabeled by `Sym2.map σ`, in order. -/
+lemma edges_relabel (σ : Equiv.Perm (Fin n)) : (m.relabel σ).edges = m.edges.map (Sym2.map σ) := by
+  simp [edges, relabel]
+
+/-- Atom `σ i` of the relabeled molecule is atom `i` of the original. -/
+@[simp] lemma atom_relabel (σ : Equiv.Perm (Fin n)) (i : Fin n) :
+    (m.relabel σ).atom (σ i) = m.atom i := relabelVec_apply σ m.atoms i
+
+/-- Relabeling preserves the number of bonds. -/
+lemma numBonds_relabel (σ : Equiv.Perm (Fin n)) : (m.relabel σ).numBonds = m.numBonds :=
+  List.length_map _
+
+/-- The atoms of a relabeled molecule are `relabelVec` of its atoms, definitionally. -/
+lemma atoms_relabel (σ : Equiv.Perm (Fin n)) : (m.relabel σ).atoms = relabelVec σ m.atoms := rfl
+
+/-- The bonds of a relabeled molecule are its bonds transported along `σ`, in order,
+definitionally. -/
+lemma bonds_relabel (σ : Equiv.Perm (Fin n)) :
+    (m.relabel σ).bonds = m.bonds.map (Bond.map σ σ.injective) := rfl
+
+/-- Relabeling a molecule moves its stereochemistry with the atoms (`relabelStereo`). -/
+lemma stereo_relabel (σ : Equiv.Perm (Fin n)) :
+    (m.relabel σ).stereo = relabelStereo σ m.stereo := rfl
+
+/-- The bonds at `σ i` after relabeling are the bonds at `i`, relabeled, in order. -/
+lemma bondsAt_relabel (σ : Equiv.Perm (Fin n)) (i : Fin n) :
+    (m.relabel σ).bondsAt (σ i) = (m.bondsAt i).map (Bond.map σ σ.injective) := by
+  simp [bondsAt, bonds_relabel, List.filter_map, Function.comp_def]
+
+/-- Relabeling preserves degree: atom `σ i` has the degree atom `i` had. -/
+@[simp] lemma degree_relabel (σ : Equiv.Perm (Fin n)) (i : Fin n) :
+    (m.relabel σ).degree (σ i) = m.degree i := by
+  simp [degree, bondsAt_relabel]
+
+/-- Relabeling twice is relabeling by the composite: first `σ`, then `τ`. -/
+theorem relabel_relabel (σ τ : Equiv.Perm (Fin n)) :
+    (m.relabel σ).relabel τ = m.relabel (σ.trans τ) :=
+  ext (relabelVec_relabelVec σ τ m.atoms) (by simp [bonds_relabel])
+    (relabelStereo_relabelStereo σ τ m.stereo)
+
+/-- Relabeling preserves bond-order sums: atom `σ i` has the sum atom `i` had. -/
+@[simp] lemma bondOrderSum_relabel (σ : Equiv.Perm (Fin n)) (i : Fin n) :
+    (m.relabel σ).bondOrderSum (σ i) = m.bondOrderSum i := by
+  simp [bondOrderSum, bondsAt_relabel, Function.comp_def]
+
+/-- Bracket normalization commutes with relabeling: an atom's normal form depends on the atom
+and its bond-order sum, not on its label. -/
+theorem normalizeBrackets_relabel (σ : Equiv.Perm (Fin n)) :
+    (m.relabel σ).normalizeBrackets = m.normalizeBrackets.relabel σ := by
+  refine ext (Vector.ext fun j hj ↦ ?_) rfl rfl
+  obtain ⟨i, hi⟩ : ∃ i, σ i = ⟨j, hj⟩ := ⟨σ.symm ⟨j, hj⟩, σ.apply_symm_apply _⟩
+  change (m.relabel σ).normalizeBrackets.atom ⟨j, hj⟩
+    = (m.normalizeBrackets.relabel σ).atom ⟨j, hj⟩
+  simp only [← hi, atom_normalizeBrackets, atom_relabel, bondOrderSum_relabel]
+
+@[deprecated (since := "2026-11-16")]
+alias dropRedundantBrackets_relabel := normalizeBrackets_relabel
+
+/-! ### Printing -/
+
+instance : Repr (Molecule n) where
+  reprPrec m _ :=
+    "Molecule " ++ repr n ++ " " ++ repr (m.atoms.toList.map Atom.toSmiles) ++ " " ++ repr m.bonds
+
+end Molecule
+
+instance : Repr Mol := ⟨fun M _ ↦ repr M.mol⟩
+
+/-- Relabel the atoms of a bundled molecule. -/
+def Mol.relabel (M : Mol) (σ : Equiv.Perm (Fin M.n)) : Mol := ⟨M.n, M.mol.relabel σ⟩
+
+end LeanSMILES
