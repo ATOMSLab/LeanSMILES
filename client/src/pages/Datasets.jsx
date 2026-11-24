@@ -29,14 +29,16 @@ const MODEL_TYPE = 'gradient-descent'
 
 const MODEL_NOTE = (
   <>
-    <span className="font-medium text-slate-700">Verified</span> means: the solver is LeanLearn's{' '}
-    <code className="font-mono">gradientDescent</code>, one definition over the scalar type, so what runs here in
-    Float is the text the theorem <code className="font-mono">Problem.loss_gradientDescent_le</code> is about at ℝ —
-    k steps of size η with 2ηΛ ≤ 1 end within ‖u‖²/(2ηk) of every competitor u. Before each fit, Lean computes Λ
-    exactly on this training set, sets η = 1/(2Λ), and decides the theorem's hypotheses (
-    <code className="font-mono">Pipeline.checkGDData</code>, sound by{' '}
-    <code className="font-mono">checkGDData_sound</code>). Features are the 2048 Morgan bits; λ = α/m, so α is
-    scikit-learn's alpha. The bound is on the training loss; nothing is said about the test set.
+    What <span className="font-medium text-slate-700">verified</span> means here: the solver comes with a proof that it
+    converges, and Lean checks that the proof applies to your data before each fit. The proof covers training loss, not
+    test accuracy.
+    <span className="block mt-1.5">
+      Details: the theorem <code className="font-mono">Problem.loss_gradientDescent_le</code> says k steps of size η, with 2ηΛ ≤ 1,
+      end within ‖u‖²/(2ηk) of any competitor u. Lean computes Λ exactly, sets η = 1/(2Λ), and checks the conditions
+      with <code className="font-mono">Pipeline.checkGDData</code> (proved sound by <code className="font-mono">checkGDData_sound</code>). Features
+      are 2048 Morgan bits; λ = α/m, so α matches scikit-learn's alpha. The theorem is proved over the reals; the same
+      code runs here in floating point.
+    </span>
   </>
 )
 
@@ -342,8 +344,8 @@ export default function Datasets() {
   return (
     <div className="space-y-6">
       <SectionHeader
-        title="Datasets & Lean Regression Pipeline"
-        description="Select a built-in benchmark or upload any CSV with SMILES and a numeric target column, then fit ridge regression on 2048 Morgan bits by gradient descent in Lean 4 — the solver its convergence theorem is about, with the theorem's step-size condition decided exactly on the data before every fit."
+        title="Regression on datasets"
+        description="Pick a built-in benchmark or upload a CSV with a SMILES column and a numeric target. Lean fits ridge regression on 2048 Morgan bits by gradient descent, using the same solver code our convergence theorem covers, and checks the theorem's step-size condition on your data before every fit."
         right={
           busy && (
             <BusyBar
@@ -357,8 +359,8 @@ export default function Datasets() {
       />
 
       <Card
-        title="1. Dataset Source & Regression Solver"
-        subtitle="Upload your own CSV (SMILES + numeric target) or pick a repository dataset"
+        title="1. Choose a dataset"
+        subtitle="Upload a CSV with SMILES and a numeric target, or pick a built-in dataset"
         action={
           <div>
             <input
@@ -507,7 +509,7 @@ export default function Datasets() {
         <div className={`grid md:grid-cols-12 gap-6 transition-opacity duration-150 ${fitting ? 'opacity-55' : 'opacity-100'}`}>
           <Card
             className="md:col-span-6"
-            title="Lean Parity Plot SVG (LeanLearn.Plot.paritySvg)"
+            title="Parity plot (LeanLearn.Plot.paritySvg)"
             subtitle={`${fitResult.trainCount} train · ${fitResult.testCount} test molecules · ${fitResult.iterations} solver steps`}
             action={
               <Button
@@ -527,7 +529,7 @@ export default function Datasets() {
 
           <Card
             className="md:col-span-6"
-            title="Error Metrics, Certificates & Predictions"
+            title="Metrics, certificate and predictions"
             subtitle="Evaluated by LeanLearn.Regression.Metrics (r2, rmse, mae)"
             action={<Badge active>Regression</Badge>}
           >
@@ -556,9 +558,10 @@ export default function Datasets() {
                     </p>
                     {fitResult.certificate.theorem && (
                       <p className="text-[11px] mt-1.5 opacity-70">
-                        Theorem: <span className="font-mono">{fitResult.certificate.theorem}</span> — for every
-                        competitor u, L(θ) ≤ L(u) + {Number(fitResult.certificate.rate ?? 0).toFixed(4)} · ‖u‖², the
-                        O(1/k) rate 1/(2ηk) of {fitResult.certificate.steps} steps.
+                        Theorem: <span className="font-mono">{fitResult.certificate.theorem}</span>. After{' '}
+                        {fitResult.certificate.steps} steps, the training loss is within{' '}
+                        {Number(fitResult.certificate.rate ?? 0).toFixed(4)} · ‖u‖² of any competitor u (the O(1/k)
+                        rate 1/(2ηk)).
                       </p>
                     )}
                   </div>
@@ -643,7 +646,7 @@ export default function Datasets() {
       )}
 
       <Card
-        title="2. Dataset Rows Explorer (CSVparser.lean)"
+        title="2. Dataset rows (CSVparser.lean)"
         subtitle={
           tableState.totalCount
             ? `${tableState.totalCount} total rows · Click Interpret to inspect any molecule in SMILES Interpreter`

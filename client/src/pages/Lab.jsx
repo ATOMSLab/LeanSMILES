@@ -252,7 +252,7 @@ export default function Lab() {
     <div className="space-y-6">
       <SectionHeader
         title="SMILES Interpreter"
-        description="Type any SMILES to evaluate canonical LeanSMILES, toggle between As-Written (M) and Sanitized (M.aromatize), inspect 2D depictions or V2000 Mol blocks, and compare Morgan fingerprints."
+        description="Type a SMILES string to see its canonical form, 2D drawing, Mol block, and Morgan fingerprint. You can switch between the molecule as written and after aromaticity is assigned."
         right={
           loading && (
             <BusyBar

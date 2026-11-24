@@ -29,7 +29,7 @@ const PROVING_TOP_ROW = [
 
 const TESTING_STEPS = [
   'Check accuracy, compare model performance',
-  'Tight agreement with RDKit and scikit-learn tests',
+  'Results agree with RDKit and scikit-learn',
 ]
 
 function SchemeNode({ title, sub, tone = 'purple' }) {

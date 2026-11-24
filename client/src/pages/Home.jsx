@@ -9,42 +9,36 @@ import PipelineScheme from '../components/PipelineScheme'
 const PRIMER = [
   {
     title: 'Molecular representations',
-    subtitle: 'From a string to numbers a model can use',
     body: (
       <>
-        Chemists write a molecule as a <strong className="font-medium text-slate-800">SMILES</strong> string:{' '}
-        <code className="font-mono text-slate-800">CCO</code> is ethanol, two carbons and an oxygen in a row. Software reads
-        that string into a graph (atoms joined by bonds), and turns the graph into numbers: simple counts, or a{' '}
-        <strong className="font-medium text-slate-800">fingerprint</strong>, a list of which small fragments the molecule
-        contains. Cheminformatics is the practice of building those representations and predicting properties from them,
-        such as solubility, boiling point, or activity against a drug target.
+        Chemists write molecules as <strong className="font-medium text-slate-800">SMILES</strong> strings:{' '}
+        <code className="font-mono text-slate-800">CCO</code> is ethanol, two carbons and an oxygen in a row. Software
+        turns the string into a graph of atoms and bonds, then into numbers, such as simple counts or a{' '}
+        <strong className="font-medium text-slate-800">fingerprint</strong> (a list of which small fragments the
+        molecule contains). Models use these numbers to predict properties like solubility, boiling point, or drug
+        activity.
       </>
     ),
   },
   {
     title: 'Lean 4',
-    subtitle: 'A programming language that checks proofs',
     body: (
       <>
-        Lean is a programming language that is also a proof assistant: the same file can define a function and prove a
-        theorem about it, and the computer checks every step. Here the parser, the fingerprint and the regression solvers
-        are Lean programs, and the claims about them are Lean theorems — this canonical SMILES does not depend on the order
-        the atoms were written in; this solver ends within ε of the best possible training loss. Where a theorem is still
-        missing, the site says so.
+        Lean is a programming language that is also a proof assistant: you write a function and a theorem about it in
+        the same file, and Lean checks the proof. Every part of this pipeline is a Lean program, and we write proofs
+        about how it behaves. We mark any claim that still lacks a proof.
       </>
     ),
   },
   {
     title: 'This project',
-    subtitle: 'SMILES to prediction, entirely in Lean',
     body: (
       <>
-        Three libraries take a molecule from its SMILES string to a regression prediction with nothing else in between:
-        parsing, aromaticity perception and fingerprints as RDKit does them, then ridge regression with its metrics. On
-        the Delaney solubility benchmark the Lean pipeline matches scikit-learn (test R² 0.67, RMSE 1.26). The model on
-        this site is trained by gradient descent — the same Lean program its convergence theorem is about, with the
-        theorem's step-size condition decided exactly on the data before every fit. Along the way the proofs turned up
-        three issues in widely used tools and standards.
+        Three Lean libraries take a molecule from SMILES to a predicted property. They parse SMILES, assign
+        aromaticity, and compute fingerprints the way RDKit does, then fit ridge regression. On the Delaney solubility
+        benchmark, the Lean pipeline matches scikit-learn (test R² 0.67, RMSE 1.26). The gradient descent solver that
+        trains the model comes with a proof that it converges. Writing the proofs also turned up problems in widely
+        used tools and standards.
       </>
     ),
   },
@@ -54,7 +48,7 @@ const LIBRARIES = [
   {
     title: 'LeanSMILES',
     code: 'The chemistry',
-    desc: 'Parses SMILES into a typed molecule graph, perceives aromaticity the way RDKit does, writes a canonical SMILES that is proved unique, computes Morgan fingerprints, and draws molecules.',
+    desc: 'Parses SMILES into a typed molecule graph and assigns aromaticity the way RDKit does. It also writes a canonical SMILES (proved unique), computes Morgan fingerprints, and draws molecules.',
   },
   {
     title: 'LeanLearn',
@@ -63,8 +57,8 @@ const LIBRARIES = [
   },
   {
     title: 'Pipelines',
-    code: 'The join',
-    desc: 'A pipeline is data, representation and solver, all in exact rational arithmetic. Before a fit, the hypotheses of the solver\'s convergence theorem — for gradient descent, the step-size condition on this training set — are decided exactly, so the theorem\'s bound on the trained model holds for the fit that actually runs.',
+    code: 'Chemistry + ML',
+    desc: 'A pipeline combines a dataset, a molecular representation, and a solver, in exact rational arithmetic. Before each fit, Lean checks that the data meet the conditions of the solver\'s convergence proof. When they do, the proof covers the model you get.',
   },
 ]
 
@@ -74,8 +68,8 @@ const THEOREMS = [
   { name: 'Finset.tanimotoMetricSpace', statement: 'dist A B = |A ∆ B| / |A ∪ B|', note: 'Tanimoto distance is a formal metric on bit sets (fails on ℝ vectors)' },
   { name: 'chargesConsistent_relabel', statement: '(m.relabel σ).chargesConsistent ↔ m.chargesConsistent', note: 'Formal charge bounds (-shellVacancy ≤ charge ≤ Z) preserved under relabeling' },
   { name: 'normalEquiv', statement: '{m // m.IsNormal} ≃ Vector Atom n × BondMatrix n', note: 'Lossless equivalence between normal-form molecule and bond matrix' },
-  { name: 'Problem.loss_gradientDescent_le', statement: 'L(θₖ) ≤ L(u) + ‖u‖² / (2ηk)', note: 'Gradient descent from 0 — k steps of size η with 2ηΛ ≤ 1 — ends within ‖u‖²/(2ηk) of every competitor u: the O(1/k) rate, about the solver that runs' },
-  { name: 'Pipeline.checkGDData_sound', statement: 'checkGDData = true → trainLoss ≤ loss u + ‖u‖²/(2ηk)', note: 'The step-size condition is decided exactly on the training set, so the bound holds for the very fit shown on the Regression page' },
+  { name: 'Problem.loss_gradientDescent_le', statement: 'L(θₖ) ≤ L(u) + ‖u‖² / (2ηk)', note: 'After k steps of size η (with 2ηΛ ≤ 1), gradient descent from 0 is within ‖u‖²/(2ηk) of any competitor u: an O(1/k) convergence rate for the solver this site runs.' },
+  { name: 'Pipeline.checkGDData_sound', statement: 'checkGDData = true → trainLoss ≤ loss u + ‖u‖²/(2ηk)', note: 'Lean checks the step-size condition exactly on the training set, so the bound holds for the fit shown on the Regression page' },
 ]
 
 export default function Home() {
@@ -89,9 +83,8 @@ export default function Home() {
           Formally verified cheminformatics
         </h1>
         <p className="text-slate-500 mt-3 max-w-xl text-sm leading-relaxed">
-          LeanSMILES reads a molecule from its SMILES string, builds the representations that cheminformatics runs on,
-          trains a model on them, and proves that the pieces behave as claimed — all in Lean 4. Try it on a molecule, or
-          fit a model on a dataset.
+          LeanSMILES parses SMILES, computes fingerprints, and fits regression models, all in Lean 4, with proofs that
+          Lean checks. Try it on a molecule or fit a model to a dataset.
         </p>
 
         <div className="flex items-center gap-3 mt-6">
@@ -104,23 +97,21 @@ export default function Home() {
         </div>
       </div>
 
-      <div className="grid md:grid-cols-3 gap-4">
-        {PRIMER.map((p) => (
-          <Card key={p.title} title={p.title} subtitle={p.subtitle}>
-            <p className="text-xs text-slate-500 leading-relaxed">{p.body}</p>
-          </Card>
-        ))}
-      </div>
-
       <Card
         title="Programming, proving and testing"
-        subtitle="A typical cheminformatics pipeline, and what LeanSMILES proves and tests along it"
+        subtitle="A typical cheminformatics pipeline, and where LeanSMILES adds proofs and tests"
       >
         <PipelineScheme />
       </Card>
 
+      <div className="max-w-2xl space-y-5">
+        {PRIMER.map((p) => (
+          <p key={p.title} className="text-sm text-slate-600 leading-relaxed">{p.body}</p>
+        ))}
+      </div>
+
       <div>
-        <p className="text-[11px] uppercase tracking-wide text-slate-400 mb-3">The three libraries</p>
+        <p className="text-[11px] uppercase tracking-wide text-slate-400 mb-3">The libraries</p>
         <div className="grid sm:grid-cols-3 gap-4">
           {LIBRARIES.map((l) => (
             <Card key={l.title} title={l.title} subtitle={l.code}>
@@ -130,29 +121,31 @@ export default function Home() {
         </div>
       </div>
 
-      <Card title="What the proofs turned up" subtitle="Three issues in widely used tools and standards">
+      <Card title="What the proofs revealed" subtitle="Issues in RDKit and the OpenSMILES standard">
         <div className="grid md:grid-cols-3 gap-x-6 gap-y-3.5 text-xs text-slate-500 leading-relaxed">
           <div>
             <p className="font-medium text-slate-800">1. RDKit's canonical SMILES is not always canonical</p>
             <p className="mt-0.5">
-              A canonical SMILES is meant to be the one string for a molecule, however its atoms were listed. For some
-              molecules RDKit gives several — a 12-carbon cubic graph gets 8, depending on the input order. Ours gives
-              one, and the theorem <code className="text-teal-700 font-mono">canonicalSmiles_relabel</code> says so.
+              A canonical SMILES should be the same no matter what order the atoms are listed in. For some molecules
+              RDKit gives more than one: a 12-carbon cubic graph gets 8 different strings depending on input order.
+              LeanSMILES always gives one, proved by{' '}
+              <code className="text-teal-700 font-mono">canonicalSmiles_relabel</code>.
             </p>
           </div>
           <div className="border-t md:border-t-0 md:border-l border-slate-100 pt-2.5 md:pt-0 md:pl-6">
-            <p className="font-medium text-slate-800">2. RDKit Morgan fingerprints depend on atom order from radius 3</p>
+            <p className="font-medium text-slate-800">2. RDKit Morgan fingerprints can change with atom order at radius 3</p>
             <p className="mt-0.5">
               <code className="font-mono">C1=C(CO)C=C1CC</code> and <code className="font-mono">C1(CC)=CC(CO)=C1</code> are the
-              same molecule but get different radius-3 bits. LeanSMILES proves order-invariance up to radius 2 (
-              <code className="text-teal-700 font-mono">morganBits_relabel</code>), which is where it stops holding.
+              same molecule, but RDKit gives them different radius-3 bits. Up to radius 2, the bits do not depend on atom
+              order, proved by <code className="text-teal-700 font-mono">morganBits_relabel</code>.
             </p>
           </div>
           <div className="border-t md:border-t-0 md:border-l border-slate-100 pt-2.5 md:pt-0 md:pl-6">
-            <p className="font-medium text-slate-800">3. OpenSMILES leaves aromatic hydrogen counts open</p>
+            <p className="font-medium text-slate-800">3. OpenSMILES is ambiguous about aromatic hydrogens</p>
             <p className="mt-0.5">
-              The standard (§3.1.5) does not fully determine the bond orders, and so the hydrogens, of aromatic atoms.{' '}
-              <code className="text-teal-700 font-mono">Molecule.implicitHydrogens</code> pins down the rule.
+              The standard (§3.1.5) does not fully determine the bond orders of aromatic atoms, so their hydrogen counts
+              can be ambiguous. LeanSMILES picks one rule, defined in{' '}
+              <code className="text-teal-700 font-mono">Molecule.implicitHydrogens</code>.
             </p>
           </div>
         </div>
@@ -171,7 +164,7 @@ export default function Home() {
 
       <div className="border-t border-slate-100 pt-6 space-y-3 text-xs text-slate-400 leading-relaxed max-w-2xl">
         <p>
-          Built by AI coding agents guided by human experts at the{' '}
+          Built by AI coding agents, directed by our team, at the{' '}
           <a
             href="https://llmhackathon.github.io"
             target="_blank"
@@ -180,8 +173,8 @@ export default function Home() {
           >
             Open Scientific Intelligence (OSI) Hackathon
           </a>
-          , as a demonstration that formally verified scientific software can be made quickly. Next: documenting the
-          approach so that scientists and engineers in other fields can use it.
+          , to show that formally verified scientific software can be built quickly. Next, we'll document the approach so
+          researchers in other fields can use it.
         </p>
         <p>
           <span className="font-medium text-slate-600">Special thanks to the team!</span> Demarko Fulcher, Ejike David
